@@ -45,11 +45,42 @@ if (!url) {
     let now = T0;
     const store = open(new HashEmbedder(), () => now);
     if (!initialised) { await store.init(); initialised = true; } // idempotent; a second store needs no init because the schema exists
-    return { store, advance: (ms) => { now += ms; }, now: () => now };
+    return {
+      store,
+      advance: (ms) => { now += ms; },
+      now: () => now,
+      // Read straight from the table: `recall` skips rows younger than two minutes on the database clock, which this clock does not move.
+      memories: async (text) => {
+        const client = new pg.Client({ connectionString: url });
+        await client.connect();
+        try {
+          const { rows } = await client.query<{ kind: string; text: string; platform: string | null; user_id: string | null; message_id: string | null }>(
+            "SELECT kind, text, platform, user_id, message_id FROM memories WHERE strpos(text, $1) > 0 ORDER BY id", [text]);
+          return rows.map((r) => ({
+            kind: r.kind, text: r.text,
+            platform: r.platform ?? undefined, userId: r.user_id ?? undefined, messageId: r.message_id ?? undefined,
+          }));
+        } finally { await client.end(); }
+      },
+    };
   }, { regular_messages: REGULAR });
 
   /** A fixed-size embedder: every text maps to the same unit-ish vector of `dims` numbers. */
   const sized = (dims: number): Embedder => ({ embed: async () => new Array<number>(dims).fill(1 / Math.sqrt(dims)) }) as Embedder;
+
+  // @spec MEM-STORE-004
+  test("MemoryStore (postgres): memories has nullable text platform, user_id, message_id and the two lookup indexes", async () => {
+    await open(new HashEmbedder()).init();
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    try {
+      const cols = (await client.query("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = 'memories' AND column_name IN ('platform','user_id','message_id') ORDER BY column_name")).rows;
+      assert.deepEqual(cols, ["message_id", "platform", "user_id"].map((column_name) => ({ column_name, data_type: "text", is_nullable: "YES" })));
+      const defs = (await client.query("SELECT indexdef FROM pg_indexes WHERE tablename = 'memories'")).rows.map((r: { indexdef: string }) => r.indexdef.replace(/\s+/g, " "));
+      assert.ok(defs.some((d) => /\(platform, message_id\)/.test(d)), "index on (platform, message_id)");
+      assert.ok(defs.some((d) => /\(platform, user_id\)/.test(d)), "index on (platform, user_id)");
+    } finally { await client.end(); }
+  });
 
   // @spec MEM-REFLECT-011
   test("MemoryStore (postgres): connect finds the tables the service created, without any embedder", async () => {

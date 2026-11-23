@@ -26,12 +26,24 @@ export function propagatedFlags(src: object | undefined): InjectionFlags { // @s
  */
 type TaggedEvent = { [K in EventType]: BusEvent<K> }[EventType];
 
-/** `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). */
+/** The platform a chat message or removal came from, as the bus names it. */
+export type ChatPlatform = BusEvent<"chat.message">["data"]["platform"];
+
+/** A `chat.removed` bus event's payload: what `Context.forget` removes. */
+export type ChatRemoval = BusEvent<"chat.removed">["data"];
+
+/**
+ * `eventId` is the id of the bus event an entry was built from (`markSeenEvents` matches on it). A chat entry holds
+ * `platform` always and `userId` and `messageId` only when the bus event carried them (WM-PUSH-001).
+ */
 export type ContextEvent =
-  | ({ kind: "chat"; eventId: string; ts: number; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
+  | ({ kind: "chat"; eventId: string; ts: number; platform: ChatPlatform; userId?: string; messageId?: string; user: string; text: string; mention: boolean; isMod: boolean; isSub: boolean; seen: boolean } & InjectionFlags)
   | ({ kind: "vision"; eventId: string; ts: number; text: string; changed: boolean; timing?: Timing; seen: boolean } & InjectionFlags)
   | ({ kind: "speech"; eventId: string; ts: number; speaker: string; text: string; timing?: Timing; seen: boolean } & InjectionFlags)
-  | { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
+  | SelfEntry;
+
+/** A `self` context entry: the co-host's own line, possibly streamed clause by clause. */
+export type SelfEntry = { kind: "self"; ts: number; text: string; emotion: Emotion; seen: true; id?: string; fallback?: string; heard?: string };
 
 /**
  * The character limits a window bounds text to on intake and renders with. Absent (a directly constructed `Context`)
@@ -63,6 +75,10 @@ export class Context {
 
   /** Entries `push` returned since `holdArrivals`; `undefined` when not holding. */
   private held: ContextEvent[] | undefined;
+  /** Each `self` event's clauses in `seq` order (clause 0 the `pushSelf` text); the event's text is these joined by one space. */
+  private readonly clauses = new WeakMap<SelfEntry, string[]>(); // @spec WM-PUSH-024
+  /** A `markFallback` with a `seq` above 0: the clause index it named (unclamped) and the fallback text it was given. */
+  private readonly fallbackFrom = new WeakMap<SelfEntry, { from: number; tail: string }>(); // @spec WM-PUSH-025
   private readonly ownLines: number;
   private readonly limits: ContextLimits | undefined;
 
@@ -115,7 +131,7 @@ export class Context {
     switch (ev.type) {
       case "chat.message": { // @spec WM-PUSH-001, WM-PUSH-010
         const d = ev.data;
-        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, user: nameOf(d.user, limits?.nameChars), text: bounded(d.text, limits?.chatChars), mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
+        entry = { kind: "chat", eventId: ev.id, ts: ev.ts, platform: d.platform, ...(d.userId !== undefined ? { userId: d.userId } : {}), ...(d.messageId !== undefined ? { messageId: d.messageId } : {}), user: nameOf(d.user, limits?.nameChars), text: bounded(d.text, limits?.chatChars), mention: d.mentionsCohost, isMod: d.isMod, isSub: d.isSub, seen: false, ...flagsOf(d) };
         break;
       }
       case "vision.summary": { // @spec WM-PUSH-004, WM-PUSH-005
@@ -146,16 +162,49 @@ export class Context {
 
   /** Append the co-host's own line; `ts` is the bus `ts` of the `brain.say` it came from, so every kind shares the publisher's clock. */
   pushSelf(text: string, emotion: Emotion, ts: number, id?: string): void { // @spec WM-PUSH-006, WM-PUSH-007
-    this.events.push({ kind: "self", ts, text, emotion, seen: true, ...(id !== undefined ? { id } : {}) });
+    const entry: SelfEntry = { kind: "self", ts, text, emotion, seen: true, ...(id !== undefined ? { id } : {}) };
+    this.clauses.set(entry, [text]);
+    this.events.push(entry);
     this.trim();
   }
 
-  /** Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window. */
-  markFallback(id: string, fallbackText: string): boolean { // @spec WM-PUSH-008
-    const e = this.events.find((x) => x.kind === "self" && x.id === id);
-    if (!e || e.kind !== "self") return false;
-    e.fallback = fallbackText;
+  /**
+   * Append clause `seq` to the `self` event with this id, separated by one space; false (and no change) when no such
+   * event is in the window, `seq` is not one more than the last clause it holds, or `text` is empty. Leaves the
+   * event's position, `seen`, `fallback`, `heard` and `emotion` as they are.
+   */
+  extendSelf(id: string, seq: number, text: string): boolean { // @spec WM-PUSH-021, WM-PUSH-022, WM-PUSH-023, WM-PUSH-024
+    const e = this.selfById(id);
+    if (!e || text === "") return false;
+    const held = this.clauses.get(e)!;
+    if (seq !== held.length) return false;
+    held.push(text);
+    e.text = held.join(" ");
     return true;
+  }
+
+  /**
+   * Record the text actually heard on the `self` event with this id; false (and no change) when it is not in the window.
+   * With no `seq` or `seq` 0 the whole line is the fallback. With `seq` above 0 the fallback is the clauses before `seq`
+   * followed by `fallbackText`. `seq` is kept as given: clauses that arrive later are part of the rendered head or
+   * rest by their index (WM-TRANS-015), so a `seq` past the clauses held now is not clamped.
+   */
+  markFallback(id: string, fallbackText: string, seq = 0): boolean { // @spec WM-PUSH-008, WM-PUSH-025
+    const e = this.selfById(id);
+    if (!e) return false;
+    const held = this.clauses.get(e)!;
+    if (seq <= 0) {
+      e.fallback = fallbackText;
+      this.fallbackFrom.delete(e);
+    } else {
+      e.fallback = [...held.slice(0, seq), fallbackText].join(" ");
+      this.fallbackFrom.set(e, { from: seq, tail: fallbackText });
+    }
+    return true;
+  }
+
+  private selfById(id: string): SelfEntry | undefined {
+    return this.events.find((x): x is SelfEntry => x.kind === "self" && x.id === id);
   }
 
   /**
@@ -173,6 +222,27 @@ export class Context {
   /** Whether a `self` event with this id is still in the window. */
   hasSelf(id: string): boolean { // @spec WM-WIN-007
     return this.events.some((e) => e.kind === "self" && e.id === id);
+  }
+
+  /**
+   * Remove the chat entries a `chat.removed` names (WM-FORGET-001..003): `message` by `messageId`, `user` by `userId`
+   * (an entry with no `userId` never matches), `all` every entry; always only this removal's platform. A removed entry
+   * also leaves the arrivals record, so it is never marked seen later (WM-FORGET-005). Returns how many were removed.
+   */
+  forget(removal: ChatRemoval): number { // @spec WM-FORGET-001, WM-FORGET-002, WM-FORGET-003, WM-FORGET-004, WM-FORGET-005, WM-FORGET-006
+    const matches = (e: ContextEvent): boolean => {
+      if (e.kind !== "chat" || e.platform !== removal.platform) return false;
+      switch (removal.scope) {
+        // An empty id names nothing: an unvalidated removal with "" matches no entry (WM-FORGET-006).
+        case "message": return !!removal.messageId && e.messageId === removal.messageId;
+        case "user": return !!removal.userId && e.userId === removal.userId;
+        case "all": return true;
+      }
+    };
+    const before = this.events.length;
+    this.events = this.events.filter((e) => !matches(e));
+    if (this.held) this.held = this.held.filter((e) => !matches(e));
+    return before - this.events.length;
   }
 
   unseen(): ContextEvent[] { // @spec WM-SEEN-001
@@ -217,9 +287,16 @@ export class Context {
           case "speech": return `${LINE_TAG.speech} ${speakerLabel(e.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(e.text)}`; // @spec WM-TRANS-003, WM-TRANS-006
           case "vision": return `${LINE_TAG.vision} ${oneLine(e.text)}`; // @spec WM-TRANS-004, WM-TRANS-006, WM-TRANS-012
           case "self": // @spec WM-TRANS-005, WM-TRANS-010, WM-TRANS-011
-            return e.fallback !== undefined
-              ? `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`
-              : `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
+            if (e.fallback === undefined) return `${cohostName}: [${e.emotion}] ${oneLine(e.text)}`;
+            const marked = this.fallbackFrom.get(e);
+            if (marked !== undefined) { // @spec WM-TRANS-015
+              // Rendered from the clauses now held, so clauses that arrived after the mark land in the right part.
+              const held = this.clauses.get(e)!;
+              const head = [...held.slice(0, marked.from), marked.tail].join(" ");
+              const rest = held.slice(marked.from).join(" ");
+              return `${cohostName}: [${e.emotion}] ${oneLine(head)} [the rest of your line "${oneLine(rest)}" failed to play; this came out instead]`;
+            }
+            return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`;
         }
       })
       .join("\n");

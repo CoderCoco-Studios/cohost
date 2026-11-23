@@ -137,7 +137,7 @@ stores (`MEM-VIEWER-001`, in-memory: `fake-store.ts`). On conflict the row's
 selected but unused; `last_seen` orders the lookups that pick the most recent of several
 viewers (a display-name match, a placeholder claim).
 
-A viewer is a platform and a user id, never a display name. The key is the shared guard's `viewerKey` ([shared-runtime](../shared-runtime/shared-runtime-design.md)): `<platform>:<userId>`, the id exactly as the platform wrote it (`twitch:<Twitch user id>`, `youtube:<channel id>`, `discord:<id>`, the same shape as a voice speaker's `discord:<speakerId>`). A YouTube channel id is case-sensitive, so no key that holds an id is case-folded; a Twitch id is digits, which folding would not change, so Twitch keys are unaffected. A chat line with no user id (a test-injected line) is keyed `<platform>:name:<lowercased name>`, the one fallback, so it is still separated by platform. A Twitch viewer and a YouTube viewer with the same display name are two rows, and `display` is for rendering only. Rows keyed in any other format are not read and not converted (`MEM-VIEWER-011`). The in-memory store counts per `viewerKey` too (`MEM-BACKEND-005`). Memory treats every platform's viewer the same: rows, memories and notes are kept across streams with no platform-specific expiry (Decisions & Alternatives, Retention of YouTube viewers).
+A viewer is a platform and a user id, never a display name. The key is the shared guard's `viewerKey` ([shared-runtime](../shared-runtime/shared-runtime-design.md), SHARED-GUARD-025..027): with a user id, the id exactly as the platform wrote it; with no user id (a test-injected line), the platform and the normalised name, so it is still separated by platform. The id form and the name form carry distinct prefixes, so no user id can collide with a name key. A YouTube channel id is case-sensitive, so no key that holds an id is case-folded (`MEM-VIEWER-008`); the name form is folded by `normalizeKey`, as the shared guard defines it (`MEM-VIEWER-009`). A Twitch and a YouTube viewer with the same display name are two rows, and `display` is for rendering only. Lookups read only rows keyed in the `viewerKey` format (`MEM-VIEWER-011`), with two readings recorded here: voice rows keyed `discord:<speakerId>` (`MEM-VOICE-001`) are a separate namespace read by the voice rules and are not converted, so they remain readable; and owner placeholders keyed by lowercased name (`MEM-REG-003`) remain readable until chat claims them (`MEM-REG-004`), since the placeholder key is specified as-is. The in-memory store counts per `viewerKey` too (`MEM-BACKEND-005`). Memory treats every platform's viewer the same: rows, memories and notes are kept across streams with no platform-specific expiry (Decisions & Alternatives, Retention of YouTube viewers).
 
 A viewer is a **regular** when the owner has flagged them as one or when their
 lifetime `msg_count` is above `brain.memory.regular_messages` (default 25)
@@ -287,8 +287,7 @@ voice-specific except how the speaker's identity is found.
 
 **Identity.** [ears](../ears/ears-design.md) publishes each transcript with the
 speaker's Discord display name (`speaker`) and Discord user id (`speakerId`).
-Memory keys chat viewers by `viewerKey` (`<platform>:<userId>`), so a Twitch chat viewer's key
-is `twitch:<id>` and a Discord id is a different namespace. A speaker's viewer key
+Memory keys chat viewers by `viewerKey` (SHARED-GUARD-025..027). A voice speaker's key, `discord:<speakerId>`, is a different namespace: no `viewerKey` takes that shape, because every `viewerKey` carries an `id:` or `name:` part. A speaker's viewer key
 is therefore one of two things (`MEM-VOICE-001`, `MEM-VOICE-004`):
 
 - **Linked.** The owner has linked the Discord id to a chat viewer: the speaker
@@ -316,9 +315,10 @@ starts a fresh voice viewer. Linking replaces an earlier link of the same id. Th
 target must be an existing viewer row that is not itself a voice viewer.
 
 **Names.** The cortex asks for notes by the display name it knows, and for a
-voice line that is the Discord display name. A name that matches no viewer's
-`display` also matches the latest Discord display name of a linked id, so a linked
-speaker's notes surface under the name they speak under (`MEM-VOICE-007`).
+voice line that is the Discord display name. A name-only entry resolves only to a
+viewer keyed by name, never to a viewer keyed by an id (`MEM-SURF-006`). A link's
+`discord_display` is not a name key, so a linked speaker's notes do not surface
+under the Discord name they speak under (`MEM-VOICE-007`).
 
 **Privacy.** Voice lines go through the same capture hook, validation and writer
 as chat lines, so politics is never stored and money never becomes a note
@@ -413,8 +413,8 @@ leaves the rest dirty (`MEM-CONSOL-011`). Each completed pass records
 The cortex asks for notes when it replies, with `memory.notes.request {id, viewers}`,
 handled in the `memory-recall` group next to recall (`MEM-SURF-001`). The first entry in `viewers` is the viewer being replied to; the rest
 are the other viewers in the cortex's working-memory window. An entry that carries a `platform` and a `userId` resolves to the viewer row with the `viewerKey` of that pair, and to nothing when there is no such row: it is never matched by name, so a same-named viewer on another platform cannot receive these notes (`MEM-SURF-002`). An entry with a `platform` and no `userId` (an injected line) resolves to the row with the `viewerKey` of that platform and its name (`MEM-SURF-007`). Only an entry with no `platform` (a speech focus, whose speaker is known by name) resolves by display name, to
-the viewer row whose display name matches it case-insensitively, the most recently
-seen one when several do (`MEM-SURF-006`). The reply lists, per resolved
+the name-keyed viewer row whose display name matches it case-insensitively, the most recently
+seen one when several do; a row keyed by an id is never chosen by name (`MEM-SURF-006`). The reply lists, per resolved
 viewer, `regular`, `msgCount` and their notes (never subscriber status, which is
 stored but not surfaced), strongest first, at most
 `max_notes_per_viewer` (default 5) each and `max_notes_total` (default 15) overall,
@@ -567,7 +567,7 @@ and related texts lower than plain word overlap would, so the fake store's recal
 tests choose fixtures whose similarity clears `min_similarity` (default 0.35)
 rather than relying on any overlap scoring positive. `recall` mirrors the SQL semantics: 2-minute cutoff against an
 injectable clock, cosine by dot product, sort, top `k`, `min_similarity` filter
-(`fake-store.ts`). `touchViewer` lowercases the key, counts from 1 and never
+(`fake-store.ts`). `touchViewer` stores the key as given, without case-folding (`MEM-VIEWER-008`), counts from 1 and never
 returns notes other than `""` (`fake-store.ts`). `recentSince` returns rows
 after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 `meta` is a `Map` (`fake-store.ts`).
@@ -576,7 +576,7 @@ after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 
 After the owner changes the embedder to one with another vector size, `init` refuses the
 existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
-`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `jobs` profile, or
+`node services/memory/dist/reembed.js`, the Compose `reembed` job in the `tools` profile, or
 `cohostctl reembed`) is the way forward; run it with the memory service stopped.
 
 - `runReembed` (`reembed-run.ts`) takes the consolidation lock (`MEM-REEMBED-004`), calls
@@ -735,7 +735,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
 | Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
 | Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres |. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
-| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
+| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, among name-keyed rows only and only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
 | Sensitive-cooldown concurrency | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a courtesy, not a safety property, and a race costs at most one repeated hint. `MEM-SURF-004` |
@@ -752,7 +752,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Testable reflection and startup | `runReflect` (`reflect-run.ts`) and `startMemory` (`startup.ts`) take their dependencies as arguments; `reflect.ts` and `main.ts` only wire them | keep the logic at module load | Both entry files run at import, which made the cursor, readiness, retry and subscription behaviour untestable; `MEM-REFLECT-008`, `MEM-HEALTH-007`, `MEM-EVT-001` |
 | Startup readiness vs group creation | `ready` is reported once every subscription's `onReady` has fired | report ready right after starting the subscriptions; call `resetGroup` first; raw Redis `XGROUP CREATE`; wait with a timer | `resetGroup` would move a resumed group to `$`, and raw Redis access would bypass the bus; the bus's `onReady` hook is the group-exists signal (`MEM-START-005`) |
 | Retention of YouTube viewers | A YouTube viewer is remembered exactly as a Twitch viewer: viewer row, remembered chat lines and notes are kept across streams with no platform-specific expiry. Owner decision 2026-11-16 | Expire YouTube-sourced rows and notes 30 days after the viewer last chatted; store nothing from YouTube (memory ignores `chat.message` with `platform: youtube`) | The YouTube API Services Developer Policies (III.E.4) say that stored API data is to be deleted or refreshed after 30 days, and deleted within 7 days of a user's request. Keeping YouTube viewers' rows and notes indefinitely does not meet the 30-day term, and cohost has no refresh of stored YouTube data; the owner made this decision knowing that. The dashboard's Viewers page is the means of deleting a viewer's notes on request (`clear`, `delete_note`); it has no operation that deletes a viewer's row or stored chat lines. |
-| Viewer key | `viewerKey`: `<platform>:<userId>` with the id as written, never case-folded; `<platform>:name:<lowercased name>` when a line has no user id | The lowercased `userId ?? user` (a bare id, folded); the display name | Owner decision 2026-11-16: a viewer is a platform and a user id. A YouTube channel id is case-sensitive, so folding a key that holds one could merge two channels; Twitch ids are digits and a key with them is unchanged by folding rules. The prefix gives each platform its own namespace, as `discord:<speakerId>` already does for a voice speaker. A name fallback keeps an injected line separated by platform. `MEM-VIEWER-001`, `MEM-VIEWER-008` |
+| Viewer key | The shared guard's `viewerKey` (SHARED-GUARD-025..027): the id form with the id as written, never case-folded; the name form when a line has no user id | The lowercased `userId ?? user` (a bare id, folded); the display name | Owner decision 2026-11-16: a viewer is a platform and a user id. A YouTube channel id is case-sensitive, so folding a key that holds one could merge two channels; Twitch ids are digits and a key with them is unchanged by folding rules. The prefix gives each platform its own namespace, as `discord:<speakerId>` already does for a voice speaker. A name fallback keeps an injected line separated by platform. `MEM-VIEWER-001`, `MEM-VIEWER-008` |
 | Forgetting a removed message | `chat.removed` deletes the stored chat rows it names (`message`: by platform and message id; `user`: by platform and user id) and nothing else; `all` deletes no stored row | Mark rows deleted and keep them; also delete the viewer's notes, row and counts; delete every stored chat row of the platform on `all`; trace notes back to their line | Owner decision 2026-11-16: cohost forgets a message the platform removed, without acting on the platform. A row is the only place chat text is stored, so deleting it is forgetting; notes are a model's description and carry no link to a line, so they are not traced back and the owner deletes them on the Viewers page; a viewer row holds only a name, a count and flags. A cleared chat names no message, and stored rows outlive the stream, so `all` is limited to the windows. `MEM-FORGET-001` to `MEM-FORGET-007` |
 
 ## Open Questions & Future Decisions

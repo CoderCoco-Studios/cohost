@@ -24,9 +24,17 @@ class FakeClient implements ChatClientLike {
   connected: (() => void)[] = [];
   disconnected: ((manually: boolean, reason?: Error) => void)[] = [];
   messages: ((chan: string, user: string, text: string, msg: { userInfo: unknown }) => void)[] = [];
+  removed: ((chan: string, id: string, msg: unknown) => void)[] = [];
+  banned: ((chan: string, user: string, msg: { targetUserId: string | null }) => void)[] = [];
+  timedOut: ((chan: string, user: string, duration: number, msg: { targetUserId: string | null }) => void)[] = [];
+  cleared: ((chan: string, msg: unknown) => void)[] = [];
   connects = 0;
   quits = 0;
   constructor(public opts: Record<string, unknown>) {}
+  onMessageRemove(cb: (chan: string, id: string, msg: unknown) => void) { this.removed.push(cb); }
+  onBan(cb: (chan: string, user: string, msg: { targetUserId: string | null }) => void) { this.banned.push(cb); }
+  onTimeout(cb: (chan: string, user: string, duration: number, msg: { targetUserId: string | null }) => void) { this.timedOut.push(cb); }
+  onChatClear(cb: (chan: string, msg: unknown) => void) { this.cleared.push(cb); }
   onConnect(cb: () => void) { this.connected.push(cb); }
   onDisconnect(cb: (manually: boolean, reason?: Error) => void) { this.disconnected.push(cb); }
   onMessage(cb: (chan: string, user: string, text: string, msg: { userInfo: unknown }) => void) { this.messages.push(cb); }
@@ -127,7 +135,7 @@ test("twitch shutdown quits the client; fake source builds no client", async () 
   await t.start();
   await t.stop();
   assert.equal(t.clients[0]!.quits, 1);
-  const f = rig({ chat: { source: "fake", twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) });
+  const f = rig({ chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) });
   try {
     await f.start();
     assert.equal(f.clients.length, 0);
@@ -219,12 +227,16 @@ test("the token store round-trips and rejects a file of the wrong shape", () => 
 });
 
 // @spec CHAT-TW-010
-test("a missing chat.twitch.refresh_token with the other credentials set is fatal at startup", async () => {
+test("a missing chat.twitch.refresh_token with the other credentials set rejects the twitch start: only that source stops, the process keeps running", async () => {
   const { refresh_token: _omit, ...partial } = creds;
   const r = rig(tw(partial));
-  await r.start();
-  assert.deepEqual(r.exits, [1]);
-  assert.ok(r.rec.lines.some((l) => l.msg === "fatal"));
+  try {
+    await r.start();
+    assert.deepEqual(r.exits, []);
+    assert.equal(r.clients.length, 0, "no client is built before the token is registered");
+    assert.ok(r.rec.msgs("error").some((m) => /chat\.twitch\.refresh_token/.test(String(m))));
+    assert.deepEqual(r.deps(), { twitch: "down", youtube: "n/a" });
+  } finally { await r.stop(); }
 });
 
 const ANON_CASES: [string, Record<string, string>][] = [
@@ -293,13 +305,13 @@ test("a disconnect logs a warning with manually and reason, and the twitch depen
     await r.start();
     const client = r.clients[0]!;
     client.connected[0]!();
-    assert.deepEqual(r.deps(), { twitch: "ok" });
+    assert.deepEqual(r.deps(), { twitch: "ok", youtube: "n/a" });
     const reason = new Error("socket reset");
     client.disconnected[0]!(true, reason);
     const line = r.rec.lines.find((l) => l.level === "warn" && l.msg === "twitch chat disconnected");
     assert.ok(line, "a warning is logged");
     assert.deepEqual(line.obj, { manually: true, reason });
-    assert.deepEqual(r.deps(), { twitch: "down" });
+    assert.deepEqual(r.deps(), { twitch: "down", youtube: "n/a" });
   } finally { await r.stop(); }
 });
 
@@ -320,7 +332,7 @@ test("chat/src has no value import of @twurple/*: type-only imports and dynamic 
 // @spec CHAT-INJ-001
 test("inject.request is subscribed with group chat in the fake, idle and twitch plans", async () => {
   const plans: [string, Record<string, unknown>, Partial<ChatServiceDeps>][] = [
-    ["fake", { chat: { source: "fake", twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) }],
+    ["fake", { chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin: Object.assign(new PassThrough(), { isTTY: true }) }],
     ["idle", { chat: { twitch: { channel: "" } } }, {}],
     ["twitch", {}, {}],
   ];
@@ -334,17 +346,127 @@ test("inject.request is subscribed with group chat in the fake, idle and twitch 
 });
 
 // @spec CHAT-FAKE-006
-test("a rejecting fake publish warns 'fake chat publish failed' and the source keeps running", async () => {
+test("a rejecting fake publish warns 'chat.message publish failed' and the source keeps running", async () => {
   const stdin = new PassThrough();
-  const r = rig({ chat: { source: "fake", twitch: { channel: "" } } }, { stdin });
+  const r = rig({ chat: { sources: ["fake"], twitch: { channel: "" } } }, { stdin });
   try {
     await r.start();
     r.bus.fail = (t) => t === "chat.message";
     stdin.write("first\n");
-    await waitFor(() => r.rec.lines.some((l) => l.level === "warn" && l.msg === "fake chat publish failed"), "publish-failed warning");
+    await waitFor(() => r.rec.lines.some((l) => l.level === "warn" && l.msg === "chat.message publish failed"), "publish-failed warning");
     r.bus.fail = undefined;
     stdin.write("second\n");
     await waitFor(() => r.bus.of("chat.message").length === 1, "a later message still publishes");
     assert.equal(r.bus.of("chat.message")[0]!.text, "second");
   } finally { await r.stop(); }
+});
+
+// @spec CHAT-TW-013, CHAT-FILT-005
+test("a Twitch line is published with the platform's message id and user id", async () => {
+  const r = rig();
+  try {
+    await r.start();
+    const msg = { id: "tw-msg-1", userInfo: { userName: "bob", displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false } };
+    r.clients[0]!.messages[0]!("#chan", "bob", "hello", msg);
+    await waitFor(() => r.bus.of("chat.message").length === 1, "chat.message");
+    const ev = r.bus.of("chat.message")[0]!;
+    assert.deepEqual([ev.platform, ev.userId, ev.messageId], ["twitch", "42", "tw-msg-1"]);
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-FILT-001, CHAT-FILT-012
+test("chat.ignore_users drops a Twitch line by login or by display name, in any letter case", async () => {
+  const r = rig({ chat: { ignore_users: ["Some_Login", "FancyName"] } });
+  try {
+    await r.start();
+    const from = (userName: string, displayName: string) => ({ id: `id-${userName}`, userInfo: { userName, displayName, userId: "1", isMod: false, isBroadcaster: false, isSubscriber: false } });
+    const send = r.clients[0]!.messages[0]!;
+    send("#chan", "some_login", "by login", from("some_login", "Whoever"));
+    send("#chan", "other", "by name", from("other", "fancyname"));
+    send("#chan", "bob", "kept", from("bob", "Bob"));
+    await waitFor(() => r.bus.of("chat.message").length >= 1, "chat.message");
+    assert.deepEqual(r.bus.of("chat.message").map((m) => m.text), ["kept"]);
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-TW-014, CHAT-TW-015, CHAT-TW-016, CHAT-TW-017, CHAT-FORGET-001, CHAT-FORGET-008
+test("Twitch removal events are published as chat.removed with platform twitch", async () => {
+  const r = rig();
+  try {
+    await r.start();
+    const c = r.clients[0]!;
+    c.removed[0]!("#chan", "gone-1", {});
+    c.banned[0]!("#chan", "troll", { targetUserId: "7" });
+    c.timedOut[0]!("#chan", "flood", 60, { targetUserId: "8" });
+    c.cleared[0]!("#chan", {});
+    await waitFor(() => r.bus.of("chat.removed").length === 4, "four chat.removed");
+    assert.deepEqual(r.bus.of("chat.removed"), [
+      { platform: "twitch", scope: "message", messageId: "gone-1" },
+      { platform: "twitch", scope: "user", userId: "7", reason: "banned" },
+      { platform: "twitch", scope: "user", userId: "8", reason: "timeout" },
+      { platform: "twitch", scope: "all", reason: "cleared" },
+    ]);
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-TW-018
+test("a ban with a null targetUserId publishes no chat.removed and warns", async () => {
+  const r = rig();
+  try {
+    await r.start();
+    r.clients[0]!.banned[0]!("#chan", "troll", { targetUserId: null });
+    await new Promise((res) => setTimeout(res, 20));
+    assert.equal(r.bus.of("chat.removed").length, 0);
+    assert.ok(r.rec.lines.some((l) => l.level === "warn"), "a warning is logged");
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-FORGET-006
+test("a removal for an ignored viewer is still published: ignore lists do not apply to removals", async () => {
+  const r = rig({ chat: { ignore_users: ["troll"], ignore_prefixes: ["!"] } });
+  try {
+    await r.start();
+    r.clients[0]!.banned[0]!("#chan", "troll", { targetUserId: "7" });
+    r.clients[0]!.removed[0]!("#chan", "!cmd-msg", {});
+    await waitFor(() => r.bus.of("chat.removed").length === 2, "both removals published");
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-FORGET-001
+test("any source's removal is published with that source's platform", async () => {
+  const hold: { env?: any } = {};
+  const r = rig({ chat: { sources: ["youtube"], youtube: { api_key: "k", video: "dQw4w9WgXcQ" } } }, {
+    sourceFactories: { youtube: () => ({ name: "youtube", state: () => ({ state: "reading" }), async start(env: any) { hold.env = env; env.onState("reading"); }, stop() {} }) as never },
+  });
+  try {
+    await r.start();
+    hold.env.emitRemoval({ scope: "user", userId: "UCabc", reason: "banned" });
+    await waitFor(() => r.bus.of("chat.removed").length === 1, "chat.removed");
+    assert.deepEqual(r.bus.of("chat.removed")[0], { platform: "youtube", scope: "user", userId: "UCabc", reason: "banned" });
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-SRC-008, CHAT-FORGET-001
+test("a failed chat.removed publish is logged at warn and the next removal is still published", async () => {
+  const r = rig();
+  try {
+    await r.start();
+    let calls = 0;
+    r.bus.fail = () => ++calls === 1;
+    const c = r.clients[0]!;
+    c.removed[0]!("#chan", "first", {});
+    await waitFor(() => calls >= 1, "first publish attempted");
+    c.removed[0]!("#chan", "second", {});
+    await waitFor(() => r.bus.of("chat.removed").length === 1, "second published");
+    assert.equal(r.bus.of("chat.removed")[0]!.messageId, "second");
+    assert.ok(r.rec.lines.some((l) => l.level === "warn" && /chat\.removed/.test(String(l.msg))), "the failure is logged at warn naming chat.removed");
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-FORGET-007
+test("chat/src has no call that sends a line, ban, timeout or delete to a platform", () => {
+  const dir = fileURLToPath(new URL("../src/", import.meta.url));
+  const all = readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => readFileSync(join(dir, f), "utf8")).join("\n");
+  assert.doesNotMatch(all, /\.(say|ban|timeout|deleteMessage|deleteChatMessage|clear|action|whisper|banUser|timeoutUser)\s*\(/);
+  assert.doesNotMatch(all, /\/moderation\/|helix\.moderation|liveChat\/(bans|messages)/);
 });

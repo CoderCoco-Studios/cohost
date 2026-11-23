@@ -246,11 +246,11 @@ test("new keys default to live backends when omitted; bad enum values are reject
   const base = { cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: { host: "h", port: 1 }, vmc: { host: "h", port: 1 } }, ears: {}, dashboard: {}, brain: {} };
   const ok = ConfigSchema.parse(base);
-  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.source, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
-    ["kokoro", "postgres", "ollama", "twitch", ["discord"], true]);
-  const bad = ConfigSchema.safeParse({ ...base, chat: { source: "irc", twitch: {} } });
+  assert.deepEqual([ok.voice.engine, ok.brain.memory.store, ok.brain.memory.embedder, ok.chat.sources, earsSources(ok.ears), ok.mouth.outputs.discord.enabled],
+    ["kokoro", "postgres", "ollama", ["twitch"], ["discord"], true]);
+  const bad = ConfigSchema.safeParse({ ...base, chat: { sources: ["irc"], twitch: {} } });
   assert.equal(bad.success, false);
-  assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".") === "chat.source"));
+  assert.ok(!bad.success && bad.error.issues.some((i) => i.path.join(".").startsWith("chat.sources")));
   assert.equal(ConfigSchema.safeParse({ ...base, ears: { sources: ["X"] } }).success, false);
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
@@ -559,18 +559,19 @@ test("mouth.outputs.discord.gain_db accepts -40 to 12 inclusive and a failure na
 });
 
 // @spec CFG-SCH-021, EYES-DESC-007
-test("vision.engine defaults to ollama (blank too), accepts stub, rejects others; the describer tuning keys default and validate", () => {
+test("vision.provider defaults to ollama (blank too), accepts the five providers, rejects others; the describer tuning keys default and validate", () => {
   const vision = (v: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), vision: { model: "v", obs: {}, ...v } });
   const d = vision({});
   assert.ok(d.success);
-  assert.equal(d.data.vision.engine, "ollama");
+  assert.equal(d.data.vision.provider, "ollama");
   assert.equal(d.data.vision.temperature, 0.2);
   assert.equal(d.data.vision.num_predict, 60);
   assert.equal(d.data.vision.jpeg_quality, 70);
   assert.match(d.data.vision.prompt, /exactly: SAME/);
-  assert.equal(vision({ engine: "" }).data!.vision.engine, "ollama");
-  assert.equal(vision({ engine: "stub" }).data!.vision.engine, "stub");
-  assert.equal(vision({ engine: "openai" }).success, false);
+  assert.equal(vision({ provider: "" }).data!.vision.provider, "ollama");
+  assert.equal(vision({ provider: "stub" }).data!.vision.provider, "stub");
+  assert.equal(vision({ provider: "bedrock" }).data!.vision.provider, "bedrock");
+  assert.equal(vision({ provider: "gemini" }).success, false);
   assert.equal(vision({ prompt: "  " }).data!.vision.prompt, d.data.vision.prompt, "a blank prompt is the default");
   assert.equal(vision({ prompt: "Say SAME or one line." }).data!.vision.prompt, "Say SAME or one line.");
   for (const bad of [{ temperature: -0.1 }, { temperature: 2.1 }, { num_predict: 0 }, { num_predict: 1.5 }, { jpeg_quality: 0 }, { jpeg_quality: 101 }]) {
@@ -645,7 +646,8 @@ test("the shipped config.example.yaml carries a starter fallback list of at leas
   assert.match(text, /mouth:[\s\S]*fallback:\s*\n\s*min_interval_ms:\s*20000\b/);
   // @spec CFG-SCH-018
   const earsBlock = text.match(/^ears:\n((?:[ \t]+.*\n|\n)*)/m)![1]!;
-  assert.doesNotMatch(earsBlock, /fallback/, "the ears block carries no fallback key");
+  // CFG-SCH-018: no `fallback` key (the spoken fallback lives under voice). CFG-SCH-063 adds `stt_fallback_engine`, a different key.
+  assert.doesNotMatch(earsBlock, /^ {2}fallback:/m, "the ears block carries no fallback key");
   assert.equal("fallback" in cfg.ears, false);
 });
 
@@ -689,11 +691,11 @@ test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir
 });
 
 // @spec CFG-SCH-010, CFG-SCH-037
-test("vision.obs, chat.twitch, avatar.vtube_studio and avatar.vmc are required objects whose hosts and ports default", () => {
+test("vision.obs, avatar.vtube_studio and avatar.vmc are required objects whose hosts and ports default; chat.twitch is optional", () => {
   assert.equal(ConfigSchema.safeParse(baseCfg()).success, true);
   const without = (mutate: (c: ReturnType<typeof baseCfg>) => void) => { const c = baseCfg(); mutate(c); return ConfigSchema.safeParse(c).success; };
   assert.equal(without((c) => { delete (c.vision as Record<string, unknown>).obs; }), false, "vision.obs");
-  assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), false, "chat.twitch");
+  assert.equal(without((c) => { delete (c.chat as Record<string, unknown>).twitch; }), true, "chat.twitch is optional (CFG-SCH-054)");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vtube_studio; }), false, "avatar.vtube_studio");
   assert.equal(without((c) => { delete (c.avatar as Record<string, unknown>).vmc; }), false, "avatar.vmc");
   const c = ConfigSchema.parse({ ...baseCfg(), avatar: { vtube_studio: {}, vmc: {} } });
@@ -752,7 +754,7 @@ test("a backend-selection value that is blank takes the live default", () => {
   });
   for (const v of ["", null, undefined]) {
     const c = blanks(v);
-    assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"], String(v));
+    assert.deepEqual([c.llm.provider, c.chat.sources, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", ["twitch"], "kokoro", "postgres", "ollama"], String(v));
   }
   // a key written as an empty string in the file is the same case
   const text = [
@@ -768,8 +770,8 @@ test("a backend-selection value that is blank takes the live default", () => {
   const parsed = parseConfigText(text);
   assert.ok(parsed.ok, JSON.stringify(parsed.ok ? [] : parsed.issues));
   const c = parsed.config;
-  assert.deepEqual([c.llm.provider, c.chat.source, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", "twitch", "kokoro", "postgres", "ollama"]);
-  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), chat: { source: "bogus", twitch: {} } }).success, false, "a non-blank unknown value still fails");
+  assert.deepEqual([c.llm.provider, c.chat.sources, c.voice.engine, c.brain.memory.store, c.brain.memory.embedder], ["ollama", ["twitch"], "kokoro", "postgres", "ollama"]);
+  assert.equal(ConfigSchema.safeParse({ ...baseCfg(), chat: { sources: ["bogus"], twitch: {} } }).success, false, "a non-blank unknown value still fails");
 });
 
 // @spec CFG-SCH-002

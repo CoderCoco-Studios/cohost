@@ -1,13 +1,16 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { FakeBus, event, recordingLog } from "@cohost/testing";
+import { FakeBus, event, recordingLog, testConfig } from "@cohost/testing";
 import { runHeartbeat } from "@cohost/testing";
-import { Voice, stubSynth, ENVELOPE_HZ } from "../src/voice.js";
+import { Voice, ENVELOPE_HZ } from "../src/voice.js";
 import { VoiceHealth } from "../src/health.js";
+import { collect } from "../src/engine.js";
+import { createEngine } from "../src/engines.js";
 import { parseWav } from "@cohost/shared";
 import { envelope } from "../src/wav.js";
 
-const synth = stubSynth({ sample_rate: 24000 });
+const stub = createEngine(testConfig({ voice: { engine: "stub", sample_rate: 24000 } }).voice);
+const synth = async (text: string) => collect(await stub.synthesize(text, { signal: new AbortController().signal }));
 
 test("stub: valid mono 16-bit WAV at the configured rate, 60 ms per character", async () => { // @spec VOICE-STUB-001
   const wav = await synth("x".repeat(100));
@@ -37,10 +40,11 @@ test("stub: brain.say publishes a real voice.utterance and never calls fetch", a
     const bus = new FakeBus();
     const voice = new Voice({ bus, log: recordingLog().log, synth, publicUrl: "http://voice:8700" });
     await voice.onEvent(event("brain.say", { id: "s1", text: "x".repeat(50), emotion: "happy" }));
+    await voice.whenIdle();
     const [u] = bus.of("voice.utterance");
     assert.equal(u!.durationMs, 3000);
     assert.equal(u!.sampleRate, 24000);
-    assert.equal(u!.audioUrl, "http://voice:8700/audio/s1.wav");
+    assert.equal(u!.audioUrl, "http://voice:8700/audio/s1-0.wav");
     assert.ok(u!.envelope.every((v) => v === 0));
     assert.equal(u!.envelope.length, 90);
     assert.equal(calls, 0);
@@ -50,10 +54,10 @@ test("stub: brain.say publishes a real voice.utterance and never calls fetch", a
   }
 });
 
-test("stub health: mode mock, kokoro n/a, still ready", async () => { // @spec VOICE-HLTH-003
-  const hbs = await runHeartbeat(new VoiceHealth("stub").spec);
+test("stub health: mode mock, tts n/a, still ready", async () => { // @spec VOICE-HLTH-003
+  const hbs = await runHeartbeat(new VoiceHealth(stub).spec);
   assert.equal(hbs[1]!.mode, "mock");
-  assert.deepEqual(hbs[1]!.deps, { kokoro: "n/a" });
+  assert.deepEqual(hbs[1]!.deps, { tts: "n/a" });
   assert.equal(hbs[1]!.state, "ready");
-  assert.equal((await runHeartbeat(new VoiceHealth().spec))[1]!.mode, "live");
+  assert.equal((await runHeartbeat(new VoiceHealth(createEngine(testConfig({ voice: { engine: "kokoro" } }).voice)).spec))[1]!.mode, "live");
 });

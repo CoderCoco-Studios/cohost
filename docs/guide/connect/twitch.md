@@ -21,12 +21,12 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
    ```yaml
    chat:
-     source: "twitch"
+     sources: [twitch]
      twitch:
        channel: "yourchannel"
    ```
 
-2. Check that `chat.source` is `twitch`. The value `fake` makes chat a scripted fake instead of Twitch.
+2. Check that `chat.sources` lists `twitch`. Every source listed is read at once, so a `fake` in the list also plays scripted messages alongside Twitch.
 
 3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 
@@ -53,6 +53,14 @@ Both tokens are required together: the refresh token must be set whenever the ac
 
 The co-host does not write into Twitch chat today. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
 
+## What cohost forgets when a moderator removes chat
+
+The chat service reports what Twitch removes: a deleted line, a ban, a timeout, or a cleared chat. It publishes each as a `chat.removed` notice and ignores `chat.ignore_users` for it. Forgetting those lines, in the co-host's short-term window and in stored memory, arrives with #180–#183; until then the co-host still holds them.
+
+cohost never sends a delete, ban or timeout to Twitch. It only reports what Twitch did.
+
+Whether Twitch sends these removal notices to the anonymous, read-only connection has not been checked against a live channel yet. It is on the manual check list for #239.
+
 ## How you know it worked
 
 - The Services screen shows `chat` as `up` with mode `live`.
@@ -66,7 +74,7 @@ If chat is quiet, I will not make things up. Well. Not until the idle chatter ki
 ## If it didn't
 
 - **`chat` shows `degraded`.** `chat.twitch.channel` is empty, so the service is waiting for you. Set it and restart `chat`.
-- **Fake messages keep arriving.** `chat.source` is still `fake` in `config/config.yaml`. Set it to `twitch` and restart `chat`.
+- **Fake messages keep arriving.** `chat.sources` still lists `fake` in `config/config.yaml`. Remove `fake` from it and restart `chat`.
 - **`chat` will not start once the access token is set.** The refresh token is missing. Both are required together.
 - **Nothing appears and the channel is busy.** Check the channel name for a typo, and read the `chat` log with `docker compose logs chat`.
 

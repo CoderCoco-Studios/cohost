@@ -5,6 +5,7 @@ import type { Logger } from "@cohost/config";
 import { INJECT_QUEUE_LIMIT } from "@cohost/shared";
 import { ClipError, decodeClip, type CaptureAdapter, type HearClip } from "./capture.js";
 import { INJECT_READ_TIMEOUT_MS, INJECT_MAX_BYTES } from "./inject.js";
+import { NO_BATCH_ENGINE } from "./engines.js";
 
 export interface HttpCaptureOptions {
   host: string;
@@ -123,6 +124,8 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
       const speaker = url.searchParams.get("speaker")?.trim() || source;
       const outcome = await serial(() => o.hear(clip, speaker, source));
       if (outcome.heard) return reply(res, 200, { heard: true, text: outcome.text });
+      // @spec EARS-ENG-005: a whole clip with no batch engine is a server-side failure of the clip
+      if (outcome.reason === "no-batch-engine") return reply(res, 502, { heard: false, reason: "stt-error", detail: NO_BATCH_ENGINE });
       return reply(res, outcome.reason === "stt-error" ? 502 : 200, { heard: false, reason: outcome.reason });
     } finally {
       inflight--;

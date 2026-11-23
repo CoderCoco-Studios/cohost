@@ -44,7 +44,7 @@ test("a line is written to audio.out.discord in the sink's format: 20 ms frames 
     assert.deepEqual(r.at("voice.done"), [{ id: "u1", seq: 0, sink: "discord" }]);
     const frames = r.bus.frames;
     assert.equal(frames.length, 5);
-    assert.ok(frames.every((f) => f.dir === "out" && f.tag === "discord" && f.frame.rate === 48000 && f.frame.ch === 2 && f.frame.utt === "u1" && f.frame.pcm.length === 3840));
+    assert.ok(frames.every((f) => f.dir === "out" && f.tag === "discord" && f.frame.rate === 48000 && f.frame.ch === 2 && f.frame.utt === "u1-0" && f.frame.pcm.length === 3840));
     assert.deepEqual(frames.map((f) => f.frame.last === true), [false, false, false, false, true]);
     assert.deepEqual(frames.map((f) => f.frame.seq), [0, 1, 2, 3, 4]);
   } finally { r.stop(); }
@@ -134,7 +134,7 @@ test("a give-up plays a fallback clip through the same sink writer, tagged with 
     await r.out.playback.enqueue("u1", "http://voice/u1.wav");
     await waitFor(() => r.at("voice.done").length === 1, "the clip finished");
     assert.deepEqual(r.at("voice.failed").map((f) => f.fallback), [{ clip: "c1", text: "one sec" }]);
-    assert.ok(r.bus.frames.every((f) => f.frame.utt === "u1"));
+    assert.ok(r.bus.frames.every((f) => f.frame.utt === "u1-0"));
   } finally { r.stop(); }
 });
 

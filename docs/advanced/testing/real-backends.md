@@ -24,11 +24,11 @@ The pattern: run the services from [One service on its own](isolated.md) with ev
 | `voice` | The [Kokoro](../../start/glossary.md#kokoro) [TTS](../../start/glossary.md#tts) container (`tts`) | Optional; a CPU image exists | `scripts/dev/stub-tts.ts`, or an isolated start (`voice.engine: stub`) |
 | `cortex`, the `salience` and `affect` `llm` [hooks](../../start/glossary.md#hook), `memory` reflection | [Ollama](../../start/glossary.md#ollama), an OpenAI-compatible server or Claude | Yes for Ollama | `scripts/dev/stub-llm.ts`, an isolated start of `cortex` (`llm.provider: mock`), or `llm.provider: openai` pointed at any local server |
 | `memory` | Ollama's `nomic-embed-text` and [Postgres](../../start/glossary.md#postgres) with [pgvector](../../start/glossary.md#pgvector) | [Embeddings](../../start/glossary.md#embedding) are light | An isolated start of `memory` (`brain.memory.store: memory`, `brain.memory.embedder: hash`), or the real containers below |
-| `eyes` | [OBS](../../start/glossary.md#obs) over [obs-websocket](../../start/glossary.md#obs-websocket) and a vision model | Yes | An isolated start of `eyes` (`vision.engine: stub`) with an image injected from the dashboard, or a hand-published `vision.summary`. Leave `vision.enabled: false` unless OBS is up |
+| `eyes` | [OBS](../../start/glossary.md#obs) over [obs-websocket](../../start/glossary.md#obs-websocket) and a vision model | Yes | An isolated start of `eyes` (`vision.provider: stub`) with an image injected from the dashboard, or a hand-published `vision.summary`. Leave `vision.enabled: false` unless OBS is up |
 | `ears` | The Discord [connector](../../start/glossary.md#connector) and an [STT](../../start/glossary.md#stt) container ([faster-whisper](../../start/glossary.md#whisper)) | STT is GPU-friendly | An isolated start of `ears` (`ears.stt_engine: stub`) with audio injected from the dashboard, or a hand-published `speech.heard`; the `http` and `dir` sources need no account |
 | `mouth` | The Discord connector's [sink](../../start/glossary.md#sink) and `voice` | No | An isolated start of `mouth` (`mouth.outputs.dryrun.enabled: true` with `mouth.outputs.discord.enabled: false`). The dashboard's `?sink=1` page is a second, independent sink |
 | `connector-discord` | The one Discord bot (`connections.discord.token` in `config/secrets.yaml`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
-| `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.source: fake`), or a hand-published `chat.message` |
+| `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.sources: [fake]`), or a hand-published `chat.message` |
 | `avatar` | [VTube Studio](../../start/glossary.md#vtube-studio) or a [VMC](../../start/glossary.md#vmc) receiver | No; the app renders | An isolated start of `avatar` (`avatar.driver: "null"`, also the default in `config.example.yaml`) |
 
 To test the service itself, rely on its unit tests; the network and hardware edge is the only part they do not cover.
@@ -96,7 +96,7 @@ docker compose exec ollama ollama ps
 docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar
 ```
 
-Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or `chat.source: fake`.
+Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>-<seq>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
 
 ## Twitch
 
@@ -125,7 +125,7 @@ Needed only by `eyes` with `vision.enabled: true`, and for the stream itself; ev
 - OBS 28 or newer, where obs-websocket v5 is built in. Under Tools, WebSocket Server Settings, enable the server on port 4455 (`vision.obs.port`) and set a password (`vision.obs.password` in `config/secrets.yaml`).
 - A source named exactly as `vision.obs.source` (default `Game Capture`) that can produce a screenshot.
 - Reachable from the `eyes` container: `vision.obs.host: host.docker.internal` for OBS on the same Windows PC as Docker Desktop, or the gaming PC's LAN address for two PCs, with obs-websocket listening on the LAN and the firewall open on 4455.
-- A vision model pulled into Ollama (`vision.model`); `vision.engine: stub` replaces it with fixed text.
+- A vision model pulled into Ollama (`vision.model`); `vision.provider: stub` replaces it with fixed text.
 - For the voice on stream: a [Browser Source](../../start/glossary.md#browser-source) with Control audio via OBS pointing at the dashboard's sink page, `http://localhost:<dashboard.port>/?sink=1` on the same PC or `http://<ai-pc-ip>:<dashboard.lan_port>/?sink=1` from a second PC (by IP address, or by a machine name listed in `dashboard.allowed_hosts`).
 
 Checks:

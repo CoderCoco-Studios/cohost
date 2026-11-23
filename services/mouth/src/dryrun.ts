@@ -42,5 +42,8 @@ export function createDryrunOutput({ bus, log, failEvery, fallback, fetchAudio =
       return fetchAudio(url);
     },
   });
-  return { name: DRYRUN, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close };
+  return {
+    name: DRYRUN, isReady: () => true, playback: timed.playback, stop: (o) => timed.playback.stop(o), close: timed.close,
+    closeLine: timed.closeLine, refuse: timed.refuse,
+  };
 }

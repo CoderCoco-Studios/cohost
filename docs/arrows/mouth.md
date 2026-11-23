@@ -4,9 +4,9 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001). Total 101 specs: 64 `[x]`, 36 `[ ]`, 1 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001). Total 101 specs: 100 `[x]`, 0 `[ ]`, 1 `[D]`.
 
-**AUDITED**, 2026-11-12: 84 specs, 83 implemented (`[x]`), 0 gaps, 1 deferred (`[D]`: MOUTH-POS-001, playback position). The service is wired into the manifest, Compose (profile `mouth`, off by default) and the dashboard's unit list. Design: [LLD](../intent/mouth/mouth-design.md); decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
+**AUDITED**, 2026-11-12, counts recomputed at #198: 101 specs, 100 implemented (`[x]`), 0 gaps, 1 deferred (`[D]`: MOUTH-POS-001, playback position). The service is wired into the manifest, Compose (profile `mouth`, off by default) and the dashboard's unit list. Design: [LLD](../intent/mouth/mouth-design.md); decision records: [listen-speak-split](../intent/ears/decisions/listen-speak-split.md), [connector-protocol](../intent/connections/decisions/connector-protocol.md).
 
 ## Cross-segment lines
 
@@ -38,10 +38,10 @@ MOUTH-STOP-001 to MOUTH-STOP-010 flush queues, stop the line and report it inter
 - docs/intent/mouth/mouth-design.md
 
 ### EARS
-- docs/intent/mouth/mouth-specs.md (101 specs: 64 `[x]`, 36 `[ ]`, 1 `[D]`)
+- docs/intent/mouth/mouth-specs.md (101 specs: 100 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
-- services/mouth/test/{audio,connector-output,dryrun,fallback,guard,health,mouth,no-discord,outputs,playback,routing,session,stop}.test.ts
+- services/mouth/test/{audio,clause-outputs,clause-routing,clause-stop,clauses,connector-output,dryrun,fallback,guard,health,mouth,no-discord,outputs,playback,routing,session,stop}.test.ts
 
 ### Code
 - services/mouth/src/{index,mouth,session,routing,playback,fallback,clips,audio,health,timed}.ts
@@ -68,6 +68,7 @@ MOUTH-STOP-001 to MOUTH-STOP-010 flush queues, stop the line and report it inter
 | MOUTH-CONN-001 to 005 | connector sink, no Discord client | 5 | 5 `[x]` |
 | MOUTH-ROUTE-001 to 008 | routing, gain | 8 | 8 `[x]` |
 | MOUTH-PLAY-001 to 012 | playback queue, give-up, guard | 12 | 12 `[x]` |
+| MOUTH-CLAUSE-001 to 017 | clauses of a streamed line, final, stop between clauses | 17 | 17 `[x]` |
 | MOUTH-STOP-001 to 010 | stop and interrupted reporting | 10 | 10 `[x]` |
 | MOUTH-POS-001 | playback position | 1 | 1 `[D]` |
 | MOUTH-AUD-002 | audio conversion | 1 | 1 `[x]` |

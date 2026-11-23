@@ -1,10 +1,13 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { lanHandler } from "../src/host.js";
 import type { StackService } from "../src/stack.js";
+import { configDir, configText, withConfigDir } from "./config-fixture.js";
 
 interface Hit { method: string; url: string; headers: http.IncomingHttpHeaders }
 
@@ -23,6 +26,14 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 };
 
 async function boot(o: { tts?: string; ollama?: string; control?: boolean; timeoutMs?: number } = {}) {
+  // Unless a test has pointed the loader at its own config (withEngine), it reads a fixture (the committed example), never the
+  // repo's config/config.yaml.
+  if (process.env["CONFIG_DIR"] === undefined) {
+    const dir = configDir(configText());
+    process.env["CONFIG_DIR"] = dir;
+    process.env["COHOST_ENV_FILE"] = join(dir, "no.env");
+    after(() => { delete process.env["CONFIG_DIR"]; delete process.env["COHOST_ENV_FILE"]; });
+  }
   const bus = new FakeBus();
   const rec = recordingLog();
   const handler = createDashboardHandler({
@@ -208,4 +219,51 @@ test("the pick-list routes are not served on the LAN listener, and only GET is s
   assert.equal((await t.get("/options/other")).status, 404);
   assert.equal((await t.get("/options/")).status, 404);
   assert.deepEqual(up.hits, []);
+});
+
+/** Runs `fn` with the loader reading a config.yaml whose voice engine is `engine`; `rewrite` swaps the engine mid-test. */
+async function withEngine<T>(engine: string, fn: (rewrite: (next: string) => void) => Promise<T>): Promise<T> {
+  const dir = configDir(configText({ voice: { engine } }));
+  return withConfigDir(dir, () => fn((next) => writeFileSync(join(dir, "config.yaml"), configText({ voice: { engine: next } }))));
+}
+
+// @spec DASH-OPT-001
+test("while voice.engine is kokoro the voice list is fetched from the TTS server", async () => {
+  const up = await upstream(json(200, { voices: ["b", "a"] }));
+  await withEngine("kokoro", async () => {
+    const t = await boot({ tts: up.url });
+    const r = await t.get("/options/voices");
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { voices: ["a", "b"] });
+  });
+  assert.equal(up.hits.length, 1);
+});
+
+// @spec DASH-OPT-005
+test("with any engine but kokoro the voice list is 502 'no voice list for engine <name>', no-store, and no voice server is contacted", async () => {
+  const up = await upstream(json(200, { voices: ["never"] }));
+  for (const engine of ["openai", "pocket", "stub"]) {
+    await withEngine(engine, async () => {
+      const t = await boot({ tts: up.url });
+      const r = await t.get("/options/voices");
+      assert.equal(r.status, 502, engine);
+      assert.equal(r.headers.get("cache-control"), "no-store");
+      assert.deepEqual(await r.json(), { ok: false, detail: `no voice list for engine ${engine}` });
+    });
+  }
+  assert.deepEqual(up.hits, [], "no request reached the voice server");
+});
+
+// @spec DASH-OPT-005, DASH-OPT-001
+test("the engine is read per request: switching the saved engine changes the next answer", async () => {
+  const up = await upstream(json(200, { voices: ["a"] }));
+  await withEngine("kokoro", async (rewrite) => {
+    const t = await boot({ tts: up.url });
+    assert.equal((await t.get("/options/voices")).status, 200);
+    rewrite("pocket");
+    const r = await t.get("/options/voices");
+    assert.equal(r.status, 502);
+    assert.equal(((await r.json()) as { detail: string }).detail, "no voice list for engine pocket");
+  });
+  assert.equal(up.hits.length, 1, "only the kokoro answer reached the server");
 });

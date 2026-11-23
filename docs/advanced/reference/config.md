@@ -67,8 +67,8 @@ The `eyes` service: OBS screenshots described by a vision model.
 | --- | --- | --- |
 | `vision` | map | The eyes service |
 | `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
-| `vision.model` | `qwen2.5vl:3b` | The vision model. Required while `enabled` is true |
-| `vision.engine` | `ollama` | `ollama` asks the vision model; `stub` answers with fixed text and no model |
+| `vision.model` | `qwen2.5vl:3b` | The vision model. Ollama pulls it while `provider` is `ollama`; blank means none, and eyes reports it down while `enabled` is true |
+| `vision.provider` | `ollama` | `ollama`, `openai`, `anthropic` or `bedrock` (hosted, with their keys in `secrets.yaml`), or `stub` for fixed text and no model |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |
@@ -85,16 +85,22 @@ The `eyes` service: OBS screenshots described by a vision model.
 
 ## `chat`
 
-The `chat` service: Twitch chat in. The channel to read is here; its login credentials are in `secrets.yaml`.
+The `chat` service: chat in from the sources listed in `chat.sources`. The Twitch channel and the YouTube video are here; their credentials are in `secrets.yaml`.
 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `chat` | map | The chat service |
-| `chat.source` | `twitch` | `twitch`, or `fake` for scripted or stdin messages with no channel |
-| `chat.fake` | map | Settings for `source: fake` |
+| `chat.sources` | `[twitch]` | The chat sources read at once: any of `twitch`, `youtube` and `fake` (scripted or stdin messages with no channel), in a list. Empty turns chat off; a name listed twice is read once; any other name fails the load naming `chat.sources` |
+| `chat.fake` | map | Settings for the `fake` source |
 | `chat.fake.interval_ms` | `8000` | The gap between scripted messages |
-| `chat.twitch` | map | Settings for `source: twitch` (the credentials are `chat.twitch.*` keys of `secrets.yaml`) |
+| `chat.twitch` | map | Settings for the `twitch` source (the credentials are `chat.twitch.*` keys of `secrets.yaml`); optional, every key defaults |
 | `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded` |
+| `chat.youtube` | map | Settings for the `youtube` source; optional, every key defaults |
+| `chat.youtube.video` | empty | The YouTube video or live stream whose chat is read: any string (a video id, a link or a handle). A value that names no video is a source gap, not a load failure |
+| `chat.youtube.api_key` | empty | The YouTube Data API key. A secret: it is a `chat.youtube.api_key` key of `secrets.yaml`, never of `config.yaml` |
+| `chat.youtube.transport` | `stream` | `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`; any other value fails the load naming `chat.youtube.transport` |
+| `chat.youtube.poll_floor_ms` | `12000` | Transport `poll`: the shortest gap between two chat polls, in milliseconds. An integer of at least 1000 |
+| `chat.youtube.recheck_ms` | `120000` | How often the video is checked again for a live chat, in milliseconds. An integer of at least 30000 |
 | `chat.ignore_users` | `[]` (`nightbot`, `streamelements`, `moobot` in the example) | Usernames whose messages are dropped |
 | `chat.ignore_prefixes` | `["!"]` | Messages starting with any of these are dropped (bot commands) |
 
@@ -150,6 +156,7 @@ When to speak, and reflexes. The region scores unseen events at a poll every `ti
 | `brain.salience.reflexes[].emotion` | `surprised` | The emotion the line is said with |
 | `brain.salience.reflexes[].gesture` | none | An optional avatar gesture |
 | `brain.salience.reflexes[].cooldown_ms` | `30000` | This reflex's own cooldown |
+| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped |
 
 ## `brain.affect`
 
@@ -254,13 +261,20 @@ The longest text a viewer may hand to a prompt. Longer text is cut to the limit.
 
 ## `voice`
 
-The `voice` service: text to speech.
+The `voice` service: text to speech. Which engine to choose, and what each sends over the network, is in [Choose a voice engine](../../guide/tune/voice-engine.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
 | `voice` | map | The voice service |
-| `voice.engine` | `kokoro` | `kokoro`, or `stub` for a silent WAV sized from the text |
-| `voice.voice` | `af_heart` | A Kokoro voice id, or a mix such as `af_bella(2)+af_sky` |
+| `voice.engine` | `kokoro` | `kokoro`, `openai` (an OpenAI-compatible speech server), `pocket` (a Pocket speech server), or `stub` for a silent WAV sized from the text |
+| `voice.voice` | `af_heart` (`alba` under `pocket`) | Under `kokoro`, a voice id or a mix such as `af_bella(2)+af_sky`; under `pocket`, a catalogue name or an http(s) URL; under `openai`, any voice name. Blank takes the engine's own default, and stays blank under `openai` |
+| `voice.timeout_ms` | `15000` | The bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks |
+| `voice.openai.base_url` | `""` | The base URL of the OpenAI-compatible speech server, for `engine: openai`. Trailing slashes are dropped |
+| `voice.openai.model` | `""` | The speech model name the server takes, for `engine: openai` |
+| `voice.openai.api_key` | `""` | The server's API key. A secret, in `secrets.yaml` |
+| `voice.pocket` | map | The Pocket speech server |
+| `voice.pocket.url` | `http://tts-pocket:8000` | The Pocket speech server, for `engine: pocket`. Blank is a configuration gap |
+| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights. A secret, in `secrets.yaml` |
 | `voice.speed` | `1.05` | The pace multiplier, 0.25 to 4 |
 | `voice.sample_rate` | `24000` | The sample rate of the silence the stub engine returns. The Kokoro engine ignores it |
 | `voice.lang_code` | unset (commented out in the example) | The Kokoro language code: `a`, `b`, `e`, `f`, `h`, `i`, `j`, `p` or `z`. Blank derives it from the voice name |
@@ -319,12 +333,25 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.vad.engine` | `silero` | `silero` (the Silero VAD model, run by onnxruntime) or `gap` (cut on the frame gap alone) |
 | `ears.vad.threshold` | `0.5` | The speech probability a frame needs, 0 to 1 |
 | `ears.max_utterance_ms` | `15000` | An utterance is cut at this length; the speaker's next speech opens a new one |
-| `ears.partials` | `off` | `on` publishes `speech.partial` while a connector utterance is open. It costs speech-to-text calls |
-| `ears.stt_gpu` | `false` | Declare that the STT backend runs on a GPU. It only silences a start-up warning about partials |
-| `ears.partial_step_ms` | `1000` | How often a growing partial transcription is made |
+| `ears.partials` | `off` | `on` publishes `speech.partial` while a connector utterance is open. With a batch engine each partial is a speech-to-text call; with a streaming engine the partials come from the session's hypotheses at no extra call |
+| `ears.stt_gpu` | `false` | Declare that the batch STT backend runs on a GPU. It only silences the start-up warning about partials of a batch engine; a streaming engine never warns |
+| `ears.partial_step_ms` | `1000` | With a batch engine, how often a growing partial transcription is made; with a streaming engine, the pacing window between published partials |
 | `ears.min_speech_ms` | `400` | The shortest speech worth transcribing |
 | `ears.stt_model` | `Systran/faster-whisper-small` | The model name sent to the STT server |
-| `ears.stt_engine` | `speaches` | `speaches`, or `stub` for a fixed transcript with no STT server |
+| `ears.stt_engine` | `speaches` | `speaches`, `openai`, `nemotron`, `kyutai`, or `stub` for a fixed transcript with no STT server |
+| `ears.stt_fallback_engine` | `speaches` | `speaches`, `openai` or `none`: the batch engine for whole clips a streaming engine (`nemotron`, `kyutai`) cannot serve |
+| `ears.stt_timeout_ms` | `20000` | The bound on one speech-to-text call: a batch request, a streaming session's connect (aborted at the bound), a readiness ping, and a session's `finish()`. The buffered start of a session is bounded the same way |
+| `ears.max_stt_sessions` | `2` | How many speech-to-text sessions run at once (at least 1) |
+| `ears.openai.base_url` | `""` | The base URL of an OpenAI-compatible transcription server, for `openai`. Trailing slashes are dropped |
+| `ears.openai.api_key` | `""` | Its API key. A secret, in `secrets.yaml` |
+| `ears.nemotron` | map | The NVIDIA Nemotron speech-to-text server |
+| `ears.nemotron.url` | `http://stt-nemotron:8080` | The NVIDIA Nemotron STT server, for `stt_engine: nemotron`. Blank is a configuration gap |
+| `ears.nemotron.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.kyutai` | map | The Kyutai speech-to-text server |
+| `ears.kyutai.url` | `http://stt-kyutai:8080` | The Kyutai STT server, for `stt_engine: kyutai`. Blank is a configuration gap |
+| `ears.kyutai.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.kyutai.end_of_turn` | `off` | `on` lets the server's end-of-turn detection close a sentence; `off` closes it on silence |
+| `ears.kyutai.end_of_turn_threshold` | `0.5` | The end-of-turn probability needed, above 0 and below 1 |
 | `ears.drop_phrases` | `[]` | Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped. They are Whisper's usual hallucinations on silence, such as `Thank you.` |
 
 ## `connections`
@@ -353,16 +380,16 @@ The `mouth` service: where her voice goes. Each key under `mouth.outputs` is one
 | `mouth.outputs.dryrun` | map | A test output that accepts each line, plays nothing and reports `voice.done` |
 | `mouth.outputs.dryrun.enabled` | `false` | Turn it on |
 | `mouth.outputs.dryrun.fail_every` | `0` | 0 never fails; N fails every Nth line, to exercise the fallback path |
-| `mouth.outputs.file` | map | Appends each line's WAV to a folder under the data directory |
+| `mouth.outputs.file` | map | Appends each clause's WAV to a folder under the data directory, named `<epoch-ms>-<n>-<id>-<seq>.wav` |
 | `mouth.outputs.file.enabled` | `false` | Turn it on |
 | `mouth.outputs.file.dir` | `mouth/outputs` | The folder, relative to the data directory. No absolute path and no `..` |
 | `mouth.outputs.file.max_files` | `100` | The newest this many files are kept |
-| `mouth.outputs.http` | map | POSTs each line's WAV (`audio/wav`) to a URL |
+| `mouth.outputs.http` | map | POSTs each clause's WAV (`audio/wav`, headers `x-cohost-utterance-id` and `x-cohost-clause`) to a URL |
 | `mouth.outputs.http.enabled` | `false` | Turn it on |
 | `mouth.outputs.http.url` | empty | An `http` or `https` URL. Empty while enabled leaves the output down |
 | `mouth.outputs.http.timeout_ms` | `5000` | Timeout per attempt |
 | `mouth.outputs.http.retries` | `3` | Attempts after the first, with backoff |
-| `mouth.outputs.http.max_queue` | `20` | Undelivered lines held; the oldest is dropped past this |
+| `mouth.outputs.http.max_queue` | `20` | Undelivered clauses held; the oldest is dropped past this |
 | `mouth.fallback` | map | The spoken fallback line |
 | `mouth.fallback.min_interval_ms` | `20000` | At most one fallback line per this long on an output when many lines fail at once |
 
@@ -381,9 +408,61 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |
 | `dashboard.inject.ttl_ms` | `300000` | How long an upload stays available to the service that asked for it |
 
+## `network`
+
+The machines that count as your own network, for the egress rule: which destinations of private data are on the LAN and which are off it.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `network` | unset | The optional network section |
+| `network.lan` | `[]` | Host names (`nas`), single addresses (`203.0.113.7`), dot suffixes (`.ts.net`) and CIDR ranges (`100.64.0.0/10`) counted as LAN. A bad entry fails naming `network.lan.<n>` |
+
+Private addresses, `localhost`, `host.docker.internal`, dotless names and `.local` names are on the LAN without an entry.
+
+## `tools`
+
+The MCP servers the co-host may call and the tools it may use. Nothing is enabled by absence: a tool runs only when `tools.allow` names it with `enabled: true`, and a server is called only for such a tool. Every server's token lives in `secrets.yaml` (`tools.servers.<name>.token`), never here.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `tools.mode` | `live` | `live` calls the configured servers; `mock` returns canned results and calls none. A blank value is `live` |
+| `tools.timeout_ms` | `10000` | Limit of one tool call before it counts as failed (ms, positive) |
+| `tools.confirm_timeout_ms` | `20000` | How long a request to confirm an acting tool waits for an answer (ms, positive) |
+| `tools.max_result_chars` | `1500` | Longest tool result that reaches the prompt (at least 64) |
+| `tools.max_concurrent` | `4` | Tool calls running at once across all servers (at least 1) |
+| `tools.catalog_ms` | `30000` | How often each server's tool list is read again (at least 5000 ms) |
+| `tools.max_tools_per_server` | `32` | Tools taken from one server's list (at least 1) |
+| `tools.max_tools` | `64` | Tools in the catalogue across all servers (at least 1) |
+| `tools.owner_sources` | `all` | `all`, or a list of listening source names whose speech counts as the owner's. Names follow `ears.sources` |
+| `tools.servers` | `{}` | Map from server name to its entry. A name is lower-case letters, digits and hyphens, starting with a letter, at most 32 characters. Sensitive: the addresses are sent private data |
+| `tools.servers.<name>.url` | required | An `http` or `https` address with no user name or password. A query parameter named `key`, `token`, `api_key`, `apikey`, `secret`, `auth`, `password` or `access_token` loads with one warning naming the server and the parameter |
+| `tools.servers.<name>.header` | `""` | The HTTP header the token is sent in. Blank means `Authorization` |
+| `tools.servers.<name>.external` | `false` | `true` treats the server as off the LAN whatever its host, for the egress rule |
+| `tools.allow` | `{}` | Map from tool name (`server__tool`, letters, digits, `_` and `-`, at most 64 characters) to its permission. Sensitive |
+| `tools.allow.<name>.enabled` | `false` | Whether the co-host may call this tool |
+| `tools.allow.<name>.acts` | `false` | The tool acts on something outside the chat |
+| `tools.allow.<name>.chat` | `false` | The tool speaks in chat. Cannot be true together with `acts` |
+| `tools.allow.<name>.confirm` | `true` | Ask the owner to confirm before an acting tool runs |
+| `tools.allow.<name>.hash` | `""` | The tool's definition hash, which the tools unit reads; empty by default |
+| `tools.allow.<name>.effect` | `read` | `read`, `acts` or `unlabelled`. Read only when `tools.mode` is `mock` |
+| `tools.timer` | map | The timer limits |
+| `tools.timer.max_active` | `5` | Timers the co-host may have running at once (at least 1) |
+| `tools.timer.max_minutes` | `120` | Longest timer, in minutes (at least 1) |
+| `tools.stream_info` | map | The stream information the co-host may read |
+| `tools.stream_info.cache_ms` | `30000` | How long the stream's title and game are remembered; 0 reads them every time |
+| `tools.reply` | map | The limits on the tool calls one reply may make |
+| `tools.reply.max_rounds` | `3` | Rounds of tool calls one reply may take (at least 1) |
+| `tools.reply.max_calls` | `3` | Tool calls one reply may make in all (at least 1) |
+| `tools.reply.budget_ms` | `30000` | Time one reply may spend on tool calls in all (at least 1 ms) |
+| `tools.reply.filler_after_ms` | `1500` | A call still running after this long gets a filler line; 0 says one at once |
+| `tools.reply.max_tokens` | `512` | The longest model answer, in tokens, for one tool-using step (at least 1) |
+| `tools.reply.filler_lines` | six lines | Lines said at random while a tool runs; each at most 200 characters. An empty list says none |
+
+A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, and so on) and never quotes a URL or the user name and password in it.
+
 ## Credentials (`secrets.yaml`)
 
-`config/secrets.yaml` holds exactly these eleven keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+`config/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
 
 | Key | Default | What it is |
 | --- | --- | --- |
@@ -397,4 +476,11 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `chat.twitch.client_secret` | `""` | The Twitch application's client secret |
 | `chat.twitch.access_token` | `""` | A user access token for the bot account. `chat` keeps its refreshed copy under the data directory |
 | `chat.twitch.refresh_token` | `""` | Its refresh token. Required whenever `access_token` is set |
+| `ears.openai.api_key` | `""` | The API key of the OpenAI-compatible transcription server |
+| `ears.nemotron.api_key` | `""` | The key of the Nemotron STT server, if it asks for one |
+| `ears.kyutai.api_key` | `""` | The key of the Kyutai STT server, if it asks for one |
+| `voice.openai.api_key` | `""` | The API key of the OpenAI-compatible speech server |
+| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights; only an owner who has accepted them needs it |
+| `chat.youtube.api_key` | `""` | The YouTube Data API key for the YouTube chat source |
 | `connections.discord.token` | `""` | The co-host's one Discord bot token, used only by the Discord connector. Invite the bot with Connect and Speak and enable the Server Members intent |
+| `tools.servers.<name>.token` | `""` | The credential sent to the MCP server named `<name>` in `config.yaml`, in the header `tools.servers.<name>.header` names. A token for a server `config.yaml` does not hold is not merged and is listed by path in the warning about keys that are not secret keys |

@@ -1,4 +1,5 @@
 import type http from "node:http";
+import { loadConfig } from "@cohost/config";
 
 /** How long a pick-list route waits for its backing server, connection and body together. */
 export const OPTIONS_TIMEOUT_MS = 3000;
@@ -80,12 +81,25 @@ function modelsOf(body: unknown, who: string): string[] {
  * `GET /options/voices` and `GET /options/models`: the settings pick lists, read from the voice server and Ollama at the
  * addresses the service-URL helpers give. Ungated like `GET /config/*`; the request contributes nothing to the upstream call.
  */
-// @spec DASH-OPT-001, DASH-OPT-002, DASH-OPT-003, DASH-OPT-004
+// @spec DASH-OPT-001, DASH-OPT-002, DASH-OPT-003, DASH-OPT-004, DASH-OPT-005
 export async function handleOptions(d: OptionsDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (req.method !== "GET") return false;
   const timeout = d.timeoutMs ?? OPTIONS_TIMEOUT_MS;
   try {
     if (url.pathname === "/options/voices") {
+      // @spec DASH-OPT-001, DASH-OPT-005
+      let engine: string;
+      try {
+        engine = loadConfig(true).voice.engine;
+      } catch (e) {
+        res.writeHead(500, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ ok: false, detail: e instanceof Error ? e.message : String(e) }));
+        return true;
+      }
+      if (engine !== "kokoro") {
+        json(res, 502, { ok: false, detail: `no voice list for engine ${engine}` });
+        return true;
+      }
       const who = "the voice server";
       json(res, 200, { voices: voicesOf(await fetchJson(d.urls.tts(), "/v1/audio/voices", who, timeout), who) });
       return true;

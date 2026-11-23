@@ -15,16 +15,21 @@ const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
 const unitIds = units.map((u) => u.id);
 const rootPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 
-interface ComposeFile { services: Record<string, { build?: { args?: { SERVICE?: string } } }> }
+interface ComposeFile { services: Record<string, { profiles?: string[]; build?: { args?: { SERVICE?: string } } }> }
 const composeServices = (parse(readFileSync(rootPath("docker-compose.yml"), "utf8"), { merge: true }) as ComposeFile).services;
 
 const composeNames = units.map((u) => u.composeName);
+
+// The optional engine servers (DEPLOY-ENG-001..003): compose services with a build of their own, and no unit.
+const ENGINE_SERVERS = ["tts-pocket", "stt-nemotron", "stt-kyutai"];
 
 // @spec MOD-MAN-008
 test("every unit has a Compose service named for its composeName, and every Compose service built from the shared Dockerfile belongs to a unit", () => {
   for (const u of units) assert.ok(composeServices[u.composeName], `unit ${u.id} has no Compose service ${u.composeName}`);
   for (const [name, s] of Object.entries(composeServices)) {
     if (!s.build) continue;
+    // The optional engine servers are built from their own sources, not the shared Dockerfile, and have no SERVICE argument (DEPLOY-ENG-001..003).
+    if (ENGINE_SERVERS.includes(name)) continue;
     // a one-shot of a unit (memory's consolidate and reembed) is built with that unit's SERVICE argument
     const owner = s.build.args?.SERVICE;
     assert.ok(composeNames.includes(name) || (owner !== undefined && composeNames.includes(owner)), `Compose service ${name} is built from the shared Dockerfile and has no unit`);
@@ -43,7 +48,11 @@ test("every declared section is a path of ConfigSchema, and every section Config
   const declared = new Set(units.flatMap((u) => u.config));
   const sections = shapeKeys(ConfigSchema).flatMap((k) => (k === "brain" ? shapeKeys(schemaAt("brain")).map((c) => `brain.${c}`) : [k]));
   assert.ok(sections.length >= 10, `read ${sections.join(", ")}`);
-  for (const sec of sections) assert.ok(declared.has(sec) || sec === "dashboard", `section ${sec} is declared by no unit`);
+  // `dashboard` is host-run, not a unit: the one section no unit declares.
+  const hostRun = new Set(["dashboard"]);
+  // TEMPORARY (#204): the `tools` unit and its section declaration arrive with #208, which removes this allowance.
+  hostRun.add("tools");
+  for (const sec of sections) assert.ok(declared.has(sec) || hostRun.has(sec), `section ${sec} is declared by no unit`);
 });
 
 const registered = new Set<string>(EVENT_TYPES);
@@ -99,5 +108,19 @@ test("for every unit with a Compose service, the name its healthcheck is given e
     const published = heartbeatNames(u.composeName);
     assert.ok(published.length > 0, `${u.id}: no heartbeat service name found in its entry or health file`);
     for (const name of published) assert.equal(name, given, `${u.id}: heartbeat service ${name} is not the name its healthcheck is given (${given})`);
+  }
+});
+
+// @spec MOD-MAN-014
+test("every Compose service of the profiles pocket, nemotron and kyutai has a manifest unit, and each such unit has a Compose service named for its composeName", () => {
+  const ENGINE_PROFILES = ["pocket", "nemotron", "kyutai"];
+  const engineServices = Object.entries(composeServices).filter(([, s]) => (s.profiles ?? []).some((p) => ENGINE_PROFILES.includes(p))).map(([n]) => n).sort();
+  assert.deepEqual(engineServices, ["stt-kyutai", "stt-nemotron", "tts-pocket"], "the three engine servers are the services of those profiles");
+  const manifestNames = SERVICE_MANIFEST.map((s) => s.composeName);
+  for (const name of engineServices) assert.ok(manifestNames.includes(name), `Compose service ${name} has no unit in SERVICE_MANIFEST`);
+  for (const id of engineServices) {
+    const unit = SERVICE_MANIFEST.find((s) => s.id === id);
+    assert.ok(unit, `${id} has a unit`);
+    assert.ok(composeServices[unit.composeName], `unit ${id} has no Compose service named ${unit.composeName}`);
   }
 });

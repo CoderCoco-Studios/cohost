@@ -20,7 +20,9 @@ const load = (f: string) => parse(readFileSync(root(f), "utf8"), { merge: true }
 const base = load("docker-compose.yml");
 const gpu = load("docker-compose.gpu.yml");
 // `models` builds the memory image too but is a one-shot on its own settings (DEPLOY-COMPOSE-008), not an x-ts-service unit.
-const appServices = Object.entries(base.services).filter(([name, s]) => s.build && name !== "models");
+// The optional engine servers are third-party images built from their own sources, not application services (DEPLOY-ENG-001..003).
+const ENGINE_SERVERS = ["tts-pocket", "stt-nemotron", "stt-kyutai"];
+const appServices = Object.entries(base.services).filter(([name, s]) => s.build && name !== "models" && !ENGINE_SERVERS.includes(name));
 
 // @spec CTRL-CHECK-003
 test("every x-ts-service application service runs the heartbeat healthcheck on the specified cadence", () => {

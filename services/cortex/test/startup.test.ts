@@ -18,7 +18,7 @@ function wiring(over: { resetGroup?: () => Promise<void> } = {}) {
   return { calls, start, fatals, opts: () => subscribed };
 }
 
-// @spec CTX-START-003, CTX-EVT-001, CTX-EVT-008
+// @spec CTX-START-003, CTX-EVT-001, CTX-EVT-008, CTX-FORGET-001
 test("startup: idle, then the cortex group exists (resetGroup), then subscribe at latest, then ready", async () => {
   const w = wiring();
   await w.start();
@@ -28,7 +28,7 @@ test("startup: idle, then the cortex group exists (resetGroup), then subscribe a
   assert.equal(o.start, "latest");
   assert.equal("fromNow" in o, false);
   assert.deepEqual([...(o.types as string[])].sort(), [
-    "affect.state", "attention.focus", "brain.say", "chat.message", "control",
+    "affect.state", "attention.focus", "brain.say", "chat.message", "chat.removed", "control",
     "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "vision.summary", "voice.done", "voice.failed", "voice.stop",
   ]);
 });
@@ -62,4 +62,20 @@ test("trackLlm: every chat outcome feeds the dependency: failure down, success o
   assert.equal(await llm.chat([]), "[happy] hi");
   assert.deepEqual(seen, [false, true]);
   assert.deepEqual([llm.name, llm.model, llm.lastError, llm.pingIsNominal, await llm.ping()], ["fake", "m", "boom", true, true]);
+});
+
+test("trackLlm: complete() and stream() pass through to the provider untracked", async () => {
+  const seen: boolean[] = [];
+  const result = { text: "x", toolCalls: [], finish: "stop", message: { role: "assistant", content: "x" } };
+  const fake = {
+    ...llmWith(async () => "ok"),
+    complete: async () => result,
+    stream: async function* () { yield { type: "text", delta: "x" }; },
+  } as unknown as ChatProvider;
+  const llm = trackLlm(fake, (ok) => seen.push(ok));
+  assert.equal(await llm.complete!([]), result);
+  const events: unknown[] = [];
+  for await (const e of llm.stream!([])) events.push(e);
+  assert.deepEqual(events, [{ type: "text", delta: "x" }]);
+  assert.deepEqual(seen, []);
 });

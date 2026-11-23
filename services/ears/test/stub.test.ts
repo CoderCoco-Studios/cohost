@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runHeartbeat } from "@cohost/testing";
+import { runHeartbeat, testConfig } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
-import { stubTranscriber } from "../src/hearing.js";
+import { createBatchEngine } from "../src/engines.js";
 import { EarsHealth, earsPlan } from "../src/health.js";
 
 // @spec EARS-STUB-001
@@ -10,7 +10,7 @@ test("stub transcriber: fixed text with the clip duration, no network", async ()
   const realFetch = globalThis.fetch;
   globalThis.fetch = (() => { throw new Error("network used"); }) as never;
   try {
-    const t = stubTranscriber();
+    const t = (audio: Buffer, hint?: { contentType: string }) => createBatchEngine("stub", testConfig().ears).transcribe(audio, hint);
     assert.equal(await t(wavWrap(Buffer.alloc(32000), 16000, 1)), "stub transcript (1000 ms)");
     assert.equal(await t(Buffer.from("not a wav"), { contentType: "audio/mpeg" }), "stub transcript (0 ms)");
   } finally {

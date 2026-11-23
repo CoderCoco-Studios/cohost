@@ -33,12 +33,12 @@ function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedde
   return { deps, events, subs, warnings, readies, inits: () => inits };
 }
 
-// @spec MEM-EVT-001
+// @spec MEM-EVT-001, MEM-FORGET-001
 test("both consumer groups subscribe with start mode resume", async () => {
   const t = setup();
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start, "fromNow" in s]), [
-    ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume", false],
+    ["memory", ["chat.message", "chat.removed", "speech.heard", "brain.say", "brain.clause", "brain.status"], "resume", false], // @spec MEM-FORGET-001
     ["memory-recall", ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], "resume", false], // @spec MEM-ADMIN-007
   ]);
   assert.equal(t.events.at(-1), "ready");
@@ -136,7 +136,7 @@ test("note capture runs in a third consumer group, memory-notes, for chat.messag
   const t = setup({ capture: true });
   await startMemory(t.deps);
   assert.deepEqual(t.subs.map((s) => [s.group, s.types, s.start]), [
-    ["memory", ["chat.message", "speech.heard", "brain.say", "brain.status"], "resume"],
+    ["memory", ["chat.message", "chat.removed", "speech.heard", "brain.say", "brain.clause", "brain.status"], "resume"],
     ["memory-recall", ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], "resume"],
     ["memory-notes", ["chat.message", "speech.heard"], "resume"],
   ]);

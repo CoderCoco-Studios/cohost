@@ -25,12 +25,12 @@ test("every unit carries config, uses, pause and test (inputs and observe)", () 
 // @spec MOD-MAN-002
 test("config sections are the declared ones and each is a path of ConfigSchema", () => {
   const want: Record<string, string[]> = {
-    chat: ["chat", "viewer_text"], eyes: ["vision"], ears: ["ears"],
+    chat: ["chat", "viewer_text"], eyes: ["vision", "network"], ears: ["ears", "network"],
     salience: ["brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"],
     affect: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"],
     memory: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
     cortex: ["brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"],
-    voice: ["voice"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
+    voice: ["voice", "network"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
   };
   for (const [id, config] of Object.entries(want)) assert.deepEqual(findService(id)!.config, config, id);
   for (const s of units) for (const sec of s.config) assert.ok(schemaAt(sec), `${s.id}: ${sec} is not a config path`);
@@ -78,5 +78,19 @@ test("test inputs and observed types are the declared ones and name registered b
 test("every name in a unit's isolatedEnv is an isolation override of the config package, and every override is used by a unit", () => {
   const used = new Set(SERVICE_MANIFEST.flatMap((s) => Object.keys(s.isolatedEnv)));
   for (const name of used) assert.ok(Object.hasOwn(ISOLATION_OVERRIDES, name), `${name} is in ISOLATION_OVERRIDES`);
-  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).sort());
+  // TEMPORARY (#204): TOOLS_MODE is used by the `tools` unit, which arrives with #208; until then it is the one override no unit names.
+  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).filter((n) => n !== "TOOLS_MODE").sort());
+});
+
+// @spec MOD-MAN-013
+test("no unit lists tts-pocket, stt-nemotron or stt-kyutai among its uses or requires, so a profile that is not enabled never annotates voice or ears", () => {
+  for (const id of ["tts-pocket", "stt-nemotron", "stt-kyutai"]) {
+    assert.ok(findService(id), `${id} is in the manifest`);
+    for (const s of SERVICE_MANIFEST) {
+      assert.ok(!s.uses.includes(id), `${s.id} uses ${id}`);
+      assert.ok(!(s.requires ?? []).includes(id), `${s.id} requires ${id}`);
+    }
+  }
+  assert.deepEqual(findService("voice")!.uses, []);
+  assert.deepEqual(findService("ears")!.uses, []);
 });

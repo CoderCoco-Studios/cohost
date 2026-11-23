@@ -8,6 +8,7 @@ import {
   untrustedNotice,
   normalizeKey,
   createOnceCounter,
+  viewerKey,
   UNKNOWN_NAME,
   UNTRUSTED_OPEN,
   UNTRUSTED_CLOSE,
@@ -256,4 +257,59 @@ test("createOnceCounter: the default capacity is 256 per kind", () => {
   assert.equal(c.admit("v256", "t256", 0), true); // the 257th drops v0 and t0
   assert.equal(c.admit("v0", "zz-new2", 0), true);
   assert.equal(c.admit("v-new", "t0", 0), true);
+});
+
+// @spec SHARED-GUARD-025
+test("viewerKey: a non-empty userId gives <platform>:id:<userId> exactly as given", () => {
+  assert.equal(viewerKey({ platform: "twitch", userId: "12345", user: "Alice" }), "twitch:id:12345");
+  assert.equal(viewerKey({ platform: "youtube", userId: "UCabcDEF", user: "Alice" }), "youtube:id:UCabcDEF");
+});
+
+// @spec SHARED-GUARD-026
+test("viewerKey: no userId or an empty one gives <platform>:name:<normalizeKey(user)>", () => {
+  assert.equal(viewerKey({ platform: "discord", user: "  Alice   Smith " }), "discord:name:alice smith");
+  assert.equal(viewerKey({ platform: "twitch", userId: "", user: "Bob" }), "twitch:name:bob");
+  assert.equal(viewerKey({ platform: "twitch", user: "Bob" }), `twitch:name:${normalizeKey("Bob")}`);
+});
+
+// @spec SHARED-GUARD-025, SHARED-GUARD-026
+test("viewerKey: the display name never enters a key that has a userId, and platforms separate keys", () => {
+  assert.equal(viewerKey({ platform: "twitch", userId: "7", user: "A" }), viewerKey({ platform: "twitch", userId: "7", user: "B" }));
+  assert.notEqual(viewerKey({ platform: "twitch", userId: "7", user: "A" }), viewerKey({ platform: "youtube", userId: "7", user: "A" }));
+  assert.notEqual(viewerKey({ platform: "twitch", user: "A" }), viewerKey({ platform: "youtube", user: "A" }));
+});
+
+// @spec SHARED-GUARD-027
+test("viewerKey: two ids that differ only in case give two keys", () => {
+  const a = viewerKey({ platform: "youtube", userId: "UCabc", user: "x" });
+  const b = viewerKey({ platform: "youtube", userId: "UCABC", user: "x" });
+  assert.equal(a, "youtube:id:UCabc");
+  assert.equal(b, "youtube:id:UCABC");
+  assert.notEqual(a, b);
+});
+
+// @spec SHARED-GUARD-020
+test("createOnceCounter.admit: records the exact viewer key and the normalised text, true when neither was seen", () => {
+  const c = createOnceCounter();
+  assert.equal(c.admit("youtube:UCabc", "Hello  World", 0), true);
+  assert.equal(c.admit("youtube:UCABC", "other", 0), true); // key compared exactly: a different case is another viewer
+  assert.equal(c.admit("twitch:1", "different", 0), true);
+});
+
+// @spec SHARED-GUARD-021
+test("createOnceCounter.admit: false when the key or the normalised text was recorded, and a refusal records nothing", () => {
+  const c = createOnceCounter({ windowMs: 1000 });
+  assert.equal(c.admit("twitch:1", "Hello  World", 0), true);
+  assert.equal(c.admit("twitch:1", "new text", 10), false); // same key
+  assert.equal(c.admit("twitch:2", "hello world", 10), false); // same text by normalizeKey
+  assert.equal(c.admit("twitch:2", "new text", 20), true); // the refusals recorded nothing
+});
+
+// @spec SHARED-GUARD-025, SHARED-GUARD-026
+test("viewerKey: a userId and a display name never collide, so a viewer named like an id keeps its own key", () => {
+  const withId = viewerKey({ platform: "twitch", userId: "name:bob", user: "x" });
+  const byName = viewerKey({ platform: "twitch", user: "bob" });
+  assert.equal(withId, "twitch:id:name:bob");
+  assert.equal(byName, "twitch:name:bob");
+  assert.notEqual(withId, byName);
 });

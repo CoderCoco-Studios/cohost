@@ -4,7 +4,7 @@ The mood region: a decaying valence/arousal state nudged by bus events and publi
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 36 implemented, 0 deferred, 21 gaps (the chat safety work, below). The LLD has no open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 57 specs: 57 implemented, 0 deferred, 0 gaps. The LLD has no open questions.
 
 ## Decisions applied
 
@@ -34,7 +34,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/affect/affect-design.md
 
 ### EARS
-- docs/intent/affect/affect-specs.md (57 specs, prefix `AFF`: 36 `[x]`, 21 `[ ]`, 0 `[D]`)
+- docs/intent/affect/affect-specs.md (57 specs, prefix `AFF`: 57 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec AFF-`)
 - services/affect/test/affect.region.test.ts
@@ -73,30 +73,31 @@ Depends on event-bus, config, region-hooks (`Module`), control-plane (heartbeat 
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event Intake | AFF-IN-001 to AFF-IN-016 | 5 | 0 | 11 |
+| Event Intake | AFF-IN-001 to AFF-IN-020 | 20 | 0 | 0 |
 | Mood Model | AFF-MOOD-001 to AFF-MOOD-006 | 6 | 0 | 0 |
 | Rule Appraisal | AFF-APPR-001 to AFF-APPR-004 | 4 | 0 | 0 |
-| Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-014 | 9 | 0 | 5 |
+| Appraiser Hook and Queue | AFF-HOOK-001 to AFF-HOOK-014 | 14 | 0 | 0 |
 | Publishing | AFF-PUB-001 to AFF-PUB-004 | 4 | 0 | 0 |
 | Control | AFF-CTRL-001 to AFF-CTRL-005 | 5 | 0 | 0 |
 | Health and Lifecycle | AFF-HEALTH-001 to AFF-HEALTH-004 | 4 | 0 | 0 |
 
-**Summary:** 57 specs: 36 implemented, 0 deferred, 21 gaps.
+**Summary:** 57 specs: 57 implemented, 0 deferred, 0 gaps.
 
 ## Key Findings
 
 1. **`forget_context` lands exactly on baseline** (AFF-IN-007). `Mood.reset` applies the pending decay and then assigns the resting values.
 2. **A pause or reset voids queued and in-flight appraisals** (AFF-HOOK-008) through an epoch counter checked before and after the appraiser runs. AFF-PUB-004: the `affect.state` publish has a rejection handler that logs a warning. The `drain()` chain in `affect.ts` is not a practical crash path: `Module.run` catches every module failure and the `rules` kind is never queued.
 3. **Spec wording matches code where the decision confirmed it.** AFF-APPR-003: only ASCII capitals count (`/[A-Z]{5,}/` in `appraise.ts`). AFF-APPR-002 names the single-letter slang tokens. AFF-IN-003 states the absent mention boost for speech. AFF-CTRL-003: publishing continues while paused.
-4. **Restart skips the backlog.** `main.ts` names start mode `latest`, so the `affect` group moves to the tail on every start (AFF-IN-001).
-5. **Startup runs under the bootstrap and `ready` follows group creation** (AFF-HEALTH-001, AFF-HEALTH-002). `Bus.subscribe` has no readiness signal, so `affectMain` awaits `bus.resetGroup("affect")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
-6. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, a test assertion, commit `969f6d7` or the 2026-11-01 owner decisions; three keep a partial `[inferred]` (queue cap 8, publish-key precision and 15 s period) and one stays `[inferred]` (lazy decay).
+4. **Chat is counted once, before any job is queued.** AFF-IN-008..016: chat text and names are bounded first; `Affect` admits each chat line through one `createOnceCounter` (`brain.affect.count_window_ms`, created at start, replaced on `forget_context`) keyed by `viewerKey` and the normalised text, at the handler's receipt time. A refused line changes neither the mood, the cause nor the counter. Speech never reaches the counter. The llm prompt quotes chat once and labels the speaker (AFF-HOOK-010..014).
+5. **Restart skips the backlog.** `main.ts` names start mode `latest`, so the `affect` group moves to the tail on every start (AFF-IN-001).
+6. **Startup runs under the bootstrap and `ready` follows group creation** (AFF-HEALTH-001, AFF-HEALTH-002). `Bus.subscribe` has no readiness signal, so `affectMain` awaits `bus.resetGroup("affect")` before starting the subscription; a readiness signal in event-bus would make that call unnecessary (Decisions row "Readiness signal").
+7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, a test assertion, commit `969f6d7` or the 2026-11-01 owner decisions; three keep a partial `[inferred]` (queue cap 8, publish-key precision and 15 s period) and one stays `[inferred]` (lazy decay).
+8. **A removal drops only queued chat.** `chat.removed` filters the queue by `platform` and `messageId`, `userId` or `all` (AFF-IN-017). Mood, cause, counter keys and the epoch are untouched (AFF-IN-018), and a running job finishes (AFF-IN-019). Viewer identity is the shared `viewerKey` at receipt (AFF-IN-011, AFF-IN-020).
 
 ## Work Required
 
-- Viewer identity and forgetting (design 2026-11-16, no code): the counter keys a viewer by platform and user id (AFF-IN-011, AFF-IN-020) and queued appraisals of removed chat are dropped (AFF-IN-001, AFF-IN-017 to AFF-IN-019).
 ### Must Fix
-Bounded intake, counting chat once per viewer and text in a window, and the guarded appraiser prompt are specified and not built (AFF-IN-002, AFF-IN-008 to AFF-IN-016, AFF-HOOK-010 to AFF-HOOK-014).
+None from the chat-safety work: bounded intake, chat counted once per window, and the guarded appraiser prompt are built (AFF-IN-002 to AFF-IN-016, AFF-HOOK-010 to AFF-HOOK-014).
 
 ### Should Fix
 None.

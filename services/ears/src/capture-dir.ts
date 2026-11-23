@@ -66,7 +66,7 @@ export function createDirCapture(o: DirCaptureOptions): DirCapture {
     }
     clip.audioEndedAt = Date.now(); // @spec EARS-HEAR-012
     const outcome = await o.hear(clip, "dir", "dir");
-    return finish(name, !outcome.heard && outcome.reason === "stt-error" ? "failed" : "done");
+    return finish(name, !outcome.heard && (outcome.reason === "stt-error" || outcome.reason === "no-batch-engine") ? "failed" : "done");
   }
 
   async function poll(): Promise<void> {

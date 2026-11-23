@@ -41,7 +41,7 @@ test("launch brings a health-checked container to running and healthy, stopAll s
   const dir = mkdtempSync(join(tmpdir(), "cohost-e2e-"));
   const project = `cohost-e2e-${process.pid}-${Date.now()}`;
   writeFileSync(join(dir, "docker-compose.yml"), COMPOSE(project));
-  const stack = new StackController({ cwd: dir, env });
+  const stack = new StackController({ cwd: dir, env, readPocketConfig: () => ({ token: "", engine: "kokoro" }) });
   const bin = (resolveDockerBin(env) as { bin: string }).bin;
   try {
     const launched = await stack.launch();

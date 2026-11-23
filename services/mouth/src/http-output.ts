@@ -45,18 +45,18 @@ export interface HttpOutput extends MouthOutput {
 export function createHttpOutput({ bus, log, url, timeoutMs, retries, maxQueue, fetchAudio, post = fetchPost, backoff = { baseMs: 250, maxMs: 5000 } }: HttpOutputDeps): HttpOutput {
   if (url === "") log.error("mouth.outputs.http.url is not set: the http output is down and skips every line");
 
-  const queue: { id: string; wav: Buffer }[] = [];
+  const queue: { id: string; seq: number; wav: Buffer }[] = [];
   const stop = new AbortController();
   let draining = false;
 
   /** One line: attempt, then retry with backoff until it is delivered, the retries run out (dropped) or the output closes. */
-  async function deliver(item: { id: string; wav: Buffer }): Promise<void> {
+  async function deliver(item: { id: string; seq: number; wav: Buffer }): Promise<void> {
     let attempts = 0;
     try {
       await retryWithBackoff(async () => {
         attempts++;
         const { status } = await post(url, {
-          headers: { "content-type": "audio/wav", "x-cohost-utterance-id": item.id },
+          headers: { "content-type": "audio/wav", "x-cohost-utterance-id": item.id, "x-cohost-clause": String(item.seq) },
           body: item.wav,
           signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), stop.signal]),
         });
@@ -84,12 +84,12 @@ export function createHttpOutput({ bus, log, url, timeoutMs, retries, maxQueue, 
 
   const timed = createTimedPlayback({
     bus, log, sink: HTTP, fetchAudio,
-    deliver: (wav, id) => {
+    deliver: (wav, id, seq) => {
       if (queue.length >= maxQueue) {
         const dropped = queue.shift()!;
         log.warn({ id: dropped.id }, "http output: queue full, dropped oldest undelivered line");
       }
-      queue.push({ id, wav });
+      queue.push({ id, seq, wav });
       void drain();
     },
   });
@@ -99,6 +99,8 @@ export function createHttpOutput({ bus, log, url, timeoutMs, retries, maxQueue, 
     isReady: () => url !== "",
     playback: timed.playback,
     stop: (o) => timed.playback.stop(o),
+    closeLine: timed.closeLine,
+    refuse: timed.refuse,
     close() {
       stop.abort();
       queue.length = 0;

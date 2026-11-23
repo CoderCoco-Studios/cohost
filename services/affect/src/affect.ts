@@ -2,6 +2,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
+import { boundText, createOnceCounter, UNKNOWN_NAME, viewerKey, type OnceCounter } from "@cohost/shared/untrusted";
 import { Mood } from "./mood.js";
 import { appraiseRules, type AppraiseInput, type AppraiseOutput } from "./appraise.js";
 
@@ -19,6 +20,20 @@ export interface AffectDeps {
 /** Most appraisal jobs kept waiting for an llm/http appraiser: a resource bound, not behaviour (AFF-HOOK-006). */
 const MAX_QUEUED = 8;
 
+/** Where a chat line came from, carried on its queued job so a `chat.removed` can find it. Absent for speech. */
+interface ChatOrigin { platform: string; userId?: string; messageId?: string }
+
+/**
+ * Whether a removal covers a queued chat job (AFF-IN-017): `message` by platform and messageId, `user` by platform
+ * and userId, `all` by platform. A job without the field a scope names is never covered by that scope.
+ */
+function covers(r: BusEvent<"chat.removed">["data"], o: ChatOrigin | undefined): boolean {
+  if (!o || o.platform !== r.platform) return false;
+  if (r.scope === "all") return true;
+  if (r.scope === "message") return o.messageId !== undefined && o.messageId === r.messageId;
+  return o.userId !== undefined && o.userId === r.userId;
+}
+
 /**
  * The affect region's state and event handling; `main.ts` wires it to the bus and the publish timer.
  *
@@ -32,7 +47,9 @@ export class Affect {
   private readonly now: () => number;
   private lastPublished = "";
   private lastPublishedAt = -Infinity;
-  private queue: { input: AppraiseInput; cause: string; epoch: number }[] = [];
+  private queue: { input: AppraiseInput; cause: string; epoch: number; origin?: ChatOrigin }[] = [];
+  /** Counts chat once per viewer and once per identical text inside `brain.affect.count_window_ms` (AFF-IN-010, AFF-IN-016). */
+  private counter: OnceCounter;
   private draining?: Promise<void>;
   /** `control` state (shared reader). Paused: events no longer nudge the mood, decay and publishing continue (AFF-CTRL-005). Its epoch is bumped by pause and forget_context: a job queued under an older epoch never changes the mood. */
   private readonly control: ReturnType<typeof controlFor>;
@@ -40,9 +57,11 @@ export class Affect {
   constructor(private d: AffectDeps) {
     this.now = d.now ?? (() => performance.now());
     this.mood = new Mood(d.cfg.brain.affect, this.now);
+    this.counter = this.newCounter(); // @spec AFF-IN-010
     this.control = controlFor("affect", {
       forget_context: () => { // @spec AFF-HOOK-008
         this.queue.length = 0;
+        this.counter = this.newCounter(); // @spec AFF-IN-016
         this.mood.reset("reset"); // @spec AFF-IN-007
       },
     }, { log: d.log, heartbeat: d.heartbeat });
@@ -53,15 +72,19 @@ export class Affect {
     const k = this.d.cfg.brain.affect;
     if (this.control.paused && ev.type !== "control") return; // @spec AFF-CTRL-002
     switch (ev.type) {
-      case "chat.message": { // @spec AFF-IN-002
+      case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
-        this.appraise("chat", d.user, d.text, d.mentionsCohost);
-        if (d.isSub) mood.nudge(k.nudge_sub_valence, k.nudge_sub_arousal, `sub: ${d.user}`); // @spec AFF-IN-004
+        const { text, name } = this.boundViewer(d.text, d.user); // @spec AFF-IN-008
+        // Counted at receipt, before any job is queued; a refused line changes nothing (AFF-IN-011..013).
+        if (!this.counter.admit(viewerKey({ platform: d.platform, userId: d.userId, user: name }), text, this.now())) return; // @spec AFF-IN-011, AFF-IN-012, AFF-IN-013, AFF-IN-014
+        this.appraise("chat", name, text, d.mentionsCohost, { platform: d.platform, userId: d.userId, messageId: d.messageId }); // @spec AFF-IN-002
+        if (d.isSub) mood.nudge(k.nudge_sub_valence, k.nudge_sub_arousal, `sub: ${name}`); // @spec AFF-IN-004
         break;
       }
-      case "speech.heard": { // @spec AFF-IN-003
+      case "speech.heard": { // @spec AFF-IN-003, AFF-IN-015
         const d = ev.data as BusEvent<"speech.heard">["data"];
-        this.appraise("speech", d.speaker, d.text, false);
+        const text = boundText(d.text, this.d.cfg.brain.input_limits.speech_max_chars); // @spec AFF-IN-009
+        this.appraise("speech", this.boundName(d.speaker), text, false);
         break;
       }
       case "vision.summary": {
@@ -69,6 +92,10 @@ export class Affect {
         if (d.changed) mood.nudge(0, k.nudge_screen_arousal, "screen changed"); // @spec AFF-IN-005
         break;
       }
+      case "chat.removed": // @spec AFF-IN-017, AFF-IN-018, AFF-IN-019
+        // Only queued jobs are dropped; a running job finishes, and the mood, cause, counter and epoch stay as they are.
+        this.queue = this.queue.filter((job) => !covers(ev.data as BusEvent<"chat.removed">["data"], job.origin));
+        break;
       case "brain.say": { // @spec AFF-IN-006
         // Saying something emotional reinforces the mood a little (and talking is arousing).
         const d = ev.data as BusEvent<"brain.say">["data"];
@@ -88,7 +115,21 @@ export class Affect {
     while (this.draining) await this.draining;
   }
 
-  private appraise(source: "chat" | "speech", who: string, text: string, mention: boolean) {
+  private newCounter(): OnceCounter {
+    return createOnceCounter({ windowMs: this.d.cfg.brain.affect.count_window_ms });
+  }
+
+  /** A viewer's name and text bounded for every later use (AFF-IN-008). */
+  private boundViewer(rawText: string, rawUser: string): { text: string; name: string } {
+    return { text: boundText(rawText, this.d.cfg.viewer_text.max_chars), name: this.boundName(rawUser) };
+  }
+
+  /** A name bounded to `viewer_text.max_name_chars`, `unknown` when nothing remains (AFF-IN-008, AFF-IN-009). */
+  private boundName(raw: string): string {
+    return boundText(raw, this.d.cfg.viewer_text.max_name_chars) || UNKNOWN_NAME;
+  }
+
+  private appraise(source: "chat" | "speech", who: string, text: string, mention: boolean, origin?: ChatOrigin) {
     const mood = this.mood;
     mood.tick();
     const input: AppraiseInput = { source, who, text, mention, valence: mood.valence, arousal: mood.arousal };
@@ -98,7 +139,7 @@ export class Affect {
       mood.applyAppraisal(appraiseRules(input), cause);
       return;
     }
-    this.queue.push({ input, cause, epoch: this.control.epoch }); // @spec AFF-HOOK-005
+    this.queue.push({ input, cause, epoch: this.control.epoch, origin }); // @spec AFF-HOOK-005
     while (this.queue.length > MAX_QUEUED) this.queue.shift(); // @spec AFF-HOOK-006
     if (!this.draining) this.draining = this.drain().finally(() => { this.draining = undefined; });
   }

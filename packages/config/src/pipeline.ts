@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { ConfigSchema, SECRET_PATHS, type Config } from "./schema.js";
+import { ConfigSchema, SECRET_PATHS, secretPathOf, type Config } from "./schema.js";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
@@ -9,7 +9,7 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 export const ISOLATION_ENV = "COHOST_ISOLATION";
 
 /**
- * The thirteen override names `COHOST_ISOLATION` may carry, each mapped to the key path it overrides. They are labels in
+ * The fourteen override names `COHOST_ISOLATION` may carry, each mapped to the key path it overrides. They are labels in
  * that JSON object, not environment variables: a variable named `AVATAR_DRIVER` is read by nothing.
  */
 // @spec CFG-ISO-006
@@ -18,20 +18,22 @@ export const ISOLATION_OVERRIDES = {
   MEMORY_STORE: "brain.memory.store",
   MEMORY_EMBEDDER: "brain.memory.embedder",
   VOICE_ENGINE: "voice.engine",
-  CHAT_SOURCE: "chat.source",
+  CHAT_SOURCES: "chat.sources",
   VISION_ENABLED: "vision.enabled",
-  VISION_ENGINE: "vision.engine",
+  VISION_PROVIDER: "vision.provider",
   EARS_SOURCES: "ears.sources",
   EARS_STT_ENGINE: "ears.stt_engine",
   CONNECTIONS_DISCORD_ENABLED: "connections.discord.enabled",
   MOUTH_DISCORD_ENABLED: "mouth.outputs.discord.enabled",
   MOUTH_DRYRUN_ENABLED: "mouth.outputs.dryrun.enabled",
   AVATAR_DRIVER: "avatar.driver",
+  TOOLS_MODE: "tools.mode",
 } as const;
 export type IsolationName = keyof typeof ISOLATION_OVERRIDES;
 
 /** Override values parsed as a YAML flow value (the boolean keys and the list); every other value stays a string. */
-const YAML_VALUED: ReadonlySet<string> = new Set(["VISION_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "EARS_SOURCES"]);
+// @spec CFG-ISO-007
+const YAML_VALUED: ReadonlySet<string> = new Set(["VISION_ENABLED", "CONNECTIONS_DISCORD_ENABLED", "MOUTH_DISCORD_ENABLED", "MOUTH_DRYRUN_ENABLED", "CHAT_SOURCES", "EARS_SOURCES"]);
 
 /** A set of overrides: override name to the string value to apply. */
 export type IsolationOverrides = Readonly<Record<string, string>>;
@@ -88,6 +90,18 @@ function setPath(root: Record<string, unknown>, path: string, value: unknown): v
 }
 
 const getPath = (root: unknown, path: string): unknown => path.split(".").reduce<unknown>((o, k) => (isObj(o) ? o[k] : undefined), root);
+
+/**
+ * The key lists of the places a secret pattern names in `root`: a `*` segment expands to each key the map holds there, and a
+ * wildcard-free segment names one key only when the map holds it (CFG-SEC-016).
+ */
+function concreteKeys(node: unknown, segs: string[], prefix: string[] = []): string[][] {
+  if (segs.length === 0) return [prefix];
+  if (!isObj(node)) return [];
+  const [head, ...rest] = segs as [string, ...string[]];
+  const keys = head === "*" ? Object.keys(node) : Object.hasOwn(node, head) ? [head] : [];
+  return keys.flatMap((k) => concreteKeys(node[k], rest, [...prefix, k]));
+}
 
 /** Sets each override at its key path; a value that parses to nothing removes the key so the schema default applies. */
 function applyIsolation(tree: Record<string, unknown>, overrides: IsolationOverrides): void {
@@ -151,8 +165,8 @@ export interface ConfigIssue { path: string; message: string }
 export type SecretValues = Readonly<Record<string, string>>;
 
 export type ParsedConfigText =
-  | { ok: true; config: Config; raw: unknown; ignoredSecrets: string[] }
-  | { ok: false; issues: ConfigIssue[]; raw: unknown; ignoredSecrets: string[] };
+  | { ok: true; config: Config; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: string[] }
+  | { ok: false; issues: ConfigIssue[]; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: [] };
 
 /**
  * The loader's pipeline on a text: YAML parse, the placeholder check, null dropping, the discarding of any value `config.yaml`
@@ -162,7 +176,7 @@ export type ParsedConfigText =
  * `raw` is the file's tree with the secret paths removed, and `ignoredSecrets` lists the secret paths the file held a value at.
  * Secrets are merged into the config after validation, so a credential can never supply a section the file lacks (CFG-SEC-002).
  */
-// @spec CFG-LOAD-001, CFG-LOAD-007, CFG-ENV-011, CFG-SEC-002, CFG-SEC-004, CFG-SEC-011, CFG-ISO-007, MOD-CFG-012
+// @spec CFG-LOAD-001, CFG-LOAD-007, CFG-ENV-011, CFG-SEC-002, CFG-SEC-004, CFG-SEC-011, CFG-SEC-016, CFG-SEC-017, CFG-ISO-007, MOD-CFG-012
 export function parseConfigText(text: string, secrets: SecretValues = {}, overrides: IsolationOverrides = {}): ParsedConfigText {
   let parsed: unknown;
   try {
@@ -173,29 +187,40 @@ export function parseConfigText(text: string, secrets: SecretValues = {}, overri
     const pos = err.linePos?.[0];
     const where = pos ? ` at line ${pos.line}, column ${pos.col}` : "";
     const code = typeof err.code === "string" ? ` (${err.code})` : "";
-    return { ok: false, issues: [{ path: "", message: `not valid YAML${where}${code}` }], raw: undefined, ignoredSecrets: [] };
+    return { ok: false, issues: [{ path: "", message: `not valid YAML${where}${code}` }], raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
   }
   const placeholders = placeholderIssues(parsed);
-  if (placeholders.length) return { ok: false, issues: placeholders, raw: undefined, ignoredSecrets: [] };
+  if (placeholders.length) return { ok: false, issues: placeholders, raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
 
   const raw = coerceEmptyNumbers(parsed);
   const ignoredSecrets: string[] = [];
   if (isObj(raw)) {
     for (const p of SECRET_PATHS) {
-      const v = getPath(raw, p);
-      if (v !== undefined && v !== "") ignoredSecrets.push(p);
-      const parent = getPath(raw, p.split(".").slice(0, -1).join("."));
-      if (isObj(parent)) delete parent[p.split(".").pop()!];
+      for (const keys of concreteKeys(raw, p.split("."))) {
+        const path = keys.join(".");
+        const v = getPath(raw, path);
+        if (v !== undefined && v !== "") ignoredSecrets.push(path);
+        const parent = getPath(raw, keys.slice(0, -1).join("."));
+        if (isObj(parent)) delete parent[keys[keys.length - 1]!];
+      }
     }
   }
   const tree = isObj(raw) ? (structuredClone(raw) as Record<string, unknown>) : raw;
   if (isObj(tree)) applyIsolation(tree, overrides);
 
   const result = ConfigSchema.safeParse(tree);
-  if (!result.success) return { ok: false, issues: result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })), raw, ignoredSecrets };
+  if (!result.success) return { ok: false, issues: result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })), raw, ignoredSecrets, unmergedSecrets: [] };
   const config = result.data;
+  // A credential at a wildcard path merges only into an entry the validated config holds; any other is reported by path (CFG-SEC-017).
+  const unmergedSecrets: string[] = [];
   for (const [p, v] of Object.entries(secrets)) {
-    if (SECRET_PATHS.includes(p) && v !== "") setPath(config as unknown as Record<string, unknown>, p, v);
+    const pattern = secretPathOf(p);
+    if (pattern === undefined || v === "") continue;
+    if (pattern.includes("*") && !isObj(getPath(config, p.split(".").slice(0, -1).join(".")))) {
+      unmergedSecrets.push(p);
+      continue;
+    }
+    setPath(config as unknown as Record<string, unknown>, p, v);
   }
-  return { ok: true, config, raw, ignoredSecrets };
+  return { ok: true, config, raw, ignoredSecrets, unmergedSecrets };
 }

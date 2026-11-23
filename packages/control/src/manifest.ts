@@ -51,10 +51,10 @@ const svc = (
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
-// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
-    groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCE: "fake" },
+    groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
     config: ["chat", "viewer_text"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
@@ -79,19 +79,19 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("voice", {
     groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" },
-    config: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
+    config: ["voice", "network"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
   }),
   svc("avatar", {
     groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" },
     config: ["avatar"], uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
   }),
   svc("eyes", {
-    groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_ENGINE: "stub" },
-    config: ["vision"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
+    groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
+    config: ["vision", "network"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    config: ["ears", "network"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
@@ -109,6 +109,11 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   compose("ollama"),
   compose("tts"),
   compose("stt"),
+  // The optional speech engine servers (profiles pocket, nemotron, kyutai): compose-only units that no unit uses or requires,
+  // so a profile that is not enabled never annotates voice or ears (CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014).
+  compose("tts-pocket"),
+  compose("stt-nemotron"),
+  compose("stt-kyutai"),
 ];
 
 /** The public face of a unit, as `GET /services/manifest` lists it: no argv material, no compose or pnpm names. */

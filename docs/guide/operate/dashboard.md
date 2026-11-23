@@ -93,6 +93,8 @@ A form for `config/config.yaml`, and for your credentials. The list on the left 
 
 For the other sections, change values, press **Check** to validate them without saving, and **Save** to write them; **Discard** drops your edits. Saving keeps your comments and unknown keys, and refuses if the file changed since you loaded it (press **Reload**). Settings apply when the services that read them restart, and after a save a banner names those services with a **Restart** button. A few keys, such as an address a credential is sent to, need the control token to change. Every key is explained on the [configuration reference](../../advanced/reference/config.md).
 
+Beside the engine and provider keys (`voice.engine`, `ears.stt_engine`, `ears.stt_fallback_engine`, `vision.provider` and `llm.provider`) the screen shows an egress note for any destination that leaves your LAN, such as "spoken text goes to speech.example.com" or "the conversation goes to chat.example.com". It appears before you restart the service, so you can see where audio, text or frames will go. The Services screen marks the same destinations on each service's row.
+
 Secrets are set here too. A key such as an API key shows **Set** or **Not set** and a masked field, and never shows the saved value: type the value and press **Save** to write it to `config/secrets.yaml`, or **Clear** (after confirming) to remove it. Writing a secret always needs the control token, even with the dashboard controls off.
 
 ## The sink page

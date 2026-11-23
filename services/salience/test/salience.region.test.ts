@@ -32,7 +32,7 @@ test("tick: a mention publishes attention.focus naming who and what", async () =
   await s.tick();
   const [focus] = bus.of("attention.focus");
   assert.equal(focus!.reason, "mentioned");
-  assert.ok(Math.abs(focus!.score - 1.15) < 1e-9);
+  assert.ok(Math.abs(focus!.score - 1.0) < 1e-9); // "plain" is the same viewer: discounted
   assert.deepEqual(focus!.focus, { kind: "chat", who: "bob", text: "hey Coco?", mention: true });
   assert.equal(s.ctx.unseen().length, 0, "what was scored is now seen");
 });
@@ -110,7 +110,7 @@ test("mute / unmute / forget_context", async () => { // @spec SAL-CTRL-004, SAL-
 
 test("an excited mood lowers the bar to speak", async () => { // @spec SAL-IN-004, SAL-DECIDE-003
   const { s, bus } = setup({ speak_threshold: 0.6, arousal_bias: 0.5 });
-  for (const t of ["a", "b", "c"]) await s.onEvent(chat(t)); // 0.45
+  for (const t of ["a", "b", "c"]) await s.onEvent(chat(t)); // one viewer: 0.15
   await s.tick();
   assert.equal(bus.of("attention.focus").length, 0);
   await s.onEvent(event("affect.state", { valence: 0.5, arousal: 1, mood: "laugh" }));
@@ -129,6 +129,22 @@ test("ticks don't overlap: a slow scorer is asked once", async () => { // @spec 
   await first;
   assert.equal(calls(), 1);
   assert.equal(bus.of("attention.focus").length, 1);
+});
+
+const RAID = { match: "raid", say: ["Raid!"], emotion: "happy", cooldown_ms: 1000 };
+test("a flood ticked inside a reflex's cooldown leaves its next fire time alone", async () => { // @spec SAL-DECIDE-016
+  let t = 0;
+  const { s, bus } = setup({ reflexes: [RAID] }, {}, () => t);
+  await s.onEvent(chat("raid incoming")); // t=0: fires and starts the rule's cooldown
+  assert.equal(bus.of("brain.say").length, 1);
+  await s.onEvent(idle); // the cortex is idle again; only the rule's own cooldown gates the next fire
+  for (let i = 0; i < 20; i++) await s.onEvent(chat(`raid ${i}`)); // a flood, all inside that cooldown
+  t = 500;
+  await s.tick(); // the walk counts the flood (one viewer, one text family): no speak, no reflex state touched
+  assert.equal(bus.of("brain.say").length, 1, "no extra line while the rule is cooling");
+  t = 1001;
+  await s.onEvent(chat("raid again")); // the rule's own next fire time is unchanged
+  assert.equal(bus.of("brain.say").length, 2);
 });
 
 test("reflex: fires brain.say instantly and marks only its trigger seen", async () => { // @spec SAL-REFLEX-001, SAL-REFLEX-004
@@ -351,4 +367,259 @@ test("tick: a failed attention.focus publish is logged and the next tick still r
   bus.fail = undefined;
   await s.tick(); // no idle event: the failed publish rolled back the busy state and left the events unseen
   assert.equal(bus.of("attention.focus").length, 1, "the next tick retried and published");
+});
+
+// Streamed lines (SAL-BUSY-005..008): playback events of the cortex's own line renew the speaking valve. Fake monotonic clock.
+function streamed(valve = 100) {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 0, idle_chatter_ms: 0 }, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 }, cortex: { speaking_timeout_ms: valve } } }, () => t);
+  const mention = chat("hey Coco?", { mentionsCohost: true });
+  return { ...h, advance: (ms: number) => { t += ms; }, mention };
+}
+const cortexSay = (id: string, more = true) => event("brain.say", { id, text: "one", emotion: "happy", reason: "speech", ...(more ? { more: true as const } : {}) });
+const playing = (id: string, seq = 0, sink = "discord") => event("voice.playing", { id, seq, sink });
+const done = (id: string, seq = 0, sink = "discord") => event("voice.done", { id, seq, sink });
+
+// @spec SAL-BUSY-006, SAL-BUSY-002
+test("busy: a voice.playing or voice.done of the cortex line with more restarts the speaking age, from any sink", async () => {
+  for (const sink of ["discord", "dryrun", "virtual"]) {
+    for (const ev of [playing("L", 1, sink), done("L", 1, sink)]) {
+      const { s, bus, advance, mention } = streamed();
+      await s.onEvent(cortexSay("L"));
+      advance(80);
+      await s.onEvent(ev); // 80 ms in, valve 100: renewed
+      advance(80); // 160 ms from the say, 80 from the renewal
+      await s.onEvent(mention);
+      await s.tick();
+      assert.equal(bus.of("attention.focus").length, 0, `still busy after ${ev.type} on ${sink}`);
+      advance(30); // 110 ms from the renewal: valve over
+      await s.tick();
+      assert.equal(bus.of("attention.focus").length, 1, "free once the renewed valve ran out");
+    }
+  }
+});
+
+// @spec SAL-BUSY-006, SAL-BUSY-002
+test("busy: renewal repeats, so a long streamed line stays busy for as long as its clauses play", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  for (let seq = 0; seq < 6; seq++) { advance(70); await s.onEvent(playing("L", seq)); await s.onEvent(done("L", seq)); }
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "420 ms in, valve 100: busy");
+});
+
+// @spec SAL-BUSY-007
+test("busy: playback events of another line, of a line without more, or while the state is not speaking do not renew", async () => {
+  { // another line
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    advance(80);
+    await s.onEvent(playing("other", 1));
+    await s.onEvent(done("other", 1));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, "valve ran out from the say");
+  }
+  { // a line without more keeps the 20 s valve from when the state was set
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L", false));
+    advance(80);
+    await s.onEvent(playing("L", 0));
+    await s.onEvent(done("L", 0));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1);
+  }
+  { // not speaking: idle after a status, a playback event must not make it busy again
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    await s.onEvent(idle);
+    await s.onEvent(playing("L", 1));
+    await s.onEvent(done("L", 1));
+    advance(10);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, "idle stays idle");
+  }
+});
+
+// @spec SAL-BUSY-005, SAL-BUSY-006
+test("busy: an operator say does not replace the remembered cortex line, so its playback events still renew", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  await s.onEvent(event("brain.say", { id: "op", text: "hello", emotion: "neutral", reason: "operator" }));
+  advance(80);
+  await s.onEvent(playing("L", 1));
+  advance(80);
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "L's event renewed the state although op set it last");
+});
+
+// @spec SAL-BUSY-005, SAL-BUSY-007
+test("busy: a playback event of a reflex or operator line does not renew", async () => {
+  for (const [id, reason] of [["rx", "reflex: you died"], ["op", "operator"]] as const) {
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    await s.onEvent(event("brain.say", { id, text: "x", emotion: "neutral", reason, more: true }));
+    advance(80);
+    await s.onEvent(playing(id, 0));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, `${reason}: no renewal`);
+  }
+});
+
+// @spec SAL-BUSY-008
+test("cooldown and idle-chatter timer are measured from the brain.say only: playback events restart neither", async () => {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 100, idle_chatter_ms: 0 }, {}, () => t);
+  await h.s.onEvent(cortexSay("L"));
+  t += 80;
+  await h.s.onEvent(playing("L", 1));
+  await h.s.onEvent(done("L", 1));
+  t += 30; // 110 ms from the say, 30 from the events
+  await h.s.onEvent(idle);
+  await h.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await h.s.tick();
+  assert.equal(h.bus.of("attention.focus").length, 1, "cooldown over: it ran from the say");
+});
+
+// @spec SAL-BUSY-005, SAL-BUSY-006
+test("busy: a later cortex line without more replaces the remembered line, so the earlier line's playback no longer renews", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  await s.onEvent(cortexSay("M", false));
+  advance(80);
+  await s.onEvent(playing("L", 1)); // L is no longer the cortex's line
+  advance(30); // 110 ms from the say of M, valve 100
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1, "L's playback did not renew the speaking state");
+});
+
+// @spec SAL-BUSY-005
+test("busy: a brain.say with no reason counts as the cortex line, so its playback renews", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(event("brain.say", { id: "L", text: "one", emotion: "happy", more: true }));
+  advance(80);
+  await s.onEvent(playing("L", 1));
+  advance(80); // 160 ms from the say, 80 from the renewal
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "still busy: the reasonless say was remembered as the cortex line");
+});
+
+// @spec SAL-BUSY-008
+test("idle chatter: playback events restart neither the idle timer nor the cooldown, which run from the brain.say", async () => {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 0, idle_chatter_ms: 100 }, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 100 }, cortex: { speaking_timeout_ms: 20 } } }, () => t);
+  await h.s.onEvent(chat("plain")); // an unseen event below the threshold; the scorer's idle timer runs from the last activity
+  t += 5;
+  await h.s.onEvent(cortexSay("L")); // the say starts the idle timer and the cooldown
+  t += 80;
+  await h.s.onEvent(playing("L", 1)); // renews the speaking state (valve 20: not busy at 110 ms) but not the idle timer
+  await h.s.onEvent(done("L", 1));
+  t += 25; // 105 ms since the say, 25 since the playback events
+  await h.s.tick();
+  assert.equal(h.bus.of("attention.focus").length, 1, "idle chatter fired: the idle timer ran from the say");
+  assert.equal(h.bus.of("attention.focus")[0]!.reason, "idle chatter");
+});
+
+// ---- chat.removed and viewer keys (issue #182)
+
+const removed = (data: Record<string, unknown>) => event("chat.removed", { platform: "twitch", scope: "message", ...data });
+const mention = (messageId: string, extra: Record<string, unknown> = {}) =>
+  chat("hey Coco?", { mentionsCohost: true, userId: "u1", messageId, ...extra });
+const texts = (s: Salience) => s.ctx.all().map((e) => (e as { text: string }).text);
+
+test("chat.removed takes the removed line out of the window so it counts toward no decision", async () => { // @spec SAL-IN-008
+  const { s, bus } = setup();
+  await s.onEvent(mention("m1"));
+  await s.onEvent(removed({ scope: "message", messageId: "m1" }));
+  assert.equal(s.ctx.all().length, 0);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0);
+});
+
+test("chat.removed by user and by all forget the matching lines of that platform", async () => { // @spec SAL-IN-008
+  const { s } = setup();
+  await s.onEvent(chat("a", { userId: "u1", messageId: "a" }));
+  await s.onEvent(chat("b", { userId: "u2", messageId: "b" }));
+  await s.onEvent(removed({ scope: "user", userId: "u1" }));
+  assert.deepEqual(texts(s), ["b"]);
+  await s.onEvent(removed({ scope: "all" }));
+  assert.equal(s.ctx.all().length, 0);
+});
+
+test("chat.removed received while paused is still applied: the line is not scored after resume", async () => { // @spec SAL-IN-009
+  const { s, bus } = setup();
+  await s.onEvent(mention("m1"));
+  await s.onEvent(event("control", { cmd: "pause" }));
+  await s.onEvent(removed({ scope: "message", messageId: "m1" }));
+  assert.equal(s.ctx.all().length, 0, "forgotten while paused");
+  await s.onEvent(event("control", { cmd: "resume" }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0);
+});
+
+test("a focused line removed while the scorer runs publishes no focus, leaves events unseen and does not mark the cortex thinking", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  await s.onEvent(chat("plain from another", { userId: "u2", messageId: "m2" }));
+  const running = s.tick();
+  await s.onEvent(removed({ scope: "message", messageId: "m1" })); // the focus leaves while the scorer is awaited
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 0);
+  assert.deepEqual(s.ctx.unseen().map((e) => (e as { text: string }).text), ["plain from another"], "the decision's other events stay unseen");
+  setGate(undefined);
+  await s.onEvent(mention("m3", { userId: "u3" }));
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 1, "not thinking, so the next decision publishes");
+});
+
+test("a focused line evicted by window overflow while the scorer runs still publishes: only a removal voids the decision", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  const running = s.tick();
+  for (let i = 0; i < 60; i++) await s.onEvent(chat(`line ${i}`, { userId: `v${i}`, messageId: `x${i}` })); // pushes the mention out of the window
+  release();
+  await running;
+  assert.equal(texts(s).includes("hey Coco?"), false, "the focus is no longer in the window");
+  assert.equal(bus.of("attention.focus").length, 1, "evicted, not removed: the decision stands");
+  assert.equal((bus.of("attention.focus")[0]!.focus as { text: string }).text, "hey Coco?");
+});
+
+test("a focused line cleared by forget_context while the scorer runs still publishes", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  const running = s.tick();
+  await s.onEvent(event("control", { cmd: "forget_context" }));
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 1, "cleared, not removed: the decision stands");
+});
+
+test("a removal of a line that is not the focus leaves the decision standing", async () => { // @spec SAL-FOCUS-007
+  const { s, bus, setGate } = setup();
+  let release!: () => void;
+  setGate(new Promise<void>((r) => (release = r)));
+  await s.onEvent(mention("m1"));
+  await s.onEvent(chat("plain from another", { userId: "u2", messageId: "m2" }));
+  const running = s.tick();
+  await s.onEvent(removed({ scope: "message", messageId: "m2" }));
+  release();
+  await running;
+  assert.equal(bus.of("attention.focus").length, 1);
 });

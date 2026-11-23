@@ -15,7 +15,7 @@ const compose = parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge:
 test("chat mounts ./data/chat beside ./config, and no other application service mounts ./data", () => {
   assert.deepEqual(compose.services.chat!.volumes, ["./config:/app/config", "./data/chat:/app/data/chat"]);
   for (const [name, svc] of Object.entries(compose.services)) {
-    if (name === "chat" || !svc.build) continue;
+    if (name === "chat" || !svc.build || name === "tts-pocket") continue; // tts-pocket mounts its token directory under ./data (DEPLOY-ENG-019)
     assert.ok(!(svc.volumes ?? []).some((v) => v.includes("./data")), `${name} has no ./data mount`);
   }
 });

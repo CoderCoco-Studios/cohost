@@ -39,8 +39,8 @@ llm:
 
 vision:
   enabled: false               # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
-  model: "qwen2.5vl:3b"        # required while enabled
-  engine: "ollama"             # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
+  model: "qwen2.5vl:3b"        # the describer model; Ollama pulls it when provider is ollama. Blank = none (eyes reports it down while enabled)
+  provider: "ollama"           # ollama | openai | anthropic | bedrock (hosted, credentials in secrets.yaml and llm) | stub (fixed text, no model; isolated runs)
   interval_ms: 8000            # how often to look at the game
   temperature: 0.2             # vision model sampling temperature (0 to 2)
   num_predict: 60              # longest description the model may write, in tokens
@@ -56,11 +56,16 @@ vision:
     width: 896                 # downscale before sending to the VLM
 
 chat:
-  source: "twitch"             # twitch | fake (scripted/stdin messages, no channel needed)
+  sources: [twitch]            # twitch | youtube | fake (scripted/stdin messages, no channel needed); each listed source is read at once
   fake:
-    interval_ms: 8000          # source=fake: gap between scripted messages
+    interval_ms: 8000          # sources includes fake: gap between scripted messages
   twitch:
     channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in secrets.yaml
+  youtube:
+    video: ""                  # the YouTube video or live stream whose chat is read; its API key is the secret chat.youtube.api_key in secrets.yaml
+    transport: stream          # stream | poll (blank is stream)
+    poll_floor_ms: 12000       # transport poll: the shortest gap between two chat polls (at least 1000)
+    recheck_ms: 120000         # how often the video is checked again for a live chat (at least 30000)
   ignore_users: ["nightbot", "streamelements", "moobot"]
   ignore_prefixes: ["!"]       # bot commands
 
@@ -198,9 +203,17 @@ viewer_text:
   max_name_chars: 40           # longest viewer name a prompt carries (at least 8)
 
 voice:
-  engine: "kokoro"             # kokoro | stub (silent WAV sized from the text; isolated runs)
-  voice: "af_heart"            # kokoro voice id
+  engine: "kokoro"             # kokoro | openai | pocket | stub (silent WAV sized from the text; isolated runs)
+  voice: "af_heart"            # kokoro: a voice id or mix; pocket: a catalogue name or an http(s) URL; openai: any voice name; blank = kokoro af_heart, pocket alba
   speed: 1.05                  # 0.25 to 4
+  timeout_ms: 15000            # bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks
+  # openai: an OpenAI-compatible speech server, used with engine openai. The API key is voice.openai.api_key in secrets.yaml.
+  # openai:
+  #   base_url: "https://api.openai.com/v1"
+  #   model: "tts-1"
+  pocket:
+    # the Pocket TTS server, used with engine pocket; blank is a configuration gap. The gated-weights token is in secrets.yaml.
+    url: "http://tts-pocket:8000"
   # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
   # voice also accepts a mix, e.g. "af_bella(2)+af_sky".
   # lang_code: "b"             # a b e f h i j p z; blank derives it from the voice name
@@ -274,7 +287,19 @@ ears:
   partial_step_ms: 1000
   min_speech_ms: 400
   stt_model: "Systran/faster-whisper-small"  # the speech-to-text model name sent to the stt service (it is not pulled by the `models` service)
-  stt_engine: "speaches"       # speaches | stub (fixed text, no STT server; isolated runs)
+  stt_engine: "speaches"       # speaches | openai | nemotron | kyutai | stub (fixed text, no STT server; isolated runs)
+  stt_fallback_engine: "speaches" # speaches | openai | none: batch engine for whole clips a streaming engine cannot serve
+  stt_timeout_ms: 20000        # bound on one speech-to-text request
+  max_stt_sessions: 2          # speech-to-text sessions that run at once (at least 1)
+  # openai: an OpenAI-compatible transcription server (stt_engine or stt_fallback_engine openai). Its key goes in secrets.yaml.
+  # openai:
+  #   base_url: "https://api.openai.com/v1"
+  nemotron:
+    url: "http://stt-nemotron:8080" # the NVIDIA Nemotron STT server, used with stt_engine nemotron; blank is a configuration gap
+  kyutai:
+    url: "http://stt-kyutai:8080"   # the Kyutai STT server, used with stt_engine kyutai; blank is a configuration gap
+    end_of_turn: "off"       # on | off: let the server's end-of-turn detection close a sentence instead of the silence gap
+    end_of_turn_threshold: 0.5 # the end-of-turn probability needed, above 0 and below 1
   # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
   # hallucinations on silence. Empty by default; uncomment to use.
   drop_phrases: []
@@ -321,3 +346,41 @@ dashboard:
     max_image_bytes: 8388608   # largest image accepted (8 MiB)
     max_audio_bytes: 26214400  # largest audio clip accepted (25 MiB)
     ttl_ms: 300000             # how long an upload stays available to the service that asked for it
+
+# The MCP servers the co-host may call and the tools it may use. No tool is enabled until tools.allow names it; a server
+# listed here is called only for an allowed tool. A server's token lives in secrets.yaml, never here.
+tools:
+  mode: live                   # live calls the servers below; mock returns canned results and calls no server
+  timeout_ms: 10000            # one tool call's limit before it counts as failed (ms)
+  confirm_timeout_ms: 20000    # how long a request to confirm an acting tool waits for your answer (ms)
+  max_result_chars: 1500       # the longest tool result that reaches the prompt (at least 64)
+  max_concurrent: 4            # tool calls running at once across all servers (at least 1)
+  catalog_ms: 30000            # how often each server's tool list is read again (at least 5000 ms)
+  max_tools_per_server: 32     # tools taken from one server's list (at least 1)
+  max_tools: 64                # tools in the catalogue across all servers (at least 1)
+  owner_sources: all           # all, or a list of listening sources whose speech counts as yours, such as [discord]
+  servers: {}                  # name: { url: "https://...", header: "", external: false }; the token goes in secrets.yaml
+  allow: {}                    # tool name (server__tool): { enabled: true, acts: false, chat: false, confirm: true }
+  timer:
+    max_active: 5              # timers the co-host may have running at once (at least 1)
+    max_minutes: 120           # the longest timer, in minutes (at least 1)
+  stream_info:
+    cache_ms: 30000            # how long the stream's title and game are remembered (ms; 0 reads them every time)
+  reply:
+    max_rounds: 3              # rounds of tool calls one reply may take (at least 1)
+    max_calls: 3               # tool calls one reply may make in all (at least 1)
+    budget_ms: 30000           # time one reply may spend on tool calls in all (ms)
+    filler_after_ms: 1500      # a call still running after this long gets a filler line; 0 says one at once (ms)
+    max_tokens: 512            # the longest model answer, in tokens, for one tool-using step (at least 1)
+    filler_lines:              # one is said at random while a tool runs; each at most 200 characters
+      - "Let me check."
+      - "Hold on, let me look."
+      - "One sec, checking."
+      - "Hang on, looking that up."
+      - "Give me a moment."
+      - "Let me see."
+
+# The machines the egress rule counts as the LAN: host names, single addresses, dot suffixes such as .ts.net, and CIDR ranges.
+# Private addresses, localhost, host.docker.internal and dotless or .local names are on the LAN already; list other machines you trust.
+network:
+  lan: []                     # host names, addresses, .suffixes and CIDR ranges counted as LAN (CFG-EGR-011); empty adds none

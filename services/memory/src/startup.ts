@@ -78,7 +78,8 @@ export async function startMemory({ cfg, log, bus, store, health, heartbeat, pin
   const recall = groupReady();
   const groups = [main, recall];
   const running = [
-    bus.subscribe({ group: "memory", types: ["chat.message", "speech.heard", "brain.say", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
+    // @spec MEM-FORGET-001
+    bus.subscribe({ group: "memory", types: ["chat.message", "chat.removed", "speech.heard", "brain.say", "brain.clause", "brain.status"], start: "resume", onReady: main.onReady }, onEvent),
     bus.subscribe({ group: "memory-recall", types: ["memory.recall.request", "memory.notes.request", "memory.viewers.request"], start: "resume", onReady: recall.onReady }, onEvent),
   ];
   // @spec MEM-CAPTURE-001, MEM-VOICE-003

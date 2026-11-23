@@ -57,8 +57,8 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
-  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets, []);
-  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets, ["http.token"]);
+  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets.slice().sort(), ["openai.api_key", "pocket.hf_token"]); // CFG-SCH-059, CFG-SCH-061
+  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
   assert.ok(SECRET_PATHS.length >= 2);
 });
 
@@ -242,7 +242,8 @@ test("restart lists units in manifest order that read the section and are runnin
 // @spec MOD-CFG-015
 test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
   const t = await boot();
-  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { engine: "stub" } });
+  // voice.sample_rate, not voice.engine: CFG-PRES-011 makes the engine sensitive, so its save needs the control token
+  const r = await t.put("/config/voice", { etag: sha(t.text()), values: { sample_rate: 24000 } });
   const j = (await r.json()) as { warnings: string[] };
   assert.deepEqual(j.warnings, []);
   const d = await t.put("/config/dashboard", { etag: sha(t.text()), values: { port: 3010 } });

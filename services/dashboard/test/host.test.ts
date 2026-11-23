@@ -54,7 +54,7 @@ test("ports: the full surface listens on dashboard.port and the LAN listener on 
   finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
 });
 
-// @spec DASH-HOST-002
+// @spec DASH-HOST-002, DASH-EGR-002
 test("the LAN allow-list is exactly GET /, GET and HEAD /assets/* and /favicon.svg, GET /audio/*, POST /sink, any /health", () => {
   const yes: [string, string][] = [["GET", "/"], ["GET", "/audio/abc.wav"], ["GET", "/assets/index-abc.js"], ["HEAD", "/assets/index-abc.css"], ["GET", "/favicon.svg"], ["HEAD", "/favicon.svg"], ["POST", "/sink"], ["GET", "/health"], ["POST", "/health"], ["DELETE", "/health"]];
   const no: [string, string][] = [
@@ -62,7 +62,7 @@ test("the LAN allow-list is exactly GET /, GET and HEAD /assets/* and /favicon.s
     ["GET", "/services"], ["GET", "/services/control"], ["POST", "/services/cortex/restart"], ["GET", "/personality"], ["PUT", "/personality"],
     ["POST", "/control"], ["POST", "/inject/text"], ["GET", "/viewers"], ["GET", "/ws"], ["GET", "/index.html"], ["GET", "/healthz"],
     ["POST", "/assets/x.js"], ["PUT", "/favicon.svg"], ["DELETE", "/assets/x.js"], ["GET", "/assets"], ["GET", "/favicon.ico"], ["GET", "/cohost/assets/a.js"],
-    ["PUT", "/secrets/discord.token"], ["PUT", "/secrets"], ["GET", "/options/voices"], ["GET", "/options/models"], ["PUT", "/config/dashboard"],
+    ["PUT", "/secrets/discord.token"], ["PUT", "/secrets"], ["GET", "/options/voices"], ["GET", "/options/models"], ["GET", "/egress"], ["PUT", "/config/dashboard"],
   ];
   for (const [m, p] of yes) assert.equal(lanAllows(m, p), true, `${m} ${p}`);
   for (const [m, p] of no) assert.equal(lanAllows(m, p), false, `${m} ${p}`);

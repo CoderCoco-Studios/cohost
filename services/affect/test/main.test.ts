@@ -56,12 +56,15 @@ test("main: subscribes in start mode latest and signals ready only after the con
   await started;
   await waitFor(() => states(bus).includes("ready"), "ready heartbeat");
   assert.deepEqual(bus.calls, ["resetGroup:affect", "subscribe:affect"]);
-  assert.deepEqual(bus.subscribed[0], {
-    group: "affect",
-    types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "control"],
-    start: "latest",
-  });
-  for (const fn of shutdown) await fn();
+  try {
+    assert.deepEqual(bus.subscribed[0], {
+      group: "affect",
+      types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "control"],
+      start: "latest",
+    });
+  } finally {
+    for (const fn of shutdown) await fn();
+  }
 });
 
 test("main: the publish timer runs at publish_ms and shutdown stops it and the bus", async () => { // @spec AFF-PUB-001

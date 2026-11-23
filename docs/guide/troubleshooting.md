@@ -91,7 +91,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### The `chat` service does nothing
 
 - **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
-- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `pnpm cohostctl start chat --isolated`), or set `chat.source: fake`.
+- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `pnpm cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
 
 ## The co-host's behaviour
 

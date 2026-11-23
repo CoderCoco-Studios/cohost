@@ -7,6 +7,7 @@ import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
 import { handleUi, locateUiDir } from "./static.js";
 import { handleOptions, type OptionsDeps } from "./options.js";
+import { handleEgress } from "./egress.js";
 import { handleMouthRouting } from "./routing.js";
 import { handleSecrets } from "./secrets.js";
 import { defaultWrite, handleConfig } from "./settings.js";
@@ -110,6 +111,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (await handleSecrets(secrets, req, res, url)) return;
       // @spec DASH-OPT-001, DASH-OPT-002, DASH-OPT-003, DASH-OPT-004
       if (await handleOptions(options, req, res, url)) return;
+      // @spec DASH-EGR-001, DASH-EGR-002, DASH-EGR-003, DASH-EGR-004
+      if (handleEgress(req, res, url)) return;
       // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, DASH-CTRL-009, DASH-CTRL-010
       if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006

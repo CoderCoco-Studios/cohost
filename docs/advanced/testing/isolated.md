@@ -23,10 +23,10 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `cortex`, and the `salience`, `affect` and notes [hooks](../../start/glossary.md#hook) that inherit its model | `LLM_PROVIDER=mock` (`llm.provider`) | Deterministic echo replies and hash [embeddings](../../start/glossary.md#embedding) (`mock`) |
 | `memory` | `MEMORY_STORE=memory` and `MEMORY_EMBEDDER=hash` (`brain.memory.store`, `brain.memory.embedder`) | An in-process store with offline embeddings, lost on exit (`mock`). Needs no [Postgres](../../start/glossary.md#postgres) and no [Ollama](../../start/glossary.md#ollama) |
 | `voice` | `VOICE_ENGINE=stub` (`voice.engine`) | A silent WAV of 60 ms per character (400 ms minimum), no [TTS](../../start/glossary.md#tts) call (`mock`) |
-| `chat` | `CHAT_SOURCE=fake` (`chat.source`) | Scripted or stdin messages, no Twitch (`mock`) |
-| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`) and still accepts injected chat |
+| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages from `fake_viewer1` and `fake_viewer3` (Twitch shape) and `fake_viewer2` (YouTube shape); no Twitch or YouTube connection; mode `mock`, ready at once |
+| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`, `deps.youtube: n/a`, mode `live`) and still accepts injected chat |
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
-| `eyes` | `VISION_ENGINE=stub` (`vision.engine`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
+| `eyes` | `VISION_PROVIDER=stub` (`vision.provider`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
 | `ears` | `EARS_SOURCES=[]` (`ears.sources`) | Idles with no Discord client; injected audio is still transcribed |
 | `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips; no account |
 | `ears` | `EARS_SOURCES=[dir]` | Hears `.wav` files dropped in `ears.dir.path`, then renames them; no account |
@@ -61,6 +61,17 @@ COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' node --import tsx services/cortex/src
 
 `pnpm --filter @cohost/salience dev` does the same with file watching. Set `LOG_LEVEL=debug` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
 
+## Scripting the mock's replies
+
+With `llm.provider: mock`, two markers in a message drive the mock model's reply. Both act on `complete()` and `stream()`, the calls that cortex and the `tools` service make with tools; `chat()` ignores them and returns the ordinary `[happy] mock: <text>` reply. A marker is ordinary text, so an injected line that is the focus of a reply carries it through the whole run.
+
+| Marker | Where it is read | Effect |
+| --- | --- | --- |
+| `[mock-tool <name> <json>]` | the last paragraph (after the last blank line) of the last message, when that message is a user message | When `<name>` is one of the offered tools, the reply has no text and one call with id `mock_call_<n>` and the parsed arguments. The arguments are the shortest `{...}` that parses, so text after the marker is not taken in; arguments that are not a JSON object give `{}` with the raw text as `invalid`. An unoffered name gives the plain reply. |
+| `[mock-fail-after <n>]` | the last user message, anywhere in it | `stream()` delivers `n` words and then fails with a `stream` error. `complete()` fails at once. When `n` is at or past the reply's word count, the call completes normally. |
+
+When a `tool` message is the last message, the reply is `[happy] mock: <tool name> said <its content>` with no tool call, so `[mock-tool]` is not read. `[mock-fail-after]` is still read from the last user message, and its word count is the tool reply's.
+
 ## What each service needs
 
 Each was started with only Redis available:
@@ -75,7 +86,7 @@ Each was started with only Redis available:
 | `cortex` | Redis and a chat model | With `llm.provider: mock` (the isolated start) it answers by itself. Otherwise it logs `waiting for the model backend` every 3 seconds until the model answers |
 | `memory` | Redis, and Postgres plus Ollama unless stubbed | With `brain.memory.store: memory` and `brain.memory.embedder: hash` (the isolated start) it needs neither. Without them it logs `waiting for ollama (embeddings)...` until Ollama answers |
 | `chat` | `chat.twitch.channel` for the real source | Idles `degraded` without a channel and still accepts injected chat |
-| `eyes` | OBS and a vision model, only with `vision.enabled: true` | Idles `off` by default; injected images are described by the stub with `vision.engine: stub` |
+| `eyes` | OBS and a vision model, only with `vision.enabled: true` | Idles `off` by default; injected images are described by the stub with `vision.provider: stub` |
 | `ears` | The Discord [connector](../../start/glossary.md#connector), for the `discord` source, and an [STT](../../start/glossary.md#stt) server | With the connector absent, `deps.discord` is `down` and injected audio still works; `ears.stt_engine: stub` needs no STT server |
 | `mouth` | Redis, and `voice` for audio | `mouth.outputs.dryrun.enabled: true` runs the whole speaking path above Discord with no sound |
 
@@ -110,7 +121,7 @@ export REDIS_URL=redis://localhost:6379
 COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' pnpm --filter @cohost/cortex exec tsx src/index.ts &
 pnpm --filter @cohost/salience exec tsx src/index.ts &
 pnpm --filter @cohost/affect exec tsx src/index.ts &
-COHOST_ISOLATION='{"CHAT_SOURCE":"fake"}' pnpm --filter @cohost/chat exec tsx src/index.ts &
+COHOST_ISOLATION='{"CHAT_SOURCES":"[fake]"}' pnpm --filter @cohost/chat exec tsx src/index.ts &
 COHOST_ISOLATION='{"VOICE_ENGINE":"stub"}' pnpm --filter @cohost/voice exec tsx src/index.ts &
 ```
 

@@ -21,7 +21,7 @@ Read by `docker compose` itself, before any container exists.
 | --- | --- | --- |
 | `COMPOSE_FILE` | `docker-compose.yml` | Which Compose files to use. The installer adds the GPU overlay when it finds an NVIDIA [GPU](../../start/glossary.md#gpu): `docker-compose.yml:docker-compose.gpu.yml` |
 | `COMPOSE_PATH_SEPARATOR` | unset | Set to `:` when a Windows `docker.exe` (see `COHOST_DOCKER_BIN`) would otherwise split `COMPOSE_FILE` on `;` |
-| `COMPOSE_PROFILES` | unset | Optional services that stay on across restarts and Launch: `eyes`, `ears`, `mouth` and `discord`, for example `discord,ears,mouth` |
+| `COMPOSE_PROFILES` | unset | Optional services that stay on across restarts and Launch: `eyes`, `ears`, `mouth` and `discord`, and the speech engine servers `pocket`, `nemotron` and `kyutai`, for example `discord,ears,mouth` |
 | `COMPOSE_PROJECT_NAME` | the folder name | The Compose project name. Set it only to run a second stack beside the first |
 | `KOKORO_IMAGE` | CPU image `ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0` | Override the [TTS](../../start/glossary.md#tts) image. The GPU overlay switches the default to the CUDA build |
 | `SPEACHES_IMAGE` | CPU image `ghcr.io/speaches-ai/speaches:0.8.3-cpu` | Override the [STT](../../start/glossary.md#stt) image. The GPU overlay switches the default to the CUDA build |
@@ -88,9 +88,9 @@ The override names are labels inside that object, not environment variables: a p
 | `MEMORY_STORE` | `brain.memory.store` | `memory` is an in-process store lost on exit |
 | `MEMORY_EMBEDDER` | `brain.memory.embedder` | `hash` makes deterministic, offline [embeddings](../../start/glossary.md#embedding) |
 | `VOICE_ENGINE` | `voice.engine` | `stub` returns a silent WAV sized from the text |
-| `CHAT_SOURCE` | `chat.source` | `fake` sends scripted or stdin messages with no channel |
+| `CHAT_SOURCES` | `chat.sources` | `[fake]` sends scripted or stdin messages with no channel |
 | `VISION_ENABLED` | `vision.enabled` | `false` makes `eyes` idle and never touch OBS |
-| `VISION_ENGINE` | `vision.engine` | `stub` answers with fixed text and no model |
+| `VISION_PROVIDER` | `vision.provider` | `stub` answers with fixed text and no model |
 | `EARS_SOURCES` | `ears.sources` | A list such as `[http, dir]` listens to those sources only; `[]` idles |
 | `EARS_STT_ENGINE` | `ears.stt_engine` | `stub` gives every clip a fixed transcript with no STT server |
 | `CONNECTIONS_DISCORD_ENABLED` | `connections.discord.enabled` | `false` makes the Discord [connector](../../start/glossary.md#connector) idle and hold no connection |
@@ -124,6 +124,9 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 | `8880` | The TTS server | `tts` | |
 | `8000` | The STT server | `stt` | |
 | `8700` | The `voice` service's HTTP: audio, fallback clips, `/health` | `voice` | The host-run dashboard proxies audio from it |
+| `8881` | The Pocket voice engine server (profile `pocket`) | `tts-pocket` | Container port 8000 |
+| `8081` | The NeMo-Speech.cpp streaming STT server (profile `nemotron`) | `stt-nemotron` | Container port 8080 |
+| `8082` | The moshi-server Kyutai STT server (profile `kyutai`) | `stt-kyutai` | Container port 8080 |
 | `8765` | `ears`' `http` source | Not published by Compose | `ears.http.port`, local only by default; in Docker bind `0.0.0.0` and publish it yourself |
 
 Both dashboard ports are read when the dashboard starts, so an edit to `dashboard.port` or `dashboard.lan_port` applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, and then it needs `CONTROL_ENABLED=1` and `CONTROL_TOKEN`; the other machine opens it by IP address, or by a name listed in `dashboard.allowed_hosts` (the dashboard answers any other name with `403`).

@@ -4,7 +4,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
-**PARTIAL**: 162 specs: 116 implemented, 0 deferred, 46 gaps. The gaps are chat safety (bounded rows, guarded capture, consolidation and reflection prompts) and, from the YouTube chat design of 2026-11-16 (no code yet), viewer identity by platform and user id (MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-008 to MEM-VIEWER-011, MEM-SURF-001, MEM-SURF-002, MEM-SURF-004, MEM-SURF-006, MEM-SURF-007, MEM-VOICE-007, MEM-BACKEND-005), the platform, user id and message id kept on chat rows (MEM-WRITE-009, MEM-STORE-004) and forgetting removed chat (MEM-FORGET-001 to MEM-FORGET-007). Retention of YouTube viewers is an owner decision recorded in the LLD.
+**PARTIAL**: 173 specs: 170 implemented, 0 deferred, 3 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Streamed lines are held by id and written as one `self` row on their closing clause, an idle or muted status, the 300 s idle bound or stop (MEM-WRITE-010 to MEM-WRITE-019). Open gaps: MEM-RECALL-007, and MEM-SURF-006 and MEM-VOICE-007, reopened because the name-only surfacing rules changed in the spec (a name-only entry never resolves to an id-keyed viewer, and a link's `discord_display` is not a name key); `services/memory/src/surface.ts` and its tests still implement the display-name fallback, so the code follows in the memory surfacing issue. Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References
 
@@ -15,7 +15,12 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 - docs/intent/memory/memory-design.md
 
 ### EARS
-- docs/intent/memory/memory-specs.md (173 specs: 114 `[x]`, 59 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+- docs/intent/memory/memory-specs.md (173 specs: 170 `[x]`, 3 `[ ]`, 0 `[D]`; prefix `MEM`; facet `FORGET` added for removed chat)
+
+### Choices
+- Chat lines have `«` and `»` replaced with straight quotes before bounding, so no hook payload carries those marks (MEM-CAPTURE-020). Speech lines are not changed.
+- Viewers are keyed by the shared `viewerKey` (SHARED-GUARD-025..027), never case-folded by id. Voice rows (`discord:<speakerId>`) are a separate namespace read by the voice rules; owner placeholders (MEM-REG-003) stay readable until claimed (MEM-VIEWER-011 readings, recorded in the LLD).
+- No Postgres migration: pre-alpha, so an existing dev `memories` table must be recreated to gain the chat columns.
 
 ### Code and tests
 - services/memory/src/ and services/memory/test/ (`@spec MEM-` annotations)
@@ -23,8 +28,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 ## Work Required
 
 ### Must Fix
-- Viewer identity by platform and user id, the `memories` columns and forgetting a removed message (listed above).
-- Chat safety specs not yet built.
+None.
 
 ### Nice to Have
 None.

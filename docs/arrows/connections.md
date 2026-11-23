@@ -4,9 +4,9 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 58 specs: 51 `[x]`, 6 `[ ]` (CONN-DESK-001, 004 and 005 for the desktop helper, plus three streamed-speech clause specs), 1 `[D]`.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 58 specs: 54 `[x]`, 3 `[ ]` (CONN-DESK-001, 004 and 005, the desktop helper), 1 `[D]`.
 
-**PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12): 58 specs, 51 implemented, 6 gaps (`[ ]`: three streamed-speech clause specs and the desktop helper's registration, CONN-DESK-001, 004, 005), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 015, 018, 019, 022 in ears) and the live verification of chunk 5. Its pure core (registration, lifecycle, delivery) is in `crates/cohost-desktop-audio`; no Redis registry store or binary exists yet.
+**PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12, counts recomputed at #198): 58 specs, 54 implemented, 3 gaps (`[ ]`: the desktop helper's registration, CONN-DESK-001, 004, 005), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 015, 018, 019, 022 in ears) and the live verification of chunk 5. Its pure core (registration, lifecycle, delivery) is in `crates/cohost-desktop-audio`; no Redis registry store or binary exists yet.
 
 ## Cross-segment cascade
 
@@ -50,7 +50,7 @@ CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 a
 - docs/intent/connections/decisions/connector-protocol.md
 
 ### EARS
-- docs/intent/connections/connections-specs.md (58 specs: 51 `[x]`, 6 `[ ]`, 1 `[D]`)
+- docs/intent/connections/connections-specs.md (58 specs: 54 `[x]`, 3 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/bus/test/{connector,native-api,native-integration,native-loops}.test.ts
@@ -58,7 +58,7 @@ CONN-AUD-006, CONN-AUD-007, CONN-FLUSH-001 to CONN-FLUSH-004 and CONN-DISC-012 a
 - packages/shared/test/utterance.test.ts
 - services/connector-discord/test/connector.test.ts, services/connector-discord/test/contract.test.ts
 - services/ears/test/connector-source.test.ts, services/ears/test/service.test.ts
-- services/mouth/test/{connector-output,mouth,no-discord,playback,stop}.test.ts
+- services/mouth/test/{clause-outputs,connector-output,mouth,no-discord,playback,stop}.test.ts
 
 ### Code
 - packages/bus/src/{connector,registrar,frames,index}.ts, packages/testing/src/index.ts
@@ -84,7 +84,7 @@ Reuses `packages/shared/src/discord-voice.ts` (`createDiscordVoiceSession`).
 |----------|----------|-------|---------|
 | Registration and liveness | CONN-REG-001 to 007 | 7 | 7 `[x]` |
 | Tags | CONN-TAG-001 to 004 | 4 | 4 `[x]` |
-| Audio streams and frames | CONN-AUD-001 to 007 | 7 | 7 `[x]` |
+| Audio streams and frames | CONN-AUD-001 to 008 | 8 | 8 `[x]` |
 | Back-pressure and loss | CONN-BP-001 to 006 | 6 | 6 `[x]` |
 | Discord connector | CONN-DISC-001 to 013 | 13 | 13 `[x]` |
 | Flush | CONN-FLUSH-001 to 004 | 4 | 4 `[x]` |

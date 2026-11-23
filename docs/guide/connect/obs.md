@@ -105,7 +105,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 ## How you know it worked
 
-- The voice: with the sink page loaded in OBS, a reply makes the source's audio meter move, and viewers hear it. If you turned **Control audio via OBS** off, the audio will not reach the stream.
+- The voice: with the sink page loaded in OBS, a reply makes the source's audio meter move, and viewers hear it. A longer reply plays clause by clause, and a barge-in cuts it short. If you turned **Control audio via OBS** off, the audio will not reach the stream.
 - The eyes: the Services screen shows `eyes` as `up` with its OBS dependency `ok`, and `vision.summary` lines appear on the live feed when the screen changes.
 - With OBS closed, `eyes` shows `degraded` with OBS `down` and keeps retrying every ten seconds, backing off up to a minute. Starting OBS fixes it without a restart.
 

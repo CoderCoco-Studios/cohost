@@ -92,12 +92,51 @@ test("POST /control forwards operator commands to the bus", async () => {
 // @spec DASH-SINK-002
 test("POST /sink reports the browser audio sink's playing / done", async () => {
   bus.clear();
-  await post("/sink", { event: "playing", id: "a1" });
-  await post("/sink", { event: "done", id: "a1" });
+  const a = await post("/sink", { event: "playing", id: "a1", seq: 0 });
+  const b = await post("/sink", { event: "done", id: "a1", seq: 2 });
+  assert.deepEqual([a.status, b.status], [204, 204]);
   assert.deepEqual(bus.published, [
     { type: "voice.playing", data: { id: "a1", seq: 0, sink: "dashboard" } },
-    { type: "voice.done", data: { id: "a1", seq: 0, sink: "dashboard" } },
+    { type: "voice.done", data: { id: "a1", seq: 2, sink: "dashboard" } },
   ]);
+});
+
+// @spec DASH-SINK-005, DASH-HTTP-004
+test("POST /sink without a seq, or with one that is not a non-negative integer, is a 400 that publishes nothing, ahead of any 500 path", async () => {
+  bus.clear();
+  for (const seq of [undefined, -1, 1.5, "1", null, true, [0]]) {
+    for (const event of ["playing", "done"]) {
+      const r = await post("/sink", { event, id: "a1", ...(seq === undefined ? {} : { seq }) });
+      assert.equal(r.status, 400, `${event} seq=${JSON.stringify(seq)}`);
+    }
+  }
+  assert.equal(bus.published.length, 0);
+});
+
+// @spec DASH-HTTP-004
+test("POST /sink with a body that is not JSON is still a 500 that does not exit", async () => {
+  bus.clear();
+  assert.equal((await post("/sink", "{nope")).status, 500);
+  assert.equal(bus.published.length, 0);
+  assert.equal((await fetch(`${base}/health`)).status, 200);
+});
+
+// @spec DASH-SINK-006
+test("POST /sink forwards an interrupted done with its spoken and unsaid texts", async () => {
+  bus.clear();
+  assert.equal((await post("/sink", { event: "done", id: "a1", seq: 1, interrupted: true, spokenText: "one two", unsaidText: "three" })).status, 204);
+  assert.equal((await post("/sink", { event: "done", id: "a2", seq: 0, interrupted: true })).status, 204);
+  assert.deepEqual(bus.published, [
+    { type: "voice.done", data: { id: "a1", seq: 1, sink: "dashboard", interrupted: true, spokenText: "one two", unsaidText: "three" } },
+    { type: "voice.done", data: { id: "a2", seq: 0, sink: "dashboard", interrupted: true } },
+  ]);
+});
+
+// @spec DASH-SINK-007
+test("POST /sink forwards a final done", async () => {
+  bus.clear();
+  assert.equal((await post("/sink", { event: "done", id: "a1", seq: 3, final: true })).status, 204);
+  assert.deepEqual(bus.published, [{ type: "voice.done", data: { id: "a1", seq: 3, sink: "dashboard", final: true } }]);
 });
 
 // @spec DASH-SINK-003

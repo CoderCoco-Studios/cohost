@@ -78,9 +78,14 @@ export class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
   played = false;
+  /** Set by `pause()`: the page stopped the clip. */
+  paused = false;
+  /** Playback position and length in seconds, for the estimate of a stopped clip's spoken part. */
+  currentTime = 0;
+  duration = 10;
   constructor(public src: string) { FakeAudio.instances.push(this); }
   play(): Promise<void> { if (FakeAudio.refuse) return Promise.reject(new DOMException("blocked", "NotAllowedError")); this.played = true; this.onplay?.(); return Promise.resolve(); }
-  pause(): void { /* nothing to stop */ }
+  pause(): void { this.paused = true; }
   end(): void { this.onended?.(); }
   fail(): void { this.onerror?.(); }
 }

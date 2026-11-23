@@ -42,6 +42,6 @@ export function createRuntime(deps: RuntimeDeps = {}): Runtime {
   const now = deps.now ?? Date.now;
   const feed = createFeed({ url: deps.wsUrl ?? feedUrl(), createSocket: deps.createSocket, setTimeout: deps.setTimeout, clearTimeout: deps.clearTimeout, now });
   const theme = createTheme({ storage: local, root: deps.themeRoot });
-  const audio = createAudio({ feed, sink: (e, id) => api.sink(e, id), createAudio: deps.createAudio, enabled: deps.sink });
+  const audio = createAudio({ feed, sink: (report, opts) => api.sink(report, opts), createAudio: deps.createAudio, enabled: deps.sink, setTimeout: deps.setTimeout, clearTimeout: deps.clearTimeout });
   return { access, api, feed, theme, audio, now };
 }

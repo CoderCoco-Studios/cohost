@@ -306,7 +306,7 @@ test("the sink view shows the brand, the audio state and a one-line status, with
 });
 
 // @spec DASH-UI-012, DASH-UI-011
-test("on the sink page an utterance is fetched from /audio/<id>.wav and reported through POST /sink only", async () => {
+test("on the sink page an utterance is fetched from /audio/<id>-<seq>.wav and reported through POST /sink only", async () => {
   const { FakeAudio } = await import("./helpers/fakes");
   FakeAudio.reset();
   const app = makeApp({ sink: true, createAudio: (src) => new FakeAudio(src) as unknown as HTMLAudioElement });
@@ -314,9 +314,9 @@ test("on the sink page an utterance is fetched from /audio/<id>.wav and reported
   location.hash = "";
   renderApp(<App sink />, app);
   act(() => { app.socket().open(); });
-  frame(app, { id: "3-0", type: "voice.utterance", ts: 1, source: "voice", data: { id: "u9" } });
+  frame(app, { id: "3-0", type: "voice.utterance", ts: 1, source: "voice", data: { id: "u9", seq: 0 } });
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  assert.equal(FakeAudio.instances[0]!.src, "/audio/u9.wav");
+  assert.equal(FakeAudio.instances[0]!.src, "/audio/u9-0.wav");
   assert.deepEqual(app.fetch.calls.map((c) => `${c.method} ${c.path}`), ["POST /sink"]);
 });
 

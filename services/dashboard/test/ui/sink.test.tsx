@@ -70,16 +70,16 @@ test("whatever the feed carries, the sink page makes no request of its own", asy
 });
 
 // @spec DASH-UI-011, DASH-UI-012
-test("a live utterance is played from /audio/<id>.wav, posts playing then done to /sink, and shows Playing meanwhile", async () => {
+test("a live utterance is played from /audio/<id>-<seq>.wav, posts playing then done to /sink, and shows Playing meanwhile", async () => {
   const { app } = boot();
   utterance(app, "u1");
   await tick();
-  assert.equal(FakeAudio.instances[0]!.src, "/audio/u1.wav");
+  assert.equal(FakeAudio.instances[0]!.src, "/audio/u1-0.wav");
   assert.equal(line(), "Playing");
   act(() => FakeAudio.instances[0]!.end());
   await tick();
   assert.equal(line(), "Connected");
-  assert.deepEqual(sinkCalls(app), [{ event: "playing", id: "u1" }, { event: "done", id: "u1" }]);
+  assert.deepEqual(sinkCalls(app), [{ event: "playing", id: "u1", seq: 0 }, { event: "done", id: "u1", seq: 0 }]);
   assert.deepEqual(app.fetch.calls.map((c) => `${c.method} ${c.path}`), ["POST /sink", "POST /sink"]);
 });
 
@@ -92,7 +92,7 @@ test("lines that arrive while one plays wait their turn, and the status says how
   assert.equal(line(), "Playing · 2 waiting");
   act(() => FakeAudio.instances[0]!.end());
   await tick();
-  assert.equal(FakeAudio.instances[1]!.src, "/audio/u2.wav");
+  assert.equal(FakeAudio.instances[1]!.src, "/audio/u2-0.wav");
   assert.equal(line(), "Playing · 1 waiting");
 });
 
@@ -102,29 +102,29 @@ test("a replayed utterance and a repeated event id are never played again", asyn
   utterance(app, "old", { replay: true });
   await tick();
   assert.equal(FakeAudio.instances.length, 0);
-  act(() => { app.socket().message({ id: "dup-0", type: "voice.utterance", ts: 1, source: "t", data: { id: "d1" } }); app.socket().message({ id: "dup-0", type: "voice.utterance", ts: 1, source: "t", data: { id: "d1" } }); });
+  act(() => { app.socket().message({ id: "dup-0", type: "voice.utterance", ts: 1, source: "t", data: { id: "d1", seq: 0 } }); app.socket().message({ id: "dup-0", type: "voice.utterance", ts: 1, source: "t", data: { id: "d1", seq: 0 } }); });
   await tick();
   assert.equal(FakeAudio.instances.length, 1);
-  assert.deepEqual(sinkCalls(app), [{ event: "playing", id: "d1" }]);
+  assert.deepEqual(sinkCalls(app), [{ event: "playing", id: "d1", seq: 0 }]);
 });
 
-// @spec DASH-UI-022, DASH-UI-012
-test("when the browser refuses playback the line is reported done once, the view says audio is off with a button, and the queue plays after it is turned on", async () => {
+// @spec DASH-UI-022, DASH-UI-052, DASH-UI-012
+test("when the browser refuses playback nothing is posted for the never-opened line, the view says audio is off with a button, and the queue plays after it is turned on", async () => {
   const user = userEvent.setup();
   const { app } = boot();
   FakeAudio.refuse = true;
   utterance(app, "u1"); utterance(app, "u2");
   await tick();
-  assert.deepEqual(sinkCalls(app), [{ event: "done", id: "u1" }]);
+  assert.deepEqual(sinkCalls(app), [], "clause 0 was refused, so the line was never open and nothing is posted (DASH-UI-052)");
   assert.match(document.body.textContent!, /Audio off/);
   assert.match(line(), /1 waiting/);
   assert.match(document.body.textContent!, /turn audio on to play the lines that are waiting/i);
   FakeAudio.refuse = false;
   await user.click(screen.getByRole("button", { name: "Turn audio on" }));
   await tick();
-  await waitFor(() => assert.equal(FakeAudio.instances.at(-1)!.src, "/audio/u2.wav"));
+  await waitFor(() => assert.equal(FakeAudio.instances.at(-1)!.src, "/audio/u2-0.wav"));
   assert.match(document.body.textContent!, /Audio on/);
-  assert.ok(sinkCalls(app).some((c) => c.event === "playing" && c.id === "u2"));
+  assert.ok(sinkCalls(app).some((c) => c.event === "playing" && c.id === "u2" && c.seq === 0));
   assert.equal(screen.queryAllByRole("button").length, 0);
 });
 
@@ -135,8 +135,8 @@ test("an audio error ends the line with done and the next one plays", async () =
   await tick();
   act(() => FakeAudio.instances[0]!.fail());
   await tick();
-  assert.deepEqual(sinkCalls(app).slice(0, 2), [{ event: "playing", id: "u1" }, { event: "done", id: "u1" }]);
-  assert.equal(FakeAudio.instances[1]!.src, "/audio/u2.wav");
+  assert.deepEqual(sinkCalls(app).slice(0, 2), [{ event: "playing", id: "u1", seq: 0 }, { event: "done", id: "u1", seq: 0 }]);
+  assert.equal(FakeAudio.instances[1]!.src, "/audio/u2-0.wav");
 });
 
 // @spec DASH-UI-011, DASH-A11Y-004
@@ -144,4 +144,35 @@ test("the status line is a polite status region, and the audio state is text bes
   boot();
   assert.equal(screen.getByRole("status").tagName, "P");
   assert.equal(document.querySelector(".sink-audio svg")!.getAttribute("aria-hidden"), "true");
+});
+
+// @spec DASH-UI-011, DASH-UI-012, DASH-UI-043, DASH-UI-046
+test("a streamed line plays clause by clause from /audio/<id>-<seq>.wav, posting each clause's playing and done with its seq, and makes no other request", async () => {
+  const { app } = boot();
+  frame(app, "voice.utterance", { id: "L", seq: 0, text: "A.", durationMs: 10, more: true });
+  frame(app, "voice.utterance", { id: "L", seq: 1, text: "B.", durationMs: 10 });
+  frame(app, "brain.clause", { id: "L", seq: 2, text: "", last: true, through: 1 });
+  await tick();
+  act(() => FakeAudio.instances[0]!.end());
+  await tick();
+  act(() => FakeAudio.instances[1]!.end());
+  await tick();
+  assert.deepEqual(FakeAudio.instances.map((a) => a.src), ["/audio/L-0.wav", "/audio/L-1.wav"]);
+  assert.deepEqual(sinkCalls(app), [
+    { event: "playing", id: "L", seq: 0 }, { event: "done", id: "L", seq: 0 },
+    { event: "playing", id: "L", seq: 1 }, { event: "done", id: "L", seq: 1 },
+  ]);
+  assert.deepEqual(app.fetch.calls.map((c) => `${c.method} ${c.path}`), ["POST /sink", "POST /sink", "POST /sink", "POST /sink"]);
+});
+
+// @spec DASH-UI-011, DASH-UI-047, DASH-UI-048
+test("a live voice.stop on the sink page cuts the clip and posts the interrupted done to /sink", async () => {
+  const { app } = boot();
+  frame(app, "voice.utterance", { id: "L", seq: 0, text: "one two three four", durationMs: 10, more: true });
+  await tick();
+  FakeAudio.instances[0]!.currentTime = 5;
+  frame(app, "voice.stop", { reason: "barge-in" });
+  await tick();
+  assert.equal(FakeAudio.instances[0]!.paused, true);
+  assert.deepEqual(sinkCalls(app).at(-1), { event: "done", id: "L", seq: 0, interrupted: true, spokenText: "one two", unsaidText: "three four" });
 });

@@ -103,6 +103,8 @@ The dashboard has a second face for streaming: the same address with `?sink=1` o
 
 On another PC, load it from the LAN port with the AI PC's **IP address**, `http://192.168.1.20:3001/?sink=1`. To load it by the computer's name (`http://streampc:3001/?sink=1`), add the name to `dashboard.allowed_hosts` in `config/config.yaml` and restart the dashboard (it reads the list when it starts); a name that is not listed is refused outright, because a page reached by a name could be a web page you visited acting as the dashboard, and an IP address cannot be. On the same PC, `localhost` is fine.
 
+A streamed reply plays clause by clause in this browser, and the feed shows it as one **Co-host** row that grows as the clauses arrive, with one **Voice** row per clause. A `voice.stop` (a barge-in, for example) cuts the clip that is playing and reports how much was said; a browser that refuses to start a clip turns **Audio on** back to **Audio off** and says so.
+
 ## Keyboard shortcuts
 
 Press `?` anywhere to see this list.

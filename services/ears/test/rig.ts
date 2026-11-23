@@ -140,6 +140,8 @@ export interface FakeSession {
   finishCalls: number;
   /** The server's current whole hypothesis changes (EARS-PART-016). */
   hypothesis(text: string): void;
+  /** A semantic end of turn is signalled (EARS-KYU-008): the engine calls the session's `onEndOfTurn` callback. */
+  endOfTurn(): void;
   /** The connection drops or the server reports an error: `failed` settles. */
   fail(err?: Error): void;
   /** The concatenation of every pushed buffer. */
@@ -176,11 +178,13 @@ export function fakeStreaming(o: FakeStreamingOptions = {}) {
       });
       let last = "";
       let cb: ((t: string) => void) | undefined;
+      let eot: (() => void) | undefined;
       let signalFailed!: (e: Error) => void;
       const failed = new Promise<Error>((res) => { signalFailed = res; });
       const s: FakeSession = {
         n, pushed: [], pushAt: [], openedAt: Date.now(), aborted: false, finishCalls: 0,
         hypothesis: (t) => { last = t; cb?.(t); },
+        endOfTurn: () => eot?.(),
         fail: (e = new Error("connection dropped")) => signalFailed(e),
         audio: () => Buffer.concat(s.pushed),
       };
@@ -188,7 +192,7 @@ export function fakeStreaming(o: FakeStreamingOptions = {}) {
       const session: SttSession = {
         push: (pcm) => { const index = s.pushed.length; s.pushed.push(Buffer.from(pcm)); s.pushAt.push(Date.now()); return o.push?.(n, index); },
         onHypothesis: (c) => { cb = c; },
-        onEndOfTurn: () => {},
+        onEndOfTurn: (c) => { eot = c; },
         finish: async () => { s.finishCalls++; return o.finish ? o.finish(s) : last; },
         abort: () => { s.aborted = true; },
         failed,

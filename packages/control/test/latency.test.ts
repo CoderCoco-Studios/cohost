@@ -376,3 +376,12 @@ test("a streamed line's llm stage uses the llmEndedAt the brain.say carries; tts
   assert.equal(row(slow.text(), "tts").p50, "850", "brain.say (T+2450) to the clause-0 utterance (T+3300)");
   assert.equal(row(slow.text(), "sink").p50, "600", "clause-0 utterance to clause-0 playing");
 });
+
+// @spec CTRL-LAT-017
+test("a brain.say with toolStartedAt and no toolEndedAt gives no tool stage, and llm is llmStartedAt to llmEndedAt", async () => {
+  const h = rig(line("t", { timing: { toolStartedAt: T + 1500 } }));
+  await executeCli(["latency"], h.w);
+  assert.equal(row(h.text(), "tool").n, "0", "no tool sample without a toolEndedAt");
+  assert.equal(row(h.text(), "llm").n, "1");
+  assert.equal(row(h.text(), "llm").p50, "1000", "llmEndedAt - llmStartedAt, the tool wait kept inside it");
+});

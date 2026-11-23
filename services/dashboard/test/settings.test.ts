@@ -241,6 +241,15 @@ test("restart lists units in manifest order that read the section and are runnin
   assert.deepEqual(((await r2.json()) as any).restart, []);
 });
 
+// @spec MOD-CFG-015, MOD-MAN-002
+test("a saved tools section restarts exactly the running units that read it (salience, cortex and tools), in manifest order", async () => {
+  const running = ["tools", "cortex", "salience", "memory", "affect", "voice"].map((service) => ({ service, status: "running" }));
+  const t = await boot({ stack: { services: running } });
+  const r = await t.put("/config/tools", { etag: sha(t.text()), values: { timeout_ms: 20000 } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(((await r.json()) as any).restart, ["salience", "cortex", "tools"]);
+});
+
 // @spec MOD-CFG-015
 test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
   const t = await boot();

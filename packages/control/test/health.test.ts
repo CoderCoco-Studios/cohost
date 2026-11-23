@@ -114,6 +114,8 @@ test("snapshot lists every known service, unseen ones as unknown", () => {
   tracker.ingest(hb({ service: "cortex", deps: { llm: "ok" } }));
   tracker.ingest(hb({ service: "extra", deps: {} }));
   const snap = tracker.snapshot();
+  assert.equal(appServiceIds().length, 12, "the twelve app services, tools among them");
+  assert.ok(snap.some((s) => s.service === "tools" && s.state === "unknown"), "an unseen tools service is unknown");
   assert.equal(snap.length, appServiceIds().length + 1);
   const unknown = snap.filter((s) => s.state === "unknown");
   assert.equal(unknown.length, appServiceIds().length - 1);

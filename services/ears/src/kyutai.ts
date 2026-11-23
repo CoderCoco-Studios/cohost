@@ -1,8 +1,9 @@
 /**
- * The `kyutai` streaming engine (EARS-KYU-*): `moshi-server` serving Kyutai STT over its ASR WebSocket, MessagePack messages.
- * The server advances only on audio, so the session keeps the stream supplied (80 ms of zero fill while frames pause), sends
- * 24 kHz float32 audio, reads each `Word` once, and flushes an utterance with silence and a `Marker`. Its semantic end of
- * turn (`Step` probabilities) is signalled to the connector source, which closes the utterance (EARS-KYU-008..013).
+ * The `kyutai` streaming engine: `moshi-server` serving Kyutai STT over its ASR WebSocket with MessagePack messages. The
+ * server advances only on audio, so the session keeps the stream supplied (80 ms of zero fill after the last frame), sends
+ * 24 kHz float32 audio, reads each `Word` once, and flushes an utterance with silence and a `Marker`. Its semantic end of turn
+ * (`Step` probabilities) is signalled to the connector source, which closes the utterance (EARS-KYU-008..013). The stt-kyutai
+ * server must run the BatchedAsr module: moshi's plain Asr never sends `Ready`.
  */
 import WebSocket from "ws";
 import { decode, encode } from "@msgpack/msgpack";
@@ -16,12 +17,13 @@ const PUBLIC_TOKEN = "public_token";
 /** The server's answer when it has no free channel for a stream (moshi-server batched_asr.rs). */
 const NO_FREE_CHANNELS = "no free channels";
 const OUT_RATE = 24000;
-/** Silence fill: 80 ms of zeros whenever no frame has arrived for 80 ms (EARS-KYU-003). */
+/** Silence fill: 80 ms of zeros after 80 ms without a frame, then every 80 ms while the stream is open (EARS-KYU-003). */
 const FILL_MS = 80;
 const FILL_SAMPLES = (OUT_RATE * FILL_MS) / 1000;
 /** The silence the server must have received after the last real audio before the Marker (EARS-KYU-006). */
 const FLUSH_SILENCE_SAMPLES = (OUT_RATE * 600) / 1000;
-
+/** The flush bound is this far under `ears.stt_timeout_ms`, so the adapter gives up before the router does. */
+const FLUSH_MARGIN_MS = 20;
 /** A `Step` probability is the third of four: the pause of 2 s. */
 const EOT_PROBABILITY_INDEX = 2;
 
@@ -44,19 +46,19 @@ function toFloat24k(pcm16k: Buffer): number[] {
   return Array.from(out);
 }
 
+/** The end-of-turn rule the session applies; absent when the engine does not signal one. */
+type EotOptions = { threshold: number };
+
 // @spec EARS-KYU-001, EARS-KYU-002, EARS-KYU-003, EARS-KYU-004, EARS-KYU-005, EARS-KYU-006, EARS-KYU-007, EARS-KYU-008, EARS-KYU-009, EARS-KYU-013, EARS-KYU-014
 /** The `kyutai` engine: a session per utterance, no readiness probe (the server has none on this route). */
 export function createKyutaiEngine(cfg: EarsConfig): StreamingSttEngine {
   const base = cfg.kyutai.url.replace(/\/+$/, "");
   const key = cfg.kyutai.api_key === "" ? PUBLIC_TOKEN : cfg.kyutai.api_key;
-  const eot = {
-    // @spec EARS-KYU-008, EARS-KYU-013: blank is off
-    on: cfg.kyutai.end_of_turn === "on",
-    threshold: cfg.kyutai.end_of_turn_threshold,
-    // @spec EARS-KYU-009: never under the gap engine, where no frame is classified as speech
-    gap: cfg.vad.engine === "gap",
-  };
-  const bound = cfg.stt_timeout_ms;
+  // @spec EARS-KYU-008, EARS-KYU-013: blank is off; @spec EARS-KYU-009: never under the gap engine, where no frame is classified as speech
+  const eot: EotOptions | undefined = cfg.kyutai.end_of_turn === "on" && cfg.vad.engine !== "gap"
+    ? { threshold: cfg.kyutai.end_of_turn_threshold }
+    : undefined;
+  const bound = Math.max(1, cfg.stt_timeout_ms - FLUSH_MARGIN_MS);
   let host: string | undefined;
   try { host = new URL(base).host; } catch { host = undefined; }
 
@@ -64,20 +66,17 @@ export function createKyutaiEngine(cfg: EarsConfig): StreamingSttEngine {
     kind: "streaming",
     name: "kyutai",
     ...(host === undefined ? {} : { destination: host }),
-    open: ({ signal }) => openSession(wsUrl(base, PATH), key, bound, eot.on && !eot.gap ? eot : undefined, signal),
+    open: ({ signal }) => openSession(wsUrl(base, PATH), key, bound, eot, signal),
   };
 }
 
-/** The end-of-turn rule the session applies; absent when the engine does not signal one. */
-type EotOptions = { threshold: number };
-
-// @spec EARS-KYU-001, EARS-KYU-014, EARS-SES-009
 /** Connects with the key header and waits for `Ready`. The no-free-channel answer is a capacity refusal; any other failure is an outage. */
 function openSession(url: string, key: string, bound: number, eot: EotOptions | undefined, signal: AbortSignal): Promise<SttSession> {
   return new Promise<SttSession>((resolve, reject) => {
     if (signal.aborted) return reject(signal.reason ?? new Error("kyutai open aborted"));
     const ws = new WebSocket(url, { headers: { [AUTH_HEADER]: key } });
     let settled = false;
+    const onAbort = (): void => fail(signal.reason instanceof Error ? signal.reason : new Error("kyutai open aborted"));
     const fail = (err: Error): void => {
       if (settled) return;
       settled = true;
@@ -85,7 +84,6 @@ function openSession(url: string, key: string, bound: number, eot: EotOptions | 
       ws.terminate();
       reject(err);
     };
-    const onAbort = (): void => fail(signal.reason instanceof Error ? signal.reason : new Error("kyutai open aborted"));
     signal.addEventListener("abort", onAbort, { once: true });
     ws.on("error", (err) => fail(err));
     ws.on("close", () => fail(new Error("kyutai connection closed before Ready")));
@@ -116,9 +114,8 @@ class KyutaiSession implements SttSession {
   private eotFired = false;
   /** Samples of zeros sent since the last real audio, fill included. */
   private zerosSinceReal = 0;
-  /** Fill starts 80 ms after Ready, as if a frame had arrived at Ready. */
-  private lastFrameAt = Date.now();
-  private fillTimer: ReturnType<typeof setInterval>;
+  /** The fill timer: armed at Ready and re-armed by every frame, so fill starts 80 ms after the last frame. */
+  private fillTimer: ReturnType<typeof setTimeout> | undefined;
   private markerId = 0;
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private resolveFinal: ((text: string) => void) | undefined;
@@ -129,34 +126,31 @@ class KyutaiSession implements SttSession {
     ws.on("message", (data) => this.onMessage(data));
     ws.on("error", (err) => this.fail(err));
     ws.on("close", () => this.fail(new Error("kyutai connection closed")));
-    // the fill timer: the stream is supplied while the session is open and through the flush
-    this.fillTimer = setInterval(() => this.tick(), FILL_MS);
-    this.fillTimer.unref();
+    this.armFill();
   }
 
-  // @spec EARS-KYU-002, EARS-KYU-004
   push(pcm: Buffer): void {
     if (this.state !== "live" || this.ws.readyState !== WebSocket.OPEN) return;
-    this.lastFrameAt = Date.now();
     this.send(toFloat24k(pcm));
     this.zerosSinceReal = 0;
+    this.armFill();
   }
 
   onHypothesis(cb: (text: string) => void): void { this.hypothesisCb = cb; }
   onEndOfTurn(cb: () => void): void { this.endCb = cb; }
 
-  // @spec EARS-KYU-006, EARS-KYU-007
   finish(): Promise<string> {
     if (this.state !== "live") return Promise.reject(new Error("kyutai session is not open for finish()"));
     this.state = "flushing";
+    this.armFill();
     const final = new Promise<string>((resolve, reject) => { this.resolveFinal = resolve; this.rejectFinal = reject; });
     const shortfall = Math.max(0, FLUSH_SILENCE_SAMPLES - this.zerosSinceReal);
     if (shortfall > 0) this.sendSilence(shortfall);
     this.markerId += 1;
     this.sendMessage({ type: "Marker", id: this.markerId });
     this.flushTimer = setTimeout(() => {
-      // a Marker never echoed is not a failure: the words so far are the final (EARS-KYU-007)
-      this.finishWith(this.hypothesis);
+      // a Marker never echoed is not a failure: the words so far are the final (EARS-KYU-007); the socket is dropped
+      this.end(this.hypothesis, true);
     }, this.bound);
     return final;
   }
@@ -174,8 +168,8 @@ class KyutaiSession implements SttSession {
     const ev = parse(data);
     if (!ev) return;
     switch (ev.type) {
-      // @spec EARS-KYU-005
       case "Word": {
+        // each Word is appended once; a word is never revised (EARS-KYU-005)
         const text = typeof ev.text === "string" ? ev.text : "";
         this.hypothesis = this.hypothesis === "" ? text : `${this.hypothesis} ${text}`;
         this.wordSeen = true;
@@ -184,20 +178,18 @@ class KyutaiSession implements SttSession {
       }
       case "Step":
         return this.onStep(ev.prs);
-      // @spec EARS-KYU-006
       case "Marker":
-        if (this.state === "flushing" && ev.id === this.markerId) this.finishWith(this.hypothesis);
+        // the echo closes the flush; the close of the socket is then expected (EARS-KYU-006)
+        if (this.state === "flushing" && ev.id === this.markerId) this.end(this.hypothesis, false);
         return;
-      // @spec EARS-KYU-014
       case "Error":
         this.fail(new Error(`kyutai: ${String(ev.message ?? "server error")}`));
         return;
       default:
-        return; // EndWord and anything else: ignored
+        return; // EndWord and anything else: ignored (EARS-KYU-005)
     }
   }
 
-  // @spec EARS-KYU-008, EARS-KYU-009
   private onStep(prs: unknown): void {
     if (!this.eot || this.state !== "live" || this.eotFired || !this.wordSeen || !Array.isArray(prs)) return;
     const p = Number(prs[EOT_PROBABILITY_INDEX]);
@@ -206,11 +198,14 @@ class KyutaiSession implements SttSession {
     this.endCb?.();
   }
 
-  // @spec EARS-KYU-003
-  private tick(): void {
-    if (this.state === "ended") return;
-    // the flush keeps the silence flowing until the Marker is echoed (EARS-KYU-006)
-    if (this.state === "flushing" || Date.now() - this.lastFrameAt >= FILL_MS) this.sendSilence(FILL_SAMPLES);
+  /** Arms the fill: 80 ms after the last frame, then every 80 ms while the stream is open or flushing (EARS-KYU-003). */
+  private armFill(): void {
+    clearTimeout(this.fillTimer);
+    this.fillTimer = setTimeout(() => {
+      if (this.state === "ended") return;
+      this.sendSilence(FILL_SAMPLES);
+      this.armFill();
+    }, FILL_MS);
   }
 
   private sendSilence(samples: number): void {
@@ -224,24 +219,26 @@ class KyutaiSession implements SttSession {
 
   private sendMessage(msg: Record<string, unknown>): void {
     if (this.ws.readyState !== WebSocket.OPEN) return;
-    // float32 on the wire: the server reads Vec<f32> and a float64 array would not be taken as one
+    // Audio samples are encoded as msgpack float32 (forceFloat32), matching moshi's f32 sample type; whether the server
+    // would also take float64 numbers was not verified.
     this.ws.send(encode(msg, { forceFloat32: true }), { binary: true });
   }
 
-  private finishWith(text: string): void {
+  /** The final is settled; `dropSocket` terminates the stream on a flush timeout, otherwise it closes after the echo. */
+  private end(text: string, dropSocket: boolean): void {
     if (this.state === "ended") return;
     this.state = "ended";
     this.clearTimers();
+    if (dropSocket) this.ws.terminate();
+    else this.ws.close();
     this.resolveFinal?.(text);
-    this.ws.close();
   }
 
   private clearTimers(): void {
-    clearInterval(this.fillTimer);
+    clearTimeout(this.fillTimer);
     clearTimeout(this.flushTimer);
   }
 
-  // @spec EARS-KYU-014
   private fail(err: Error): void {
     if (this.state === "ended") return;
     this.state = "ended";

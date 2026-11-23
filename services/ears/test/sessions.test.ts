@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { event, waitFor } from "@cohost/testing";
 import { SttCapacityError } from "../src/engines.js";
+import { createKyutaiEngine } from "../src/kyutai.js";
+import { earsCfg, kyutaiServer, until, word } from "./stt-servers.js";
 import { SILENCE, SPEECH, boot, connectorOffer, fakeStreaming, fakeStt, fakeVad, frame, resetSeq, sleep } from "./rig.js";
 
 // The streaming session lifecycle (EARS-SES-*) against the scripted `fakeStreaming` engine of rig.ts, with the real ears service
@@ -338,4 +340,25 @@ test("a connect still pending when its source stops is aborted, and one that nev
     await waitFor(() => timedOut[0]!.aborted, "aborted at the bound", 1000);
     await waitFor(() => r2.lastHeartbeat()?.deps.stt === "down" && /session did not connect after 100 ms/.test(r2.lastHeartbeat()?.detail ?? ""), "outage recorded", 2000);
   });
+});
+
+// @spec EARS-KYU-007
+test("kyutai: an unechoed Marker is not a failure: speech.heard carries the words so far, deps.stt stays ok, the batch engine is not called", async () => {
+  const srv = await kyutaiServer({ echo: false });
+  const stt = fakeStt(() => "from the batch engine");
+  const ears = cfg({ stt_engine: "kyutai", stt_timeout_ms: 300, kyutai: { url: srv.url } });
+  resetSeq();
+  const r = await boot(ears, { setup: reg, streaming: createKyutaiEngine(earsCfg(ears)) });
+  try {
+    await sleep(60);
+    await say(r);
+    await until(() => srv.messages.length > 0, "the first audio at the server");
+    srv.send(word("so"));
+    srv.send(word("far", 0.3));
+    await waitFor(() => r.heard().length === 1, "speech.heard", 2000);
+    assert.equal(r.heard()[0]!.text, "so far");
+    assert.equal(stt.calls.length, 0, "the batch engine is not used");
+    assert.ok(neverDown(r), "a flush timeout leaves deps.stt alone");
+    assert.equal(srv.markers().length, 1, "the Marker was sent and never echoed");
+  } finally { await r.stop(); stt.restore(); await srv.close(); }
 });

@@ -353,7 +353,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
         s.session = session;
         s.state = "starting";
         session.onHypothesis((t) => hypothesis(o, t));
-        // @spec EARS-KYU-010, EARS-KYU-011, EARS-KYU-012: the signal closes this utterance only while it is still open
+        // an end-of-turn signal closes this utterance only while it is still open; a stale one does nothing
         session.onEndOfTurn(() => {
           if (o.closed || sp.open !== o) return;
           close(sp, true);

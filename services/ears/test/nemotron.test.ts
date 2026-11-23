@@ -88,52 +88,18 @@ test("each push is one binary 16 kHz PCM16 frame of the same bytes and length, w
 });
 
 // @spec EARS-NEM-004
-test("deltas build the hypothesis: a suffix is appended, a delta that starts with the hypothesis replaces it", async () => {
+test("deltas never produce a partial: no hypothesis callback, however the deltas read", async () => {
   const srv = await nemotronServer();
   try {
     const s = await connect(srv);
     const seen: string[] = [];
     s.onHypothesis((t) => seen.push(t));
     const delta = (d: string) => srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: d });
-    delta("hello");              // the first transcript: the whole text
-    delta(" wor");              // a suffix of "hello wor"
-    delta("ld");                // a suffix of "hello world"
-    await until(() => seen.length === 3, "three hypotheses");
-    assert.deepEqual(seen, ["hello", "hello wor", "hello world"]);
-    delta("hello world!");      // a corrected whole transcript: it starts with the hypothesis "hello world"
-    await until(() => seen.length === 4, "the correction");
-    assert.equal(seen[3], "hello world!");
-    s.abort();
-  } finally { await srv.close(); }
-});
-
-// @spec EARS-NEM-004
-test("a corrected whole transcript that does not start with the hypothesis is appended, as the server's suffix", async () => {
-  const srv = await nemotronServer();
-  try {
-    const s = await connect(srv);
-    const seen: string[] = [];
-    s.onHypothesis((t) => seen.push(t));
-    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "turn on" });
-    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: " the lamp" });
-    await until(() => seen.length === 2, "two hypotheses");
-    assert.deepEqual(seen, ["turn on", "turn on the lamp"]);
-    s.abort();
-  } finally { await srv.close(); }
-});
-
-// @spec EARS-NEM-004
-test("known limit: a suffix that begins with the whole hypothesis is read as a correction and replaces it", async () => {
-  const srv = await nemotronServer();
-  try {
-    const s = await connect(srv);
-    const seen: string[] = [];
-    s.onHypothesis((t) => seen.push(t));
-    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "no" });
-    // the server's suffix for the transcript "no" + "nope" (no space): it begins with "no", so it is read as a whole text
-    srv.send({ type: "conversation.item.input_audio_transcription.delta", delta: "nope" });
-    await until(() => seen.length === 2, "two hypotheses");
-    assert.deepEqual(seen, ["no", "nope"], "the limit: the suffix replaced the hypothesis instead of extending it");
+    delta("hello");
+    delta(" wor");
+    delta("hello there");
+    await sleep(60);
+    assert.deepEqual(seen, []);
     s.abort();
   } finally { await srv.close(); }
 });
@@ -152,7 +118,7 @@ test("finish() sends input_audio_buffer.commit, resolves with the completed tran
 });
 
 // @spec EARS-NEM-005
-test("the final is the completed event's transcript, not the last hypothesis", async () => {
+test("a delta before the final does not change the final: the completed transcript is the final", async () => {
   const srv = await nemotronServer({ transcript: () => "from completed" });
   try {
     const s = await connect(srv);

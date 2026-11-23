@@ -14,7 +14,11 @@ fn quiet(n_ms: usize) -> Vec<i16> {
     vec![0; ms(n_ms)]
 }
 fn cutter(silence_ms: u32, max_clip_ms: u32) -> ClipCutter {
-    ClipCutter::new(ClipConfig { silence_ms, max_clip_ms, silence_level: 500 })
+    ClipCutter::new(ClipConfig {
+        silence_ms,
+        max_clip_ms,
+        silence_level: 500,
+    })
 }
 fn feed(c: &mut ClipCutter, pcm: &[i16], chunk: usize) -> Vec<Vec<i16>> {
     pcm.chunks(chunk).flat_map(|p| c.push(p)).collect()
@@ -86,7 +90,10 @@ fn the_cut_does_not_depend_on_how_the_feed_is_chunked() {
 #[test]
 fn the_defaults_are_700_ms_15_s_and_level_500() {
     let d = ClipConfig::default();
-    assert_eq!((d.silence_ms, d.max_clip_ms, d.silence_level), (700, 15_000, 500));
+    assert_eq!(
+        (d.silence_ms, d.max_clip_ms, d.silence_level),
+        (700, 15_000, 500)
+    );
 }
 
 // @spec EARS-SRC-017

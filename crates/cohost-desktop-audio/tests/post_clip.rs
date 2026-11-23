@@ -29,7 +29,8 @@ async fn serve_once(status: u16) -> (String, tokio::task::JoinHandle<(String, Ve
             }
             assert!(n > 0, "connection closed early");
         };
-        let reply = format!("HTTP/1.1 {status} X\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}");
+        let reply =
+            format!("HTTP/1.1 {status} X\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}");
         s.write_all(reply.as_bytes()).await.unwrap();
         (head, body)
     });
@@ -43,7 +44,11 @@ async fn posts_s16le_audio_l16_with_rate_and_channels_to_the_url() {
     post_clip(&url, None, &[1, -2, 300]).await.unwrap();
     let (head, body) = srv.await.unwrap();
     assert!(head.starts_with("post /audio?source=desktop "), "{head}");
-    let ct = head.lines().find_map(|l| l.strip_prefix("content-type:")).unwrap().replace(' ', "");
+    let ct = head
+        .lines()
+        .find_map(|l| l.strip_prefix("content-type:"))
+        .unwrap()
+        .replace(' ', "");
     assert_eq!(ct, "audio/l16;rate=16000;channels=1");
     assert_eq!(body, [1, 0, 0xfe, 0xff, 0x2c, 0x01]);
     assert!(!head.contains("authorization:"));
@@ -79,18 +84,40 @@ fn the_default_url_is_ears_loopback_listener_tagged_desktop() {
 // @spec EARS-SRC-021
 #[test]
 fn the_flag_wins_over_the_environment_and_an_empty_value_counts_as_unset() {
-    assert_eq!(resolve_token(Some("a".into()), Some("b".into())).as_deref(), Some("a"));
+    assert_eq!(
+        resolve_token(Some("a".into()), Some("b".into())).as_deref(),
+        Some("a")
+    );
     assert_eq!(resolve_token(None, Some("b".into())).as_deref(), Some("b"));
-    assert_eq!(resolve_token(Some(String::new()), Some("b".into())).as_deref(), Some("b"));
-    assert_eq!(resolve_token(Some("a".into()), Some(String::new())).as_deref(), Some("a"));
-    assert_eq!(resolve_token(Some(String::new()), Some(String::new())), None);
+    assert_eq!(
+        resolve_token(Some(String::new()), Some("b".into())).as_deref(),
+        Some("b")
+    );
+    assert_eq!(
+        resolve_token(Some("a".into()), Some(String::new())).as_deref(),
+        Some("a")
+    );
+    assert_eq!(
+        resolve_token(Some(String::new()), Some(String::new())),
+        None
+    );
     assert_eq!(resolve_token(None, None), None);
 }
 
 // @spec EARS-SRC-020
 #[tokio::test]
 async fn connection_failures_and_400_408_429_5xx_are_retried_other_refusals_are_dropped() {
-    for (status, retry) in [(400, true), (408, true), (429, true), (500, true), (503, true), (401, false), (404, false), (413, false), (415, false)] {
+    for (status, retry) in [
+        (400, true),
+        (408, true),
+        (429, true),
+        (500, true),
+        (503, true),
+        (401, false),
+        (404, false),
+        (413, false),
+        (415, false),
+    ] {
         let (url, srv) = serve_once(status).await;
         let err = post_clip(&url, None, &[0, 0]).await.unwrap_err();
         srv.await.unwrap();
@@ -99,7 +126,12 @@ async fn connection_failures_and_400_408_429_5xx_are_retried_other_refusals_are_
     let dead = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/audio", dead.local_addr().unwrap());
     drop(dead);
-    assert!(post_clip(&url, None, &[0, 0]).await.unwrap_err().is_retryable());
+    assert!(
+        post_clip(&url, None, &[0, 0])
+            .await
+            .unwrap_err()
+            .is_retryable()
+    );
 }
 
 // @spec EARS-SRC-020
@@ -107,7 +139,12 @@ async fn connection_failures_and_400_408_429_5xx_are_retried_other_refusals_are_
 fn retry_delay_starts_at_500_ms_doubles_stops_at_30_s_and_resets_after_a_delivery() {
     let mut b = Backoff::new();
     let ms: Vec<u128> = (0..9).map(|_| b.next_delay().as_millis()).collect();
-    assert_eq!(ms, [500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+    assert_eq!(
+        ms,
+        [
+            500, 1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000
+        ]
+    );
     b.reset();
     assert_eq!(b.next_delay(), Duration::from_millis(500));
 }
@@ -128,10 +165,22 @@ fn at_most_four_clips_wait_in_order_and_a_fifth_drops_the_oldest() {
 #[test]
 fn a_failure_is_logged_when_first_seen_and_when_it_changes_not_while_it_repeats() {
     let mut log = FailureLog::new();
-    assert!(log.observe(&PostError::Status(400)).unwrap().contains("400"));
+    assert!(
+        log.observe(&PostError::Status(400))
+            .unwrap()
+            .contains("400")
+    );
     assert_eq!(log.observe(&PostError::Status(400)), None);
-    assert!(log.observe(&PostError::Status(503)).unwrap().contains("503"));
-    assert!(log.observe(&PostError::Network("refused".into())).unwrap().contains("refused"));
+    assert!(
+        log.observe(&PostError::Status(503))
+            .unwrap()
+            .contains("503")
+    );
+    assert!(
+        log.observe(&PostError::Network("refused".into()))
+            .unwrap()
+            .contains("refused")
+    );
     log.clear();
     assert!(log.observe(&PostError::Network("refused".into())).is_some());
 }
@@ -143,6 +192,12 @@ fn a_dropped_refusal_carries_a_log_line_with_its_status() {
         Disposition::Drop(line) => assert!(line.contains("401"), "{line}"),
         Disposition::Retry => panic!("401 must be dropped"),
     }
-    assert!(matches!(disposition(&PostError::Status(400)), Disposition::Retry));
-    assert!(matches!(disposition(&PostError::Network("x".into())), Disposition::Retry));
+    assert!(matches!(
+        disposition(&PostError::Status(400)),
+        Disposition::Retry
+    ));
+    assert!(matches!(
+        disposition(&PostError::Network("x".into())),
+        Disposition::Retry
+    ));
 }

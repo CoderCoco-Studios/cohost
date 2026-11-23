@@ -22,7 +22,12 @@ struct Store {
     held: Mutex<Option<String>>,
 }
 impl RegistryStore for Store {
-    async fn write_registration(&self, _id: &str, _json: &str, _lease_ms: u64) -> Result<(), String> {
+    async fn write_registration(
+        &self,
+        _id: &str,
+        _json: &str,
+        _lease_ms: u64,
+    ) -> Result<(), String> {
         self.events.lock().unwrap().push("write".into());
         Ok(())
     }
@@ -43,8 +48,14 @@ async fn settle() {
 
 fn rig() -> (Events, Arc<Store>, Deliverer<Sender>, Registrar<Store>) {
     let events: Events = Arc::default();
-    let store = Arc::new(Store { events: events.clone(), held: Mutex::new(None) });
-    let reg = Registrar::start(store.clone(), RegistrationConfig::new(5_000, "0.1.0", "inst-1", "default sink monitor", 1));
+    let store = Arc::new(Store {
+        events: events.clone(),
+        held: Mutex::new(None),
+    });
+    let reg = Registrar::start(
+        store.clone(),
+        RegistrationConfig::new(5_000, "0.1.0", "inst-1", "default sink monitor", 1),
+    );
     let d = Deliverer::start(Arc::new(Sender(events.clone())), |_| {});
     (events, store, d, reg)
 }
@@ -55,13 +66,18 @@ fn position(events: &Events, what: &str) -> Option<usize> {
 
 // @spec EARS-SRC-022
 #[tokio::test(start_paused = true)]
-async fn an_orderly_stop_attempts_the_held_clip_before_it_deletes_the_registration_and_exits_zero() {
+async fn an_orderly_stop_attempts_the_held_clip_before_it_deletes_the_registration_and_exits_zero()
+{
     let (events, _store, d, reg) = rig();
     settle().await;
     let stopped = stop(d, reg, Some(vec![9]), StopReason::Signal).await;
     assert_eq!(stopped.exit_code, 0);
     let (sent, deleted) = (position(&events, "send 9"), position(&events, "delete"));
-    assert!(sent.is_some() && deleted.is_some() && sent < deleted, "{:?}", events.lock().unwrap());
+    assert!(
+        sent.is_some() && deleted.is_some() && sent < deleted,
+        "{:?}",
+        events.lock().unwrap()
+    );
 }
 
 // @spec EARS-SRC-022, EARS-SRC-019

@@ -26,7 +26,11 @@ fn a_constant_level_keeps_its_level_when_the_channels_agree() {
 // @spec EARS-SRC-014
 #[test]
 fn silence_stays_silence_and_overload_clamps_to_the_i16_range() {
-    assert!(to_16k_mono_i16(&vec![0.0_f32; 16_000], 16_000, 1).iter().all(|s| *s == 0));
+    assert!(
+        to_16k_mono_i16(&vec![0.0_f32; 16_000], 16_000, 1)
+            .iter()
+            .all(|s| *s == 0)
+    );
     let hot = to_16k_mono_i16(&vec![1.5_f32; 16_000], 16_000, 1);
     assert!(hot.iter().all(|s| *s == i16::MAX));
 }

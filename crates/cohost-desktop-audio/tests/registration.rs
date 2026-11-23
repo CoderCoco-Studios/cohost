@@ -3,13 +3,21 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cohost_desktop_audio::registration::{Registrar, RegistrationConfig, RegistryStore, detail_for};
+use cohost_desktop_audio::registration::{
+    Registrar, RegistrationConfig, RegistryStore, detail_for,
+};
 use cohost_desktop_audio::source::SourceChoice;
 
 #[derive(Debug, PartialEq)]
 enum Call {
-    Write { id: String, json: String, lease_ms: u64 },
-    Delete { id: String },
+    Write {
+        id: String,
+        json: String,
+        lease_ms: u64,
+    },
+    Delete {
+        id: String,
+    },
 }
 
 #[derive(Default)]
@@ -23,7 +31,11 @@ struct Fake {
 
 impl RegistryStore for Fake {
     async fn write_registration(&self, id: &str, json: &str, lease_ms: u64) -> Result<(), String> {
-        self.calls.lock().unwrap().push(Call::Write { id: id.into(), json: json.into(), lease_ms });
+        self.calls.lock().unwrap().push(Call::Write {
+            id: id.into(),
+            json: json.into(),
+            lease_ms,
+        });
         let mut failing = self.failing.lock().unwrap();
         if *failing > 0 {
             *failing -= 1;
@@ -35,19 +47,33 @@ impl RegistryStore for Fake {
         Ok(self.held.lock().unwrap().clone())
     }
     async fn delete_registration(&self, id: &str) -> Result<(), String> {
-        self.calls.lock().unwrap().push(Call::Delete { id: id.into() });
+        self.calls
+            .lock()
+            .unwrap()
+            .push(Call::Delete { id: id.into() });
         Ok(())
     }
 }
 
 impl Fake {
     fn writes(&self) -> usize {
-        self.calls.lock().unwrap().iter().filter(|c| matches!(c, Call::Write { .. })).count()
+        self.calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| matches!(c, Call::Write { .. }))
+            .count()
     }
 }
 
 fn config() -> RegistrationConfig {
-    RegistrationConfig::new(5_000, "0.1.0", "inst-1", "default sink monitor", 1_700_000_000_000)
+    RegistrationConfig::new(
+        5_000,
+        "0.1.0",
+        "inst-1",
+        "default sink monitor",
+        1_700_000_000_000,
+    )
 }
 
 async fn settle() {
@@ -64,7 +90,9 @@ async fn the_registration_carries_kind_version_instance_pid_state_and_the_device
     settle().await;
     {
         let calls = store.calls.lock().unwrap();
-        let Some(Call::Write { json, .. }) = calls.first() else { panic!("no write") };
+        let Some(Call::Write { json, .. }) = calls.first() else {
+            panic!("no write")
+        };
         let v: serde_json::Value = serde_json::from_str(json).unwrap();
         assert_eq!(v["kind"], "desktop");
         assert_eq!(v["version"], "0.1.0");
@@ -79,8 +107,12 @@ async fn the_registration_carries_kind_version_instance_pid_state_and_the_device
 
 // @spec CONN-DESK-005
 #[tokio::test(start_paused = true)]
-async fn failed_writes_retry_at_500_then_1000_ms_and_the_interval_cadence_resumes_after_a_success() {
-    let store = Arc::new(Fake { failing: Mutex::new(2), ..Fake::default() });
+async fn failed_writes_retry_at_500_then_1000_ms_and_the_interval_cadence_resumes_after_a_success()
+{
+    let store = Arc::new(Fake {
+        failing: Mutex::new(2),
+        ..Fake::default()
+    });
     let reg = Registrar::start(store.clone(), config());
     settle().await;
     assert_eq!(store.writes(), 1);
@@ -107,7 +139,9 @@ async fn registers_connector_desktop_with_an_http_audio_in_capability() {
     settle().await;
     {
         let calls = store.calls.lock().unwrap();
-        let Some(Call::Write { id, json, lease_ms }) = calls.first() else { panic!("no write: {calls:?}") };
+        let Some(Call::Write { id, json, lease_ms }) = calls.first() else {
+            panic!("no write: {calls:?}")
+        };
         assert_eq!(id, "desktop");
         let v: serde_json::Value = serde_json::from_str(json).unwrap();
         assert_eq!(v["v"], 1);
@@ -147,7 +181,12 @@ async fn an_orderly_stop_deletes_the_registration_and_writes_no_more() {
     reg.stop().await;
     {
         let calls = store.calls.lock().unwrap();
-        assert_eq!(calls.last(), Some(&Call::Delete { id: "desktop".into() }));
+        assert_eq!(
+            calls.last(),
+            Some(&Call::Delete {
+                id: "desktop".into()
+            })
+        );
     }
     let before = store.calls.lock().unwrap().len();
     tokio::time::advance(Duration::from_millis(30_000)).await;
@@ -158,9 +197,18 @@ async fn an_orderly_stop_deletes_the_registration_and_writes_no_more() {
 // @spec CONN-DESK-004
 #[test]
 fn the_detail_names_the_captured_device() {
-    assert_eq!(detail_for(&SourceChoice::DefaultMonitor), "default sink monitor");
-    assert_eq!(detail_for(&SourceChoice::Named("alsa_output.x.monitor".into())), "alsa_output.x.monitor");
-    assert_eq!(detail_for(&SourceChoice::DefaultRender), "default render device");
+    assert_eq!(
+        detail_for(&SourceChoice::DefaultMonitor),
+        "default sink monitor"
+    );
+    assert_eq!(
+        detail_for(&SourceChoice::Named("alsa_output.x.monitor".into())),
+        "alsa_output.x.monitor"
+    );
+    assert_eq!(
+        detail_for(&SourceChoice::DefaultRender),
+        "default render device"
+    );
 }
 
 // @spec CONN-DESK-004
@@ -175,7 +223,14 @@ async fn a_different_instance_under_the_key_stops_the_writes_and_the_stop_leaves
     assert_eq!(store.writes(), 1);
     assert!(reg.is_displaced());
     reg.stop().await;
-    assert!(!store.calls.lock().unwrap().iter().any(|c| matches!(c, Call::Delete { .. })));
+    assert!(
+        !store
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, Call::Delete { .. }))
+    );
 }
 
 // @spec CONN-DESK-004
@@ -189,13 +244,23 @@ async fn the_same_instance_under_the_key_keeps_the_writes_and_the_stop_deletes()
     settle().await;
     assert_eq!(store.writes(), 2);
     reg.stop().await;
-    assert!(store.calls.lock().unwrap().iter().any(|c| matches!(c, Call::Delete { .. })));
+    assert!(
+        store
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| matches!(c, Call::Delete { .. }))
+    );
 }
 
 // @spec CONN-DESK-005
 #[tokio::test(start_paused = true)]
 async fn a_different_instance_found_while_retrying_ends_the_retries() {
-    let store = Arc::new(Fake { failing: Mutex::new(5), ..Fake::default() });
+    let store = Arc::new(Fake {
+        failing: Mutex::new(5),
+        ..Fake::default()
+    });
     let reg = Registrar::start(store.clone(), config());
     settle().await;
     assert_eq!(store.writes(), 1);

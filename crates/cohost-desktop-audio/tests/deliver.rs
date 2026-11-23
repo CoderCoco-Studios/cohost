@@ -17,7 +17,12 @@ struct Fake {
 
 impl Fake {
     fn new(gate: Option<Arc<Semaphore>>, fail: Option<u16>) -> Arc<Self> {
-        Arc::new(Self { attempts: Mutex::default(), delivered: Mutex::default(), gate, fail })
+        Arc::new(Self {
+            attempts: Mutex::default(),
+            delivered: Mutex::default(),
+            gate,
+            fail,
+        })
     }
 }
 
@@ -40,7 +45,10 @@ type Logs = Arc<Mutex<Vec<String>>>;
 fn start(sender: &Arc<Fake>) -> (Deliverer<Fake>, Logs) {
     let logs: Logs = Arc::default();
     let sink = logs.clone();
-    (Deliverer::start(sender.clone(), move |line| sink.lock().unwrap().push(line)), logs)
+    (
+        Deliverer::start(sender.clone(), move |line| sink.lock().unwrap().push(line)),
+        logs,
+    )
 }
 
 /// True when the line has the number `n` as a whole word and the word `dropped` (either order).
@@ -101,7 +109,12 @@ async fn each_overflow_drop_is_logged() {
     for n in 1..=6 {
         d.enqueue(vec![n]);
     }
-    let lines = logs.lock().unwrap().iter().filter(|l| l.contains("dropped")).count();
+    let lines = logs
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|l| l.contains("dropped"))
+        .count();
     assert_eq!(lines, 2);
 }
 
@@ -128,7 +141,14 @@ async fn a_retried_400_is_logged_once_not_on_every_attempt() {
         advance(ms).await;
     }
     assert!(sender.attempts.lock().unwrap().len() >= 4);
-    assert_eq!(logs.lock().unwrap().iter().filter(|l| l.contains("400")).count(), 1);
+    assert_eq!(
+        logs.lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l.contains("400"))
+            .count(),
+        1
+    );
 }
 
 // @spec EARS-SRC-022
@@ -143,7 +163,11 @@ async fn dropped_counts_the_held_clip_whose_attempt_fails_and_every_waiting_clip
     let report = d.shutdown(Some(vec![9])).await;
     assert_eq!(report.dropped, 3);
     assert_eq!(*sender.attempts.lock().unwrap(), [vec![1], vec![9]]);
-    assert!(logs.lock().unwrap().iter().any(|l| says_dropped(l, 3)), "{:?}", logs.lock().unwrap());
+    assert!(
+        logs.lock().unwrap().iter().any(|l| says_dropped(l, 3)),
+        "{:?}",
+        logs.lock().unwrap()
+    );
 }
 
 // @spec EARS-SRC-022

@@ -1,21 +1,32 @@
 //! Choosing the capture source for the host and the `--device` value, with no audio device involved.
-use cohost_desktop_audio::source::{DeviceAction, DeviceEvent, Platform, SourceChoice, on_device_event, select_source};
+use cohost_desktop_audio::source::{
+    DeviceAction, DeviceEvent, Platform, SourceChoice, on_device_event, select_source,
+};
 
 fn avail() -> Vec<String> {
-    vec!["alsa_output.pci.analog-stereo.monitor".into(), "alsa_input.usb.mic".into()]
+    vec![
+        "alsa_output.pci.analog-stereo.monitor".into(),
+        "alsa_input.usb.mic".into(),
+    ]
 }
 
 // @spec EARS-SRC-018
 #[test]
 fn linux_without_a_device_captures_the_monitor_of_the_default_sink() {
-    assert_eq!(select_source(Platform::Linux, None, &avail()).unwrap(), SourceChoice::DefaultMonitor);
+    assert_eq!(
+        select_source(Platform::Linux, None, &avail()).unwrap(),
+        SourceChoice::DefaultMonitor
+    );
 }
 
 // @spec EARS-SRC-018
 #[test]
 fn linux_with_a_listed_source_captures_that_source() {
     let name = "alsa_output.pci.analog-stereo.monitor";
-    assert_eq!(select_source(Platform::Linux, Some(name), &avail()).unwrap(), SourceChoice::Named(name.into()));
+    assert_eq!(
+        select_source(Platform::Linux, Some(name), &avail()).unwrap(),
+        SourceChoice::Named(name.into())
+    );
 }
 
 // @spec EARS-SRC-018
@@ -28,7 +39,10 @@ fn linux_with_a_missing_source_is_an_error_naming_it_with_no_fallback() {
 // @spec EARS-SRC-018
 #[test]
 fn windows_captures_the_default_render_device_and_refuses_a_device_value() {
-    assert_eq!(select_source(Platform::Windows, None, &[]).unwrap(), SourceChoice::DefaultRender);
+    assert_eq!(
+        select_source(Platform::Windows, None, &[]).unwrap(),
+        SourceChoice::DefaultRender
+    );
     let err = select_source(Platform::Windows, Some("Speakers"), &[]).unwrap_err();
     assert!(err.to_string().contains("Speakers"), "{err}");
 }
@@ -44,7 +58,10 @@ fn any_other_host_is_an_error_naming_the_host() {
 #[test]
 fn a_change_of_the_followed_default_reopens() {
     for choice in [SourceChoice::DefaultMonitor, SourceChoice::DefaultRender] {
-        assert_eq!(on_device_event(&choice, DeviceEvent::DefaultChanged), DeviceAction::Reopen);
+        assert_eq!(
+            on_device_event(&choice, DeviceEvent::DefaultChanged),
+            DeviceAction::Reopen
+        );
     }
 }
 
@@ -52,13 +69,20 @@ fn a_change_of_the_followed_default_reopens() {
 #[test]
 fn a_named_source_ignores_a_change_of_the_default() {
     let named = SourceChoice::Named("x.monitor".into());
-    assert_eq!(on_device_event(&named, DeviceEvent::DefaultChanged), DeviceAction::Continue);
+    assert_eq!(
+        on_device_event(&named, DeviceEvent::DefaultChanged),
+        DeviceAction::Continue
+    );
 }
 
 // @spec EARS-SRC-019
 #[test]
 fn any_other_device_error_fails_with_a_message_naming_it_for_every_choice() {
-    for choice in [SourceChoice::DefaultMonitor, SourceChoice::DefaultRender, SourceChoice::Named("x".into())] {
+    for choice in [
+        SourceChoice::DefaultMonitor,
+        SourceChoice::DefaultRender,
+        SourceChoice::Named("x".into()),
+    ] {
         match on_device_event(&choice, DeviceEvent::Error("device unplugged".into())) {
             DeviceAction::Fail(msg) => assert!(msg.contains("device unplugged"), "{msg}"),
             other => panic!("expected Fail, got {other:?}"),

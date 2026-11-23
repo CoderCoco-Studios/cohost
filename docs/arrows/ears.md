@@ -4,7 +4,7 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 ## Status
 
-**PARTIAL**, 2026-11-16: the STT engine design (more speech engines) is specified and not built. The spec file holds 195 specs: 84 `[x]`, 109 `[ ]`, 2 `[D]`. 62 new `[ ]` specs cover the engine contract (EARS-ENG), the streaming session (EARS-SES), the Nemotron and Kyutai engines (EARS-NEM, EARS-KYU), streaming partials (EARS-PART-016 to 022) and health (EARS-HLTH-004 to 011); eight existing specs are revised and re-marked `[ ]` (EARS-HEAR-005, EARS-PART-001, 004, 005, 006, 012, EARS-VAD-003, EARS-HLTH-003). The other 88 `[x]` lines are unchanged. Earlier: `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002); the older gaps are the desktop capture helper (EARS-SRC-014, 015, and 017 to 023 on its defaults, delivery, device handling and CI).
+**PARTIAL**, 2026-11-16: the STT engine design (more speech engines) is specified and not built. The spec file holds 195 specs: 88 `[x]`, 105 `[ ]`, 2 `[D]`. 62 new `[ ]` specs cover the engine contract (EARS-ENG), the streaming session (EARS-SES), the Nemotron and Kyutai engines (EARS-NEM, EARS-KYU), streaming partials (EARS-PART-016 to 022) and health (EARS-HLTH-004 to 011); eight existing specs are revised and re-marked `[ ]` (EARS-HEAR-005, EARS-PART-001, 004, 005, 006, 012, EARS-VAD-003, EARS-HLTH-003). The desktop capture helper's pure core is built in `crates/cohost-desktop-audio` (clip cutting, delivery and retry, token, CI: EARS-SRC-017, 020, 021, 023); its binary and OS capture back ends are not (EARS-SRC-014, 015, 018, 019, 022). Earlier: `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002).
 
 **AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone. The docs site's extension guides added EARS-EX-001 to EARS-EX-007 (the example audio clients, the `curl` script and the conversion scripts), implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent), not yet audited; the spec file now holds 100 specs (96 `[x]`, 2 `[ ]`, 2 `[D]`).
 
@@ -32,7 +32,7 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (195 specs: 84 `[x]`, 109 `[ ]`, 2 `[D]`; the gaps are the engine design above, the early-reply specs (EARS-EARLY-001 to 026, with EARS-PART-009 and EARS-HEAR-012 revised and opened) and the desktop helper, EARS-SRC-014, 015 and 017 to 023; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
+- docs/intent/ears/ears-specs.md (195 specs: 88 `[x]`, 105 `[ ]`, 2 `[D]`; the gaps are the engine design above, the early-reply specs (EARS-EARLY-001 to 026, with EARS-PART-009 and EARS-HEAR-012 revised and opened) and the desktop helper's binary and back ends, EARS-SRC-014, 015, 018, 019 and 022; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Spec Coverage
 
@@ -44,6 +44,7 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | EARS-PART-001 to 022 | partial transcripts | 22 | 9 `[x]`, 12 `[ ]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
 | EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 12 `[x]`, 2 `[ ]`, 1 `[D]` |
+| EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 4 `[x]`, 3 `[ ]` |
 | EARS-CON-001 to 005 | connector sources | 5 | 5 `[x]` |
 | EARS-ECHO-001 to 009 | echo gate | 9 | 9 `[x]` |
 | EARS-INJ-005 to 012 | audio injection | 7 | 7 `[x]` |
@@ -55,11 +56,13 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | EARS-KYU-001 to 014 | Kyutai engine | 14 | 14 `[ ]` |
 
 ### Tests
+- crates/cohost-desktop-audio/tests/*.rs (`cli`, `clip_cutter`, `deliver`, `lifecycle`, `pcm_convert`, `post_clip`, `registration`, `select_source`, `ci`)
 - services/ears/test/*.test.ts (`audio`, `ears`, `filter`, `transcript`, `stub`, `loop`, `service`, `session`, `health`, `inject`, `inject-limits`, `capture`, `capture-http`, `capture-dir`, `connector-source`, `endpointing`, `partials`, `echo`, `timing`, `silero`, `no-discord`)
 - packages/config/test/config-ears-sources.test.ts
 - packages/bus/test/bus.test.ts
 
 ### Code
+- crates/cohost-desktop-audio/src/{clip,pcm,post,retry,registration,cli,deliver,source,lifecycle}.rs (the desktop helper's pure core)
 - services/ears/src/{index,service,sources,session,health,hearing,transcript,audio,inject}.ts
 - services/ears/src/{capture,capture-http,capture-dir,connector-source,vad,echo}.ts
 - packages/config/src/schema.ts
@@ -93,4 +96,4 @@ The design of the STT engines (EARS-ENG, EARS-SES, EARS-NEM, EARS-KYU, EARS-PART
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
-The desktop capture helper (EARS-SRC-014, 015, 017 to 023, CONN-DESK-001, 004, 005) is not built; EARS-SRC-016 follows when it writes frames.
+The desktop capture helper's binary and OS capture back ends (libpulse, WASAPI loopback) are not built, so EARS-SRC-014, 015, 018, 019 and 022 stay open; EARS-SRC-016 follows when the helper writes frames.

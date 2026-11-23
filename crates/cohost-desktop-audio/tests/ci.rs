@@ -20,23 +20,41 @@ fn workflow_lines() -> Vec<String> {
 #[test]
 fn the_linux_runner_installs_libpulse_dev_and_pkg_config() {
     let lines = workflow_lines();
-    assert!(lines.iter().any(|l| l.contains("libpulse-dev")), "test.yml does not install libpulse-dev");
-    assert!(lines.iter().any(|l| l.contains("pkg-config")), "test.yml does not install pkg-config");
+    assert!(
+        lines.iter().any(|l| l.contains("libpulse-dev")),
+        "test.yml does not install libpulse-dev"
+    );
+    assert!(
+        lines.iter().any(|l| l.contains("pkg-config")),
+        "test.yml does not install pkg-config"
+    );
 }
 
 // @spec EARS-SRC-023
 #[test]
 fn the_windows_back_end_is_compiled_with_cargo_check() {
     let found = workflow_lines().iter().any(|l| {
-        ["cargo check", "x86_64-pc-windows-msvc", "cohost-desktop-audio"].iter().all(|p| l.contains(p))
+        [
+            "cargo check",
+            "x86_64-pc-windows-msvc",
+            "cohost-desktop-audio",
+        ]
+        .iter()
+        .all(|p| l.contains(p))
     });
-    assert!(found, "test.yml has no Windows cargo check step for cohost-desktop-audio");
+    assert!(
+        found,
+        "test.yml has no Windows cargo check step for cohost-desktop-audio"
+    );
 }
 
 // @spec EARS-SRC-023
 #[test]
 fn the_pinned_toolchain_installs_the_windows_target() {
     let toolchain = read("../../rust-toolchain.toml");
-    let line = toolchain.lines().find(|l| l.trim_start().starts_with("targets")).expect("no targets key");
+    let line = toolchain
+        .lines()
+        .find(|l| l.trim_start().starts_with("targets"))
+        .expect("no targets key");
     assert!(line.contains("x86_64-pc-windows-msvc"), "{line}");
 }

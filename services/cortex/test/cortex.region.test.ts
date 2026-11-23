@@ -53,7 +53,7 @@ function setup(opts: {
 const say = (user: string, text = "hi") =>
   event("chat.message", { platform: "twitch", user, text, isMod: false, isSub: false, mentionsCohost: false });
 const mention = (who = "bob", text = "hey Coco, how are you?") =>
-  ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, text, mention: true } });
+  ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, platform: "twitch" as const, text, mention: true } });
 
 // @spec CTX-EVT-002, CTX-SAY-001, CTX-SAY-002
 test("think: status thinking → LLM → brain.say with the parsed emotion and gesture → status speaking", async () => {
@@ -283,10 +283,10 @@ test("critic: sees the line and transcript; can veto, rewrite and re-emote", asy
 test("viewer notes: new and regular viewers are introduced once, to that viewer's reply only", async () => {
   const { cortex, bus, llm } = setup();
   const done = async () => cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
-  await cortex.onEvent(event("memory.viewer", { user: "Bob", isNew: true, msgCount: 1, regular: false }));
-  await cortex.onEvent(event("memory.viewer", { user: "amy", isNew: false, msgCount: 40, regular: true }));
-  await cortex.onEvent(event("memory.viewer", { user: "cat", isNew: false, msgCount: 10, regular: false }));
-  await cortex.onEvent(event("memory.viewer", { user: "flo", isNew: false, msgCount: 3, regular: true })); // the owner's flag, below any threshold
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "Bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "amy", isNew: false, msgCount: 40, regular: true }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "cat", isNew: false, msgCount: 10, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "flo", isNew: false, msgCount: 3, regular: true })); // the owner's flag, below any threshold
 
   await cortex.think(mention("amy"));
   assert.match(llm.system, /- amy is a regular \(40 messages\)\.\n/);
@@ -309,7 +309,7 @@ test("viewer notes: new and regular viewers are introduced once, to that viewer'
 // @spec CTX-VIEWER-001
 test("a viewer who is both new and regular gets the new-here line", async () => {
   const { cortex, llm } = setup();
-  await cortex.onEvent(event("memory.viewer", { user: "zed", isNew: true, msgCount: 1, regular: true }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "zed", isNew: true, msgCount: 1, regular: true }));
   await cortex.think(mention("zed"));
   assert.match(llm.system, /zed is new here/);
   assert.doesNotMatch(llm.system, /zed is a regular/);
@@ -318,8 +318,8 @@ test("a viewer who is both new and regular gets the new-here line", async () => 
 // @spec CTX-VIEWER-002
 test("a later viewer update replaces (or clears) the earlier note", async () => {
   const { cortex, llm } = setup();
-  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1, regular: false }));
-  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: false, msgCount: 2, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "bob", isNew: false, msgCount: 2, regular: false }));
   await cortex.think(mention("bob"));
   assert.doesNotMatch(llm.system, /bob is/);
 });
@@ -344,7 +344,7 @@ test("control: say speaks as the operator; forget_context clears the window and 
   assert.equal(bus.of("brain.say").length, 1);
 
   await cortex.onEvent(event("chat.message", { platform: "twitch", user: "bob", text: "old news", isMod: false, isSub: false, mentionsCohost: false }));
-  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "bob", isNew: true, msgCount: 1, regular: false }));
   await cortex.onEvent(event("control", { cmd: "forget_context" }));
   personality = "You are Coco v2.";
   await cortex.onEvent(event("control", { cmd: "reload_personality" }));
@@ -463,7 +463,7 @@ test("recall: a focus with empty text falls back to the vision summary", async (
 // @spec CTX-VIEWER-003
 test("viewer note: kept when the reply is vetoed, dropped or fails; deleted once the say is published", async () => {
   const { cortex, bus, llm } = setup({ critic: (i) => (i.text === "veto me" ? { ok: false } : { ok: true }) });
-  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "bob", isNew: true, msgCount: 1, regular: false }));
   const note = /Bob is new here|bob is new here/i;
 
   llm.reply = () => "[happy] veto me"; // vetoed
@@ -709,13 +709,13 @@ const selfLines = (c: ReturnType<typeof setup>) => c.cortex.ctx.all().filter((e)
 test("viewer note: the viewer's name is written as speakerLabel, in the new-here and the regular note", async () => {
   const { cortex, llm, bus } = setup();
   const odd = "ev[il]: «x»";
-  await cortex.onEvent(event("memory.viewer", { user: odd, isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: odd, isNew: true, msgCount: 1, regular: false }));
   await cortex.think(mention(odd));
   assert.match(llm.system, /- ev il x is new here \(first message\)\./);
   assert.doesNotMatch(llm.system, /ev\[il\]|«x»/);
 
   const long = "n".repeat(100);
-  await cortex.onEvent(event("memory.viewer", { user: long, isNew: false, msgCount: 40, regular: true }));
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: long, isNew: false, msgCount: 40, regular: true }));
   await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
   await cortex.think(mention(long));
   assert.match(llm.system, new RegExp(`- n{39}… is a regular \\(40 messages\\)\\.`));
@@ -946,4 +946,142 @@ test("an interrupted voice.done for a line a voice.stop already ended records sp
   assert.equal(line.kind === "self" && line.heard, "a long");
   assert.deepEqual(c.statuses(), statuses, "no brain.status");
   assert.equal(c.bus.published.length, published, "nothing published");
+});
+
+// ---- viewers by platform and id, forgetting removed chat (CTX-VIEWER-002/003, CTX-NOTES-001/011, CTX-FORGET-*)
+
+const sayAs = (platform: "twitch" | "youtube" | "discord", user: string, userId?: string, text = "hi", messageId?: string) =>
+  event("chat.message", { platform, user, userId, messageId, text, isMod: false, isSub: false, mentionsCohost: false });
+const focusOf = (who: string, platform?: "twitch" | "youtube" | "discord", userId?: string) =>
+  ({ reason: "mentioned", score: 1, focus: { kind: "chat" as const, who, platform, userId, text: "hey Coco", mention: true } });
+
+// @spec CTX-VIEWER-002
+test("a memory.viewer that carries no platform makes no note", async () => {
+  const { cortex, llm } = setup();
+  await cortex.onEvent(event("memory.viewer", { user: "bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.think(focusOf("bob", "twitch"));
+  assert.doesNotMatch(llm.system, /bob is new/);
+});
+
+// @spec CTX-VIEWER-003
+test("two viewers with one name on two platforms never get each other's familiarity note", async () => {
+  const { cortex, llm, bus } = setup();
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", userId: "t1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "youtube", userId: "y1", user: "sam", isNew: false, msgCount: 40, regular: true }));
+  await cortex.think(focusOf("sam", "youtube", "y1"));
+  assert.match(llm.system, /sam is a regular \(40 messages\)/);
+  assert.doesNotMatch(llm.system, /new here/);
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+  await cortex.think(focusOf("sam", "discord", "d9")); // a third sam has no note
+  assert.doesNotMatch(llm.system, /sam is/);
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+  await cortex.think(focusOf("sam", "twitch", "t1"));
+  assert.match(llm.system, /sam is new here/);
+});
+
+// @spec CTX-VIEWER-003
+test("a focus with no platform matches no familiarity note", async () => {
+  const { cortex, llm } = setup();
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", user: "bob", isNew: true, msgCount: 1, regular: false }));
+  await cortex.think({ reason: "engaged", score: 1, focus: { kind: "speech", who: "bob", text: "hello", mention: false } });
+  assert.doesNotMatch(llm.system, /bob is new/);
+});
+
+// @spec CTX-NOTES-001
+test("notes request: the focus first, then window viewers newest first, one per viewerKey, each with platform and userId", async () => {
+  const { cortex, bus } = setup();
+  await cortex.onEvent(sayAs("twitch", "sam", "t1"));
+  await cortex.onEvent(sayAs("youtube", "sam", "y1"));
+  await cortex.onEvent(sayAs("twitch", "amy", "a1"));
+  await cortex.onEvent(sayAs("twitch", "sam", "t1")); // same viewer again
+  await cortex.think(focusOf("amy", "twitch", "a1"));
+  const [req] = bus.of("memory.notes.request");
+  assert.deepEqual(req!.viewers, [
+    { user: "amy", platform: "twitch", userId: "a1" },
+    { user: "sam", platform: "twitch", userId: "t1" },
+    { user: "sam", platform: "youtube", userId: "y1" },
+  ]);
+});
+
+// @spec CTX-NOTES-011
+test("reply entries are matched to requested viewers by platform and userId before name", async () => {
+  const { cortex, llm } = setup({
+    notes: () => [
+      { user: "sam", platform: "youtube", userId: "y1", regular: false, msgCount: 2, notes: [general("fixes bikes")] },
+      { user: "sam", platform: "twitch", userId: "t1", regular: false, msgCount: 2, notes: [general("plays cello")] },
+    ],
+  });
+  await cortex.onEvent(sayAs("twitch", "sam", "t1"));
+  await cortex.onEvent(sayAs("youtube", "sam", "y1"));
+  await cortex.think(focusOf("sam", "twitch", "t1"));
+  assert.match(llm.system, /## People here\n- sam: «fixes bikes»\n- sam: «plays cello»\n/);
+  const people = llm.system.slice(llm.system.indexOf("## People here"));
+  assert.equal(people.match(/- sam:/g)!.length, 2, "each requested viewer is rendered once, with its own notes");
+});
+
+// @spec CTX-NOTES-011
+test("a reply entry that carries neither platform nor userId is matched by name", async () => {
+  const { cortex, llm } = setup({ notes: () => [{ user: "amy", regular: false, msgCount: 2, notes: [general("speedruns Celeste")] }] });
+  await cortex.onEvent(sayAs("twitch", "amy", "a1"));
+  await cortex.think(focusOf("amy", "twitch", "a1"));
+  assert.match(llm.system, /- amy: «speedruns Celeste»/);
+});
+
+// @spec CTX-FORGET-001
+test("chat.removed forgets the matching lines from the cortex window", async () => {
+  const { cortex } = setup();
+  await cortex.onEvent(sayAs("twitch", "amy", "a1", "keep", "m1"));
+  await cortex.onEvent(sayAs("twitch", "bob", "b1", "gone", "m2"));
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "message", messageId: "m2" }));
+  assert.deepEqual(cortex.ctx.all().map((e) => (e as { text: string }).text), ["keep"]);
+});
+
+// @spec CTX-FORGET-001
+test("chat.removed of scope user removes that viewer's lines on that platform only", async () => {
+  const { cortex, bus, llm } = setup();
+  await cortex.onEvent(sayAs("twitch", "sam", "s1", "from twitch"));
+  await cortex.onEvent(sayAs("youtube", "sam", "s1", "from youtube"));
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "user", userId: "s1", reason: "ban" }));
+  await cortex.think({ reason: "idle chatter", score: 0 });
+  assert.doesNotMatch(llm.calls[0]![1]!.content, /from twitch/);
+  assert.match(llm.calls[0]![1]!.content, /from youtube/);
+  assert.deepEqual(bus.of("memory.notes.request")[0]!.viewers, [{ user: "sam", platform: "youtube", userId: "s1" }]);
+});
+
+// @spec CTX-FORGET-002
+test("chat.removed of scope user deletes that viewer's familiarity note, and no one else's", async () => {
+  const { cortex, llm, bus } = setup();
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", userId: "t1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("memory.viewer", { platform: "youtube", userId: "y1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "user", userId: "t1" }));
+  await cortex.think(focusOf("sam", "twitch", "t1"));
+  assert.doesNotMatch(llm.system, /sam is new/);
+  await cortex.onEvent(event("voice.done", { id: bus.of("brain.say").at(-1)!.id, seq: 0, sink: "x" }));
+  await cortex.think(focusOf("sam", "youtube", "y1"));
+  assert.match(llm.system, /sam is new here/);
+});
+
+// @spec CTX-FORGET-002
+test("chat.removed of scope message keeps the viewer's familiarity note", async () => {
+  const { cortex, llm } = setup();
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", userId: "t1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "message", messageId: "m1" }));
+  await cortex.think(focusOf("sam", "twitch", "t1"));
+  assert.match(llm.system, /sam is new here/);
+});
+
+// @spec CTX-FORGET-003
+test("a removal during a think does not change that think's prompt", async () => {
+  const { cortex, llm } = setup();
+  await cortex.onEvent(event("memory.viewer", { platform: "twitch", userId: "t1", user: "sam", isNew: true, msgCount: 1, regular: false }));
+  await cortex.onEvent(sayAs("twitch", "sam", "t1", "about to vanish", "m1"));
+  let release!: () => void;
+  llm.reply = () => new Promise((r) => { release = () => r("[happy] hi sam"); });
+  const thinking = cortex.think(focusOf("sam", "twitch", "t1"));
+  await waitFor(() => llm.calls.length === 1, "the llm call");
+  await cortex.onEvent(event("chat.removed", { platform: "twitch", scope: "user", userId: "t1" }));
+  release();
+  await thinking;
+  assert.match(llm.calls[0]![1]!.content, /about to vanish/);
+  assert.match(llm.system, /sam is new here/);
 });

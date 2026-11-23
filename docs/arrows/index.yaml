@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "109 specs: 74 [x], 35 [ ] (SHARED-GUARD-001 to SHARED-GUARD-027, the untrusted text guard and the viewer key; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "109 specs: 95 [x], 14 [ ] (SHARED-GUARD-003, -020, -021 and -025 to -030, the untrusted totality, counter admission, viewer key and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
     drift: null
 
   module-contract:

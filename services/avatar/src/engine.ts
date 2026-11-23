@@ -1,10 +1,16 @@
 import type { Config, Emotion } from "@cohost/config";
 import { NEUTRAL, type AvatarDriver, type AvatarParams } from "./types.js";
 
-/** Most prepared utterances kept (AVATAR-ENG-002). */
-const MAX_KNOWN = 20;
+/** Most prepared clauses kept (AVATAR-ENG-002). */
+const MAX_CLAUSES = 50;
+/** Most lines whose gesture is remembered (AVATAR-ENG-021). Separate from the clause store. */
+const MAX_GESTURED_LINES = 50;
 
-interface Utterance { id: string; emotion: Emotion; gesture?: string; envelope: number[]; envelopeHz: number; durationMs: number }
+/** One clause of a line: `seq` 0 for a line that is not streamed, 1.. for later clauses. */
+interface Utterance { id: string; seq: number; emotion: Emotion; gesture?: string; envelope: number[]; envelopeHz: number; durationMs: number }
+
+/** Map key for a clause. `seq` is an integer, so the first colon ends it and the key is unambiguous. */
+const clauseKey = (id: string, seq: number) => `${seq}:${id}`;
 
 /**
  * The animation loop. Owns timing, smoothing, idle motion and lip-sync
@@ -18,6 +24,8 @@ export class Engine {
   /** Resting face from the affect region; what we fall back to when an utterance's emotion wears off. */
   private mood: Emotion = "neutral";
   private known = new Map<string, Utterance>();
+  /** Lines whose seq-0 clause has played, oldest first (AVATAR-ENG-021). */
+  private gestured = new Set<string>();
   private playing?: { u: Utterance; startedAt: number };
   private nextBlink: number;
   private blinkUntil = 0;
@@ -45,26 +53,37 @@ export class Engine {
   }
   stop(): void { clearInterval(this.timer); }
 
-  /** Audio is ready; remember it so we can lip-sync when a sink starts playing. */
+  /** Audio is ready; remember the clause so we can lip-sync when a sink starts playing it. */
   prepare(u: Utterance): void { // @spec AVATAR-ENG-002
-    this.known.delete(u.id); // a re-sent id moves to the newest slot: Map keeps insertion order
-    this.known.set(u.id, u);
-    if (this.known.size > MAX_KNOWN) {
+    const key = clauseKey(u.id, u.seq);
+    this.known.delete(key); // a re-sent clause moves to the newest slot: Map keeps insertion order
+    this.known.set(key, u);
+    if (this.known.size > MAX_CLAUSES) {
       for (const oldest of this.known.keys()) { this.known.delete(oldest); break; }
     }
   }
 
-  /** A sink started playing this utterance. */
-  play(id: string): void { // @spec AVATAR-ENG-003, AVATAR-ENG-004
-    const u = this.known.get(id);
+  /**
+   * A sink started playing this clause. Its emotion holds until the later of the current hold's end and
+   * `durationMs + 4000` from now (AVATAR-ENG-019). The line's gesture fires on its seq-0 clause, once per line (AVATAR-ENG-021).
+   */
+  play(id: string, seq: number): void { // @spec AVATAR-ENG-003, AVATAR-ENG-004, AVATAR-ENG-019, AVATAR-ENG-020, AVATAR-ENG-021
+    const u = this.known.get(clauseKey(id, seq));
     if (!u) return;
     this.playing = { u, startedAt: this.now() };
-    this.setEmotion(u.emotion, u.durationMs + 4000);
-    if (u.gesture) this.driver.trigger(u.gesture);
+    const holdMs = Math.max(this.emotionUntil - this.now(), u.durationMs + 4000);
+    this.setEmotion(u.emotion, holdMs);
+    if (seq === 0 && !this.gestured.has(id)) {
+      this.gestured.add(id);
+      if (this.gestured.size > MAX_GESTURED_LINES) {
+        for (const oldest of this.gestured) { this.gestured.delete(oldest); break; }
+      }
+      if (u.gesture) this.driver.trigger(u.gesture);
+    }
   }
 
-  done(id: string): void { // @spec AVATAR-ENG-007
-    if (this.playing?.u.id === id) this.playing = undefined;
+  done(id: string, seq: number): void { // @spec AVATAR-ENG-007
+    if (this.playing?.u.id === id && this.playing.u.seq === seq) this.playing = undefined;
   }
 
   setEmotion(e: Emotion, holdMs = 4000): void { // @spec AVATAR-ENG-008

@@ -267,7 +267,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "91 specs: 57 [x], 34 [ ], 0 [D] (streamed-speech clause specs, the driver-set revisions, the parameter directions AVATAR-DIR-001 to 005 and the browser driver AVATAR-BRW-001 to 013 are open gaps)."
+    next: "91 specs: 68 [x], 23 [ ], 0 [D] (the driver-set revisions AVATAR-DRV-002 to 004, AVATAR-VMC-007, AVATAR-VTS-018, the parameter directions AVATAR-DIR-001 to 005 and the browser driver AVATAR-BRW-001 to 013 are open gaps)."
     drift: null
 
   dashboard:

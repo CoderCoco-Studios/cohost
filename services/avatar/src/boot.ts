@@ -53,7 +53,7 @@ export async function avatarMain(ctx: ServiceContext<AvatarBus>, driverRef: { cu
   log.info({ driver: driver.name, expressions: Object.keys(expressions).length }, "avatar online");
 
   // The subscription's start mode is `latest`: a restart never replays stale expressions or lip-sync (AVATAR-BUS-001).
-  await bus.subscribe( // @spec AVATAR-BUS-001
+  await bus.subscribe( // @spec AVATAR-BUS-001, AVATAR-BUS-009: no brain.clause in the types
     { group: "avatar", types: ["voice.utterance", "voice.playing", "voice.done", "brain.say", "affect.state"], start: "latest" },
     (ev: BusEvent) => {
       switch (ev.type) {
@@ -65,12 +65,12 @@ export async function avatarMain(ctx: ServiceContext<AvatarBus>, driverRef: { cu
         }
         case "voice.utterance": { // @spec AVATAR-BUS-003
           const d = ev.data as BusEvent<"voice.utterance">["data"];
-          engine.prepare({ id: d.id, emotion: d.emotion, gesture: d.gesture, envelope: d.envelope, envelopeHz: d.envelopeHz, durationMs: d.durationMs });
+          engine.prepare({ id: d.id, seq: d.seq, emotion: d.emotion, gesture: d.gesture, envelope: d.envelope, envelopeHz: d.envelopeHz, durationMs: d.durationMs });
           break;
         }
         case "affect.state": engine.setMood((ev.data as BusEvent<"affect.state">["data"]).mood); break; // @spec AVATAR-BUS-006
-        case "voice.playing": engine.play((ev.data as BusEvent<"voice.playing">["data"]).id); break; // @spec AVATAR-BUS-004
-        case "voice.done": engine.done((ev.data as BusEvent<"voice.done">["data"]).id); break; // @spec AVATAR-BUS-005
+        case "voice.playing": { const d = ev.data as BusEvent<"voice.playing">["data"]; engine.play(d.id, d.seq); break; } // @spec AVATAR-BUS-004
+        case "voice.done": { const d = ev.data as BusEvent<"voice.done">["data"]; engine.done(d.id, d.seq); break; } // @spec AVATAR-BUS-005
       }
     },
   );

@@ -11,6 +11,7 @@ class FakeLlm implements ChatProvider {
   readonly name = "fake";
   readonly model = "fake";
   async chat(_m: ChatMessage[]) { await new Promise((r) => setTimeout(r, 15)); return "[happy] hey chat!"; }
+  async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
   async ping() { return true; }
 }
 

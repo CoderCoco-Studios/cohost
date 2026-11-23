@@ -14,6 +14,7 @@ class FakeLlm implements ChatProvider {
   calls: ChatMessage[][] = [];
   reply: (msgs: ChatMessage[]) => string | Promise<string> = () => "[happy] hey chat!";
   async chat(msgs: ChatMessage[]) { this.calls.push(msgs); return this.reply(msgs); }
+  async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
   async ping() { return true; }
   get system() { return this.calls.at(-1)![0]!.content; }
 }

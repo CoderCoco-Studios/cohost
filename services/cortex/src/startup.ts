@@ -1,7 +1,7 @@
 import { type Bus } from "@cohost/bus";
 import { retryWithBackoff, tracked } from "@cohost/shared";
 import type { Logger } from "@cohost/config";
-import type { ChatProvider } from "@cohost/llm";
+import type { ChatEvent, ChatProvider } from "@cohost/llm";
 import type { Cortex } from "./cortex.js";
 
 export interface WaitForLlmOptions {
@@ -42,7 +42,7 @@ export async function waitForLlm(llm: ChatProvider, o: WaitForLlmOptions): Promi
 /** Every bus event type the cortex reads. */
 // @spec CTX-EVT-001, CTX-FORGET-001
 const CORTEX_EVENTS = [
-  "chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.done", "voice.stop", "voice.failed",
+  "chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "brain.clause", "voice.done", "voice.stop", "voice.failed",
   "attention.focus", "memory.recall.reply", "memory.notes.reply", "memory.viewer", "affect.state", "control",
 ] as const;
 
@@ -67,10 +67,27 @@ export async function startCortex(o: StartCortexOptions): Promise<void> {
   o.heartbeat.ready();
 }
 
+/**
+ * A reply stream as cortex's dependency health sees it: a stream that ends, is abandoned by its consumer, or stops because the
+ * consumer aborted its signal counts as ok; a stream that throws otherwise counts as down (CTX-HEALTH-003).
+ */
+// @spec CTX-HEALTH-003
+async function* trackStream(inner: AsyncGenerator<ChatEvent>, signal: AbortSignal | undefined, set: (ok: boolean) => void): AsyncGenerator<ChatEvent> {
+  let failed = false;
+  try {
+    for await (const ev of inner) yield ev;
+  } catch (err) {
+    failed = !signal?.aborted;
+    throw err;
+  } finally {
+    set(!failed);
+  }
+}
+
 // @spec CTX-HEALTH-003
 /**
- * The provider as cortex's dependency health sees it: every `chat` outcome is reported to `set` (ok after a reply, not ok after a
- * failure, CTX-HEALTH-003). `complete()` and `stream()` pass through untracked; health tracking for them belongs to its own issue.
+ * The provider as cortex's dependency health sees it: every `chat` and `stream` outcome is reported to `set` (ok after a reply, not
+ * ok after a failure, CTX-HEALTH-003). `complete()` passes through untracked.
  */
 export function trackLlm(llm: ChatProvider, set: (ok: boolean) => void): ChatProvider {
   return {
@@ -80,7 +97,7 @@ export function trackLlm(llm: ChatProvider, set: (ok: boolean) => void): ChatPro
     get pingIsNominal() { return llm.pingIsNominal; },
     chat: tracked((m, opts) => llm.chat(m, opts), set),
     complete: (m, req) => llm.complete(m, req),
-    stream: (m, opts) => llm.stream(m, opts),
+    stream: (m, opts) => trackStream(llm.stream(m, opts), opts?.signal, set),
     ping: () => llm.ping(),
   };
 }

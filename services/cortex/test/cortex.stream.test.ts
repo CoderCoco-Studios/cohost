@@ -322,7 +322,7 @@ test("rules critic with a veto on the first clause: no brain.say and the stream 
 test("the critic is asked before the repetition check: a repeating first clause still reaches the critic", async () => {
   const s = setup();
   s.cortex.ctx.pushSelf("Hello there everyone, welcome.", "neutral", Date.now(), "old");
-  await run(s, ["[happy] Hello there everyone, welcome."]);
+  await run(s, ["[happy] Hello there everyone welcome."]);
   assert.equal(s.criticCalls.length, 1);
   assert.equal(s.bus.of("brain.say").length, 0);
 });
@@ -381,7 +381,7 @@ test("the repetition check leaves out the line being streamed, and compares agai
   const s = setup();
   await s.cortex.onEvent(event("brain.say", { id: "op", text: "Hello there everyone, welcome in.", emotion: "neutral" }, "dashboard"));
   await endOther(s.cortex, "op");
-  await run(s, ["[happy] Hello there everyone, welcome in."]);
+  await run(s, ["[happy] Hello there everyone welcome in."]);
   assert.equal(s.bus.of("brain.say").length, 0, "an operator line counts as a recent line");
 });
 
@@ -400,7 +400,7 @@ test("a repeat on the first clause is the no-line exit and keeps the viewer note
   const s = setup();
   await s.cortex.onEvent(event("memory.viewer", { user: "bob", platform: "twitch", userId: "u1", isNew: true, msgCount: 1, regular: false }));
   s.cortex.ctx.pushSelf("Hello there everyone, welcome in.", "neutral", Date.now(), "old");
-  await run(s, ["[happy] Hello there everyone, welcome in."]);
+  await run(s, ["[happy] Hello there everyone welcome in."]);
   assert.equal(s.bus.of("brain.say").length, 0);
   assert.equal(s.statuses().at(-1), "idle");
   await run(s, ["[happy] Something quite different, honestly."]);

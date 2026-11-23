@@ -16,6 +16,7 @@ class FakeLlm implements ChatProvider {
   gate: Promise<void> | undefined;
   reply: (msgs: ChatMessage[]) => string = () => "[happy] hey chat!";
   async chat(msgs: ChatMessage[]) { this.calls.push(msgs); if (this.gate) await this.gate; return this.reply(msgs); }
+  async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
   async ping() { return true; }
 }
 const critic = () => new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: () => ({ ok: true }) }, silentLog);

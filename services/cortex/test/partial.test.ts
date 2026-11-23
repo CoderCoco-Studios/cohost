@@ -14,6 +14,7 @@ class CountingLlm implements ChatProvider {
   readonly model = "fake";
   calls = 0;
   async chat(_m: ChatMessage[]) { this.calls++; return "[happy] hi!"; }
+  async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
   async ping() { return true; }
 }
 

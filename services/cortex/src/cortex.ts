@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BusEvent, Publisher, Timing } from "@cohost/bus";
 import type { Config, Emotion, Logger } from "@cohost/config";
-import type { ChatProvider } from "@cohost/llm";
+import type { ChatMessage, ChatProvider } from "@cohost/llm";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
 import { normalizeKey, speakerLabel, viewerKey } from "@cohost/shared/untrusted";
@@ -9,6 +9,7 @@ import { Context, propagatedFlags, type ContextEvent, type InjectionFlags } from
 import { buildMessages, parseReply, type Focus, type Glitch, type Mood, type People, type Recalled } from "./prompt.js";
 import type { CriticInput, CriticOutput } from "./critic.js";
 import { isRepeat, type RecentLine } from "./repeat.js";
+import { cleanClause, cutClause, hasWord, readHead, type Head } from "./clauses.js";
 
 export interface CortexDeps {
   cfg: Config;
@@ -85,6 +86,37 @@ function matchNotes(people: People, requested: readonly ViewerRef[]): People {
   return out;
 }
 
+/** A streamed line while its reply is read and published: the cortex keeps at most one. */
+interface Line {
+  ctrl: AbortController;
+  /** The `brain.say` id once the first clause is out; undefined for a think that publishes no line. */
+  id?: string;
+  /** The `seq` of the last published clause (0 is the `brain.say`); -1 before it. */
+  lastSeq: number;
+  /** The published clauses, cleaned, in order. */
+  published: string[];
+  emotion: Emotion;
+  gesture?: string;
+  criticEndedAt?: number;
+  /** The closing clause (or the last clause, marked `last`) is out: nothing more is published for the line. */
+  closed: boolean;
+  /** The think ended without a line. */
+  exited: boolean;
+}
+
+/** Why a streamed line was closed short (`cut` of its closing `brain.clause`). */
+type LineCut = NonNullable<BusEvent<"brain.clause">["data"]["cut"]>;
+
+/** What a think needs to read its reply and publish the line. */
+interface ReplyRequest {
+  focus: Focus;
+  focusedAt?: number;
+  /** When the think's LLM request began (`timing.llmStartedAt`). */
+  t0: number;
+  memories: number;
+  onSaid: () => void;
+}
+
 /** The cortex's state and event handling; main.ts wires it to the bus. */
 export class Cortex {
   readonly ctx: Context;
@@ -92,6 +124,8 @@ export class Cortex {
   /** `control` state and dispatch (shared reader). Paused: keeps reading events but starts no LLM call, reported as "muted" so salience stops waiting. */
   private readonly control: ReturnType<typeof controlFor>;
   private thinking = false;
+  /** The streamed line being read, if any: `stop()` closes it (CTX-STREAM-037). */
+  private line: Line | undefined;
   /**
    * Lines that have begun and not yet ended, by `brain.say` id: the cortex's own, a reflex's and the operator's. An operator
    * `say` over a playing line leaves that line here, so its `voice.done` is still reconciled (CTX-SAY-005). Each entry has
@@ -139,6 +173,13 @@ export class Cortex {
         const d = ev.data as BusEvent<"brain.say">["data"];
         this.ctx.pushSelf(d.text, d.emotion, ev.ts, d.id); // @spec CTX-FALL-001
         if (ev.source !== "cortex") this.startSpeaking(d.id); // @spec CTX-EVT-004
+        break;
+      }
+      // A clause of the cortex's own streamed line extends its working-memory line (CTX-STREAM-034).
+      case "brain.clause": {
+        if (ev.source !== "cortex") break;
+        const d = ev.data as BusEvent<"brain.clause">["data"];
+        this.ctx.extendSelf(d.id, d.seq, d.text);
         break;
       }
       // @spec CTX-EVT-005
@@ -232,7 +273,7 @@ export class Cortex {
   // @spec CTX-SAY-006, CTX-SAY-007, CTX-SAY-008
   /** `focusedAt` is the `attention.focus` envelope `ts`; a direct call without one leaves that stamp off. */
   async think(focus: Focus, focusedAt?: number): Promise<void> {
-    const { cfg, llm, critic, log } = this.d;
+    const { cfg, log } = this.d;
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
     // @spec CTX-GATE-001
     if (this.thinking) { await this.statusLogged("thinking", focus.reason); return; }
@@ -264,45 +305,16 @@ export class Cortex {
       const glitch: Glitch | undefined = carried && { intended: carried.intended, fallback: carried.fallback, chance };
       const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch });
       const t0 = Date.now();
-      const llmStartedAt = t0;
-      const raw = await llm.chat(messages);
-      const llmEndedAt = Date.now();
-      const parsed = parseReply(raw);
-      let { text, emotion } = parsed;
-      const { gesture } = parsed;
-      // @spec CTX-PROMPT-007
-      log.info({ ms: Date.now() - t0, reason: focus.reason, memories: memories.length }, "llm reply");
-      log.debug({ raw }, "llm reply text"); // raw text can echo chat and is not yet through the critic
-      // @spec CTX-PROMPT-006
-      if (!text || text.length < 2) { await this.status("idle"); return; }
-      // Inhibition: let the critic veto or touch up the line before it's spoken.
-      // @spec CTX-CRITIC-001, CTX-CRITIC-002, CTX-CRITIC-003
-      const verdict = await critic.run({ text, emotion, reason: focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
-      const criticEndedAt = Date.now();
-      if (!verdict.ok) { log.info({ note: verdict.note, text }, "critic vetoed"); await this.status("idle"); return; }
-      // A rewrite is parsed like a reply; the critic's emotion tag and gesture are ignored, the model's gesture is kept (CTX-CRITIC-007, 009, 012).
-      // @spec CTX-CRITIC-003, CTX-CRITIC-007, CTX-CRITIC-008, CTX-CRITIC-009, CTX-CRITIC-012
-      if (verdict.text) {
-        const rewritten = parseReply(verdict.text).text;
-        log.info({ from: text, to: rewritten }, "critic rewrote");
-        text = rewritten;
-        if (text.length < 2) { await this.status("idle"); return; } // CTX-GATE-012
-      }
-      if (verdict.emotion) emotion = verdict.emotion;
-      // Whole-line repetition check: the clause trigger (CTX-REPEAT-001) is not built yet. Only a think's line is checked.
-      // @spec CTX-REPEAT-012, CTX-REPEAT-013, CTX-REPEAT-014
-      if (isRepeat(text, this.recentSelf(), cfg.brain.cortex.repeat_similarity)) { log.info({ text }, "repeat withheld"); await this.status("idle"); return; }
-      // A reflex or operator line may have started while we were thinking; don't talk over it.
-      // @spec CTX-GATE-005
-      if (this.control.muted || this.control.paused) { await this.status("muted"); return; }
-      // @spec CTX-GATE-006
-      if (this.voiceBusy()) { log.info({ text }, "dropped: something else spoke while thinking"); await this.status("speaking"); return; }
-      // @spec CTX-INJ-001
-      // The viewer's note is one-shot: consumed only once this reply's brain.say is out (a newer note is kept). @spec CTX-VIEWER-003
-      const timing = { ...(focusedAt === undefined ? {} : { focusedAt }), llmStartedAt, llmEndedAt, criticEndedAt, ...focus.timing }; // received stamps win (BUS-EVT-025)
-      await this.say(text, emotion, gesture, focus.reason, { ...propagatedFlags(focus), timing }, () => {
-        if (focusKey && this.viewerNotes.get(focusKey) === viewerNote) this.viewerNotes.delete(focusKey);
-        if (carried && this.glitch === carried) this.glitch = undefined; // a newer glitch stays pending (CTX-FALL-005)
+      await this.readReply(messages, {
+        focus,
+        focusedAt,
+        t0,
+        memories: memories.length,
+        // The viewer's note and the glitch hint are consumed once this reply's first clause is out (CTX-VIEWER-003, CTX-FALL-005).
+        onSaid: () => {
+          if (focusKey && this.viewerNotes.get(focusKey) === viewerNote) this.viewerNotes.delete(focusKey);
+          if (carried && this.glitch === carried) this.glitch = undefined;
+        },
       });
     } catch (err) {
       log.error({ err }, "think failed");
@@ -312,11 +324,201 @@ export class Cortex {
     }
   }
 
-  /** The co-host's recent `self` lines as the repetition check reads them (CTX-REPEAT-002). */
-  private recentSelf(): RecentLine[] {
+  /** The co-host's recent `self` lines as the repetition check reads them (CTX-REPEAT-002); `except` leaves out one line by id. */
+  private recentSelf(except?: string): RecentLine[] {
     const lines: RecentLine[] = [];
-    for (const e of this.ctx.all()) if (e.kind === "self") lines.push({ text: e.text, heard: e.heard, fallback: e.fallback });
+    for (const e of this.ctx.all()) {
+      if (e.kind === "self" && (except === undefined || e.id !== except)) lines.push({ text: e.text, heard: e.heard, fallback: e.fallback });
+    }
     return lines;
+  }
+
+  // @spec CTX-GATE-012
+  /** The status of a think that ends without a line: muted when muted or paused, speaking while a line plays, else idle. */
+  private noLineState(): "muted" | "speaking" | "idle" {
+    if (this.control.muted || this.control.paused) return "muted";
+    return this.voiceBusy() ? "speaking" : "idle";
+  }
+
+  // @spec CTX-GATE-012
+  /** The think ends without a line: stop reading, publish no `brain.say`, publish the status of CTX-GATE-012. */
+  private async noLine(line: Line): Promise<void> {
+    line.exited = true;
+    line.ctrl.abort();
+    await this.status(this.noLineState());
+  }
+
+  // @spec CTX-STREAM-026, CTX-STREAM-028
+  /** Close a streamed line once: abort the stream, then publish the closing `brain.clause` (with `cut` when cut short). */
+  private async closeLine(line: Line, cut?: LineCut): Promise<void> {
+    if (line.id === undefined || line.closed) return;
+    line.closed = true;
+    line.ctrl.abort();
+    await this.d.bus.publish("brain.clause", {
+      id: line.id, seq: line.lastSeq + 1, text: "", last: true, through: line.lastSeq, ...(cut ? { cut } : {}),
+    });
+  }
+
+  // @spec CTX-STREAM-003, CTX-STREAM-004, CTX-STREAM-005, CTX-STREAM-012, CTX-STREAM-013, CTX-GATE-013
+  /**
+   * Reads one reply through `llm.stream` and publishes its line. A `rules` critic is asked about the first clause as it is cut
+   * and each clause is checked as it arrives; an `llm` or `http` critic is given the whole reply, checked once, then cut.
+   * A think that publishes no line ends through `noLine`.
+   */
+  private async readReply(messages: ChatMessage[], r: ReplyRequest): Promise<void> {
+    const { cfg, llm, critic, log } = this.d;
+    const { clause_min_chars: min, clause_max_chars: max, max_clauses: maxClauses, repeat_similarity: similarity } = cfg.brain.cortex;
+    const incremental = critic.kind === "rules";
+    const line: Line = { ctrl: new AbortController(), lastSeq: -1, published: [], emotion: "neutral", closed: false, exited: false };
+    this.line = line;
+    const cursor = { at: 0 };
+
+    // One cut clause: the first is the brain.say, the rest brain.clause; `final` is the reply's last clause. Resolves false
+    // when the reply stops (the line closed or a no-line exit).
+    const emit = async (text: string, final: boolean, endedAt: number): Promise<boolean> => {
+      if (line.closed || line.exited) return false; // a line cortex has ended publishes nothing more
+      if (line.id === undefined) {
+        let t = text;
+        if (incremental) {
+          if (t.length < 2) { await this.noLine(line); return false; } // CTX-PROMPT-006
+          // @spec CTX-CRITIC-001
+          const verdict = await critic.run({ text: t, emotion: line.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+          line.criticEndedAt = Date.now();
+          if (!verdict.ok) { log.info({ note: verdict.note, text: t }, "critic vetoed"); await this.noLine(line); return false; } // CTX-CRITIC-002
+          if (verdict.text) {
+            // A rewrite is parsed like a reply; the critic's emotion tag and gesture are ignored, the model's gesture is kept.
+            t = parseReply(verdict.text).text;
+            log.info({ to: t }, "critic rewrote");
+            if (t.length < 2) { await this.noLine(line); return false; } // CTX-CRITIC-008
+          }
+          if (verdict.emotion) line.emotion = verdict.emotion;
+          // @spec CTX-REPEAT-010
+          if (isRepeat(t, this.recentSelf(), similarity)) { log.info({ text: t }, "repeat withheld"); await this.noLine(line); return false; }
+        }
+        // @spec CTX-GATE-005, CTX-GATE-006
+        if (this.control.muted || this.control.paused) { await this.noLine(line); return false; }
+        if (this.voiceBusy()) { log.info({ text: t }, "dropped: something else spoke while thinking"); await this.noLine(line); return false; }
+
+        const id = randomUUID();
+        line.id = id;
+        line.lastSeq = 0;
+        line.published.push(t);
+        this.startSpeaking(id); // pending from its brain.say until voice.done (CTX-SAY-004)
+        // @spec CTX-SAY-007
+        const timing: Timing = {
+          ...(r.focusedAt === undefined ? {} : { focusedAt: r.focusedAt }),
+          llmStartedAt: r.t0,
+          llmEndedAt: endedAt,
+          ...(line.criticEndedAt === undefined ? {} : { criticEndedAt: line.criticEndedAt }),
+          ...r.focus.timing,
+        };
+        // @spec CTX-SAY-001, CTX-STREAM-017, CTX-STREAM-019
+        await this.d.bus.publish("brain.say", {
+          id, text: t, emotion: line.emotion, gesture: line.gesture, reason: r.focus.reason,
+          ...propagatedFlags(r.focus), timing, ...(final ? {} : { more: true as const }),
+        });
+        r.onSaid();
+        await this.status("speaking", t); // CTX-STREAM-018
+        if (final) line.closed = true;
+        return !final;
+      }
+
+      // A later clause: the length cut, the repetition check on the reply so far, the mute and busy re-check, then publish.
+      // @spec CTX-STREAM-024
+      if (line.lastSeq + 1 >= maxClauses) { await this.closeLine(line, "length"); return false; }
+      // @spec CTX-STREAM-021, CTX-REPEAT-001, CTX-REPEAT-002
+      if (incremental && isRepeat([...line.published, text].join(" "), this.recentSelf(line.id), similarity)) {
+        log.info({ text }, "repeat withheld: a later clause"); await this.closeLine(line, "repeat"); return false;
+      }
+      // @spec CTX-STREAM-022, CTX-STREAM-023
+      if (this.control.muted || this.control.paused) { await this.closeLine(line, "muted"); return false; }
+      if (this.voiceBusy(line.id)) { await this.closeLine(line, "busy"); return false; }
+      const seq = line.lastSeq + 1;
+      line.lastSeq = seq;
+      line.published.push(text);
+      // @spec CTX-STREAM-020, CTX-STREAM-027
+      await this.d.bus.publish("brain.clause", { id: line.id, seq, text, ...(final ? { last: true as const, through: seq } : {}) });
+      if (final) line.closed = true;
+      return !final;
+    };
+
+    // Cut every clause the body allows; with `final` the rest is the last clause. Resolves false when the reply stopped.
+    const pump = async (body: string, final: boolean, endedAt: number): Promise<boolean> => {
+      for (;;) {
+        const rest = body.slice(cursor.at);
+        if (!rest) return true;
+        const cut = cutClause(rest, min, max, final);
+        if (!cut) return true;
+        const piece = rest.slice(0, cut.end);
+        cursor.at += cut.next;
+        while (cursor.at < body.length && /\s/.test(body[cursor.at]!)) cursor.at++;
+        const text = cleanClause(piece);
+        if (!hasWord(text)) continue; // CTX-STREAM-015
+        if (!(await emit(text, final && cursor.at >= body.length, incremental ? Date.now() : endedAt))) return false;
+      }
+    };
+
+    let raw = "";
+    let head: Head | undefined;
+    const stream = llm.stream(messages, { signal: line.ctrl.signal }); // CTX-STREAM-003
+    try {
+      for await (const ev of stream) {
+        if (ev.type !== "text" || line.ctrl.signal.aborted) continue;
+        raw += ev.delta;
+        const trimmed = raw.trimStart();
+        const nl = trimmed.indexOf("\n");
+        const ended = nl >= 0; // CTX-STREAM-004: the first newline ends the reply
+        if (ended) raw = trimmed.slice(0, nl);
+        const h = readHead(raw, ended);
+        if (h) { head = h; line.emotion = h.emotion; line.gesture = h.gesture; }
+        if (ended) { line.ctrl.abort(); break; }
+        if (incremental && head && !(await pump(head.body, false, 0))) break;
+      }
+      if (!line.closed && !line.exited) {
+        if (incremental) {
+          head = readHead(raw, true) ?? { emotion: "neutral", body: "" };
+          line.emotion = head.emotion;
+          line.gesture = head.gesture;
+          await pump(head.body, true, 0);
+        } else {
+          // @spec CTX-PROMPT-005, CTX-CRITIC-001, CTX-REPEAT-001, CTX-PROMPT-006
+          const inHand = Date.now();
+          const whole = parseReply(raw);
+          line.emotion = whole.emotion;
+          line.gesture = whole.gesture;
+          if (whole.text.length < 2) {
+            await this.noLine(line);
+          } else {
+            const verdict = await critic.run({ text: whole.text, emotion: whole.emotion, reason: r.focus.reason, transcript: this.ctx.transcript(cfg.cohost.name) });
+            line.criticEndedAt = Date.now();
+            if (!verdict.ok) {
+              log.info({ note: verdict.note, text: whole.text }, "critic vetoed");
+              await this.noLine(line);
+            } else {
+              let text = whole.text;
+              if (verdict.text) { text = parseReply(verdict.text).text; log.info({ from: whole.text, to: text }, "critic rewrote"); }
+              if (verdict.emotion) line.emotion = verdict.emotion;
+              if (text.length < 2) await this.noLine(line); // CTX-CRITIC-008
+              else if (isRepeat(text, this.recentSelf(), similarity)) { log.info({ text }, "repeat withheld"); await this.noLine(line); }
+              else await pump(text, true, inHand);
+            }
+          }
+        }
+        // Nothing left to say: the line closes with an empty closing clause, or a think with no line takes its no-line exit.
+        if (!line.closed && !line.exited) {
+          if (line.id !== undefined) await this.closeLine(line);
+          else await this.noLine(line);
+        }
+      }
+    } catch (err) {
+      if (line.ctrl.signal.aborted) return; // cortex ended the stream itself (CTX-STREAM-026)
+      if (line.id !== undefined && !line.closed) await this.closeLine(line);
+      throw err;
+    } finally {
+      this.line = undefined;
+      log.info({ ms: Date.now() - r.t0, reason: r.focus.reason, memories: r.memories }, "llm reply");
+      log.debug({ raw }, "llm reply text"); // raw text can echo chat and is not yet through the critic
+    }
   }
 
   /** `status` for paths with nothing else to do: a failed publish is logged, never raised (CTX-GATE-008). */
@@ -330,10 +532,11 @@ export class Cortex {
 
   // @spec CTX-GATE-004
   /** Some line is still pending on the voice (with the stuck-sink safety valve per line). */
-  private voiceBusy(): boolean {
+  private voiceBusy(except?: string): boolean {
     const limit = this.d.cfg.brain.cortex.speaking_timeout_ms;
     for (const [id, line] of this.pending) if (performance.now() - line.since > limit) this.endSpeaking(id); // monotonic: a stepped wall clock must not move the valve
-    return this.pending.size > 0;
+    for (const id of this.pending.keys()) if (id !== except) return true;
+    return false;
   }
 
   /** A line began playing: remember it and arm the stuck-sink release. Lines already pending stay pending. */
@@ -349,9 +552,11 @@ export class Cortex {
     this.pending.set(id, { since: performance.now(), timer });
   }
 
-  /** Release every pending line's valve timer (service shutdown). */
-  stop(): void {
+  /** Service shutdown: release the valves, then close the streamed line still open with cut `stopped`, once (CTX-STREAM-037). */
+  async stop(): Promise<void> {
     for (const id of [...this.pending.keys()]) this.endSpeaking(id);
+    const line = this.line;
+    if (line) await this.closeLine(line, "stopped").catch((err) => this.d.log.error({ err }, "closing the streamed line failed"));
   }
 
   /** A line ended (voice.done or its valve); false when it was not pending. */

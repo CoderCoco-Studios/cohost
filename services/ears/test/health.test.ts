@@ -58,7 +58,8 @@ test("heartbeat: stub engine is mode mock with stt n/a", async () => {
 
 const reg = (b: Parameters<NonNullable<Parameters<typeof boot>[1]>["setup"] & {}>[0]) => b.register("discord", connectorOffer);
 const cfg = (over: Record<string, unknown> = {}) => ({
-  sources: ["discord"], stt_engine: "speaches", partials: "off", vad: { engine: "gap" }, silence_ms: 150, min_speech_ms: 100, stt_timeout_ms: 300, ...over,
+  // CFG-SCH-105: ears.early.after_ms (default 250) must sit below silence_ms, so it is set here.
+  sources: ["discord"], stt_engine: "speaches", partials: "off", vad: { engine: "gap" }, silence_ms: 150, early: { after_ms: 100 }, min_speech_ms: 100, stt_timeout_ms: 300, ...over,
 });
 type Rig = Awaited<ReturnType<typeof boot>>;
 async function run<T>(ears: Record<string, unknown>, stt: ReturnType<typeof fakeStt>, body: (r: Rig) => Promise<T>, o: Parameters<typeof boot>[1] = {}): Promise<T> {

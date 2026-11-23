@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 231 specs: 218 implemented, 0 deferred, 13 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 231 specs: 229 implemented, 0 deferred, 2 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -39,6 +39,7 @@ Orientation:
 - packages/config/test/editor.test.ts
 - packages/config/test/config-tools.test.ts (CFG-SCH-075 to CFG-SCH-096, CFG-USR-020)
 - packages/config/test/config-renderer.test.ts (CFG-SCH-006, CFG-SCH-097 to CFG-SCH-101, CFG-ISO-005, CFG-ISO-011, CFG-USR-021, CFG-LOAD-008)
+- packages/config/test/config-early.test.ts (CFG-SCH-102 to CFG-SCH-112)
 - packages/config/test/config-secrets.test.ts (CFG-SEC-016 to CFG-SEC-018, CFG-USR-016)
 - services/dashboard/test/viewers.test.ts (CFG-ENV-009)
 - services/voice/test/kokoro-request.test.ts (CFG-SCH-029)
@@ -88,9 +89,9 @@ Orientation:
 | Logger | CFG-LOG-001 | 1 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
-| Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 0 | 0 | 11 |
+| Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
 
-**Summary:** 231 specs: 218 implemented, 13 gaps, 0 deferred. The early-reply settings (CFG-SCH-102 to 112) are gaps. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
+**Summary:** 231 specs: 229 implemented, 2 gaps, 0 deferred. The gaps are CFG-SEC-018 and CFG-PRES-014; the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 
 ## Coverage notes
 

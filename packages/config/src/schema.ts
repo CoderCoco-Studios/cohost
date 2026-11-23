@@ -366,6 +366,20 @@ export const ConfigSchema = z.object({
       barge_in_sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).default(["discord"]),
       /** Words a transcript needs to count as a barge-in (a backchannel like "mm-hm" does not). */
       barge_in_min_words: z.number().int().min(1).default(2),
+      /** Whether salience may interject: answer a sentence while the speaker is still talking (SAL-INTJ-001). Off by default. */
+      interject: z.boolean().default(false), // @spec CFG-SCH-107
+      /** The chance, from 0 to 1, that an eligible interjection is taken (SAL-INTJ-004). */
+      interject_chance: z.number().min(0).max(1).default(0.15), // @spec CFG-SCH-107
+      /** Whether a speaker who resumes talking cancels the interjection (SAL-INTJ-009). */
+      interject_yield: z.boolean().default(true), // @spec CFG-SCH-107
+      /** The shortest pause between two interjections (SAL-INTJ-003). */
+      interject_min_gap_ms: z.number().int().positive().default(120000), // @spec CFG-SCH-108
+      /** Words a sentence needs before it may be interjected on (SAL-INTJ-002). */
+      interject_min_words: z.number().int().min(1).default(4), // @spec CFG-SCH-108
+      /** Words a follow-up sentence needs to be interjected on (SAL-INTJ-010). */
+      interject_followup_min_words: z.number().int().min(1).default(3), // @spec CFG-SCH-108
+      /** How long a provisional focus may stay unresolved before salience gives up on it (SAL-PROV-012). */
+      unresolved_limit_ms: z.number().int().positive().default(4000), // @spec CFG-SCH-109
       cooldown_ms: z.number().int().nonnegative().default(6000),
       /** How long a `thinking` cortex counts as busy before salience stops waiting on it. */
       thinking_timeout_ms: z.number().int().positive().default(60000),
@@ -464,6 +478,8 @@ export const ConfigSchema = z.object({
       speaking_timeout_ms: z.number().int().positive().default(20000),
       /** Base chance, stated to the model as a nudge, that she riffs on a spoken line that failed to play. Never enforced. */
       fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
+      /** How long a provisional think may hold its first clause back before it is released or parked (CTX-PROV-010). */
+      hold_limit_ms: z.number().int().positive().default(5000), // @spec CFG-SCH-110
       /** The cortex stays silent rather than say a line this similar (0..1) to a recent one of its own; 0 turns the check off. */
       repeat_similarity: z.number().min(0).max(1).default(0.8), // @spec CFG-SCH-046
       /** The shortest clause a streamed reply is cut into (cortex cuts at a clause boundary once it has this many characters). */
@@ -657,6 +673,21 @@ export const ConfigSchema = z.object({
     /** Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped: Whisper's silence hallucinations. */
     // @spec EARS-HEAR-010
     drop_phrases: z.array(z.string()).default([]),
+    /**
+     * Early reply: a provisional transcript of a sentence still being spoken, published `after_ms` into a pause (EARS-EARLY-001).
+     * `max_per_utterance` caps the early transcripts of one utterance (EARS-EARLY-004). `after_ms` must stay below `silence_ms`.
+     */
+    early: z.object({
+      /** Off by default; a streaming engine is not required (CFG-SCH-106). */
+      enabled: z.boolean().default(false), // @spec CFG-SCH-102
+      after_ms: z.number().int().min(100).default(250), // @spec CFG-SCH-103
+      max_per_utterance: z.number().int().min(1).max(5).default(2), // @spec CFG-SCH-104
+    }).prefault({}),
+  }).superRefine((v, ctx) => {
+    // @spec CFG-SCH-105
+    if (v.early.after_ms >= v.silence_ms) {
+      ctx.addIssue({ code: "custom", path: ["early", "after_ms"], message: `must be below ears.silence_ms (${v.silence_ms})` });
+    }
   }),
   /**
    * The co-host's speaking module. The whole section is optional.

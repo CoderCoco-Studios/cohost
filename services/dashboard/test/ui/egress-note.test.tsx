@@ -2,7 +2,7 @@
 import "./helpers/dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { act, makeApp, screen, within } from "./helpers/render";
+import { act, makeApp, screen, userEvent, within } from "./helpers/render";
 import { UNITS, mountServices, svc } from "./services-fixtures";
 import { boot, settle } from "./settings-helpers";
 
@@ -70,6 +70,18 @@ test("a service with several off-LAN entries (two ears destinations, several too
   assert.match(text(rowOf("ears")), /audio goes to b\.example\.com/);
   assert.match(text(rowOf("tools")), /t1\.example\.com/);
   assert.match(text(rowOf("tools")), /t2\.example\.com/);
+});
+
+// @spec DASH-UI-037
+test("each note of a row is its own block element, so several notes do not run together", async () => {
+  await servicesWith([
+    entry("tools", "text", "mcp", { host: "t1.example.com" }),
+    entry("tools", "text", "mcp", { host: "t2.example.com" }),
+  ]);
+  const notes = [...rowOf("tools").querySelectorAll<HTMLElement>(".egress-note")];
+  assert.equal(notes.length, 2);
+  for (const n of notes) assert.equal(n.tagName, "P", n.textContent ?? "");
+  assert.notEqual(notes[0], notes[1]);
 });
 
 // @spec DASH-UI-037
@@ -157,4 +169,26 @@ test("a section with none of the five keys shows no note", async () => {
   await settle();
   assert.doesNotMatch(document.body.textContent ?? "", /goes to/);
   void b;
+});
+
+// @spec DASH-SET-034
+test("a save reads GET /egress again: the note beside llm.provider follows the saved provider", async () => {
+  const b = boot({
+    section: "llm", schema: SCHEMA,
+    routes: {
+      "GET /config/llm": { json: READS.llm },
+      "GET /egress": { json: { destinations: [entry("cortex", "text", "openai", { host: "llm.example.com" })] } },
+      "PUT /config/llm": { json: { ok: true, etag: "e2", restart: [], warnings: [] } },
+    },
+  });
+  await screen.findByRole("heading", { level: 1 });
+  await settle();
+  assert.match(text(row("provider")), /the conversation goes to llm\.example\.com/);
+  b.app.fetch.on("GET /egress", { json: { destinations: [entry("cortex", "text", "anthropic", { hosted: "anthropic" })] } });
+  const user = userEvent.setup();
+  await user.selectOptions(within(row("provider")).getByRole("combobox"), "anthropic");
+  await user.click(within(screen.getByRole("group", { name: "Save settings" })).getByRole("button", { name: "Save" }));
+  await settle();
+  assert.match(text(row("provider")), /the conversation goes to anthropic/);
+  assert.doesNotMatch(text(row("provider")), /llm\.example\.com/);
 });

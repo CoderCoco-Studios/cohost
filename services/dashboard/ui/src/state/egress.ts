@@ -27,11 +27,12 @@ export function egressNote(e: EgressEntry): string | undefined {
 }
 
 /**
- * Reads `GET /egress` once when the screen mounts. A failure, or a body without the list, yields no entries, so a screen
- * renders without its marks rather than failing (DASH-UI-037).
+ * Reads `GET /egress` when the screen mounts and again whenever `refreshKey` changes (the settings screen passes the etags of
+ * the sections it shows, so a save refreshes it). A failure, or a body without the list, yields no entries, so a screen renders
+ * without its marks rather than failing (DASH-UI-037).
  */
 // @spec DASH-UI-037, DASH-SET-034
-export function useEgress(): EgressEntry[] {
+export function useEgress(refreshKey: string = ""): EgressEntry[] {
   const api = useApi();
   const [entries, setEntries] = useState<EgressEntry[]>([]);
   useEffect(() => {
@@ -40,6 +41,6 @@ export function useEgress(): EgressEntry[] {
       if (alive) setEntries(r.ok && Array.isArray(r.data?.destinations) ? r.data!.destinations! : []);
     });
     return () => { alive = false; };
-  }, [api]);
+  }, [api, refreshKey]);
   return entries;
 }

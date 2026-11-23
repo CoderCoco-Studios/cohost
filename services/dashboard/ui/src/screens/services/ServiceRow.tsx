@@ -88,7 +88,7 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
         </div>
       </td>
       <td data-label="Why">{why.lead ? <span className="small">{why.lead}</span> : null}{why.lead && why.rest ? " " : ""}{why.rest ? <span className="small muted">{why.rest}</span> : null}
-        {egress.map((e, i) => { const note = egressNote(e); return note ? <span key={i} className="egress-note small muted">{note}</span> : null; })}
+        {egress.map((e, i) => { const note = egressNote(e); return note ? <p key={i} className="egress-note small muted">{note}</p> : null; })}
       </td>
       <td data-label="Last seen">
         <span className="svc-age">{id === "dashboard" ? "now" : <Age s={s} />}</span>

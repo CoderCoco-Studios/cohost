@@ -78,7 +78,7 @@ The secret routes are served on the full dashboard only, never on the second lis
 
 `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key` are set or cleared together: a request that would leave exactly one of them set answers `400 {"ok": false, "detail": "...", "paths": ["llm.bedrock.access_key_id", "llm.bedrock.secret_access_key"]}` and writes nothing. Use `PUT /secrets` to set or clear both in one request.
 
-The two `GET /options/...` routes and `GET /egress` are served on the full dashboard only. They fetch the addresses `TTS_URL` and `OLLAMA_URL` name (nothing in the request changes them), read at most 1 MiB, wait at most 3 seconds, never cache, and answer `502 {"ok": false, "detail": "..."}` naming the cause (unreachable, a non-2xx status, no answer in time, too large, or a body of the wrong shape) when the server is down or answers badly.
+The two `GET /options/...` routes are served on the full dashboard only. They fetch the addresses `TTS_URL` and `OLLAMA_URL` name (nothing in the request changes them), read at most 1 MiB, wait at most 3 seconds, never cache, and answer `502 {"ok": false, "detail": "..."}` naming the cause (unreachable, a non-2xx status, no answer in time, too large, or a body of the wrong shape) when the server is down or answers badly.
 
 ## Dashboard: test inputs
 

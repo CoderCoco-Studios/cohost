@@ -62,7 +62,7 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
         onChange={(v, error) => settings.edit(section.path, km.key, v, error)} />
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
       {note ? <p className="help" id={ids.note}>{note}</p> : null}
-      {egressNotes.map((n) => <p className="help egress-note" key={n}>{n}</p>)}
+      {egressNotes.map((n, i) => <p className="help egress-note" key={i}>{n}</p>)}
       {km.sensitive ? <p className="help" id={ids.sens}>Changing this needs the control token.</p> : null}
       {overriders.length > 0 ? (
         <div className="note note-warn small" id={ids.iso}>
@@ -116,7 +116,9 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
   const sections = useSettingsState((s) => s.sections);
   const wanted = (kind: string) => members.some((m) => m.keys.some((k) => k.control.kind === kind));
   const picks = usePickLists(wanted("model"), wanted("voice"), primary.path);
-  const egress = useEgress();
+  // GET /egress is read again after each save: a saved engine or provider changes the destinations (DASH-SET-034).
+  const saveKey = members.map((m) => sections[m.path]?.etag ?? "").join("|");
+  const egress = useEgress(saveKey);
   useEffect(() => { for (const m of members) void settings.loadSection(m.path); }, [settings, primary.path]); // eslint-disable-line react-hooks/exhaustive-deps
   const st = sections[primary.path];
   const failed = members.find((m) => sections[m.path]?.status === "error" && !Object.keys(sections[m.path]!.keys).length);

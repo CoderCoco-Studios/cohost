@@ -26,6 +26,14 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
 };
 
 async function boot(o: { tts?: string; ollama?: string; control?: boolean; timeoutMs?: number } = {}) {
+  // Unless a test has pointed the loader at its own config (withEngine), it reads a fixture (the committed example), never the
+  // repo's config/config.yaml.
+  if (process.env["CONFIG_DIR"] === undefined) {
+    const dir = configDir(configText());
+    process.env["CONFIG_DIR"] = dir;
+    process.env["COHOST_ENV_FILE"] = join(dir, "no.env");
+    after(() => { delete process.env["CONFIG_DIR"]; delete process.env["COHOST_ENV_FILE"]; });
+  }
   const bus = new FakeBus();
   const rec = recordingLog();
   const handler = createDashboardHandler({

@@ -426,3 +426,52 @@ test("the fake source is reading at once, so the service is ready in mode mock b
     assert.equal(r.bus.of("chat.message").length, 0);
   } finally { await r.stop(); }
 });
+
+// @spec CHAT-SRC-002, CHAT-HEALTH-004
+test("a start that rejects after ready publishes the heartbeat at once", async () => {
+  let rejectYt!: (e: Error) => void;
+  const late = new Promise<void>((_, rej) => { rejectYt = rej; });
+  const r = rig({ chat: { sources: ["twitch", "youtube"], youtube: YT } }, {
+    twitch: twitchStub,
+    youtube: (b) => new StubSource("youtube", b, () => late),
+  });
+  try {
+    const started = r.start();
+    await waitFor(() => r.made.length === 2, "both sources built");
+    r.made[0]!.set("reading");
+    r.clock.calls.find((c) => c.ms === 30_000 && !c.cleared)!.fire();
+    await waitFor(() => r.readyHeartbeats().length > 0, "ready at the bound");
+    const before = r.bus.health.length;
+    rejectYt(new Error("late failure"));
+    await new Promise((x) => setTimeout(x, 50));
+    assert.ok(r.bus.health.length > before, "a heartbeat is published before the 1 s watch could see the change");
+    await started;
+    assert.ok(r.rec.msgs("error").some((m) => /chat source youtube did not start: late failure/.test(String(m))));
+  } finally { await r.stop(); }
+});
+
+// @spec CHAT-PLAN-006, CHAT-SRC-006
+test("a start that rejects after shutdown logs nothing and changes no state", async () => {
+  let rejectYt!: (e: Error) => void;
+  const late = new Promise<void>((_, rej) => { rejectYt = rej; });
+  const r = rig({ chat: { sources: ["youtube"], youtube: YT } }, { youtube: (b) => new StubSource("youtube", b, () => late) });
+  const started = r.start();
+  await waitFor(() => r.made.length === 1, "built");
+  await r.stop();
+  const errors = r.rec.msgs("error").length;
+  rejectYt(new Error("too late"));
+  await started;
+  assert.equal(r.rec.msgs("error").length, errors, "no error line after shutdown");
+  assert.deepEqual(r.deps(), { twitch: "n/a", youtube: "down" }, "the state stays what shutdown left");
+});
+
+// @spec CHAT-FAKE-001
+test("a listed fake source logs one warning that it stands in and the mode is mock", async () => {
+  const r = rig({ chat: { sources: ["fake"], fake: { interval_ms: 100_000 } } }, {}, { stdin: Object.assign(new PassThrough(), { isTTY: true }) });
+  try {
+    await r.start();
+    const warns = r.rec.msgs("warn").filter((m) => /chat\.sources includes fake/.test(String(m)));
+    assert.equal(warns.length, 1);
+    assert.equal(r.bus.health[0]!.mode, "mock");
+  } finally { await r.stop(); }
+});

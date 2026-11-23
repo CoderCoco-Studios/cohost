@@ -23,8 +23,8 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `cortex`, and the `salience`, `affect` and notes [hooks](../../start/glossary.md#hook) that inherit its model | `LLM_PROVIDER=mock` (`llm.provider`) | Deterministic echo replies and hash [embeddings](../../start/glossary.md#embedding) (`mock`) |
 | `memory` | `MEMORY_STORE=memory` and `MEMORY_EMBEDDER=hash` (`brain.memory.store`, `brain.memory.embedder`) | An in-process store with offline embeddings, lost on exit (`mock`). Needs no [Postgres](../../start/glossary.md#postgres) and no [Ollama](../../start/glossary.md#ollama) |
 | `voice` | `VOICE_ENGINE=stub` (`voice.engine`) | A silent WAV of 60 ms per character (400 ms minimum), no [TTS](../../start/glossary.md#tts) call (`mock`) |
-| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages, no Twitch (`mock`) |
-| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`) and still accepts injected chat |
+| `chat` | `CHAT_SOURCES=[fake]` (`chat.sources`) | Scripted or stdin messages from `fake_viewer1` and `fake_viewer3` (Twitch shape) and `fake_viewer2` (YouTube shape); no Twitch or YouTube connection; mode `mock`, ready at once |
+| `chat` | none, with `chat.twitch.channel` empty | Idles `degraded` (`deps.twitch: down`, `deps.youtube: n/a`, mode `live`) and still accepts injected chat |
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
 | `eyes` | `VISION_ENGINE=stub` (`vision.engine`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
 | `ears` | `EARS_SOURCES=[]` (`ears.sources`) | Idles with no Discord client; injected audio is still transcribed |

@@ -24,7 +24,7 @@ export function sourcePlan(cfg: Config["chat"]): PlanEntry[] {
   });
 }
 
-// @spec CHAT-YT-003, CHAT-PLAN-012, CHAT-PLAN-013, CHAT-PLAN-014
+// @spec CHAT-YT-003, CHAT-PLAN-012, CHAT-PLAN-013, CHAT-PLAN-014, SHARED-VID-002
 function youtubeEntry(cfg: Config["chat"]): PlanEntry {
   const reasons: string[] = [];
   if (!(cfg.youtube?.api_key ?? "").trim()) reasons.push("chat.youtube.api_key is not set");

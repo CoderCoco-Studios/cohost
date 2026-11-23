@@ -3,7 +3,7 @@ import type { ChatSourceName, ChatSourceStatus } from "./source.js";
 
 type Dep = "ok" | "down" | "n/a";
 
-// @spec CHAT-HEALTH-001, CHAT-HEALTH-002, CHAT-HEALTH-003, CHAT-HEALTH-006, CHAT-HEALTH-007, CHAT-HEALTH-008, CHAT-HEALTH-009, CHAT-HEALTH-012
+// @spec CHAT-HEALTH-001, CHAT-HEALTH-002, CHAT-HEALTH-003, CHAT-HEALTH-006, CHAT-HEALTH-007, CHAT-HEALTH-008, CHAT-HEALTH-009, CHAT-HEALTH-010, CHAT-HEALTH-012, CHAT-SRC-009
 /**
  * chat's heartbeat. `mode` is fixed by the listed sources: `mock` with fake, `off` with none, `live` otherwise.
  * A listed twitch or youtube dependency is `ok` only while that source is `reading`, otherwise `down`; a source not

@@ -93,6 +93,7 @@ export class TwitchSource implements ChatSource {
   readonly name = "twitch" as const;
   private status: ChatSourceStatus = { state: "starting" };
   private client?: ChatClientLike;
+  private stopped = false;
 
   constructor(private readonly opts: TwitchSourceOptions) {}
 
@@ -103,8 +104,14 @@ export class TwitchSource implements ChatSource {
   async start(env: ChatSourceStartEnv): Promise<void> {
     const { channel } = this.opts;
     const authProvider = await this.buildAuth(env);
+    if (this.stopped) return;
     const client = await (this.opts.createClient ?? defaultCreateClient)({ authProvider, channels: [channel], logger: { minLevel: "warning" } });
     this.client = client;
+    // A stop that arrived while the client was being built: quit it and never connect.
+    if (this.stopped) {
+      client.quit();
+      return;
+    }
     const setState = (state: ChatSourceState, reason?: string) => {
       this.status = { state, reason };
       env.onState(state, reason);
@@ -126,6 +133,7 @@ export class TwitchSource implements ChatSource {
   }
 
   stop(): void {
+    this.stopped = true;
     this.client?.quit();
   }
 

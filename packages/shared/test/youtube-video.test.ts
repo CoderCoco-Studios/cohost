@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseVideoValue } from "../src/index.js";
 
@@ -67,10 +67,17 @@ test("channel URLs, playlists, search phrases and URLs with no video are unparse
 });
 
 // @spec SHARED-VID-002
-test("the chat service reads a video value only through parseVideoValue: no id pattern of its own in services/chat/src", () => {
-  const root = fileURLToPath(new URL("../../../services/chat/src", import.meta.url));
-  for (const f of readdirSync(root).filter((n) => n.endsWith(".ts"))) {
-    const src = readFileSync(`${root}/${f}`, "utf8");
-    assert.ok(!/\[A-Za-z0-9_-\]\{11\}|live_chat\?v=|youtu\.be\//.test(src), `${f} parses a video value itself`);
+test("no service reads a YouTube video value except through parseVideoValue: no id pattern of its own in any services/*/src", () => {
+  const services = fileURLToPath(new URL("../../../services/", import.meta.url));
+  const files: string[] = [];
+  for (const svc of readdirSync(services)) {
+    const src = `${services}${svc}/src`;
+    if (!existsSync(src)) continue;
+    for (const f of readdirSync(src, { recursive: true }) as string[]) if (f.endsWith(".ts")) files.push(`${src}/${f}`);
+  }
+  assert.ok(files.some((f) => f.includes("/services/chat/src/")), "the chat sources are scanned");
+  for (const file of files) {
+    const text = readFileSync(file, "utf8");
+    assert.ok(!/\[A-Za-z0-9_-\]\{11\}|live_chat\?v=|youtu\.be\//.test(text), `${file} parses a video value itself`);
   }
 });

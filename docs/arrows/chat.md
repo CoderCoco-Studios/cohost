@@ -81,7 +81,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 | YouTube source | CHAT-YT-001 to CHAT-YT-068 | 4 | 0 | 64 | 4 |
 | Forgetting a removed message | CHAT-FORGET-001 to CHAT-FORGET-008 | 0 | 0 | 8 | 0 |
 
-**Summary:** 73 of 163 specs implemented; 0 deferred; 90 open. 81 carry a test `@spec` annotation. Open and not yet provable here: CHAT-SRC-001 (the state vocabulary is typed in `source.ts`; left for the source-contract review), CHAT-SRC-005 (per-source stop cancels every timer and call: the fake proves it, the Twitch wrapper and the YouTube reader do not yet), CHAT-HEALTH-011 (a quiet YouTube chat keeps `reading`: needs the reader, #179), CHAT-YT-003..006 are implemented in the plan and the parser, not in a YouTube reader. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 73 of 163 specs implemented; 0 deferred; 90 open. 81 carry a test `@spec` annotation. Open and not yet provable here: CHAT-SRC-001 (the five states are typed in `source.ts`; not in #177's list, and the first issue that drives all five states from real sources owns the flip, #179), CHAT-SRC-005 (per-source stop cancels every timer and call: the fake proves it, the Twitch stop guard covers the start path, the YouTube reader is #179), CHAT-HEALTH-011 (a quiet YouTube chat keeps `reading`: needs the reader, #179). CHAT-YT-003..006 are implemented in the plan and the parser, not in a YouTube reader. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -91,7 +91,7 @@ Depends on `event-bus`, `config`, `control-plane` (heartbeat), `shared-runtime`.
 4. **A failed publish on the live path is logged and the next message is handled** (CHAT-TW-007, CHAT-SRC-008). The `inject.request` subscription is created before any plan runs, with start mode `latest` (CHAT-INJ-009, CHAT-PLAN-015).
 5. **Reconnect is the library default.** `TwitchSource` reports `retrying` on disconnect and `reading` on connect; a change to a ready service publishes at once (CHAT-TW-009, `sources.test.ts`).
 6. **Filter.** Substring mention match is deliberate (`services/chat/test/filter.test.ts`); `ignore_prefixes` is matched against the bounded text (CHAT-FILT-003). The shipped filter still matches `ignore_users` against the login only (CHAT-FILT-012, CHAT-FILT-013).
-7. **Credentials serve a deferred goal.** The `service.ts` header says credentials are for typing in chat later; nothing calls `say` and the scope is read-only `["chat"]`. The path stays.
+7. **Credentials serve a deferred goal.** The credential path is kept for typing in chat later (`chat-design.md`, Decisions: anonymous vs authenticated IRC); nothing calls `say` and the scope is read-only `["chat"]`. The path stays.
 
 ## Work Required
 

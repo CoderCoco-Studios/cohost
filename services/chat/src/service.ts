@@ -59,7 +59,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
   const states = new Map<ChatSourceName, ChatSourceStatus>();
 
   return {
-    // @spec CHAT-HEALTH-001, CHAT-HEALTH-002, CHAT-HEALTH-005, CHAT-HEALTH-007, CHAT-HEALTH-008
+    // @spec CHAT-HEALTH-001, CHAT-HEALTH-002, CHAT-HEALTH-004, CHAT-HEALTH-005, CHAT-HEALTH-007, CHAT-HEALTH-008
     health(cfg) {
       return chatHealth(sourcePlan(cfg.chat).map((e) => e.source), () => Object.fromEntries(states));
     },
@@ -99,6 +99,11 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
 
       for (const e of plan) {
         if (e.status === "gap") log.error(`chat source ${e.source} is not running: ${e.reasons.join("; ")}`);
+      }
+
+      // The fake source stands in for the platforms: say so once, so a run that is not live is visible in the log.
+      if (plan.some((e) => e.status === "runnable" && e.source === "fake")) {
+        log.warn({ intervalMs: cfg.chat.fake.interval_ms }, "chat.sources includes fake: publishing scripted/stdin messages (mode mock)");
       }
 
       // Ready once every listed source has had a first outcome, or at the 30 s bound, whichever comes first.
@@ -194,11 +199,15 @@ export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): 
         try {
           await src.start(envFor(e.source));
         } catch (err) {
+          // A start that fails after shutdown is not news: no state, no log.
+          if (closed) return;
           const reason = err instanceof Error ? err.message : String(err);
           states.set(e.source, { state: "stopped", reason });
           outcomes.add(e.source);
           log.error(`chat source ${e.source} did not start: ${reason}`);
-          checkReady();
+          // After ready, publish at once, as a source state change does.
+          if (readySignalled) heartbeat.ready();
+          else checkReady();
         }
       }));
     },

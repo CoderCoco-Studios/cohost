@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Built on Ollama and OpenAI-compatible only: the result contract (`ChatMessage` as a closed union by role, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`, `ChatEvent` types), `ChatError` with kind `http`, and `complete()`, which shares one request builder with `chat()`. `chat()` rejects a tool history with a `TypeError` on every provider, and `chat()` on the Claude, Bedrock and mock providers is text-only as before. Not yet built: `complete()` on the Claude, Bedrock and mock providers (so the `any provider` lines of LLM-IF-005 to -007 stay open), `stream()`, tool calls, image input on every provider, and the `connect`, `stream` and `not_configured` kinds of `ChatError`. The spec file now holds 226 specs: 76 `[x]`, 150 `[ ]`, 0 `[D]`. Existing `chat()` specs keep their markers except LLM-VIS-002 and LLM-VIS-003, whose `chat()` behaviour reverses (images are sent, not dropped) and are `[ ]`. Not covered by the last audit.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Built on Ollama and OpenAI-compatible only: the result contract (`ChatMessage` as a closed union by role, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`, `ChatEvent` types), `ChatError` with kinds `http`, `connect` and `stream`, `complete()` and `stream()` with tools (definitions out; calls back whole on Ollama and assembled by `index` from fragments on OpenAI-compatible; results forward; a call the cap cut off is dropped; calls delivered after the text and before `done`), and the tool rules shared in `index.ts` (name pattern, `json` with tools, `tools: []` as none, stop omission, argument parsing, finish mapping). `chat()` rejects a tool history with a `TypeError` on every provider, and `chat()` on the Claude, Bedrock and mock providers is text-only as before. Not yet built: `complete()` and tools on the Claude, Bedrock and mock providers (#159, #161, #163; the `any provider` lines LLM-TOOL-017, LLM-TOOL-025, LLM-STREAM-032 and LLM-STOP-019 stay open until the Claude providers carry tools), image input on every provider (#164), and the `not_configured` kind of `ChatError` on the Claude paths. The spec file now holds 226 specs: 146 `[x]`, 80 `[ ]`, 0 `[D]`. Existing `chat()` specs keep their markers except LLM-VIS-002 and LLM-VIS-003, whose `chat()` behaviour reverses (images are sent, not dropped) and are `[ ]`. Not covered by the last audit.
 
 **AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). The docs site's extension guides added LLM-EX-001 to LLM-EX-006 (the OpenAI-compatible stub servers in Python and TypeScript and their try-it script), implemented and tested, not yet audited; the spec file then held 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`).
 
@@ -17,9 +17,10 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (226 specs, prefix LLM: 76 `[x]`, 150 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (226 specs, prefix LLM: 146 `[x]`, 80 `[ ]`, 0 `[D]`)
 
 ### Tests
+- packages/llm/test/tools.test.ts (tool calls on Ollama and OpenAI-compatible, complete() and stream(): definitions, calls, results, arguments, finish, streamed calls, the shared request checks; fake HTTP servers, no external network)
 - packages/llm/test/complete.test.ts (the result contract: `complete()` on Ollama and OpenAI-compatible, `ChatError`, the `chat()` tool-history rejection on every provider; recorder and black-hole servers, stubbed Claude and Bedrock transports; no external network)
 - packages/llm/test/llm.test.ts (fake HTTP servers, including a black-hole server for the timeout tests, and a stubbed SDK client; no external network)
 - packages/llm/test/backends.test.ts (Claude and Bedrock through the real SDK clients against recorded fixtures; an opt-in live smoke test)
@@ -53,20 +54,20 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test pointers |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-022 | 11 | 0 | 11 | 11 |
+| Interface and factory | LLM-IF-001 to LLM-IF-022 | 15 | 0 | 7 | 15 |
 | Errors | LLM-ERR-001 to LLM-ERR-009 | 6 | 0 | 3 | 6 |
 | Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 20 | 0 | 2 | 20 |
 | Vision | LLM-VIS-001 to LLM-VIS-013 | 1 | 0 | 12 | 1 |
-| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 23 | 0 | 14 | 23 |
-| Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 0 | 0 | 30 | 0 |
-| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 12 | 0 | 7 | 12 |
+| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 27 | 0 | 10 | 27 |
+| Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 19 | 0 | 11 | 19 |
+| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 14 | 0 | 5 | 14 |
 | Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-033 | 19 | 0 | 14 | 19 |
 | Health ping | LLM-PING-001 to LLM-PING-007 | 7 | 0 | 0 | 7 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-021 | 5 | 0 | 16 | 5 |
-| Example stub servers | LLM-EX-001 to LLM-EX-008 | 7 | 0 | 1 | 7 |
+| Example stub servers | LLM-EX-001 to LLM-EX-008 | 8 | 0 | 0 | 8 |
 
-**Summary:** 116 of 226 specs implemented; 0 deferred; 110 gaps. The gaps are tool calls and the streamed tool-call and Claude lines, image input on every provider, the `not_configured` kind of `ChatError` on the Claude paths, the mock's tool and failure markers, `complete()` on the Claude, Bedrock and mock providers, and LLM-VIS-002 and LLM-VIS-003.
+**Summary:** 146 of 226 specs implemented; 0 deferred; 80 gaps. The gaps are the Claude and Bedrock lines (complete, tools, streamed tool calls, continuation, refusal, retries, abort and timeouts on `complete()`), the `any provider` lines LLM-TOOL-017, LLM-TOOL-025, LLM-STREAM-032 and LLM-STOP-019, image input on every provider, the `not_configured` kind of `ChatError` on the Claude paths, the mock's tool and failure markers, and LLM-VIS-002 and LLM-VIS-003.
 
 ## Key Findings
 
@@ -84,8 +85,7 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 None.
 
 ### Should Fix
-- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE, LLM-MOCK and LLM-EX-008): `complete()` on `anthropic`, `bedrock` and `mock` (#159, #161), tools and streamed tool calls (#162), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and `ChatError` kinds `connect`, `stream` and `not_configured`.
-- `complete()` on Ollama and OpenAI-compatible accepts `ChatRequest.tools` and ignores them. Until #162 it must reject a non-empty `tools` with a `TypeError` or act on it; a silent drop is not acceptable once a caller passes tools.
+- Build the revised contract (all `[ ]` lines of LLM-IF, LLM-ERR, LLM-CHAT, LLM-VIS, LLM-STREAM, LLM-TOOL, LLM-STOP, LLM-CLAUDE and LLM-MOCK): `complete()` on `anthropic`, `bedrock` and `mock` (#159, #161), tools and streamed tool calls on the Claude and Bedrock providers (#163), images on OpenAI-compatible, `anthropic` and `bedrock` (#164), and `ChatError` kinds `connect`, `stream` and `not_configured`.
 - Audit the stub model servers (LLM-EX-001..006), cited by the docs site's Extend pages.
 1. Fix the docs site's Choose a model page (`docs/guide/tune/model.md`): its override path `brain.<region>.module.llm` does not fit the critic (`brain.cortex.critic.llm`).
 

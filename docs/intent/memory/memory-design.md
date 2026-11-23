@@ -59,7 +59,7 @@ function is shared by the `memory` and `memory-recall` consumer groups; the
 | in | `brain.status` | `memory` | remember the cortex's latest state, so a consolidation pass runs only while the cortex is idle (`MEM-CONSOL-002`); an `idle` or `muted` state also writes every open streamed line (Streamed lines) | `region.ts`, `startup.ts` |
 | in | `memory.notes.request` | `memory-recall` | answer the cortex with the notes of the named viewers (`MEM-SURF-*`) | `surface.ts`, `region.ts` |
 | in | `memory.viewers.request` | `memory-recall` | owner operations from the dashboard Viewers page (`MEM-ADMIN-*`) | `admin.ts`, `region.ts` |
-| out | `memory.viewer` | | `{user, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
+| out | `memory.viewer` | | `{user, platform, userId?, isNew, msgCount, regular}`; published before the slow embed so the cortex has it when it builds the reply | `region.ts`; `MEM-VIEWER-002` |
 | out | `memory.recall.reply` | | `{id, memories:[{ts(epoch ms), kind, who, text, similarity}]}` | `region.ts` |
 | out | `memory.notes.reply` | | `{id, viewers:[{user, regular, msgCount, notes:[{layer, category, text? (never for health or family), hint?, strength}]}]}` | `surface.ts` (`MEM-SURF-001`) |
 | out | `memory.viewers.reply` | | `{id, ok, error?, detail?, data?}` | `admin.ts` (`MEM-ADMIN-007`) |
@@ -144,8 +144,8 @@ lifetime `msg_count` is above `brain.memory.regular_messages` (default 25)
 (`MEM-REG-001`). `msg_count` is never reset. Regular status decides only how the
 co-host frames a viewer ("a regular"); it does not decide whether notes are
 captured or shown: notes are kept for every viewer from their first message
-(see Viewer notes below). `memory.viewer` carries `{user, isNew, msgCount,
-regular}` (`MEM-VIEWER-002`); the threshold is a config value rather than a
+(see Viewer notes below). `memory.viewer` carries `{user, platform, userId?, isNew,
+msgCount, regular}` (`MEM-VIEWER-002`; `userId` only when the message has one); the threshold is a config value rather than a
 literal in the cortex. Viewer notes live only in `viewer_notes`; the `viewers`
 table has no notes column.
 

@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 84 [x], 25 [ ], 2 [D] (streamed-speech clause specs and the early-reply latency specs CTRL-LAT-018 to 033 are open gaps). Open manifest gaps: CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
+    next: "111 specs: 103 [x], 6 [ ], 2 [D]. Open gaps: CTRL-HEALTH-005, CTRL-LAT-017, CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
     drift: null
 
   deployment:

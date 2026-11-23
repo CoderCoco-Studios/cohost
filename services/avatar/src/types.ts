@@ -1,3 +1,4 @@
+import type { Bus } from "@cohost/bus";
 import type { Emotion, Logger } from "@cohost/config";
 
 /**
@@ -8,11 +9,13 @@ import type { Emotion, Logger } from "@cohost/config";
 export interface AvatarParams {
   mouthOpen: number;
   mouthSmile: number;
-  headX: number;   // yaw, -30..30
-  headY: number;   // pitch
-  headZ: number;   // roll
-  eyeX: number;    // -1..1
-  eyeY: number;
+  // Directions are as a viewer of the stream sees the face (avatar design, Direction of the angles); a driver signs
+  // each value for its app to match.
+  headX: number;   // yaw, -30..30: positive turns the face toward the viewer's left (AVATAR-DIR-001)
+  headY: number;   // pitch: positive tips the face down, chin toward the chest (AVATAR-DIR-002)
+  headZ: number;   // roll: positive tilts the top of the head toward the viewer's right (AVATAR-DIR-003)
+  eyeX: number;    // -1..1: positive moves the gaze toward the viewer's right (AVATAR-DIR-004)
+  eyeY: number;    // -1..1: positive moves the gaze up (AVATAR-DIR-005)
   blink: number;   // 0 open .. 1 closed
 }
 
@@ -24,6 +27,8 @@ export interface DriverContext {
   gestures: Record<string, string>;
   /** Directory the driver may persist small state in (auth tokens etc.). */
   stateDir: string;
+  /** The bus client's avatar-frame writer, used only by the browser driver (AVATAR-BRW-002); absent in tests of other drivers. */
+  frames?: Pick<Bus, "publishAvatarFrame">;
 }
 
 /**

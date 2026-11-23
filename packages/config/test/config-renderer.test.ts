@@ -21,7 +21,7 @@ const failPaths = (patch: Record<string, unknown>): string[] => { const r = pars
 const renderer = (r: Record<string, unknown>) => ({ renderer: r });
 const dashboard = (d: Record<string, unknown>) => ({ dashboard: d });
 
-// @spec CFG-SCH-006, CFG-ISO-005
+// @spec CFG-SCH-006, CFG-ISO-005, AVATAR-DRV-004
 test("avatar.driver accepts browser, treats blank as null, and an unknown value fails naming avatar.driver", () => {
   assert.equal(ok({ avatar: { driver: "browser", vtube_studio: {}, vmc: {} } }).avatar.driver, "browser");
   assert.equal(ok({ avatar: { driver: "", vtube_studio: {}, vmc: {} } }).avatar.driver, "null");

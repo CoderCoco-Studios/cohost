@@ -15,6 +15,7 @@ The brain never knows which app you picked. It publishes one canonical picture o
 | --- | --- | --- |
 | `vtube-studio` | [VTube Studio](../../start/glossary.md#vtube-studio) with a [Live2D](../../start/glossary.md#live2d) model (2D) | Through VTube Studio's own plugin connection |
 | `vmc` | A 3D [VRM](../../start/glossary.md#vrm) avatar app that accepts the [VMC](../../start/glossary.md#vmc) protocol, such as VSeeFace, Warudo, VNyan or VMagicMirror | Through VMC, which carries the pose and expressions as small network messages |
+| `browser` | A [VRM](../../start/glossary.md#vrm) model drawn in the dashboard's renderer page | Through the avatar-frame stream: the service writes the face's state each tick and the dashboard draws it. No host, port or plugin setting. |
 | `null` | Nothing | No avatar app: the dashboard preview face is all there is. This is the default. Written as the string `"null"` in YAML. |
 
 ::: aside
@@ -74,6 +75,28 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
    ```
 
 4. Open `config/expressions.yaml` and, under `vmc`, set each emotion to the name of the VRM expression (blendshape) it should use. The defaults use the standard VRM presets, such as `Joy`, `Angry`, `Sorrow` and `Surprised`.
+
+## Browser renderer
+
+With `avatar.driver: "browser"` the service needs no app and no port. It writes the face's state (mouth, head, gaze, blink, emotion) on every tick to the avatar-frame stream, and the dashboard relays it to the renderer page, which draws the model. Nothing is opened on the [container](../../start/glossary.md#container) that runs the avatar service, and the model file never reaches it.
+
+```yaml
+avatar:
+  driver: "browser"
+```
+
+Under `browser` in `config/expressions.yaml`, each emotion names the VRM expression the page should show. The built-in names are the VRM 1.0 presets, so a model with the standard presets needs no block. An emotion you leave out takes the built-in name, and an empty string means no expression for that emotion. A name is at most 64 characters. `neutral` always shows no expression.
+
+| Emotion | Built-in expression |
+| --- | --- |
+| `happy`, `laugh` | `happy` |
+| `surprised` | `surprised` |
+| `smug` | `relaxed` |
+| `sad`, `confused` | `sad` |
+| `angry` | `angry` |
+| `think`, `neutral` | none |
+
+The browser driver ignores `gestures`, because a VRM has no hotkeys.
 
 ## Getting the avatar into OBS
 

@@ -10,9 +10,9 @@ const log = { warn() {}, info() {}, error() {}, debug() {} } as never;
 const ctx = (): DriverContext => ({ log, stateDir: "/tmp", expressions: {}, gestures: {} });
 
 /** The head quaternion `[x, y, z, w]` a VMC driver sends for one parameter set. */
-async function headQuat(p: Partial<typeof NEUTRAL>): Promise<number[]> {
+async function headQuat(p: Partial<typeof NEUTRAL>): Promise<[number, number, number, number]> {
   const sock = dgram.createSocket("udp4");
-  const heads: number[][] = [];
+  const heads: [number, number, number, number][] = [];
   sock.on("message", (b) => {
     if (!b.toString("latin1", 0, 20).startsWith("/VMC/Ext/Bone/Pos")) return;
     const f = (i: number) => b.readFloatBE(b.length - 4 * (8 - i)); // the last four floats are x y z w

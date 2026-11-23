@@ -314,7 +314,7 @@ The `avatar` service.
 
 ## `renderer`
 
-The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. Selecting `browser` fails at start until the browser driver exists (#215), and a saved change reaches a running renderer without a restart once the live push lands (#216).
+The browser renderer's model and framing, read when `avatar.driver` is `browser`. The section is optional: an absent key takes its default. A saved change reaches a running renderer without a restart once the live push lands (#216).
 
 | Key | Default | What it does |
 | --- | --- | --- |

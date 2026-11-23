@@ -11,6 +11,7 @@
  */
 import dgram from "node:dgram";
 import type { Emotion } from "@cohost/config";
+import { eulerToQuat } from "@cohost/shared/head-rotation";
 import type { AvatarDriver, AvatarParams, DriverContext } from "../types.js";
 
 export class VmcDriver implements AvatarDriver {
@@ -35,7 +36,7 @@ export class VmcDriver implements AvatarDriver {
 
   setParams(p: AvatarParams): void { // @spec AVATAR-VMC-002
     if (!this.sock) return;
-    const q = eulerToQuat(p.headY, p.headX, p.headZ);
+    const q = eulerToQuat(p.headY, p.headX, p.headZ); // @spec AVATAR-VMC-007
     const msgs: Buffer[] = [
       osc("/VMC/Ext/Bone/Pos", ["Head", 0, 0, 0, q[0], q[1], q[2], q[3]]),
       osc("/VMC/Ext/Blend/Val", ["A", p.mouthOpen]),
@@ -94,17 +95,4 @@ function oscString(s: string): Buffer {
   const b = Buffer.alloc(len + pad);
   b.write(s, "utf8");
   return b;
-}
-/** pitch/yaw/roll in degrees -> [x,y,z,w] */
-function eulerToQuat(pitch: number, yaw: number, roll: number): [number, number, number, number] {
-  const r = Math.PI / 180;
-  const cy = Math.cos(yaw * r / 2), sy = Math.sin(yaw * r / 2);
-  const cp = Math.cos(pitch * r / 2), sp = Math.sin(pitch * r / 2);
-  const cr = Math.cos(roll * r / 2), sr = Math.sin(roll * r / 2);
-  return [
-    sp * cy * cr - cp * sy * sr,
-    cp * sy * cr + sp * cy * sr,
-    cp * cy * sr - sp * sy * cr,
-    cp * cy * cr + sp * sy * sr,
-  ];
 }

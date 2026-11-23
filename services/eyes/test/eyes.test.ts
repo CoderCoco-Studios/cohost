@@ -2,8 +2,9 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, silentLog, testConfig } from "@cohost/testing";
+import { ImageDataError } from "@cohost/llm";
 import { parseConfigText } from "@cohost/config";
-import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber, visionGap } from "../src/eyes.js";
+import { Eyes, createDescriber, isSame, modelDescriber, startEyes, stripDataUrl, stubDescriber, buildVisionProvider, gapOf } from "../src/eyes.js";
 import { JPEG_B64, serveModel } from "./support.js";
 
 function setup(replies: string[]) {
@@ -301,7 +302,7 @@ test("a BMP or PDF frame is refused by every hosted provider with a TypeError be
   for (const [provider, llm] of [["openai", { openai: { base_url: m.url } }], ["anthropic", keyed], ["bedrock", keyed]] as const) {
     const describe = createDescriber(testConfig({ llm, vision: { provider, model: "vision-model" } }));
     for (const img of [bmp, pdf]) {
-      await assert.rejects(describe(img, ""), (err) => err instanceof TypeError, provider);
+      await assert.rejects(describe(img, ""), (err) => err instanceof ImageDataError, provider);
     }
   }
   assert.deepEqual(m.seen, []);
@@ -323,5 +324,5 @@ test("bedrock with a region and only one of the key pair is a gap: createDescrib
   const t0 = performance.now();
   await assert.rejects(describe(JPEG_B64, ""), /must be set together: only one of them is set/);
   assert.ok(performance.now() - t0 < 1000, "at once");
-  assert.equal(visionGap(cfg), "llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set");
+  assert.equal(gapOf(buildVisionProvider(cfg)), "llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together: only one of them is set");
 });

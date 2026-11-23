@@ -15,15 +15,23 @@ export interface Seen {
 
 /**
  * A local server that answers the Ollama (`/api/chat`) and OpenAI-compatible (`/chat/completions`) chat endpoints, records
- * each request and answers `state.status` (a non-200 status carries an error body) or never, while `state.hang` is set.
+ * each request and answers `state.status` (a non-200 status carries an error body) or never, while `state.hang` is set, or
+ * drops the socket mid-body while `state.dropMidBody` is set.
  */
 export async function serveModel(reply = "A boss appears.") {
   const seen: Seen[] = [];
-  const state = { status: 200, hang: false, reply };
+  const state = { status: 200, hang: false, dropMidBody: false, reply };
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const c of req) raw += c;
     seen.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body: raw ? JSON.parse(raw) : {} });
     if (state.hang) return;
+    if (state.dropMidBody) {
+      // a reply that starts and then loses its socket: the client reads a body that ends early (a transport failure, not a status)
+      res.writeHead(200, { "content-type": "application/json", "content-length": "1000" });
+      res.write('{"choices":[');
+      setImmediate(() => res.socket?.destroy());
+      return;
+    }
     res.statusCode = state.status;
     res.setHeader("content-type", "application/json");
     if (state.status !== 200) { res.end(JSON.stringify({ error: `status ${state.status}` })); return; }

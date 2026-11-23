@@ -1,6 +1,6 @@
 import type { Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
-import { createChatProvider, type ChatProvider } from "@cohost/llm";
+import { createChatProvider, notConfiguredReason, type ChatProvider } from "@cohost/llm";
 import { egressDestinations } from "@cohost/config";
 
 export interface EyesDeps {
@@ -21,9 +21,6 @@ export interface EyesDeps {
 export function stripDataUrl(imageData: string): string {
   return imageData.replace(/^data:image\/\w+;base64,/, "");
 }
-
-/** True for the error a request rejects with when its abort signal fires on a timeout. */
-export const isTimeout = (err: unknown): boolean => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 
 // @spec EYES-LOOK-002, EYES-INJ-008
 /**
@@ -84,41 +81,32 @@ export function stubDescriber(): Describe {
   return async (b64, previous) => (previous ? "SAME" : `stub vision: ${Buffer.from(b64, "base64").length} bytes`);
 }
 
+/** The provider a start builds, or the gap that keeps it from describing; undefined for the stub, which builds none. */
+export type VisionBuild = { provider: ChatProvider } | { gap: string };
+
 // @spec EYES-GAP-001, EYES-GAP-003, EYES-GAP-006
 /**
- * The chat provider `vision.provider` names, or the configuration gap that keeps it from describing: a blank `vision.model`,
- * a hosted provider without its credentials, or a provider the model layer refuses to construct (a bedrock region or key
- * pair only partly set, LLM-CLAUDE-016). Not a load failure: the service stays up and reports the reason.
+ * Build the chat provider `vision.provider` names, or the configuration gap that keeps it from describing: a blank `vision.model`,
+ * a hosted provider without its credentials, or a provider the model layer refuses to construct (a bedrock key pair only partly
+ * set, LLM-CLAUDE-016). A gap is not a load failure: the service stays up and reports the reason. Built once per start.
  */
-export function buildVisionProvider(cfg: Config): { provider: ChatProvider } | { gap: string } {
+export function buildVisionProvider(cfg: Config): VisionBuild | undefined {
   const { provider, model } = cfg.vision;
-  if (provider === "stub") return { gap: "vision.provider is stub: no provider is built" };
+  if (provider === "stub") return undefined;
   if (!model) return { gap: "vision.model is not set" };
   try {
     const chat = createChatProvider({ ...cfg.llm, provider, model });
-    const missing = credentialGap(cfg.llm, provider);
+    const missing = provider === "anthropic" || provider === "bedrock" ? notConfiguredReason(cfg.llm, provider) : undefined;
     return missing ? { gap: missing } : { provider: chat };
   } catch (err) {
     return { gap: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** The reason a hosted provider lacks its credentials, in the words of the model layer's `not configured` error (LLM-CLAUDE-017, LLM-CLAUDE-018). */
-function credentialGap(llm: Config["llm"], provider: Config["vision"]["provider"]): string | undefined {
-  if (provider === "anthropic" && !llm.claude.api_key) return "the anthropic provider is not configured: llm.claude.api_key is not set";
-  if (provider === "bedrock") {
-    const empty = [["region", llm.bedrock.region], ["access_key_id", llm.bedrock.access_key_id], ["secret_access_key", llm.bedrock.secret_access_key]]
-      .filter(([, v]) => !v).map(([n]) => `llm.bedrock.${n}`);
-    if (empty.length) return `the bedrock provider is not configured: ${empty.join(", ")} not set`;
-  }
-  return undefined;
-}
-
 /** The describer `vision.provider` selects. A stub is `stubDescriber`; a gap describes by failing at once with its reason (EYES-GAP-001, EYES-GAP-004). */
 // @spec EYES-PROV-001, EYES-PROV-002, EYES-PROV-003, EYES-GAP-001, EYES-GAP-003, EYES-GAP-004
-export function createDescriber(cfg: Config): Describe {
-  if (cfg.vision.provider === "stub") return stubDescriber();
-  const built = buildVisionProvider(cfg);
+export function createDescriber(cfg: Config, built: VisionBuild | undefined = buildVisionProvider(cfg)): Describe {
+  if (!built) return stubDescriber();
   if ("gap" in built) {
     const reason = built.gap;
     return async () => { throw new Error(reason); };
@@ -134,12 +122,9 @@ export function describerLabel(cfg: Config): string | undefined {
   return dest.host ? `${dest.engine} at ${dest.host}` : dest.engine;
 }
 
-// @spec EYES-GAP-002, EYES-GAP-003, EYES-GAP-006
-/** The configuration gap that keeps the describer from describing, or undefined when it can describe (stub never has one). */
-export function visionGap(cfg: Config): string | undefined {
-  if (cfg.vision.provider === "stub") return undefined;
-  const built = buildVisionProvider(cfg);
-  return "gap" in built ? built.gap : undefined;
+/** The configuration gap of a build, or undefined when the describer can describe. */
+export function gapOf(built: VisionBuild | undefined): string | undefined {
+  return built && "gap" in built ? built.gap : undefined;
 }
 
 /** One look at the screen; publishes `vision.summary` only when the model saw a change. */

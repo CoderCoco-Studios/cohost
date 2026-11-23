@@ -76,7 +76,7 @@ Depends on `event-bus`, `config` (including `egressDestinations`), `control-plan
 3. **One shutdown sequence in both plans.** `stopEyes` clears the idle timer, stops the link and the bus; `service.ts` registers a single `onStop` step (EYES-ENAB-005).
 4. **Disabled gate.** `startEyes` (`services/eyes/src/eyes.ts`, test `services/eyes/test/eyes.test.ts`) keeps eyes from connecting to OBS with `vision.enabled=false`. Injection still works while disabled.
 5. **Change detection is entirely model-driven.** The service trusts a clear `SAME` (`isSame` in `eyes.ts`); every interval costs a model call. `changed` is always `true` by contract (EYES-LOOK-001).
-6. **One tracked `describe` is shared by loop and injection.** An outage-class failure of an injected image marks `vision` down for the live heartbeat; a frame fault (400, 422, or a `TypeError` for an unsupported image format) drops that frame and leaves `vision` alone (`service.ts`, `health.ts`; EYES-HEALTH-003, EYES-PROV-006, EYES-PROV-007).
+6. **One tracked `describe` is shared by loop and injection.** An outage-class failure of an injected image marks `vision` down for the live heartbeat; a frame fault (400, 422, or an `ImageDataError` for an unsupported image format) drops that frame and leaves `vision` alone (`service.ts`, `health.ts`; EYES-HEALTH-003, EYES-PROV-006, EYES-PROV-007).
 7. **Outbound calls are bounded.** The describer's own timer aborts the describe call after `vision.timeout_ms` and rejects even when a provider ignores the signal (EYES-DESC-006); the upload read gives up after `vision.upload_timeout_ms` and an upload past `vision.upload_max_bytes` is refused (SHARED-INJ-006, SHARED-INJ-007). The `inject.request` subscription starts with `latest` after the group is created (EYES-INJ-014).
 8. **Inject helpers are shared.** `INJECT_STALE_MS` and the upload read have one definition in `packages/shared/src/inject.ts`, used through the shared inject handler by eyes, ears and chat (SHARED-INJ-008). Uploads travel over Redis (`Bus.takeUpload`), so a request carries no URL.
 
@@ -87,6 +87,7 @@ Depends on `event-bus`, `config` (including `egressDestinations`), `control-plan
 
 ### Should Fix
 1. Live check of `vision.provider` against a local Ollama vision model and one hosted provider, recorded on #189.
+2. Claude thinking budget: a Claude or Bedrock describe sends `vision.num_predict` (default 60) as `max_tokens`. A thinking model may spend that budget on thinking and return an empty reply, which reads as `SAME`. Check on the live hosted run and raise the default or a floor for those providers if it does.
 
 ### Nice to Have
 None.

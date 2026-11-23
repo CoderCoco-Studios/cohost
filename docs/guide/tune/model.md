@@ -151,12 +151,12 @@ The [OBS](../connect/obs.md) screenshots that the `eyes` service describes go to
 
 | `vision.provider` | Where the picture goes |
 | --- | --- |
-| `ollama` (default) | Your Ollama server at `OLLAMA_URL`, on your machine or your LAN. Nothing leaves the LAN. |
+| `ollama` (default) | Your Ollama server at `OLLAMA_URL`. On your machine or your LAN, nothing leaves it; a URL off the LAN sends the pictures off it. |
 | `openai` | The OpenAI-compatible server at `llm.openai.base_url`. The default is the hosted `https://api.openai.com/v1`, so the picture leaves your machine; a server on your LAN keeps it there. |
 | `anthropic`, `bedrock` | The hosted Claude API or Amazon Bedrock, with the keys from `secrets.yaml`. The picture leaves your machine. |
 | `stub` | Nowhere: fixed text, no model. |
 
-Each provider takes pictures in its own form. A model that takes no images fails the describe call with an error, and eyes reports that frame as failed. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. Bytes that are not a JPEG, PNG, GIF or WebP, such as a BMP or a PDF injected from the dashboard, are refused before anything is sent.
+Each provider takes pictures in its own form. A model that takes no images fails the describe call with an error. A 400 or 422 from the provider reports that one frame as failed and leaves `vision` as it was; any other error marks `vision` down until a later describe succeeds. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. For `openai`, `anthropic` and `bedrock`, bytes that are not a JPEG, PNG, GIF or WebP, such as a BMP or a PDF injected from the dashboard, are refused before anything is sent; `ollama` passes the bytes through unchecked.
 
 When frames leave the LAN, eyes logs one warning at start that names the provider and, for `openai`, the host. Its [heartbeat](../../start/glossary.md#heartbeat) detail names the same destination. A blank `vision.model`, or a hosted provider without its keys, keeps eyes running with `vision` down and the reason in the detail; it describes nothing until you fix the setting.
 

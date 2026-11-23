@@ -16,7 +16,7 @@
 import type { Bus } from "@cohost/bus";
 import type { Config } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
-import { Eyes, createDescriber, describerLabel, startEyes, stripDataUrl, visionGap, type Describe } from "./eyes.js";
+import { Eyes, buildVisionProvider, createDescriber, describerLabel, gapOf, startEyes, stripDataUrl, type Describe, type VisionBuild } from "./eyes.js";
 import { egressDestinations } from "@cohost/config";
 import { EyesHealth } from "./health.js";
 import { createInjectHandler } from "./inject.js";
@@ -49,11 +49,14 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
   const sleep = deps.sleep ?? timerSleep;
   const now = deps.now ?? (() => performance.now());
   let health: EyesHealth | undefined;
+  /** The provider this start builds, made once by `health(cfg)` (runService calls it before `main`) and shared with `main`. */
+  let built: VisionBuild | undefined;
 
   return {
     // @spec EYES-HEALTH-001, EYES-HEALTH-002, EYES-STUB-002
     health(cfg) {
-      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.provider, { label: describerLabel(cfg), gap: visionGap(cfg) });
+      built = buildVisionProvider(cfg);
+      health = new EyesHealth(cfg.vision.enabled, () => obs.identified, cfg.vision.provider, { label: describerLabel(cfg), gap: gapOf(built) });
       return health.spec;
     },
 
@@ -65,7 +68,8 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
       // @spec EYES-GAP-002, EYES-GAP-003, EYES-HEALTH-003
       // A gap keeps the service up with `vision` down; the reason is the heartbeat detail while
       // enabled. `ready()` clears a detail, so the reason is set again after each ready (OBS connect).
-      const gap = cfg.vision.enabled ? visionGap(cfg) : undefined;
+      const vision = built ?? buildVisionProvider(cfg);
+      const gap = cfg.vision.enabled ? gapOf(vision) : undefined;
       const label = describerLabel(cfg);
       const gapDetail = gap ? (label ? `${label}: ${gap}` : gap) : undefined;
       if (gapDetail) heartbeat.degraded(gapDetail);
@@ -92,7 +96,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
         log.warn(`eyes sends frames to ${e.engine}${e.host ? ` at ${e.host}` : ""}, which is off the LAN`);
       }
       // @spec EYES-HEALTH-003
-      const describe = health!.track((deps.createDescriber ?? createDescriber)(cfg));
+      const describe = health!.track(deps.createDescriber ? deps.createDescriber(cfg) : createDescriber(cfg, vision));
       const eyes = new Eyes({ bus, log, screenshot, describe, now });
 
       // Injected images never touch OBS, so this is wired whether vision is enabled or idle. The

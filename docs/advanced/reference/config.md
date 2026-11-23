@@ -68,7 +68,7 @@ The `eyes` service: OBS screenshots described by a vision model.
 | `vision` | map | The eyes service |
 | `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
 | `vision.model` | `qwen2.5vl:3b` | The vision model the describer asks. Ollama pulls it while `provider` is `ollama`. Blank is a configuration gap: eyes stays up, makes no describe call, and reports `vision` down with `vision.model is not set` while `enabled` is true |
-| `vision.provider` | `ollama` | The chat provider that describes frames: `ollama` (your Ollama server, `OLLAMA_URL`), `openai` (the OpenAI-compatible server at `llm.openai.base_url`, which defaults to the hosted `https://api.openai.com/v1`), `anthropic` or `bedrock` (hosted, with the `llm.claude.*` and `llm.bedrock.*` keys), or `stub` for fixed text and no model. Frames leave the LAN for `anthropic`, `bedrock` and an off-LAN `openai`; eyes logs one warning at start. Sensitive: changing it needs the control token |
+| `vision.provider` | `ollama` | The chat provider that describes frames: `ollama` (your Ollama server, `OLLAMA_URL`), `openai` (the OpenAI-compatible server at `llm.openai.base_url`, which defaults to the hosted `https://api.openai.com/v1`), `anthropic` or `bedrock` (hosted, with the `llm.claude.*` and `llm.bedrock.*` keys), or `stub` for fixed text and no model. Frames leave the LAN for `anthropic`, `bedrock`, and an off-LAN `openai` or `ollama` URL; eyes logs one warning at start. Sensitive: changing it needs the control token |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |

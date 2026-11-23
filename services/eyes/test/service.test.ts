@@ -219,6 +219,14 @@ const results = (r: ReturnType<typeof rig>) => r.bus.of("inject.result");
 const lineText = (l: { obj: unknown; msg?: string }): string => `${l.msg ?? ""} ${typeof l.obj === "string" ? l.obj : JSON.stringify(l.obj)}`;
 const warnings = (r: ReturnType<typeof rig>): string[] => r.rec.lines.filter((l) => l.level === "warn").map(lineText);
 const lastHeartbeat = (r: ReturnType<typeof rig>) => heartbeats(r.bus).at(-1);
+/**
+ * The newest heartbeat is degraded, with vision down and the gap reason as its detail. A `ready()` after the gap was set
+ * would clear the detail (SHARED-LIFE), so this fails if the OBS link reports ready without the gap reason re-applied.
+ */
+const degradedWithReason = (r: ReturnType<typeof rig>, reason: RegExp): boolean => {
+  const h = lastHeartbeat(r);
+  return h?.state === "degraded" && h.deps?.vision === "down" && reason.test(h.detail ?? "");
+};
 /** Run `fn` with `OLLAMA_URL` set. */
 async function withOllama<T>(url: string, fn: () => Promise<T>): Promise<T> {
   const saved = process.env.OLLAMA_URL;
@@ -295,10 +303,10 @@ test("enabled with a blank vision.model: eyes stays up, the loop sends no descri
     const r = rig({ enabled: true, provider: "ollama", model: "" }, { sleep: async () => { sleeps++; await settle(2); } }, new JpegObs());
     try {
       await r.start();
-      await waitFor(() => sleeps >= 5, "several loop passes");
+      await waitFor(() => r.obs.connects >= 1 && sleeps >= 5, "OBS connected and several loop passes");
       assert.deepEqual(m.seen, []);
       assert.deepEqual(r.exits, []);
-      await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down" && /vision\.model is not set/.test(h.detail ?? "")), "down with the reason", 4000);
+      await waitFor(() => degradedWithReason(r, /vision\.model is not set/), "last heartbeat degraded with the reason", 4000);
     } finally { await r.stop(); }
   });
 });
@@ -308,9 +316,9 @@ test("enabled, anthropic without llm.claude.api_key: eyes stays up, each look fa
   const r = rig({ enabled: true, provider: "anthropic", model: "claude-vision" }, {}, new JpegObs());
   try {
     await r.start();
-    await waitFor(() => r.rec.msgs("warn").filter((m) => m === "look failed").length >= 2, "looks failing");
+    await waitFor(() => r.obs.connects >= 1 && r.rec.msgs("warn").filter((m) => m === "look failed").length >= 1, "OBS connected and a look failed");
     assert.ok(r.rec.lines.some((l) => l.level === "warn" && /not configured: llm\.claude\.api_key is not set/.test(lineText(l))));
-    await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down" && /llm\.claude\.api_key is not set/.test(h.detail ?? "")), "down with the reason", 4000);
+    await waitFor(() => degradedWithReason(r, /llm\.claude\.api_key is not set/), "last heartbeat degraded with the reason", 4000);
     inject(r);
     await waitFor(() => results(r).length === 1, "inject.result");
     assert.equal(results(r)[0]!.ok, false);
@@ -325,7 +333,8 @@ test("enabled, bedrock without its region and keys: deps.vision is down naming t
   const r = rig({ enabled: true, provider: "bedrock", model: "claude-vision" }, {}, new JpegObs());
   try {
     await r.start();
-    await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down" && /llm\.bedrock\.region/.test(h.detail ?? "")), "down with the reason", 4000);
+    await waitFor(() => r.obs.connects >= 1, "OBS connected");
+    await waitFor(() => degradedWithReason(r, /llm\.bedrock\.region/), "last heartbeat degraded with the reason", 4000);
     assert.deepEqual(r.exits, []);
   } finally { await r.stop(); }
 });
@@ -411,7 +420,8 @@ test("enabled, bedrock with a region and only the access key: eyes stays up, dep
   const r = rig({ enabled: true, provider: "bedrock", model: "claude-vision", llm }, {}, new JpegObs());
   try {
     await r.start();
-    await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down" && /must be set together/.test(h.detail ?? "")), "down with the reason", 4000);
+    await waitFor(() => r.obs.connects >= 1, "OBS connected");
+    await waitFor(() => degradedWithReason(r, /must be set together/), "last heartbeat degraded with the reason", 4000);
     inject(r);
     await waitFor(() => results(r).length === 1, "inject.result");
     assert.equal(results(r)[0]!.ok, false);
@@ -434,5 +444,19 @@ test("enabled with openai: an injected BMP is a frame fault, answers ok:false, a
     await settle(1300);
     assert.ok(heartbeats(r.bus).every((h) => h.deps?.vision !== "down"));
     assert.deepEqual(m.seen, []);
+  } finally { await r.stop(); }
+});
+
+// @spec EYES-PROV-006, EYES-HEALTH-003
+test("enabled with openai: a socket dropped mid-body is an outage, a TypeError from undici, so deps.vision goes down", async () => {
+  const m = await serveModel();
+  m.state.dropMidBody = true;
+  const r = rig({ enabled: true, provider: "openai", model: "vision-model", llm: { openai: { base_url: m.url } } }, {}, new IdleObs());
+  try {
+    await r.start();
+    inject(r, "i1");
+    await waitFor(() => results(r).length === 1, "inject.result");
+    assert.equal(results(r)[0]!.ok, false);
+    await waitFor(() => heartbeats(r.bus).some((h) => h.deps?.vision === "down"), "vision down after a dropped socket", 4000);
   } finally { await r.stop(); }
 });

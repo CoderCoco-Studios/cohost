@@ -1,13 +1,14 @@
-import { ChatError } from "@cohost/llm";
+import { ChatError, ImageDataError } from "@cohost/llm";
 import { type HeartbeatSpec } from "@cohost/shared";
 
 /**
- * A describe failure that concerns one frame, not the provider (EYES-PROV-007): a 400 or 422 from the provider, or a
- * TypeError from the model layer for image data in no supported format (LLM-VIS-005). Every other failure is an outage.
+ * A describe failure that concerns one frame, not the provider (EYES-PROV-007): a 400 or 422 from the provider, or an
+ * `ImageDataError` from the model layer for image data in no supported format (LLM-VIS-005). Every other failure is an
+ * outage, including the `TypeError` undici throws when a socket drops mid-body.
  */
 // @spec EYES-PROV-006, EYES-PROV-007
 export const isFrameFault = (err: unknown): boolean =>
-  err instanceof TypeError || (err instanceof ChatError && err.kind === "http" && (err.status === 400 || err.status === 422));
+  err instanceof ImageDataError || (err instanceof ChatError && err.kind === "http" && (err.status === 400 || err.status === 422));
 
 export interface EyesHealthOptions {
   /** The heartbeat detail: the destination, as `describerLabel` names it. */

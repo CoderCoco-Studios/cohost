@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runHeartbeat } from "@cohost/testing";
-import { ChatError } from "@cohost/llm";
+import { ChatError, ImageDataError } from "@cohost/llm";
 import { EyesHealth } from "../src/health.js";
 
 // @spec EYES-HEALTH-001
@@ -65,6 +65,7 @@ test("every outage-class failure sets deps.vision down: dropped connection, time
     ["stream, no status", new ChatError("stream", "openai stream: cut")],
     ["timeout", new Error("vision model did not answer within 30000 ms")],
     ["a plain error with no status", new Error("boom")],
+    ["a TypeError from a dropped socket (undici: terminated)", new TypeError("terminated")],
   ];
   for (const [name, err] of outages) {
     const h = new EyesHealth(true, () => true, "openai");
@@ -125,8 +126,8 @@ test("every provider reports mode live while enabled and off while disabled, wit
 });
 
 // @spec EYES-PROV-007, EYES-PROV-006
-test("a TypeError from the model layer for one frame (image data in no supported format) leaves deps.vision as it was", async () => {
-  const bad = new TypeError("image data is not JPEG, PNG, GIF or WebP");
+test("an ImageDataError from the model layer for one frame (image data in no supported format) leaves deps.vision as it was", async () => {
+  const bad = new ImageDataError("image data is not JPEG, PNG, GIF or WebP");
   const ok = new EyesHealth(true, () => true, "openai");
   await fail(ok, bad);
   assert.equal(await visionOf(ok), "ok");

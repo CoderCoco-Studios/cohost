@@ -51,7 +51,9 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.equal(r.status, 200);
   const { sections } = (await r.json()) as { sections: { path: string; services: string[]; schema: any; secrets: string[] }[] };
   const declared = [...new Set(SERVICE_MANIFEST.flatMap((s) => s.config))];
-  assert.deepEqual(sections.map((s) => s.path), [...declared, "dashboard"]);
+  assert.deepEqual(sections.map((s) => s.path).sort(), [...declared, "dashboard", "renderer"].sort());
+  assert.deepEqual(sections.find((s) => s.path === "renderer")!.services, []);
+  assert.deepEqual(sections.find((s) => s.path === "renderer")!.secrets, []);
   const llm = sections.find((s) => s.path === "llm")!;
   assert.deepEqual(llm.services, SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).map((s) => s.id));
   assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
@@ -340,4 +342,15 @@ test("a save leaves comments, unknown keys and other sections exactly as they we
   assert.equal(changed.length, 1);
   assert.match(changed[0]!, /speed: 1\.1/);
   assert.match(t.text(), /legacy_key: 1 {3}# old/);
+});
+
+// @spec MOD-CFG-021, MOD-CFG-022
+test("GET /config/schema serves the avatar-model and slider widgets and live: true on the renderer section alone", async () => {
+  const t = await boot({ control: true });
+  const { sections } = (await (await t.get("/config/schema")).json()) as { sections: { path: string; live?: unknown; keys: Record<string, { widget?: unknown }> }[] };
+  const renderer = sections.find((s) => s.path === "renderer")!;
+  assert.equal(renderer.live, true);
+  assert.deepEqual(renderer.keys["model"]!.widget, { type: "avatar-model" });
+  assert.deepEqual(renderer.keys["turn"]!.widget, { type: "slider" });
+  for (const s of sections.filter((x) => x.path !== "renderer")) assert.equal("live" in s, false, `${s.path} has no live field`);
 });

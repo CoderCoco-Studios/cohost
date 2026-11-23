@@ -78,9 +78,9 @@ test("an entry for a section or key that the schema does not define fails, and t
   assert.equal(ALL_KEYS.length, new Set(ALL_KEYS).size, "a key belongs to one section");
 });
 
-// @spec CFG-PRES-007
-test("the declared sections are the sections the control plane's manifest declares plus dashboard", () => {
-  const declared = new Set<string>(["dashboard", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
+// @spec CFG-PRES-007, CFG-PRES-018
+test("the declared sections are the sections the control plane's manifest declares plus dashboard and renderer", () => {
+  const declared = new Set<string>(["dashboard", "renderer", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
   // the manifest's `tools` unit (and its `tools` section) arrives with #208; until then the presentation table alone declares it
   declared.add("tools");
   assert.deepEqual([...declared].sort(), [...SECTION_LIST].sort());
@@ -108,7 +108,7 @@ test("the four text-limit keys carry the unit chars and brain.affect.count_windo
   assert.equal(PRESENTATION.keys["brain.affect.count_window_ms"]?.unit, "ms");
 });
 
-// @spec CFG-PRES-005
+// @spec CFG-PRES-005, MOD-CFG-021
 test("a widget is one of the closed set, a model widget is on a string key, options are distinct members of the enum", () => {
   const KINDS = ["chat", "small", "vision", "embed", "stt"];
   for (const [k, e] of Object.entries(PRESENTATION.keys)) {
@@ -116,7 +116,8 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
     if (!w) continue;
     const node = nodeOf(k);
     switch (w.type) {
-      case "timezone": case "voice": case "sources": case "textarea": case "mcp-servers": case "tool-list": break;
+      case "timezone": case "voice": case "sources": case "textarea": case "mcp-servers": case "tool-list": case "avatar-model": break;
+      case "slider": assert.equal(node.type, "number", `${k}: a slider is on a numeric key`); break;
       case "model":
         assert.ok(KINDS.includes(w.kind), `${k}: model kind ${String(w.kind)}`);
         assert.equal(node.type, "string", `${k}: a model widget is on a string key`);
@@ -305,4 +306,37 @@ test("the network section entry stays in group System with a title, an about sen
   assert.ok(oneLine(PRESENTATION.keys["network.lan"]?.help));
   const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.id).sort();
   for (const u of ["ears", "eyes", "voice"]) assert.ok(declaring.includes(u), u);
+});
+
+// @spec CFG-PRES-018
+test("the renderer section is in group Voice and body, titled Avatar renderer, shown on avatar, with help for its four keys and the unit deg on turn", () => {
+  const e = PRESENTATION.sections["renderer"]!;
+  assert.ok(e, "renderer entry");
+  assert.equal(e.title, "Avatar renderer");
+  assert.equal(e.group, "Voice and body");
+  assert.equal(e.page, "avatar");
+  assert.equal(e.live, true);
+  assert.ok(oneLine(e.about));
+  assert.deepEqual(sectionKeyPaths("renderer").sort(), ["renderer.model", "renderer.offset_y", "renderer.turn", "renderer.zoom"]);
+  for (const k of sectionKeyPaths("renderer")) assert.ok(oneLine(PRESENTATION.keys[k]?.help), `${k}: help`);
+  assert.equal(PRESENTATION.keys["renderer.turn"]!.unit, "deg");
+  assert.ok(oneLine(PRESENTATION.keys["dashboard.models.max_bytes"]?.help), "max_bytes help");
+  assert.equal(PRESENTATION.keys["dashboard.models.max_bytes"]!.unit, "bytes");
+});
+
+// @spec CFG-PRES-019, MOD-CFG-022
+test("live is true on the renderer section alone, and sectionPresentation carries it only there", () => {
+  const live = Object.entries(PRESENTATION.sections).filter(([, e]) => e.live !== undefined);
+  assert.deepEqual(live.map(([s, e]) => [s, e.live]), [["renderer", true]]);
+  assert.equal(sectionPresentation("renderer").live, true);
+  assert.equal("live" in sectionPresentation("dashboard"), false);
+  assert.equal("live" in sectionPresentation("avatar"), false);
+});
+
+// @spec CFG-PRES-020
+test("renderer.model gets the avatar-model widget, renderer.turn the slider, and none of the renderer keys nor dashboard.models.max_bytes is sensitive", () => {
+  assert.deepEqual(PRESENTATION.keys["renderer.model"]!.widget, { type: "avatar-model" });
+  assert.deepEqual(PRESENTATION.keys["renderer.turn"]!.widget, { type: "slider" });
+  for (const k of [...sectionKeyPaths("renderer"), "dashboard.models.max_bytes"]) assert.notEqual(PRESENTATION.keys[k]?.sensitive, true, `${k} is not sensitive`);
+  assert.equal((sectionJsonSchema("renderer") as any).properties.turn.minimum, -90);
 });

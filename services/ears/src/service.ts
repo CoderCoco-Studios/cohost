@@ -11,7 +11,7 @@ import { SttRouter } from "./stt.js";
 import { createDirCapture } from "./capture-dir.js";
 import { createHttpCapture } from "./capture-http.js";
 import type { CaptureAdapter, HearClip } from "./capture.js";
-import { createConnectorSource, type ConnectorSource } from "./connector-source.js";
+import { createConnectorSource, type ConnectorSource, type EarlyCounts } from "./connector-source.js";
 import { Hearing } from "./hearing.js";
 import { createInjectHandler } from "./inject.js";
 import { EchoGate } from "./echo.js";
@@ -64,6 +64,12 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       if (partialsOn && !streaming && !cfg.ears.stt_gpu) log.warn("ears.partials is on and ears.stt_gpu is false: partial transcription may not keep up on a speech-to-text backend that is not on a GPU");
       // @spec EARS-STUB-002
       if (stub) log.warn("ears.stt_engine is stub: transcripts are fixed text (stub transcript), nothing is sent to the STT service");
+      // @spec EARS-EARLY-009, EARS-EARLY-010
+      const earlyOn = cfg.ears.early.enabled;
+      if (earlyOn && streaming) log.warn(`ears.early.enabled is on but ears.stt_engine is ${engines.selected.name}, a streaming engine: early reply is off, because that engine ends utterances itself`);
+      // stub is a batch engine (EARS-ENG-001), so early reply runs with it like any batch engine
+      const earlyActive = earlyOn && !streaming;
+      const earlyCounts: EarlyCounts = { published: 0, retracted: 0, reused: 0, late: 0 };
       // @spec EARS-HLTH-010
       if (plan.sources.length > 0) {
         for (const e of egressDestinations(cfg).filter((x) => x.service === "ears" && x.offLan)) {
@@ -148,6 +154,14 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
             // @spec EARS-SES-005: an echo-suppressed source never opens a session
             ...(rt.stream && !echoGated ? { stream: { router: rt, minSpeechMs: cfg.ears.min_speech_ms } } : {}),
             hearText: (text, durationMs, meta) => hearing.heardText(text, durationMs, meta),
+            // @spec EARS-EARLY-001, EARS-EARLY-008: an echo-suppressed source never takes an early snapshot
+            ...(earlyActive && !echoGated ? { early: {
+              afterMs: cfg.ears.early.after_ms, max: cfg.ears.early.max_per_utterance, minSpeechMs: cfg.ears.min_speech_ms, dropPhrases: cfg.ears.drop_phrases,
+              transcribe: (wav: Buffer) => rt.partial(wav),
+              publish: async (data) => { await bus.publish("speech.early", data); },
+              publishRetracted: async (data) => { await bus.publish("speech.retracted", data); },
+              counts: earlyCounts,
+            } } : {}),
           });
           sources.set(src.name, cs);
           adapters.set(src.name, cs);
@@ -155,6 +169,12 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       }
 
       const statsText = (): string => [...sources.entries()].map(([n, s]) => `${n} ${s.stats()}`).join("; ");
+      // @spec EARS-EARLY-011, EARS-EARLY-022
+      const earlyText = (): string => {
+        if (!earlyOn) return "";
+        if (streaming) return "early reply off: streaming engine";
+        return `early: ${earlyCounts.published} published, ${earlyCounts.retracted} retracted, ${earlyCounts.reused} reused, ${earlyCounts.late} late`;
+      };
       const detailOf = (name: string): string => failed.get(name) ?? sources.get(name)?.detail() ?? "";
       /**
        * One heartbeat state from every source and the speech-to-text engine: degraded while any enabled source or `deps.stt`
@@ -166,12 +186,12 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
         const sttDetail = h.sttDetail();
         const sttPart = [h.sttSummary(), sttDetail].filter((x) => x !== undefined).join(": ");
         if (down.length === 0 && sttDetail === undefined) {
-          heartbeat.setDetail([statsText(), sttPart].filter((x) => x !== "").join("; ") || undefined);
+          heartbeat.setDetail([statsText(), earlyText(), sttPart].filter((x) => x !== "").join("; ") || undefined);
           if (reported !== "ready") { reported = "ready"; heartbeat.ready(); }
           return;
         }
         const reasons = down.map((s) => s.gap ?? detailOf(s.name)).filter((d) => d !== "");
-        const text = [...reasons, sttPart].filter((x) => x !== "").join("; ");
+        const text = [...reasons, earlyText(), sttPart].filter((x) => x !== "").join("; ");
         if (reported !== `degraded:${text}`) { reported = `degraded:${text}`; heartbeat.degraded(text || undefined); }
       };
       h.changed = refresh;

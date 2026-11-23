@@ -71,8 +71,10 @@ export async function boot(ears: Record<string, unknown>, o: { setup?: (bus: Con
   const deliver = async (ev: unknown) => { for (const s of subs) if (s.opts.types.includes((ev as { type: string }).type)) await s.handler(ev as never); };
   return {
     bus, log,
-    heard: () => bus.of("speech.heard") as unknown as { speaker: string; speakerId?: string; source?: string; text: string; durationMs: number; utteranceId?: string; timing?: { audioEndedAt?: number } }[],
+    heard: () => bus.of("speech.heard") as unknown as { speaker: string; speakerId?: string; source?: string; text: string; durationMs: number; utteranceId?: string; earlySeq?: number; earlySttMs?: number; earlyLate?: true; timing?: { audioEndedAt?: number; closedAt?: number } }[],
     partials: () => bus.of("speech.partial" as never) as unknown as { speaker: string; speakerId?: string; source: string; text: string; seq: number; utteranceId: string; timing?: { audioEndedAt?: number } }[],
+    early: () => bus.of("speech.early" as never) as unknown as { speaker: string; speakerId?: string; source: string; text: string; seq: number; sttMs: number; utteranceId: string; timing?: { audioEndedAt?: number; closedAt?: number } }[],
+    retracted: () => bus.of("speech.retracted" as never) as unknown as { speaker: string; speakerId?: string; source: string; utteranceId: string; seq: number }[],
     lastHeartbeat: () => bus.health.at(-1),
     /** Deliver an event to the handler the service subscribed (`inject.request`, `voice.playing`). */
     deliver,

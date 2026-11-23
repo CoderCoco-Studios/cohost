@@ -25,6 +25,13 @@ export interface HeardMeta {
   source?: string;
   audioEndedAt?: number;
   utteranceId?: string;
+  /** Epoch ms ears closed the utterance, when it did (EARS-EARLY-020). */
+  closedAt?: number;
+  /** Early reply: the `seq` and speech-to-text time of the early transcript this final reuses (EARS-EARLY-016). */
+  earlySeq?: number;
+  earlySttMs?: number;
+  /** The final arrived after an early transcription it waited for at the close (EARS-EARLY-018). */
+  earlyLate?: true;
 }
 
 // @spec EARS-HEAR-004, EARS-HEAR-005, EARS-HEAR-006, EARS-HEAR-007, EARS-HEAR-008, EARS-HEAR-011, EARS-HEAR-012
@@ -46,7 +53,7 @@ export class Hearing {
     const utteranceId = clip.utteranceId ?? randomUUID(); // @spec EARS-PART-003
     try {
       const text = await this.d.transcribe(wav, clip.fallback === true);
-      return await this.publish(text, durationMs, { speaker, speakerId, source, audioEndedAt: clip.audioEndedAt, utteranceId });
+      return await this.publish(text, durationMs, { speaker, speakerId, source, audioEndedAt: clip.audioEndedAt, utteranceId, closedAt: clip.closedAt });
     } catch (err) {
       return this.failed(err);
     }
@@ -63,7 +70,7 @@ export class Hearing {
   }
 
   private async publish(text: string, durationMs: number, m: HeardMeta): Promise<HearOutcome> {
-    const { speaker, speakerId, source, audioEndedAt, utteranceId } = m;
+    const { speaker, speakerId, source, audioEndedAt, utteranceId, closedAt, earlySeq, earlySttMs, earlyLate } = m;
     text = text.trim();
     if (!hasWordCharacter(text)) return { heard: false, reason: "empty" };
     // @spec EARS-HEAR-010
@@ -72,7 +79,8 @@ export class Hearing {
       return { heard: false, reason: "drop-phrase" };
     }
     this.d.log.info({ speaker, durationMs: Math.round(durationMs), text }, "heard");
-    await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }), ...(utteranceId === undefined ? {} : { utteranceId }), ...(audioEndedAt === undefined ? {} : { timing: { audioEndedAt } }) });
+    const timing = { ...(audioEndedAt === undefined ? {} : { audioEndedAt }), ...(closedAt === undefined ? {} : { closedAt }) };
+    await this.d.bus.publish("speech.heard", { speaker, ...(speakerId === undefined ? {} : { speakerId }), text, durationMs: Math.round(durationMs), ...(source === undefined ? {} : { source }), ...(utteranceId === undefined ? {} : { utteranceId }), ...(Object.keys(timing).length === 0 ? {} : { timing }), ...(earlySeq === undefined ? {} : { earlySeq }), ...(earlySttMs === undefined ? {} : { earlySttMs }), ...(earlyLate ? { earlyLate: true as const } : {}) });
     return { heard: true, text };
   }
 

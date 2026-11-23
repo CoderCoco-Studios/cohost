@@ -13,6 +13,8 @@ export interface Clip {
   audioEndedAt?: number;
   /** Minted when the utterance opened (connector source); `Hearing` mints one for a whole clip (EARS-PART-003). */
   utteranceId?: string;
+  /** Epoch ms ears closed the utterance (the silence rule, the frame-gap rule, the length cap or a Kyutai end of turn); absent for a clip ears did not close (EARS-EARLY-020). */
+  closedAt?: number;
   /** A live utterance whose streaming session could not serve it, sent to the batch engine as its fallback (EARS-SES-010). */
   fallback?: boolean;
 }

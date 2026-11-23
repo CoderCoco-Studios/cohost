@@ -211,7 +211,7 @@ test("early: below the threshold it publishes nothing, decides no idle chatter, 
   e.advance(20_000);
   await e.s.onEvent(early("look at this one"));
   await flush();
-  assert.equal(e.calls(), 2, "the early pass scored");
+  assert.equal(e.calls(), 1, "the early pass scored the chat line and the early text in one call (SAL-PROV-006)");
   assert.equal(focuses(e).length, 0, "no provisional focus and no idle chatter");
   assert.equal(resolves(e).length, 0);
   await e.s.onEvent(heard("look at this one that is long"));
@@ -301,8 +301,10 @@ test("early: the matching final publishes a confirm with the final's fields and 
   const fin = heard("look at this one please", { timing: { audioEndedAt: 5000, closedAt: 4000 }, injected: true, remember: false });
   await e.s.onEvent(fin);
   await flush();
+  // The confirm carries the held record's reason and score (SAL-PROV-013): the provisional decision scored the chat line (0.55)
+  // and the early speech (0.9), as SAL-PROV-006 asserts. Written as the sum the walk adds (0.9 first), which is exact in floats.
   assert.deepEqual(resolves(e), [{
-    utteranceId: "u1", seq: 0, outcome: "confirm", reason: "engaged", score: 0.9,
+    utteranceId: "u1", seq: 0, outcome: "confirm", reason: "engaged", score: 0.9 + 0.55,
     focus: { kind: "speech", who: "Chris", text: "look at this one please", source: "discord", mention: false },
     injected: true, remember: false,
     timing: { audioEndedAt: 5000, closedAt: 4000, heardAt: fin.ts },
@@ -496,4 +498,24 @@ test("early: a speech focus whose event carries an utteranceId sets it; one with
   await bare.s.onEvent(heard("look at this one", { utteranceId: undefined, earlySeq: undefined }));
   await flush();
   assert.equal(focuses(bare)[0]!.utteranceId, undefined);
+});
+
+test("early: a withdraw sent while the provisional focus is still publishing is ordered behind it on the bus", async () => { // @spec SAL-PROV-023
+  const e = setup();
+  const realPublish = e.bus.publish.bind(e.bus) as typeof e.bus.publish;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  e.bus.publish = (async (type: Parameters<typeof realPublish>[0], data: Parameters<typeof realPublish>[1]) => {
+    if (type === "attention.focus") await gate; // the focus is in flight while the withdraw is sent
+    return realPublish(type, data);
+  }) as typeof e.bus.publish;
+  await e.s.onEvent(early("look at this one"));
+  await flush(); // the scorer has returned; the focus publish waits on the gate
+  await e.s.onEvent(event("control", { cmd: "mute" }));
+  await flush();
+  assert.deepEqual(e.kinds(), [], "nothing is on the bus while the focus is in flight");
+  release();
+  await flush();
+  assert.deepEqual(e.kinds(), ["attention.focus", "resolve:withdraw"], "the resolve follows its focus");
+  assert.equal(resolves(e)[0]!.reason, "muted");
 });

@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 103 `[x]`, 64 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are counted per category in the coverage table below: the early-reply and interjection specs (SAL-PROV, SAL-INTJ), the streamed-speech clause specs, and the open focus and intake specs (SAL-FOCUS-004 and SAL-FOCUS-006 are revised by the early-reply work; SAL-IN-001 and SAL-IN-007 are open). The LLD lists open questions.
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 143 `[x]`, 24 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the 23 interjection specs (SAL-INTJ, the interjection half of early reply, #226) and SAL-BARGE-001, which the early-reply work revises. The LLD lists open questions.
 
 ## Decisions applied
 
@@ -40,7 +40,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 103 `[x]`, 64 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 143 `[x]`, 24 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -52,6 +52,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - services/salience/test/health.test.ts
 - services/salience/test/main.test.ts
 - services/salience/test/timing.test.ts
+- services/salience/test/salience.early.test.ts
 - services/salience/test/salience.reminders.test.ts
 
 ### Code (files carrying `@spec SAL-`)
@@ -86,11 +87,11 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Intake | SAL-IN-001 to SAL-IN-009 | 7 | 0 | 2 |
+| Intake | SAL-IN-001 to SAL-IN-009 | 9 | 0 | 0 |
 | Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 14 | 0 | 0 |
 | Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 19 | 0 | 0 |
-| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 5 | 0 | 2 |
-| Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 7 | 1 | 2 |
+| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 7 | 0 | 0 |
+| Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 9 | 1 | 0 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-008 | 8 | 0 | 0 |
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 |
 | Control | SAL-CTRL-001 to SAL-CTRL-007 | 7 | 0 | 0 |
@@ -98,10 +99,10 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Barge-in | SAL-BARGE-001 to SAL-BARGE-012 | 11 | 0 | 1 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 | Reminders | SAL-REM-001 to SAL-REM-008 | 8 | 0 | 0 |
-| Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 0 | 0 | 34 |
+| Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 34 | 0 | 0 |
 | Interjection | SAL-INTJ-001 to SAL-INTJ-023 | 0 | 0 | 23 |
 
-**Summary:** 168 specs: 103 implemented, 64 gaps, 1 deferred. The early-reply specs (SAL-PROV, SAL-INTJ, with SAL-IN-001 revised and SAL-TRIG-001, SAL-TRIG-002, SAL-BARGE-001, SAL-IN-007, SAL-FOCUS-004 and SAL-FOCUS-006 revised and opened) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 168 specs: 143 implemented, 24 gaps, 1 deferred. The gaps are SAL-INTJ-001 to SAL-INTJ-023 (interjection, #226) and SAL-BARGE-001 (revised by the early-reply work; its interjection clause waits on #226). `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -114,10 +115,10 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 7. **Decisions cite evidence or an owner decision.** LLD rows are settled by code comments, commit `969f6d7` ("Fix review findings") or the 2026-11-01 owner decisions; two keep a partial `[inferred]` (why sum not max, the 0.1 threshold floor) and the 60 s valve default value is `[inferred]`.
 8. **Reminders run on the wall clock, gates decide only speech.** `Reminders.takeExpired` and `due` compare `dueAt` with `Date.now()`; an expired reminder is republished as `missed` on arrival and on every tick, whatever the gates, and is never spoken (SAL-REM-003). A failed `missed` republish is logged and the reminder dropped (no retry; the LLD's Decisions table records the rejected re-hold). A reminder whose focus publish is in flight is never expired, so it is not spoken and republished as missed. A `tool.timer` arriving while paused is held in the list and decided after resume.
 9. **`chat.removed` is forgotten in `onEvent`, which has no pause gate** (SAL-IN-008, SAL-IN-009). The removed entries are recorded, so a decision whose focus is one of them publishes nothing (SAL-FOCUS-007). The burst counter keys viewers by `viewerKey` (SAL-DECIDE-011, SAL-DECIDE-012, SAL-DECIDE-017 to SAL-DECIDE-019).
+10. **Early reply's salience half** (`Salience.earlyPass`, `provisional`, `withdraw`, `confirm` in `salience.ts`). An early transcript is scored beside the unseen events without entering the window, and a provisional focus is held until exactly one `attention.resolve` (SAL-PROV-023). The limit is a node timer (`brain.salience.unresolved_limit_ms`); a resolve is ordered behind its focus publish. A final with the held `earlySeq` confirms it and reuses the early score (SAL-PROV-007); any other final withdraws as `resumed`. The early pass is a decision in flight, so a final during it records one rerun.
 
 ## Work Required
 
-- SAL-IN-001 stays open: its listed types name sources salience does not yet subscribe to.
 - Open LLD questions: repeated mentions across decisions, and several viewers named `unknown`.
 
 ### Must Fix

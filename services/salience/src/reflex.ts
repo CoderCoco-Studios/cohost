@@ -19,6 +19,15 @@ export class Reflexes {
 
   get size(): number { return this.rules.length; }
 
+  /**
+   * Whether a rule would fire on `text` now, without spending its cooldown. The early pass asks this so an early transcript
+   * that a reflex answers is left to the final (SAL-PROV-004).
+   * @spec SAL-PROV-004
+   */
+  matches(sense: Sense, text: string, now = performance.now()): boolean {
+    return this.rules.some((r) => r.rule.on.includes(sense) && now - r.lastFired >= r.rule.cooldown_ms && r.re.test(text));
+  }
+
   test(sense: Sense, text: string, now = performance.now()): ReflexHit | undefined { // @spec SAL-REFLEX-001, SAL-REFLEX-003
     for (const r of this.rules) {
       if (!r.rule.on.includes(sense)) continue;

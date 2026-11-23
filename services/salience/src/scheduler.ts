@@ -55,18 +55,29 @@ export class Scheduler {
     this.lastActivity = this.now();
   }
 
+  /** The score the scorer (or a primed score) gave an event, if it has one. */
+  scoreOf(e: ContextEvent): number | undefined { return this.scoreCache.get(e); }
+
+  /**
+   * Gives an event a score already obtained for the same words, so the scorer is not asked again (SAL-PROV-007, SAL-PROV-033).
+   * @spec SAL-PROV-007, SAL-PROV-033
+   */
+  primeScore(e: ContextEvent, score: number): void { this.scoreCache.set(e, score); }
+
   /**
    * `reminder` is the due timer reminder, if any. It is spoken ahead of unseen events and without calling the scorer
-   * (SAL-REM-005, SAL-REM-006).
+   * (SAL-REM-005, SAL-REM-006). `transient` is an event that is scored beside the unseen ones but is not in the window: the
+   * early transcript of the early pass (SAL-PROV-006).
    */
-  async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0, reminder?: Reminder): Promise<Decision> {
+  async decide(ctx: Context, busy: boolean, muted: boolean, arousal = 0, reminder?: Reminder, transient?: ContextEvent): Promise<Decision> {
     const now = this.now();
     if (muted) return { speak: false, reason: "muted", score: 0, scored: [] }; // @spec SAL-DECIDE-001, SAL-CTRL-004
     if (busy) return { speak: false, reason: "cortex busy", score: 0, scored: [] };
     if (this.cooling()) return { speak: false, reason: "cooldown", score: 0, scored: [] }; // @spec SAL-DECIDE-001
     if (reminder) return { speak: true, reason: "reminder", score: 1, reminder, scored: [] }; // @spec SAL-DECIDE-001, SAL-REM-005, SAL-REM-006
 
-    const unseen = ctx.unseen().filter((e) => e.kind !== "self"); // @spec SAL-DECIDE-007
+    const unseen: ContextEvent[] = ctx.unseen().filter((e) => e.kind !== "self"); // @spec SAL-DECIDE-007
+    if (transient) unseen.push(transient); // @spec SAL-PROV-006
     if (unseen.length === 0) return { speak: false, reason: "nothing new", score: 0, scored: [] }; // @spec SAL-DECIDE-005
 
     // Score only events we haven't scored yet: an event stays unseen across ticks while the

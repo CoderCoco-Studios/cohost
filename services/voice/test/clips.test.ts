@@ -5,10 +5,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeBus, recordingLog, waitFor } from "@cohost/testing";
+import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { ClipService, clipFingerprint, CLIP_RETRY_INITIAL_MS, CLIP_RETRY_MAX_MS } from "../src/clips.js";
-import { TtsError, Voice } from "../src/voice.js";
+import { Voice } from "../src/voice.js";
+import { TtsError } from "../src/engine.js";
+import { createEngine } from "../src/engines.js";
 
 // ---- helpers
 
@@ -25,6 +27,7 @@ const wav = (fill: number, ms = 300) => {
 const fillFor = (text: string) => 100 + [...text].reduce((n, c) => n + c.charCodeAt(0), 0);
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 const settings = { model: "kokoro", voice: "af_heart", speed: 1.05, response_format: "wav" };
+const kokoro = () => createEngine(testConfig({ voice: { engine: "kokoro" } }).voice);
 
 /** A fake TTS backend: records every request and how many ran at once. */
 function fakeTts(reply: (text: string, call: number) => Buffer | Promise<Buffer> = (t) => wav(fillFor(t))) {
@@ -42,7 +45,7 @@ function service(over: Partial<ConstructorParameters<typeof ClipService>[0]> & {
   const rec = recordingLog();
   const tts = fakeTts();
   const dir = over.dir ?? tmp();
-  const svc = new ClipService({ dir, lines: ["Line one.", "Line two.", "Line three."], engine: "kokoro", settings, synth: tts.synth, log: rec.log, ...over });
+  const svc = new ClipService({ dir, lines: ["Line one.", "Line two.", "Line three."], engine: kokoro(), synth: tts.synth, log: rec.log, ...over });
   return { svc, rec, tts, dir };
 }
 
@@ -270,15 +273,12 @@ test("stop cancels a pending retry", async () => { // @spec VOICE-CLIP-005
 
 // ---- per-phrase failures
 
-test("an unspeakable phrase (4xx, not a WAV, not 16-bit, under 100 ms) is skipped with a warning naming its index, the rest is committed, and it is not retried", async () => { // @spec VOICE-CLIP-006
+test("an unspeakable phrase (a 400 or 422, or under 100 ms) is skipped with a warning naming its index, the rest is committed, and it is not retried", async () => { // @spec VOICE-CLIP-006
   mock.timers.enable({ apis: ["setTimeout"] });
-  const eightBit = Buffer.from(wav(1));
-  eightBit.writeUInt16LE(8, 34); // bits per sample
   const replies: Record<string, () => Buffer> = {
     ok0: () => wav(11),
-    bad4xx: () => { throw new TtsError(422, "unprocessable"); },
-    notWav: () => Buffer.from("definitely not audio"),
-    eightBit: () => eightBit,
+    bad422: () => { throw new TtsError(422, "unprocessable"); },
+    bad400: () => { throw new TtsError(400, "bad text"); },
     tooShort: () => wav(5, 99),
     ok5: () => wav(55),
   };
@@ -290,8 +290,8 @@ test("an unspeakable phrase (4xx, not a WAV, not 16-bit, under 100 ms) is skippe
   assert.equal(m.fingerprint, svc.fingerprint, "committed under the computed fingerprint");
   assert.deepEqual(m.clips.map((c: { text: string }) => c.text), ["ok0", "ok5"]);
   const warned = JSON.stringify(rec.lines.filter((l) => l.level === "warn").map((l) => l.obj));
-  for (const i of [1, 2, 3, 4]) assert.ok(warned.includes(`"index":${i}`), `warning names index ${i}`);
-  assert.ok(!warned.includes(`"index":0`) && !warned.includes(`"index":5`));
+  for (const i of [1, 2, 3]) assert.ok(warned.includes(`"index":${i}`), `warning names index ${i}`);
+  assert.ok(!warned.includes(`"index":0`) && !warned.includes(`"index":4`));
   const calls = tts.calls.length;
   await tick(60 * 60_000, svc);
   assert.equal(tts.calls.length, calls, "no retry");

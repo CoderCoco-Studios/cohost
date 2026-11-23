@@ -352,3 +352,123 @@ test("tick: a failed attention.focus publish is logged and the next tick still r
   await s.tick(); // no idle event: the failed publish rolled back the busy state and left the events unseen
   assert.equal(bus.of("attention.focus").length, 1, "the next tick retried and published");
 });
+
+// Streamed lines (SAL-BUSY-005..008): playback events of the cortex's own line renew the speaking valve. Fake monotonic clock.
+function streamed(valve = 100) {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 0, idle_chatter_ms: 0 }, { brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0 }, cortex: { speaking_timeout_ms: valve } } }, () => t);
+  const mention = chat("hey Coco?", { mentionsCohost: true });
+  return { ...h, advance: (ms: number) => { t += ms; }, mention };
+}
+const cortexSay = (id: string, more = true) => event("brain.say", { id, text: "one", emotion: "happy", reason: "speech", ...(more ? { more: true as const } : {}) });
+const playing = (id: string, seq = 0, sink = "discord") => event("voice.playing", { id, seq, sink });
+const done = (id: string, seq = 0, sink = "discord") => event("voice.done", { id, seq, sink });
+
+// @spec SAL-BUSY-006, SAL-BUSY-002
+test("busy: a voice.playing or voice.done of the cortex line with more restarts the speaking age, from any sink", async () => {
+  for (const sink of ["discord", "dryrun", "virtual"]) {
+    for (const ev of [playing("L", 1, sink), done("L", 1, sink)]) {
+      const { s, bus, advance, mention } = streamed();
+      await s.onEvent(cortexSay("L"));
+      advance(80);
+      await s.onEvent(ev); // 80 ms in, valve 100: renewed
+      advance(80); // 160 ms from the say, 80 from the renewal
+      await s.onEvent(mention);
+      await s.tick();
+      assert.equal(bus.of("attention.focus").length, 0, `still busy after ${ev.type} on ${sink}`);
+      advance(30); // 110 ms from the renewal: valve over
+      await s.tick();
+      assert.equal(bus.of("attention.focus").length, 1, "free once the renewed valve ran out");
+    }
+  }
+});
+
+// @spec SAL-BUSY-006, SAL-BUSY-002
+test("busy: renewal repeats, so a long streamed line stays busy for as long as its clauses play", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  for (let seq = 0; seq < 6; seq++) { advance(70); await s.onEvent(playing("L", seq)); await s.onEvent(done("L", seq)); }
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "420 ms in, valve 100: busy");
+});
+
+// @spec SAL-BUSY-007
+test("busy: playback events of another line, of a line without more, or while the state is not speaking do not renew", async () => {
+  { // another line
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    advance(80);
+    await s.onEvent(playing("other", 1));
+    await s.onEvent(done("other", 1));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, "valve ran out from the say");
+  }
+  { // a line without more keeps the 20 s valve from when the state was set
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L", false));
+    advance(80);
+    await s.onEvent(playing("L", 0));
+    await s.onEvent(done("L", 0));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1);
+  }
+  { // not speaking: idle after a status, a playback event must not make it busy again
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    await s.onEvent(idle);
+    await s.onEvent(playing("L", 1));
+    await s.onEvent(done("L", 1));
+    advance(10);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, "idle stays idle");
+  }
+});
+
+// @spec SAL-BUSY-005, SAL-BUSY-006
+test("busy: an operator say does not replace the remembered cortex line, so its playback events still renew", async () => {
+  const { s, bus, advance, mention } = streamed();
+  await s.onEvent(cortexSay("L"));
+  await s.onEvent(event("brain.say", { id: "op", text: "hello", emotion: "neutral", reason: "operator" }));
+  advance(80);
+  await s.onEvent(playing("L", 1));
+  advance(80);
+  await s.onEvent(mention);
+  await s.tick();
+  assert.equal(bus.of("attention.focus").length, 0, "L's event renewed the state although op set it last");
+});
+
+// @spec SAL-BUSY-005, SAL-BUSY-007
+test("busy: a playback event of a reflex or operator line does not renew", async () => {
+  for (const [id, reason] of [["rx", "reflex: you died"], ["op", "operator"]] as const) {
+    const { s, bus, advance, mention } = streamed();
+    await s.onEvent(cortexSay("L"));
+    await s.onEvent(event("brain.say", { id, text: "x", emotion: "neutral", reason, more: true }));
+    advance(80);
+    await s.onEvent(playing(id, 0));
+    advance(30);
+    await s.onEvent(mention);
+    await s.tick();
+    assert.equal(bus.of("attention.focus").length, 1, `${reason}: no renewal`);
+  }
+});
+
+// @spec SAL-BUSY-008
+test("cooldown and idle-chatter timer are measured from the brain.say only: playback events restart neither", async () => {
+  let t = 1_000_000;
+  const h = setup({ cooldown_ms: 100, idle_chatter_ms: 0 }, {}, () => t);
+  await h.s.onEvent(cortexSay("L"));
+  t += 80;
+  await h.s.onEvent(playing("L", 1));
+  await h.s.onEvent(done("L", 1));
+  t += 30; // 110 ms from the say, 30 from the events
+  await h.s.onEvent(idle);
+  await h.s.onEvent(chat("hey Coco?", { mentionsCohost: true }));
+  await h.s.tick();
+  assert.equal(h.bus.of("attention.focus").length, 1, "cooldown over: it ran from the say");
+});

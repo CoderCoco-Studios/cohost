@@ -7,6 +7,7 @@ import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-mem
 import { Scheduler } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
 import { Reflexes, type Sense } from "./reflex.js";
+import { Reminders, type TimerEvent } from "./reminders.js";
 
 export interface SalienceDeps {
   cfg: Config;
@@ -45,6 +46,10 @@ export class Salience {
   private cortexLine: { id: string; more: boolean } | undefined;
   /** Entries a `chat.removed` took out of the window. A decision whose focus is one of them publishes nothing (SAL-FOCUS-007). */
   private readonly removed = new WeakSet<ContextEvent>();
+  /** The bus `source` of each speech entry, kept for the speech focus (SAL-FOCUS-003). */
+  private readonly speechSource = new WeakMap<ContextEvent, string>();
+  /** Due timer reminders, held apart from working memory: a reminder never enters a transcript (SAL-REM-001). */
+  private readonly reminders: Reminders;
 
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
@@ -57,6 +62,7 @@ export class Salience {
     }, { log: d.log, heartbeat: d.heartbeat });
     this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
+    this.reminders = new Reminders(d.cfg.tools.timer.max_active, d.cfg.brain.salience.reminder_expiry_ms);
   }
 
   async onEvent(ev: BusEvent): Promise<void> {
@@ -79,10 +85,17 @@ export class Salience {
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
         const entry = this.ctx.push(ev);
+        if (entry && d.source !== undefined) this.speechSource.set(entry, d.source); // @spec SAL-FOCUS-003
         this.scheduler.noteActivity();
         await this.bargeIn(d); // @spec SAL-BARGE-001, SAL-BARGE-003
         const fired = await this.reflex("speech", d.text, entry);
         if (!fired) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
+        break;
+      }
+      // A timer is never chat, speech or vision: it is held as a reminder, and it starts no decision pass (SAL-REM-007).
+      case "tool.timer": { // @spec SAL-REM-001, SAL-REM-002, SAL-REM-003, SAL-REM-007
+        this.reminders.arrive(ev.data as TimerEvent);
+        await this.expireReminders(); // a reminder that arrives already past the expiry is republished as missed now
         break;
       }
       case "vision.summary": { // @spec SAL-IN-003
@@ -197,10 +210,29 @@ export class Salience {
    * @spec SAL-HEALTH-002, SAL-TRIG-008, SAL-TRIG-009
    */
   async tick(): Promise<void> {
+    // Expiry is evaluated whatever the gates (SAL-REM-003). It is started without awaiting so the decision below begins in
+    // this same turn, as a pass always has: a removal arriving while the scorer runs is then seen as one.
+    const expiring = this.expireReminders();
     do {
       try { await this.decideAndPublish(); }
       catch (err) { this.d.log.error({ err }, "tick failed"); }
     } while (this.rerun && !this.control.paused && !this.deciding);
+    await expiring;
+  }
+
+  /**
+   * Republishes every held reminder past its expiry as `tool.timer` with `missed`, and drops it: it is never spoken. A failed
+   * republish is logged and the reminder is still dropped (no retry). Never rejects.
+   * @spec SAL-REM-003
+   */
+  private async expireReminders(): Promise<void> {
+    for (const r of this.reminders.takeExpired(Date.now())) {
+      try {
+        await this.d.bus.publish("tool.timer", { id: r.id, note: r.note, setAt: r.setAt, dueAt: r.dueAt, missed: true });
+      } catch (err) {
+        this.d.log.error({ err, id: r.id }, "missed timer republish failed");
+      }
+    }
   }
 
   private async decideAndPublish(): Promise<void> {
@@ -208,7 +240,7 @@ export class Salience {
     this.deciding = true;
     this.rerun = false; // this pass sees everything that has arrived so far
     let decision;
-    try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal); }
+    try { decision = await this.scheduler.decide(this.ctx, this.busy(), this.control.muted, this.arousal, this.reminders.due(Date.now())); } // @spec SAL-REM-006
     finally { this.deciding = false; }
     if (!decision.speak) return;
     // A mute, pause or busy cortex may have arrived while the scorer ran: the decision is void then.
@@ -224,13 +256,16 @@ export class Salience {
     this.cortexState = "thinking";
     const since = this.cortexSince = this.now();
     const f = decision.focus;
+    const r = decision.reminder;
+    const src = f?.kind === "speech" ? this.speechSource.get(f) : undefined;
     try {
     await this.d.bus.publish("attention.focus", { // @spec SAL-FOCUS-003
       reason: decision.reason,
       score: decision.score,
       focus:
-        f?.kind === "chat" ? { kind: "chat", who: f.user, text: f.text, mention: f.mention }
-        : f?.kind === "speech" ? { kind: "speech", who: f.speaker, text: f.text }
+        r ? { kind: "reminder", text: r.note } // @spec SAL-REM-005
+        : f?.kind === "chat" ? { kind: "chat", who: f.user, text: f.text, mention: f.mention }
+        : f?.kind === "speech" ? { kind: "speech", who: f.speaker, text: f.text, ...(src !== undefined ? { source: src } : {}) }
         : f?.kind === "vision" ? { kind: "vision", text: f.text }
         : undefined,
       ...(f?.kind === "speech" && f.timing?.audioEndedAt !== undefined ? { timing: { audioEndedAt: f.timing.audioEndedAt, heardAt: f.ts } } : {}), // @spec SAL-FOCUS-006
@@ -247,6 +282,7 @@ export class Salience {
       for (const e of decision.scored) e.seen = false;
       throw err;
     }
+    if (r) this.reminders.settle(r.id); // removed only once published (SAL-REM-005)
     this.d.log.debug({ reason: decision.reason, score: decision.score }, "focus");
   }
 }

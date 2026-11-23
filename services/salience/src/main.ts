@@ -35,7 +35,7 @@ export async function salienceMain(ctx: ServiceContext<SalienceBus>, env: Salien
   void bus.subscribe( // @spec SAL-IN-001
     {
       group: "salience",
-      types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "control"],
+      types: ["chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "tool.timer", "control"],
       start: "latest",
     },
     (ev) => salience.onEvent(ev),

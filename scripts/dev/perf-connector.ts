@@ -46,6 +46,11 @@ const registrar = new ConnectorRegistrar(bus, {
   capabilities: () => [{ cap: "audio-in", tag, format: { rate: RATE, channels: 1 }, ready: true }],
 });
 
+// Deregisters the connector once, whether the run ends or the operator interrupts it (CTRL-LAT-030).
+let closed: Promise<void> | undefined;
+const close = (): Promise<void> => (closed ??= registrar.stop().then(() => bus.stop()));
+process.once("SIGINT", () => { void close().finally(() => process.exit(130)); });
+
 try {
   const pcm = clipPcm();
   await registrar.start();
@@ -66,6 +71,5 @@ try {
   }
   console.log(`perf-connector: ${sent} frames (${(stream.length / 2 / RATE * 1000).toFixed(0)} ms, ${SILENCE_MS} ms silence) onto audio.in.${tag}`);
 } finally {
-  await registrar.stop();
-  await bus.stop();
+  await close();
 }

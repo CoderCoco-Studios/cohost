@@ -228,3 +228,34 @@ test("no speech.early means no early stt row even when other early members print
   assert.ok(earlyLine(out));
   assert.ok(!speechRows(out).some((l) => l.startsWith("early stt")));
 });
+
+// @spec CTRL-LAT-021, CTRL-LAT-022
+test("a prepared reply whose focus came after its confirm: prep starts at confirmedAt, so the stages still sum to total", () => {
+  const timing = { closedAt: T + 300, heardAt: T + 400, focusedAt: T + 1200, llmStartedAt: T + 1300, llmEndedAt: T + 1500, confirmedAt: T + 1000 };
+  const out = report(sample({ timing, sayTs: T + 1550, uttTs: T + 2050, playTs: T + 2100 }));
+  assert.equal(p50(out, "salience"), 600);
+  assert.equal(p50(out, "prep"), 300, "prep runs from confirmedAt to llmStartedAt");
+  assert.equal(p50(out, "llm"), 200);
+  assert.equal(p50(out, "say"), 50);
+  assert.equal(sumOf(out), 2100);
+});
+
+// @spec CTRL-LAT-008, CTRL-LAT-025
+test("with no speech sample, the no-sample line is followed by the early lines when early events exist", () => {
+  const out = report([ev("speech.retracted", T + 1, { speaker: "s", source: "perf", utteranceId: "u", seq: 0 })]);
+  assert.equal(out[0], "speech path");
+  assert.equal(out[1], "latency: no speech-path samples in the last 5000 events");
+  assert.equal(out[2], "early transcripts: 0 published, 1 retracted, 0 reused as the final, 0 replies released from a prepared think, 0 interjections spoken, 0 still running at the close");
+});
+
+// @spec CTRL-LAT-026
+test("r and l fall back to the envelope id when a speech.heard carries no utteranceId", () => {
+  const events: Ev[] = [
+    ev("speech.heard", T + 5, { speaker: "s", text: "t", earlySeq: 0 }),
+    ev("speech.heard", T + 6, { speaker: "s", text: "t", earlyLate: true }),
+  ];
+  assert.equal(
+    earlyLine(report(events)),
+    "early transcripts: 0 published, 0 retracted, 1 reused as the final, 0 replies released from a prepared think, 0 interjections spoken, 1 still running at the close",
+  );
+});

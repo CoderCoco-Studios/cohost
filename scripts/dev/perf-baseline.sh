@@ -21,8 +21,8 @@ while [ $# -gt 0 ]; do
 done
 # @spec CTRL-LAT-030, CTRL-LAT-031
 case "$MODE" in
-  http) COHOST_ISOLATION='{"EARS_SOURCES":"[http]"}' ;;
-  connector) COHOST_ISOLATION='{"EARS_SOURCES":"[perf]"}' ;;
+  http) COHOST_ISOLATION='{"EARS_SOURCES":"[http]","MOUTH_DRYRUN_ENABLED":"true"}' ;;
+  connector) COHOST_ISOLATION='{"EARS_SOURCES":"[perf]","MOUTH_DRYRUN_ENABLED":"true"}' ;;
   *) echo "usage: $0 [--mode connector|http] [--runs N] [--down]" >&2; exit 2 ;;
 esac
 
@@ -37,7 +37,6 @@ if nvidia-smi >/dev/null 2>&1; then COMPOSE_FILE=docker-compose.yml:docker-compo
 export KOKORO_IMAGE="${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0}"
 export COMPOSE_PROFILES=ears,mouth
 export COHOST_ISOLATION
-export MOUTH_DRYRUN_ENABLED=true
 
 if [ "$DOWN" = 1 ]; then docker compose down; exit 0; fi
 

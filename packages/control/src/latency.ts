@@ -1,6 +1,7 @@
 import type { BusEvent } from "@cohost/bus";
 
 /** The speech-path stage rows in report order (CTRL-LAT-004, CTRL-LAT-024). `think` is printed after `total` and is not summed. */
+// @spec CTRL-LAT-024
 const SPEECH_STAGES = ["endpoint", "stt", "salience", "prep", "llm", "tool", "critic", "say", "tts", "sink", "total", "think"] as const;
 /** The vision-path stage rows, as CTRL-LAT-012 names them: no `tool` or `think` row, so its `llm` keeps any tool wait (CTRL-LAT-013). */
 const VISION_STAGES = ["describe", "salience", "prep", "llm", "critic", "say", "tts", "sink", "total"] as const;
@@ -67,7 +68,8 @@ function stagesOf({ say, play, utt }: Sample, path: Path, put: Put): void {
     put("describe", span(stamp(t.capturedAt), stamp(t.describedAt)));
     put("salience", span(stamp(t.describedAt), confirmed ?? focused));
   }
-  put("prep", span(cut(focused), llmStart));
+  // A prepared reply's prep starts at its confirmation, the end of salience (CTRL-LAT-021).
+  put("prep", span(confirmed ?? focused, llmStart));
   if (hasTool) {
     put("tool", span(toolStart, toolEnd));
     const before = span(llmStart, toolStart), after = span(toolEnd, llmEnd);
@@ -123,8 +125,10 @@ function earlyLines(events: readonly BusEvent[]): string[] {
     } else if (e.type === "speech.retracted") {
       retracted.add(`${d.utteranceId}#${d.seq}`);
     } else if (e.type === "speech.heard") {
-      if (d.earlySeq !== undefined && d.earlySeq !== null) reused.add(String(d.utteranceId));
-      if (d.earlyLate === true) late.add(String(d.utteranceId));
+      // Keyed by utteranceId, or by the envelope id when the event carries none (CTRL-LAT-026).
+      const key = String(d.utteranceId ?? e.id);
+      if (d.earlySeq !== undefined && d.earlySeq !== null) reused.add(key);
+      if (d.earlyLate === true) late.add(key);
     } else if (e.type === "brain.say") {
       // An injected line counts in neither `b` nor `i`; an interjected one counts in `i` only (CTRL-LAT-026).
       if (d.injected === true) continue;
@@ -149,7 +153,7 @@ function earlyLines(events: readonly BusEvent[]): string[] {
  * The per-stage report over bus history, oldest event first, as a `speech path` and a `vision path` section: one sample
  * per answer line (a `brain.say`), its stages from the stamps and the joined `voice.utterance` / `voice.playing`.
  */
-// @spec CTRL-LAT-003, CTRL-LAT-004, CTRL-LAT-005, CTRL-LAT-006, CTRL-LAT-007, CTRL-LAT-008, CTRL-LAT-029
+// @spec CTRL-LAT-003, CTRL-LAT-004, CTRL-LAT-005, CTRL-LAT-006, CTRL-LAT-007, CTRL-LAT-008, CTRL-LAT-024, CTRL-LAT-029
 // @spec CTRL-LAT-011, CTRL-LAT-012, CTRL-LAT-013, CTRL-LAT-014, CTRL-LAT-015, CTRL-LAT-016
 export function latencyReport(events: readonly BusEvent[], count: number): string[] {
   const utterances = new Map<string, BusEvent[]>();

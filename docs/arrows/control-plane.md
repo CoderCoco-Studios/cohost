@@ -38,6 +38,8 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - packages/control/test/health-clock.test.ts
 - packages/control/test/healthcheck.test.ts
 - packages/control/test/latency.test.ts
+- packages/control/test/latency-early.test.ts
+- packages/control/test/perf-baseline.test.ts
 - packages/control/test/launch.e2e.test.ts
 - packages/control/test/lock.test.ts
 - packages/control/test/manifest.test.ts
@@ -47,6 +49,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 
 ### Code
 - packages/control/src/cli.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts
+- scripts/dev/perf-baseline.sh, scripts/dev/perf-connector.ts (connector mode, CTRL-LAT-030, -031)
 - packages/bus/src/index.ts (`Bus.serverTime`, CTRL-CHECK-004), crates/cohost-bus/src/transport.rs (CTRL-CHECK-004)
 - Consumers (owned elsewhere): services/dashboard/src/control.ts, routes.ts, stack.ts; docker-compose.yml (`x-ts-service`, realizes CTRL-CHECK-003, not annotated); Dockerfile
 

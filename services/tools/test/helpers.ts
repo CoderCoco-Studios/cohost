@@ -118,6 +118,13 @@ export async function startTools(
   sources: ToolSource[] = [],
   extra: Record<string, unknown> = {},
   bus: ToolsFakeBus = new ToolsFakeBus(),
+  /**
+   * `live` runs the real MCP client: `createSources` is left out, so `runTools` builds the sources of `tools.servers` itself.
+   * `mcp` is the client's own seam (`ToolsEnv.mcp`): `retry` is the `RetryOptions` of the shared backoff (`baseMs`, `maxMs`,
+   * `sleep`) and `setupTimeoutMs` bounds the initialize and list requests of a connection attempt. `catalogMs` overrides
+   * `tools.catalog_ms` after validation (the schema's minimum is 5000 ms).
+   */
+  live?: { mcp?: Record<string, unknown>; catalogMs?: number },
 ): Promise<Started> {
   const shutdown: (() => void | Promise<void>)[] = [];
   let stopped = false;
@@ -142,12 +149,17 @@ export async function startTools(
     },
   };
   await runTools({
-    loadConfig: () => { s.cfgLoads++; return testConfig({ ...extra, tools }); },
+    loadConfig: () => {
+      s.cfgLoads++;
+      const cfg = testConfig({ ...extra, tools });
+      if (live?.catalogMs !== undefined) cfg.tools.catalog_ms = live.catalogMs;
+      return cfg;
+    },
     createBus: () => bus as unknown as ToolsBus,
     onShutdown: (fn: () => void | Promise<void>) => { shutdown.push(fn); },
     exit: (code: number) => { exits.push(code); },
     log: log.log,
-    createSources: () => { s.sourcesBuilt++; return sources; },
+    ...(live === undefined ? { createSources: () => { s.sourcesBuilt++; return sources; } } : { mcp: live.mcp }),
   } as never);
   started.push(s);
   return s;

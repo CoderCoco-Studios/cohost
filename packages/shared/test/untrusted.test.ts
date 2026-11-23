@@ -238,7 +238,7 @@ test("untrustedToolNotice says a trailing … means the text was cut short", () 
 
 // @spec SHARED-GUARD-003
 test("every untrusted function returns for any string input and never throws, untrustedToolNotice included", () => {
-  const inputs = ["", " ", "«»", "\u0000‮", "\ud800", "x".repeat(50_000), FAMILY, E_ACUTE, "line\nbreak\t", "İ"];
+  const inputs = ["", " ", "«»", "\u0000‮", "\ud800", "\udc00", "\u0301\u0301\u0301", "x".repeat(50_000), FAMILY, E_ACUTE, "line\nbreak\t", "İ"];
   for (const s of inputs) {
     assert.equal(typeof boundText(s, 2), "string");
     assert.equal(typeof boundText(s, BIG), "string");
@@ -246,6 +246,27 @@ test("every untrusted function returns for any string input and never throws, un
     assert.equal(typeof speakerLabel(s, 5), "string");
     assert.equal(typeof untrustedNotice(s), "string");
     assert.equal(typeof normalizeKey(s), "string");
+  }
+  // Bounds that admit no text (zero, negative, NaN) still return a string for every input.
+  for (const max of [0, -1, Number.NaN]) {
+    for (const s of inputs) {
+      assert.equal(typeof boundText(s, max), "string", `boundText ${max}`);
+      assert.equal(typeof quoteUntrusted(s, max), "string", `quoteUntrusted ${max}`);
+      assert.equal(typeof speakerLabel(s, max), "string", `speakerLabel ${max}`);
+    }
+  }
+  // Seeded random UTF-16 code-unit strings, lone surrogates included.
+  let seed = 0x5eed;
+  const next = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed; };
+  for (let i = 0; i < 300; i++) {
+    let s = "";
+    const len = next() % 40;
+    for (let j = 0; j < len; j++) s += String.fromCharCode(next() % 0x10000);
+    assert.doesNotThrow(() => boundText(s, 1 + (next() % 12)), `boundText fuzz ${i}`);
+    assert.doesNotThrow(() => quoteUntrusted(s, next() % 12), `quoteUntrusted fuzz ${i}`);
+    assert.doesNotThrow(() => speakerLabel(s, next() % 12), `speakerLabel fuzz ${i}`);
+    assert.doesNotThrow(() => normalizeKey(s), `normalizeKey fuzz ${i}`);
+    assert.doesNotThrow(() => untrustedNotice(s), `untrustedNotice fuzz ${i}`);
   }
   assert.doesNotThrow(() => untrustedToolNotice());
   assert.equal(typeof untrustedToolNotice(), "string");

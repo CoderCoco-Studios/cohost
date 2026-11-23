@@ -119,12 +119,13 @@ test("BusOptions.transport is called once with the URL and { prefix, failFast },
   await bus.publishHealth(hb);
   await bus.recent(2); await bus.recentHealth(2);
   await bus.putUpload("u", Buffer.from("x"), 5); await bus.takeUpload("u");
+  await bus.putTimer("t1", "{}"); await bus.listTimers(); await bus.deleteTimer("t1");
   await bus.writeRegistration(reg as never); assert.equal((await bus.readRegistration("disc"))?.id, "disc"); await bus.deleteRegistration("disc");
   assert.equal((await bus.listConnectors()).length, 1);
   await bus.publishFrame("in", "discord", { epoch: 1, seq: 0, rate: 16000, ch: 1, pcm: Buffer.alloc(4) });
   await bus.serverTime(); await bus.resetGroup("g");
   const seen = new Set(f1.names());
-  for (const m of ["append", "recent", "putUpload", "takeUpload", "writeRegistration", "readRegistration", "deleteRegistration", "listRegistrations", "serverTime", "createGroup"]) assert.ok(seen.has(m as never), m);
+  for (const m of ["append", "recent", "putUpload", "takeUpload", "putTimer", "deleteTimer", "listTimers", "writeRegistration", "readRegistration", "deleteRegistration", "listRegistrations", "serverTime", "createGroup"]) assert.ok(seen.has(m as never), m);
   assert.ok(!seen.has("appendFrame" as never), "publishFrame does not run on the events transport");
   assert.equal(l.frames.of("appendFrame").length, 1, "publishFrame runs on the frame transport");
   assert.deepEqual(f1.of("append").map((c) => c.args[0]), ["events", "health"]);
@@ -374,6 +375,7 @@ test("a command rejected BUS_CONNECTION by the down shared connection reaches it
   const calls: [string, () => Promise<unknown>][] = [
     ["append", () => bus.publish("chat.message", chat)], ["append", () => bus.publishHealth(hb)],
     ["putUpload", () => bus.putUpload("u", Buffer.alloc(1), 1)], ["takeUpload", () => bus.takeUpload("u")],
+    ["putTimer", () => bus.putTimer("t", "{}")], ["deleteTimer", () => bus.deleteTimer("t")], ["listTimers", () => bus.listTimers()],
     ["writeRegistration", () => bus.writeRegistration({ v: 1, id: "d", kind: "k", version: "1", instance: "i", pid: 1, startedAt: 1, intervalMs: 1, state: "s", detail: "", capabilities: [] })],
     ["readRegistration", () => bus.readRegistration("d")], ["deleteRegistration", () => bus.deleteRegistration("d")],
     ["listRegistrations", () => bus.listConnectors()], ["recent", () => bus.recent(1)], ["recent", () => bus.recentHealth(1)],

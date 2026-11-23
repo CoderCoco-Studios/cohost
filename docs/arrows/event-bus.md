@@ -38,7 +38,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-specs.md (214 specs: 198 `[x]`, 11 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
-- packages/bus/test/: bus.test.ts, clauses.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
+- packages/bus/test/: bus.test.ts, clauses.test.ts, tool-events.test.ts, timers.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
 - crates/cohost-bus/tests/: transport.rs, connection.rs, contract.rs, workspace.rs
 - packages/testing/test/fake-bus.test.ts
 - services/salience/test/timing.test.ts, services/cortex/test/timing.test.ts (BUS-EVT-025)
@@ -72,12 +72,14 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Chat removal | BUS-EVT-033 to 036 | 4 | 0 | 0 |
 | Streamed lines | BUS-EVT-037 to 042 | 6 | 0 | 0 |
 | Tool events | BUS-EVT-043 to 051 | 9 | 0 | 0 |
+| Early reply | BUS-EVT-052 to 060 | 0 | 9 | 0 |
 | Consumer-group subscription | BUS-SUB-001 to 013 | 13 | 0 | 0 |
 | Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |
 | Health stream | BUS-HEALTH-001 to 004 | 4 | 0 | 0 |
 | Group reset | BUS-GROUP-001 | 1 | 0 | 0 |
 | Shutdown | BUS-STOP-001 | 1 | 0 | 0 |
 | Native: facade API | BUS-NAT-API-001 to 011 | 11 | 0 | 0 |
+| Native: examples | BUS-NAT-EX-001 to 005 | 5 | 0 | 0 |
 | Native: transport | BUS-NAT-TRN-001 to 014 (006, 012 retired) | 12 | 0 | 0 |
 | Native: acks | BUS-NAT-ACK-001 to 009 | 9 | 0 | 0 |
 | Native: connections | BUS-NAT-CONN-001 to 008 | 8 | 0 | 0 |
@@ -92,7 +94,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 | Tool timer hash | BUS-TIMER-001 to 002 | 2 | 0 | 0 |
 
-**Summary:** 214 specs: 198 implemented, 11 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060, with BUS-EVT-001 and BUS-EVT-024 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the remaining per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 214 specs: 198 implemented, 11 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060) are gaps, and BUS-EVT-001 and BUS-EVT-024 are open for their revision. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

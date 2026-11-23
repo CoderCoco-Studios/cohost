@@ -554,21 +554,7 @@ impl Transport {
     pub async fn list_timers(&self) -> Result<Vec<(String, String)>> {
         let mut cmd = redis::cmd("HGETALL");
         cmd.arg(self.inner.keys.timers());
-        let Value::Array(parts) = self.inner.cmd(cmd).await? else {
-            return Err(unexpected("HGETALL"));
-        };
-        parts
-            .chunks(2)
-            .map(|pair| match pair {
-                [id, json] => Ok((
-                    String::from_utf8_lossy(&bytes_of(id).ok_or_else(|| unexpected("HGETALL"))?)
-                        .into_owned(),
-                    String::from_utf8_lossy(&bytes_of(json).ok_or_else(|| unexpected("HGETALL"))?)
-                        .into_owned(),
-                )),
-                _ => Err(unexpected("HGETALL")),
-            })
-            .collect()
+        timer_pairs(&self.inner.cmd(cmd).await?)
     }
 
     // @spec BUS-NAT-TRN-001, CONN-REG-001
@@ -718,6 +704,29 @@ impl Transport {
             let _ = timeout(budget, pipe.query_async::<Vec<Value>>(&mut c)).await;
         }
         *done = true;
+    }
+}
+
+/// The field and value pairs of an `HGETALL` reply: a flat array under RESP2, a map under RESP3 (BUS-TIMER-002).
+fn timer_pairs(v: &Value) -> Result<Vec<(String, String)>> {
+    let text = |b: &Value| -> Result<String> {
+        bytes_of(b)
+            .map(|b| String::from_utf8_lossy(&b).into_owned())
+            .ok_or_else(|| unexpected("HGETALL"))
+    };
+    match v {
+        Value::Array(parts) => parts
+            .chunks(2)
+            .map(|pair| match pair {
+                [id, json] => Ok((text(id)?, text(json)?)),
+                _ => Err(unexpected("HGETALL")),
+            })
+            .collect(),
+        Value::Map(pairs) => pairs
+            .iter()
+            .map(|(id, json)| Ok((text(id)?, text(json)?)))
+            .collect(),
+        _ => Err(unexpected("HGETALL")),
     }
 }
 
@@ -982,7 +991,33 @@ impl Reader {
 
 #[cfg(test)]
 mod tests {
-    use super::ConnSlot;
+    use super::{ConnSlot, Value, timer_pairs};
+
+    // @spec BUS-TIMER-002
+    #[test]
+    fn timer_pairs_reads_a_resp2_flat_array_and_a_resp3_map() {
+        let bulk = |s: &str| Value::BulkString(s.as_bytes().to_vec());
+        let flat = Value::Array(vec![
+            bulk("t1"),
+            bulk("{\"n\":1}"),
+            bulk("t2"),
+            bulk("{\"n\":2}"),
+        ]);
+        let map = Value::Map(vec![
+            (bulk("t1"), bulk("{\"n\":1}")),
+            (bulk("t2"), bulk("{\"n\":2}")),
+        ]);
+        let want = vec![
+            ("t1".to_string(), "{\"n\":1}".to_string()),
+            ("t2".to_string(), "{\"n\":2}".to_string()),
+        ];
+        assert_eq!(timer_pairs(&flat).unwrap(), want);
+        assert_eq!(timer_pairs(&map).unwrap(), want);
+        assert!(timer_pairs(&Value::Array(vec![])).unwrap().is_empty());
+        assert!(timer_pairs(&Value::Map(vec![])).unwrap().is_empty());
+        assert!(timer_pairs(&Value::Array(vec![bulk("odd")])).is_err());
+        assert!(timer_pairs(&Value::Nil).is_err());
+    }
 
     // @spec BUS-NAT-CONN-008
     #[test]

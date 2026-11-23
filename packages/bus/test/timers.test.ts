@@ -13,17 +13,9 @@ async function redisUp(): Promise<boolean> {
 }
 const needsRedis = { skip: !(await redisUp()) && `no Redis at ${url}` };
 
-/** A `FakeTransport` with a hash behind the three timer calls. */
-class TimerTransport extends FakeTransport {
-  hash = new Map<string, string>();
-  putTimer(id: string, json: string) { return this.run("putTimer" as never, [id, json], () => { this.hash.set(id, json); }); }
-  deleteTimer(id: string) { return this.run("deleteTimer" as never, [id], () => { this.hash.delete(id); }); }
-  listTimers() { return this.run("listTimers" as never, [], () => [...this.hash].map(([id, json]) => ({ id, json }))); }
-}
-
 // @spec BUS-NAT-TRN-001
 test("the facade passes putTimer, deleteTimer and listTimers through to the transport", async () => {
-  const fake = new TimerTransport();
+  const fake = new FakeTransport();
   const bus = new Bus("t", undefined, "redis://fake", { transport: fake.factory });
   await bus.putTimer("a", "{\"n\":1}");
   await bus.putTimer("b", "{\"n\":2}");

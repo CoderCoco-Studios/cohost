@@ -57,7 +57,7 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 | --- | --- | --- | --- |
 | `control` | The dashboard | `affect`, `salience`, `cortex`, `mouth` | `cmd` (`mute`, `unmute`, `say`, `forget_context`, `reload_personality`, `pause`, `resume` or `set_routing`), `text` (for `say`), `target` (the service it is for; absent means every service), `routing` (for `set_routing`: output id to `enabled` and `gain_db`), `route` (for `say`) |
 | `inject.request` | The dashboard | The target service | `id`, `target` (`eyes`, `ears`, `chat`, `connector-discord` or `tools`), `kind` (`image`, `audio` or `text`), `uploadId` (the bytes the dashboard stored in [Redis](../../start/glossary.md#redis)), `contentType`, `text`, `meta` (`user`, `platform`, `isMod`, `isSub`, `source`), `remember`. Binaries never ride the stream |
-| `inject.result` | `eyes`, `ears`, `chat`, `connector-discord` | The dashboard | `id` (the request's id), `ok`, `detail` (optional) |
+| `inject.result` | `eyes`, `ears`, `chat`, `connector-discord`, `tools` | The dashboard | `id` (the request's id), `ok`, `detail` (optional) |
 | `service.lifecycle` | The dashboard, `cohostctl` | The dashboard feed | `service`, `action` (`start`, `stop` or `restart`), `by` (`dashboard` or `cohostctl`), `ok`, `detail` (optional). An audit record of each attempt |
 | `service.heartbeat` | Every service, on `cohost:health` | The dashboard's health tracker, `cohostctl status` | `service`, `instance` (unique per process), `pid`, `version`, `startedAt`, `state` (`starting`, `ready`, `degraded` or `stopping`), `deps` (name to `ok`, `down` or `n/a`), `mode` (`live`, `mock` or `off` by convention), `detail` (optional), `intervalMs` |
 

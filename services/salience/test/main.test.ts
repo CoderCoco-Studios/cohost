@@ -58,7 +58,7 @@ test("main: subscribes in start mode latest and signals ready only after the con
   assert.deepEqual(bus.calls, ["resetGroup:salience", "subscribe:salience"]);
   assert.deepEqual(bus.subscribed[0], {
     group: "salience",
-    types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "brain.status", "affect.state", "control"],
+    types: ["chat.message", "speech.heard", "vision.summary", "brain.say", "voice.playing", "voice.done", "brain.status", "affect.state", "control"],
     start: "latest",
   });
   for (const fn of shutdown) await fn();
@@ -117,5 +117,16 @@ test("main: the heartbeat reports mode mock and a hook dependency when the score
   const ready = bus.health.find((h) => h.state === "ready")!;
   assert.equal(ready.mode, "mock");
   assert.ok("hook.salience.scorer" in (ready.deps ?? {}));
+  for (const fn of shutdown) await fn();
+});
+
+// @spec SAL-BUSY-008, SAL-BUSY-006
+test("main: salience reads voice.playing and voice.done and never subscribes to brain.clause", async () => {
+  const bus = new GroupBus();
+  const { env: e, shutdown } = env(bus);
+  await runSalience({ ...e, log: recordingLog().log });
+  const types = (bus.subscribed[0]!.types ?? []) as readonly string[];
+  assert.ok(types.includes("voice.playing") && types.includes("voice.done"));
+  assert.ok(!types.includes("brain.clause"));
   for (const fn of shutdown) await fn();
 });

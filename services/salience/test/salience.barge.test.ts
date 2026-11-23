@@ -219,3 +219,56 @@ test("barge-in: with barge_in false no voice.stop is published and speech.heard 
   const dflt = testConfig({ brain: { salience: {} } });
   assert.equal((dflt.brain.salience as unknown as Record<string, unknown>).barge_in, false);
 });
+
+// Barge-in across a streamed line (SAL-BARGE-007, SAL-BARGE-012): playback events of the cortex line renew the speaking age.
+const streamSay = (id = "L") => event("brain.say", { id, text: "one", emotion: "happy", reason: "speech", more: true });
+const play = (id: string, seq: number, kind: "voice.playing" | "voice.done" = "voice.playing") => event(kind, { id, seq, sink: "discord" });
+
+// @spec SAL-BARGE-012, SAL-BARGE-007
+test("barge-in: stays possible for the whole renewed span of a streamed line, past the valve counted from the say", async () => {
+  const { s, bus, advance } = setup({}, { speaking_timeout_ms: 100 });
+  await s.onEvent(streamSay());
+  for (let seq = 0; seq < 5; seq++) { advance(70); await s.onEvent(play("L", seq)); await s.onEvent(play("L", seq, "voice.done")); }
+  await s.onEvent(speech("wait stop")); // 350 ms after the say, 0 after the last renewal
+  await flush();
+  assert.equal(stops(bus).length, 1);
+  assert.equal(stops(bus)[0]!.reason, "barge-in");
+});
+
+// @spec SAL-BARGE-007
+test("barge-in: a streamed line no event renewed for longer than the valve is not barged into", async () => {
+  const { s, bus, advance } = setup({}, { speaking_timeout_ms: 100 });
+  await s.onEvent(streamSay());
+  advance(80);
+  await s.onEvent(play("L", 1));
+  advance(120);
+  await s.onEvent(speech("wait stop"));
+  await flush();
+  assert.equal(stops(bus).length, 0);
+});
+
+// @spec SAL-BARGE-007, SAL-BUSY-007
+test("barge-in: a playback event of the stopped line does not make salience speaking again, so no second voice.stop", async () => {
+  const { s, bus } = setup({}, { speaking_timeout_ms: 100 });
+  await s.onEvent(streamSay());
+  await s.onEvent(speech("wait stop"));
+  await flush();
+  assert.equal(stops(bus).length, 1);
+  await s.onEvent(play("L", 2)); // a clause already playing when the stop landed
+  await s.onEvent(play("L", 2, "voice.done"));
+  await s.onEvent(speech("and another thing"));
+  await flush();
+  assert.equal(stops(bus).length, 1, "the state stayed idle");
+});
+
+// @spec SAL-BARGE-007, SAL-BUSY-007
+test("barge-in: a line without more is not renewed, so it is not barged into after its valve", async () => {
+  const { s, bus, advance } = setup({}, { speaking_timeout_ms: 100 });
+  await s.onEvent(event("brain.say", { id: "L", text: "one", emotion: "happy", reason: "speech" }));
+  advance(80);
+  await s.onEvent(play("L", 0));
+  advance(50);
+  await s.onEvent(speech("wait stop"));
+  await flush();
+  assert.equal(stops(bus).length, 0);
+});

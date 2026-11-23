@@ -66,8 +66,8 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       await subscribeEars(bus, gate ? EARS_ECHO_LOOP_TYPES : EARS_LOOP_TYPES, createEarsHandler({
         onInject: (ev: BusEvent<"inject.request">) => onInject(ev),
         ...(gate ? { onVoice: (ev: BusEvent<"voice.playing" | "voice.done">) => { // @spec EARS-ECHO-002
-          if (ev.type === "voice.done") gate.done(ev.data.id);
-          else if (ev.data.sink !== "virtual") gate.playing(ev.data.id);
+          if (ev.type === "voice.done") gate.done(ev.data.id, ev.data.seq);
+          else if (ev.data.sink !== "virtual") gate.playing(ev.data.id, ev.data.seq);
         } } : {}),
       }), log);
 

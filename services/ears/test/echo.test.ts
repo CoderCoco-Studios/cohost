@@ -184,3 +184,50 @@ test("echo_tail_ms 0 closes the gate at the moment the last line is removed", as
     await waitFor(() => t.r.heard().length === 1, "heard at once");
   });
 });
+
+// Streamed lines: each clause (id, seq) is its own entry in the gate.
+const clause = (id: string, seq: number, sink = "discord") => event("voice.playing", { id, seq, sink });
+const clauseDone = (id: string, seq: number, extra: Record<string, unknown> = {}) => event("voice.done", { id, seq, sink: "discord", ...extra } as never);
+
+// @spec EARS-ECHO-002
+test("a voice.done removes only its own clause: the gate stays open while another clause of the line is playing", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(clause("L", 0));
+    await t.deliver(clause("L", 1));
+    await t.deliver(clauseDone("L", 0));
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "clause 1 still plays");
+    await t.deliver(clauseDone("L", 1, { final: true }));
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard once the last clause is done");
+  });
+});
+
+// @spec EARS-ECHO-002
+test("a voice.done for a clause that was never recorded removes nothing, and a done of the same id other seq leaves the clause", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(clause("L", 2));
+    await t.deliver(clauseDone("L", 0));
+    await t.deliver(clauseDone("other", 2, { interrupted: true }));
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "L/2 is still recorded");
+  });
+});
+
+// @spec EARS-ECHO-003
+test("each clause expires 60000 ms after its own voice.playing, not after the line's first", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(clause("L", 0));
+    t.jump(40_000);
+    await t.deliver(clause("L", 1));
+    t.jump(30_000); // clause 0 is 70 s old and gone; clause 1 is 30 s old
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "clause 1 still plays");
+    t.jump(31_000); // clause 1 is 61 s old
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard once clause 1 expired too");
+  });
+});

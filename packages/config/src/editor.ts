@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseYaml, parseDocument, isMap, isScalar, stringify, type Document, type YAMLMap } from "yaml";
 import { z } from "zod";
-import { ConfigSchema, SECRET_PATHS } from "./schema.js";
+import { ConfigSchema, SECRET_PATHS, secretPathMatches, secretPathOf } from "./schema.js";
 import { PRESENTATION, type KeyPresentation, type SectionPresentation } from "./presentation.js";
 import { parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, type ConfigIssue } from "./pipeline.js";
 
@@ -91,14 +91,16 @@ function jsonSchemaOf(s: z.ZodType, path: string[], element = false): Json {
     out.items = jsonSchemaOf(u.element as z.ZodType, path, true);
     const min = checks.find((c) => c.check === "min_length")?.minimum;
     if (min) out.minItems = min;
-  } else if (u instanceof z.ZodRecord) { out.type = "object"; out.additionalProperties = jsonSchemaOf(u.valueType as z.ZodType, path); }
+  // a map's entries are described under the key `*`, the wildcard the secret paths use (CFG-SEC-016); the map carries no `type`
+  // so that, as a group of keys, it has no description of its own beside its help (CFG-PRES-004)
+  } else if (u instanceof z.ZodRecord) out.properties = { "*": jsonSchemaOf(u.valueType as z.ZodType, [...path, "*"]) };
   // any, unknown: no constraint
   const d = s.safeParse(undefined);
   if (d.success && d.data !== undefined && !isObj(d.data)) out.default = d.data;
   // A group of keys has no help of its own: only a leaf (a scalar or an array) is described.
   const description = u instanceof z.ZodObject || element ? undefined : helpAt(path);
   if (description) out.description = description;
-  if (!element && SECRET_PATHS.includes(path.join("."))) out["x-secret"] = true;
+  if (!element && secretPathOf(path.join(".")) !== undefined) out["x-secret"] = true;
   if (!element && PRESENTATION.keys[path.join(".")]?.sensitive) out["x-sensitive"] = true;
   return out;
 }
@@ -116,6 +118,17 @@ export function sectionJsonSchema(section: string): Json {
 
 interface Leaf { key: string; path: string[]; schema: z.ZodType; secret: boolean }
 
+/** The zod schema at a path of object keys below `root`, or undefined when a key is not in an object. */
+function leafAt(root: z.ZodType, keys: string[]): z.ZodType | undefined {
+  let cur: z.ZodType | undefined = root;
+  for (const key of keys) {
+    const obj: z.ZodType | undefined = cur ? unwrap(cur).schema : undefined;
+    if (!(obj instanceof z.ZodObject)) return undefined;
+    cur = shapeOf(obj)[key];
+  }
+  return cur;
+}
+
 /** The keys of a section: every scalar or array under it, named by its dotted path relative to the section (a leaf section is named for itself). */
 function leavesOf(section: string): Leaf[] {
   const segs = section.split(".");
@@ -126,7 +139,18 @@ function leavesOf(section: string): Leaf[] {
     const u = unwrap(s).schema;
     if (u instanceof z.ZodObject) { for (const [k, v] of Object.entries(shapeOf(u))) walk(v, [...rel, k]); return; }
     const path = [...segs, ...rel];
-    out.push({ key: rel.length ? rel.join(".") : segs[segs.length - 1]!, path, schema: s, secret: SECRET_PATHS.includes(path.join(".")) });
+    out.push({ key: rel.length ? rel.join(".") : segs[segs.length - 1]!, path, schema: s, secret: secretPathOf(path.join(".")) !== undefined });
+    // the credentials of a map's entries (CFG-SEC-016): `servers.*.token` is a leaf beside the map itself
+    if (u instanceof z.ZodRecord) {
+      const dotted = path.join(".");
+      for (const p of SECRET_PATHS) {
+        const parts = p.split(".");
+        if (!p.startsWith(`${dotted}.*.`)) continue;
+        const rest = parts.slice(path.length + 1);
+        const leaf = leafAt(u.valueType as z.ZodType, rest);
+        if (leaf) out.push({ key: [...rel, "*", ...rest].join("."), path: parts, schema: leaf, secret: true });
+      }
+    }
   };
   walk(root, []);
   return out;
@@ -236,7 +260,7 @@ export function readSection(text: string, section: string, secretsSet: readonly 
   for (const leaf of leaves) {
     const dotted = leaf.path.join(".");
     if (leaf.secret) {
-      keys[leaf.key] = { editable: false, secret: true, set: secretsSet.includes(dotted) };
+      keys[leaf.key] = { editable: false, secret: true, set: secretsSet.some((p) => secretPathMatches(p, dotted)) };
       continue;
     }
     const node = doc.getIn(leaf.path, true);

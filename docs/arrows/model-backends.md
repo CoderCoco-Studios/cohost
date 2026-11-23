@@ -4,7 +4,7 @@ The `@cohost/llm` package: one `ChatProvider` interface over Ollama, OpenAI-comp
 
 ## Status
 
-Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Built on Ollama and OpenAI-compatible: the result contract (`ChatMessage` as a closed union by role, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`, `ChatEvent` types), `ChatError` with kinds `http`, `connect` and `stream`, `complete()` and `stream()` with tools (definitions out; calls back whole on Ollama and assembled by `index` from fragments on OpenAI-compatible; results forward; a call the cap cut off is dropped; calls delivered after the text and before `done`), and the tool rules shared in `index.ts` (name pattern, `json` with tools, `tools: []` as none, stop omission, argument parsing, finish mapping). `chat()` rejects a tool history with a `TypeError` on every provider, and `chat()` on the Claude, Bedrock and mock providers is text-only as before. Built on the Claude API and Bedrock for text (#161): `complete()` and `stream()` through the SDK, sharing one request builder with `chat()`, with `ChatProvider` declaring both calls (LLM-IF-020). The Claude `stream()` plugs the SDK's streaming request into the shared clocks and framing; server-side fallbacks apply to a non-streamed request only; errors are `http`, `connect`, `stream` or `not_configured`. Built on the Claude API and Bedrock for tools (#163): `tools` as `{name, description, input_schema}` with no `stop_sequences`; `tool_use` blocks become calls with the backend's id; consecutive `tool` messages go out as `tool_result` blocks of one user turn; an assistant turn sends its kept thinking blocks, a text block when non-empty, then its `tool_use` blocks; `continuation` carries the thinking blocks and calls under the producing provider's name, and the other Claude provider ignores it; `stop_reason` maps to `tool_calls`, `length` and `refusal`; a call the token cap cut off is dropped; streamed calls are assembled from `input_json_delta` and delivered after the text, before `done`. Not yet built: image input on every provider (#164). The spec file now holds 226 specs: 215 `[x]`, 11 `[ ]`, 0 `[D]`. Existing `chat()` specs keep their markers except LLM-VIS-002 and LLM-VIS-003, whose `chat()` behaviour reverses (images are sent, not dropped) and are `[ ]`. Not covered by the last audit.
+Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): every client is built from `secrets.yaml` credentials alone, the Bedrock client from the region and both keys (LLM-CLAUDE-009, -015 to -018). Built on Ollama and OpenAI-compatible: the result contract (`ChatMessage` as a closed union by role, `ChatResult`, `ChatRequest`, `ToolSpec`, `ToolCall`, `ChatEvent` types), `ChatError` with kinds `http`, `connect` and `stream`, `complete()` and `stream()` with tools (definitions out; calls back whole on Ollama and assembled by `index` from fragments on OpenAI-compatible; results forward; a call the cap cut off is dropped; calls delivered after the text and before `done`), and the tool rules shared in `index.ts` (name pattern, `json` with tools, `tools: []` as none, stop omission, argument parsing, finish mapping). `chat()` rejects a tool history with a `TypeError` on every provider, and `chat()` on the Claude, Bedrock and mock providers is text-only as before. Built on the Claude API and Bedrock for text (#161): `complete()` and `stream()` through the SDK, sharing one request builder with `chat()`, with `ChatProvider` declaring both calls (LLM-IF-020). The Claude `stream()` plugs the SDK's streaming request into the shared clocks and framing; server-side fallbacks apply to a non-streamed request only; errors are `http`, `connect`, `stream` or `not_configured`. Built on the Claude API and Bedrock for tools (#163): `tools` as `{name, description, input_schema}` with no `stop_sequences`; `tool_use` blocks become calls with the backend's id; consecutive `tool` messages go out as `tool_result` blocks of one user turn; an assistant turn with calls and its own continuation is sent back verbatim, otherwise as a text block when non-empty then its `tool_use` blocks; `continuation` carries the reply's content blocks in the order sent, under the producing provider's name, and is sent back verbatim; the other Claude provider ignores it; a refused stream delivers no calls; `stop_reason` maps to `tool_calls`, `length` and `refusal`; a call the token cap cut off is dropped; streamed calls are assembled from `input_json_delta` and delivered after the text, before `done`. Not yet built: image input on every provider (#164). The spec file now holds 227 specs: 216 `[x]`, 11 `[ ]`, 0 `[D]`. Existing `chat()` specs keep their markers except LLM-VIS-002 and LLM-VIS-003, whose `chat()` behaviour reverses (images are sent, not dropped) and are `[ ]`. Not covered by the last audit.
 
 **AUDITED** — 54 specs: 54 implemented (`[x]`), 0 gaps (`[ ]`), 0 deferred (`[D]`). The docs site's extension guides added LLM-EX-001 to LLM-EX-006 (the OpenAI-compatible stub servers in Python and TypeScript and their try-it script), implemented and tested, not yet audited; the spec file then held 60 specs (60 `[x]`, 0 `[ ]`, 0 `[D]`).
 
@@ -17,7 +17,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/model-backends/model-backends-design.md
 
 ### EARS
-- docs/intent/model-backends/model-backends-specs.md (226 specs, prefix LLM: 215 `[x]`, 11 `[ ]`, 0 `[D]`)
+- docs/intent/model-backends/model-backends-specs.md (227 specs, prefix LLM: 216 `[x]`, 11 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/llm/test/tools.test.ts (tool calls on Ollama and OpenAI-compatible, complete() and stream(): definitions, calls, results, arguments, finish, streamed calls, the shared request checks; fake HTTP servers, no external network)
@@ -56,20 +56,20 @@ Consumers: cortex (`services/cortex/src/main.ts`), memory (`services/memory/src/
 
 | Category | Spec IDs | Implemented | Deferred | Gaps | Test pointers |
 |----------|----------|-------------|----------|------|----------------|
-| Interface and factory | LLM-IF-001 to LLM-IF-022 | 21 | 0 | 1 | 21 |
+| Interface and factory | LLM-IF-001 to LLM-IF-022 | 22 | 0 | 0 | 21 |
 | Errors | LLM-ERR-001 to LLM-ERR-009 | 9 | 0 | 0 | 9 |
 | Ollama and OpenAI-compatible chat | LLM-CHAT-001 to LLM-CHAT-022 | 22 | 0 | 0 | 22 |
 | Vision | LLM-VIS-001 to LLM-VIS-013 | 2 | 0 | 11 | 2 |
-| Streamed replies | LLM-STREAM-001 to LLM-STREAM-037 | 35 | 0 | 2 | 35 |
-| Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 20 | 0 | 10 | 20 |
-| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 17 | 0 | 2 | 17 |
+| Streamed replies | LLM-STREAM-001 to LLM-STREAM-038 | 38 | 0 | 0 | 38 |
+| Tool calls | LLM-TOOL-001 to LLM-TOOL-030 | 30 | 0 | 0 | 30 |
+| Stop sequences | LLM-STOP-001 to LLM-STOP-019 | 19 | 0 | 0 | 19 |
 | Claude providers | LLM-CLAUDE-001 to LLM-CLAUDE-033 | 33 | 0 | 0 | 33 |
 | Health ping | LLM-PING-001 to LLM-PING-007 | 7 | 0 | 0 | 7 |
 | Embeddings | LLM-EMBED-001 to LLM-EMBED-006 (003 retired) | 5 | 0 | 0 | 5 |
 | Mock provider | LLM-MOCK-001 to LLM-MOCK-021 | 21 | 0 | 0 | 21 |
 | Example stub servers | LLM-EX-001 to LLM-EX-008 | 8 | 0 | 0 | 8 |
 
-**Summary:** 215 of 226 specs implemented; 0 deferred; 11 gaps. The gaps are the image input lines (LLM-VIS-002 to -013; #164 for the Claude side), and nothing else in the model-backends segment.
+**Summary:** 216 of 227 specs implemented; 0 deferred; 11 gaps. The gaps are the image input lines (LLM-VIS-002 to -013; #164 for the Claude side), and nothing else in the model-backends segment.
 
 ## Key Findings
 

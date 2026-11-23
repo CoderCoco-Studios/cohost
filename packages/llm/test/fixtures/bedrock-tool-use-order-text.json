@@ -1,0 +1,36 @@
+{
+  "id": "msg_01FixtureTool",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-fixture",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "First, the viewer's question.",
+      "signature": "sig-1"
+    },
+    {
+      "type": "text",
+      "text": "Let me check."
+    },
+    {
+      "type": "thinking",
+      "thinking": "Oslo, so the weather tool.",
+      "signature": "sig-2"
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_bdrk_01A",
+      "name": "get_weather",
+      "input": {
+        "city": "Oslo"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 52,
+    "output_tokens": 38
+  }
+}

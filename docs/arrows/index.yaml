@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 135 [x], 149 [ ], 1 [D]. Open: streamed-reply specs CTX-STREAM-001, 003, 004, 011 to 013, 019, 030, 031, 035, 036 (003 and 004 implemented, not yet flipped); early-reply, tool and release specs (CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL); CTX-EVT-005, CTX-EVT-012, CTX-FALL-007."
+    next: "285 specs: 173 [x], 111 [ ], 1 [D]. Open: streamed-reply CTX-STREAM-003, 004 (implemented, not yet flipped), 011 to 013, 019, 030; early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL); CTX-EVT-001, 009; prompt, saying and health specs."
     drift: null
 
   tools:

@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 135 `[x]`, 149 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs not yet built (below), the early-reply, tool and release specs (CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL) and the fallback and control specs still open. The LLD has open questions (a repeat on a mention).
+**AUDITED** (date and commit in `index.yaml`). The spec file holds 285 specs: 173 `[x]`, 111 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The gaps are the streamed-reply specs not yet built (below), the early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL), and the open event, gating, prompt and saying specs. The LLD has open questions (a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -16,9 +16,9 @@ Design: LLD § Viewer notes. `CTX-VIEWER-001` to `004` (familiarity line from me
 
 ## Streamed reply
 
-Design: LLD §§ The think pipeline, Streaming the reply, Critic, Repetition check. `services/cortex/src/clauses.ts` holds the pure parts: `readHead` (the leading `Name:`, `[emotion]` and `[gesture:name]`, decided at the first non-tag character, at 80 characters, or at the end), `cutClause` (boundaries, `clause_min_chars`/`clause_max_chars`, bracketed spans) and `cleanClause`. `cortex.ts` `readReply` reads `llm.stream` under an `AbortSignal`: with a `rules` critic each clause is checked as it arrives (critic on the first clause only, then repetition, then the mute and busy re-check) and published; with an `llm` or `http` critic the whole reply is read, criticised once and then cut. The first clause is `brain.say` (`more` unless it is the whole reply); later clauses are `brain.clause` with `seq` from 1; exactly one closing `brain.clause` (`last`, `through`, optional `cut`: `repeat`, `muted`, `busy`, `length`, `stopped`) closes each line that had `more`. `closeLine` aborts the stream before the closing event. `stop()` is async and closes an open line as `stopped`. The cortex's own `brain.clause` extends its working-memory line (`extendSelf`). `trackLlm` in `startup.ts` tracks `stream()` outcomes (CTX-HEALTH-003).
+Design: LLD §§ The think pipeline, Streaming the reply, Critic, Repetition check. `services/cortex/src/clauses.ts` holds the pure parts: `readHead` (the leading `Name:`, `[emotion]` and `[gesture:name]`, decided at the first non-tag character, at 80 characters, or at the end), `cutClause` (boundaries, `clause_min_chars`/`clause_max_chars`, bracketed spans) and `cleanClause`. `cortex.ts` `readReply` reads `llm.stream` under an `AbortSignal`: with a `rules` critic each clause is checked as it arrives (critic on the first clause only, then repetition, then the mute and busy re-check) and published; with an `llm` or `http` critic the whole reply is read, criticised once and then cut. The first clause is `brain.say` (`more` unless it is the whole reply); later clauses are `brain.clause` with `seq` from 1; exactly one closing `brain.clause` (`last`, `through`, optional `cut`: `repeat`, `muted`, `busy`, `length`, `stopped`) closes each line that had `more`. `closeLine` aborts the stream before the closing event. `stop()` is async and closes an open line as `stopped`. The cortex's own `brain.clause` extends its working-memory line (`extendSelf`). `trackLlm` in `startup.ts` tracks `stream()` outcomes (CTX-HEALTH-003). A reply line's release record (`Pending`, `armValve`, `settle`) releases a streamed line by its players' completion, by the claim window and failure condition, or by the valve; released lines are kept in `retired` (bounded) until their closing clause reads back, so a `voice.failed` queued before the release still applies its mark and a late failure still judges who played (CTX-REL-016, CTX-FALL-009).
 
-Open in this area: CTX-STREAM-001, 003, 004 (the first newline ends the reply; implemented, not yet flipped), 011 to 013 and 019 (ownership to be confirmed), 030, 031, 035 and 036 (stream failure and valve cuts, CTX-STREAM-031 and -036 in #197).
+Open in this area: CTX-STREAM-003, 004 (the first newline ends the reply; implemented, not yet flipped), 011 to 013 and 019 (ownership to be confirmed), 030.
 
 ## Decisions applied
 
@@ -51,13 +51,14 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 135 `[x]`, 149 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 173 `[x]`, 111 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
 - services/cortex/test/cortex.stream.test.ts
 - services/cortex/test/transcript-stops.test.ts
 - services/cortex/test/cortex.dispositions.test.ts
+- services/cortex/test/cortex.release.test.ts
 - services/cortex/test/cortex.stop.test.ts
 - services/cortex/test/cortex.test.ts
 - services/cortex/test/critic.test.ts
@@ -98,26 +99,26 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event handling | CTX-EVT-001 to CTX-EVT-013 | 8 | 0 | 5 |
-| Think gating | CTX-GATE-001 to CTX-GATE-013 | 10 | 0 | 3 |
+| Event handling | CTX-EVT-001 to CTX-EVT-013 | 11 | 0 | 2 |
+| Think gating | CTX-GATE-001 to CTX-GATE-013 | 12 | 0 | 1 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-004 | 4 | 0 | 0 |
 | Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-011 | 11 | 0 | 0 |
 | Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-020 | 13 | 0 | 7 |
-| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-012 | 4 | 0 | 8 |
+| Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-012 | 12 | 0 | 0 |
 | Critic | CTX-CRITIC-001 to CTX-CRITIC-013 | 13 | 0 | 0 |
-| Saying | CTX-SAY-001 to CTX-SAY-010 | 4 | 0 | 6 |
-| Control | CTX-CTRL-001 to CTX-CTRL-011 | 7 | 0 | 4 |
+| Saying | CTX-SAY-001 to CTX-SAY-010 | 5 | 0 | 5 |
+| Control | CTX-CTRL-001 to CTX-CTRL-011 | 11 | 0 | 0 |
 | Interruptible speech | CTX-REPLAN-001 | 0 | 1 | 0 |
 | Test injection | CTX-INJ-001 to CTX-INJ-002 | 1 | 0 | 1 |
 | Startup and shutdown | CTX-START-001 to CTX-START-005 | 4 | 0 | 1 |
 | Health | CTX-HEALTH-001 to CTX-HEALTH-009 | 7 | 0 | 2 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 15 | 0 | 0 |
-| Streamed reply | CTX-STREAM-001 to CTX-STREAM-037 | 26 | 0 | 11 |
+| Streamed reply | CTX-STREAM-001 to CTX-STREAM-037 | 30 | 0 | 7 |
 | Forgetting | CTX-FORGET-001 to CTX-FORGET-003 | 3 | 0 | 0 |
-| Early reply, tools, release | CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL | 0 | 0 | 101 |
+| Early reply, tools, release | CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL | 16 | 0 | 85 |
 
-**Summary:** 285 specs: 135 implemented, 149 gaps, 1 deferred. The early-reply, tool and release specs (CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 285 specs: 173 implemented, 111 gaps, 1 deferred. The early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL) are gaps; the release specs (CTX-REL) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -134,6 +135,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 ## Work Required
 
-- Streamed reply: CTX-STREAM-001, 003, 004 (implemented; not yet flipped), 011 to 013, 019, 030, 031, 035, 036 are open.
-- Early reply, tools and release (CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL) are open.
+- Streamed reply: CTX-STREAM-003, 004 (implemented; not yet flipped), 011 to 013, 019, 030 are open.
+- Early reply and tools (CTX-PROV, CTX-INTJ, CTX-TOOL) are open.
+- Event handling: CTX-EVT-001 and CTX-EVT-009 are open. `CORTEX_EVENTS` in `startup.ts` includes `voice.utterance` and `voice.playing` for the release logic (CTX-REL-001, CTX-REL-002); the rest of CTX-EVT-001's list is owned by #225.
 - The LLD's open questions: a repeat on a mention.

@@ -42,7 +42,7 @@ export async function waitForLlm(llm: ChatProvider, o: WaitForLlmOptions): Promi
 /** Every bus event type the cortex reads. */
 // @spec CTX-EVT-001, CTX-FORGET-001
 const CORTEX_EVENTS = [
-  "chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "brain.clause", "voice.done", "voice.stop", "voice.failed",
+  "chat.message", "chat.removed", "speech.heard", "vision.summary", "brain.say", "brain.clause", "voice.utterance", "voice.playing", "voice.done", "voice.stop", "voice.failed",
   "attention.focus", "memory.recall.reply", "memory.notes.reply", "memory.viewer", "affect.state", "control",
 ] as const;
 

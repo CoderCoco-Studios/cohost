@@ -55,12 +55,13 @@ export function buildMessages(opts: {
   ];
 }
 
-export interface Glitch { intended: string; fallback: string; chance: number }
+export interface Glitch { intended: string; fallback: string; chance: number; partial?: boolean }
 
-// @spec CTX-FALL-004
+// @spec CTX-FALL-004, CTX-FALL-010
 /** The one `## Now` line about a failed line: both texts and the base chance as a whole percentage; the model decides in character. */
 function glitchLine(g: Glitch): string {
-  return `- Your voice glitched: your line "${oneLine(g.intended)}" failed to play and everyone heard "${oneLine(g.fallback)}" instead. ` +
+  const what = g.partial ? "the rest of your line" : "your line";
+  return `- Your voice glitched: ${what} "${oneLine(g.intended)}" failed to play and everyone heard "${oneLine(g.fallback)}" instead. ` +
     `You may react to it in character if that fits you; as a rough guide, about ${Math.round(g.chance * 100)}% of the time. If it does not fit, let it go.`;
 }
 

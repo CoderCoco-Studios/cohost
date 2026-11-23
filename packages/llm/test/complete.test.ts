@@ -129,19 +129,26 @@ test("complete(): finish is length when the token cap ended the reply, stop othe
 });
 
 // @spec LLM-IF-011, LLM-IF-012
-test("chat(): a tool message or an assistant toolCalls is a TypeError before any request; a model-emitted tool call is ignored", async () => {
+test("chat(): a tool message or an assistant toolCalls is a TypeError before any request on every provider; a model-emitted tool call is ignored", async () => {
   const b = await recorder(() => ({ json: {
     message: { content: "text", tool_calls: [{ function: { name: "t", arguments: {} } }] },
     choices: [{ message: { content: "text", tool_calls: [{ id: "1", type: "function", function: { name: "t", arguments: "{}" } }] }, finish_reason: "tool_calls" }],
   } }));
   const o = new Ollama(llmCfg({ provider: "ollama" }), b.url);
   const p = new OpenAICompatible(llmCfg({ openai: { base_url: `${b.url}/v1` } }));
+  // Claude and Bedrock take a stubbed transport that counts requests, so a rejected call that sends one is visible.
+  let claudeRequests = 0;
+  const stub = (async () => { claudeRequests++; throw new Error("no request expected"); }) as typeof fetch;
+  const anth = new llmApi.AnthropicProvider(llmCfg({ provider: "anthropic", claude: { api_key: "k" } }), undefined, { fetch: stub });
+  const bed = new llmApi.BedrockProvider(llmCfg({ provider: "bedrock", bedrock: { region: "us-east-1", access_key_id: "AKIATEST", secret_access_key: "test-secret" } }), undefined, { fetch: stub });
+  const mock = new llmApi.MockProvider({ model: "m" });
   const toolMsg = [...hello, { role: "tool", callId: "1", name: "t", content: "r" }] as any;
   const asstCalls = [...hello, { role: "assistant", content: "", toolCalls: [{ id: "1", name: "t", arguments: {} }] }] as any;
-  for (const prov of [o, p]) for (const h of [toolMsg, asstCalls]) {
-    await assert.rejects(prov.chat(h), TypeError);
+  for (const prov of [o, p, anth, bed, mock]) for (const h of [toolMsg, asstCalls]) {
+    await assert.rejects(prov.chat(h), TypeError, prov.name);
   }
-  assert.equal(b.seen.length, 0, "no request was sent");
+  assert.equal(b.seen.length, 0, "no request was sent to Ollama or OpenAI-compatible");
+  assert.equal(claudeRequests, 0, "no request was sent to Claude or Bedrock");
   const asstEmpty = [...hello, { role: "assistant", content: "ok", toolCalls: [] }] as any;
   assert.equal(await o.chat(asstEmpty), "text");
   assert.equal(await p.chat(hello), "text");
@@ -160,12 +167,12 @@ test("a non-2xx answer is a ChatError of kind http with the status and the exist
 });
 
 // @spec LLM-ERR-005
-test("complete(): a default-timeout expiry rejects with the TimeoutError of AbortSignal.timeout, not a ChatError", async () => {
+test("complete() and chat(): a default-timeout expiry rejects with the TimeoutError of AbortSignal.timeout, not a ChatError", async () => {
   const ChatError = (llmApi as any).ChatError;
   assert.equal(typeof ChatError, "function", "ChatError is exported");
   const o = new Ollama(withTimeout(150, { provider: "ollama" }), holeUrl) as any;
   const p = new OpenAICompatible(withTimeout(150, { openai: { base_url: `${holeUrl}/v1` } })) as any;
-  for (const call of [() => o.complete(hello), () => p.complete(hello)]) {
+  for (const call of [() => o.complete(hello), () => p.complete(hello), () => o.chat(hello), () => p.chat(hello)]) {
     await assert.rejects(call(), (e: any) => e?.name === "TimeoutError" && !(e instanceof ChatError));
   }
 });
@@ -179,5 +186,5 @@ test("complete(): a failing request is made once; no retry or back-off", async (
   await assert.rejects(p.complete(hello), /openai chat 500/);
   assert.equal(b.seen.length, 2, "one fetch per call");
   const dead = new OpenAICompatible(llmCfg({ openai: { base_url: "http://127.0.0.1:1/v1" } })) as any;
-  await assert.rejects(dead.complete(hello), /complete is not a function|fetch failed/);
+  await assert.rejects(dead.complete(hello), /fetch failed/);
 });

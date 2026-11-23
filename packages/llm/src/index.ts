@@ -18,6 +18,7 @@ import { AnthropicBedrockMantle } from "@anthropic-ai/bedrock-sdk";
 import { createLogger, urls, type Config, type Logger } from "@cohost/config";
 import { TRANSCRIPT_TAGS } from "@cohost/working-memory";
 import { MockProvider, HashEmbedder } from "./mock.js";
+import { assertTextHistory } from "./history.js";
 export type { Config };
 export { MockProvider, HashEmbedder };
 
@@ -114,13 +115,6 @@ const requestSignal = (cfg: Config["llm"], caller?: AbortSignal): AbortSignal =>
 function textResult(content: string | null | undefined, finish: ChatResult["finish"]): ChatResult { // @spec LLM-IF-005, LLM-IF-006, LLM-IF-007, LLM-IF-022, LLM-IF-014, LLM-IF-015, LLM-CHAT-007
   const text = (content ?? "").trim();
   return { text, toolCalls: [], finish, message: { role: "assistant", content: text } };
-}
-
-/** `chat()` offers no tools, so a history that holds a tool result or a tool call is a caller's programming error (LLM-IF-012). */
-function assertTextHistory(messages: ChatMessage[]): void { // @spec LLM-IF-012
-  if (messages.some((m) => m.role === "tool" || (m.role === "assistant" && (m.toolCalls?.length ?? 0) > 0))) {
-    throw new TypeError("chat() takes a text-only history: a tool message or an assistant toolCalls needs complete()");
-  }
 }
 
 /** The one logger method a provider uses. */
@@ -321,13 +315,14 @@ abstract class ClaudeBase implements ChatProvider {
     this.images = new ImageDropper(provider, log);
   }
 
-  async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
+  async chat(allMessages: ChatMessage[], opts: ChatOptions = {}): Promise<string> { // @spec LLM-IF-011, LLM-IF-012
+    assertTextHistory(allMessages);
     const client = this.client;
     if (!client) throw new Error(this.notConfigured()); // @spec LLM-CLAUDE-017, LLM-CLAUDE-018
     const messages = this.images.strip(allMessages); // @spec LLM-VIS-003 (Claude has no image path here: images are dropped)
     const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n"); // @spec LLM-CLAUDE-001
     const turns: Anthropic.MessageParam[] = messages
-      .filter((m): m is ChatMessage & { role: "user" | "assistant" } => m.role !== "system")
+      .filter((m): m is Extract<ChatMessage, { role: "user" | "assistant" }> => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role, content: m.content }));
     if (turns.length === 0 || turns[0]!.role !== "user") turns.unshift({ role: "user", content: "(begin)" }); // @spec LLM-CLAUDE-002
 

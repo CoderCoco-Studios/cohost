@@ -199,15 +199,19 @@ interface WireCall { index?: number; id?: string; name?: string; args?: unknown;
 
 /**
  * Collects a reply's calls and builds them in the order the model asked (LLM-TOOL-024). Fragments of one call join by `index`
- * (LLM-TOOL-007); a call with no index takes the next position. A call the cap cut off (`capped`, and `dropCut` for backends whose
- * cap can cut arguments) is dropped (LLM-TOOL-022). A call with no backend id gets `call_<position>`, unique within the reply.
+ * (LLM-TOOL-007). A fragment with no index joins the call that has its id; a fragment with neither index nor id continues the
+ * last call; any other unindexed call takes the next free position. A call the cap cut off (`capped`, and `dropCut` for backends
+ * whose cap can cut arguments) is dropped (LLM-TOOL-022). A call with no backend id gets `call_<position>`, unique within the reply.
  */
 class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOOL-024
   private calls = new Map<number, { id?: string; name?: string; args?: unknown }>();
   private last: number | undefined;
   add(c: WireCall): void {
-    // An unindexed fragment without an id continues the last call; any other unindexed call takes the next free position.
-    const i = c.index ?? (c.fragment && c.id === undefined && this.last !== undefined ? this.last : Math.max(-1, ...this.calls.keys()) + 1);
+    let i = c.index;
+    if (i === undefined && c.id !== undefined) {
+      for (const [k, v] of this.calls) if (v.id === c.id) { i = k; break; }
+    }
+    i ??= c.fragment && c.id === undefined && this.last !== undefined ? this.last : Math.max(-1, ...this.calls.keys()) + 1;
     this.last = i;
     const cur = this.calls.get(i) ?? {};
     if (c.id !== undefined) cur.id = c.id;
@@ -438,15 +442,12 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       whole = { value: parseWhole(plan.name, await clocked(() => res.text())) };
     } else {
       let wholeText: string | undefined;
-      let sawLine = false;
       outer: for await (const line of lines(res.body)) { // @spec LLM-STREAM-002, LLM-STREAM-005
         if (wholeText !== undefined) { wholeText += `\n${line}`; continue; } // @spec LLM-STREAM-029
-        const firstLine = !sawLine;
-        if (line.trim() !== "") sawLine = true;
         for (const ev of plan.line(line)) {
           if (ev.kind === "whole") {
-            // A single JSON body is the whole reply only when it is the first line of the answer.
-            if (!firstLine) throw streamError(plan.name, "a JSON object arrived after stream events");
+            // A single JSON body is the whole reply only when no stream event came before it (keepalives may).
+            if (sawOutput) throw streamError(plan.name, "a JSON object arrived after stream events");
             wholeText = line;
             break;
           } // @spec LLM-STREAM-029

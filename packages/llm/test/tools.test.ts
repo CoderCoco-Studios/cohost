@@ -585,3 +585,42 @@ test("openai stream: an unindexed fragment with no id continues the last call; a
   const calls = evs.filter((e) => e.type === "tool_call").map((e) => e.call);
   assert.deepEqual(calls.map((c: any) => [c.id, c.arguments]), [["a", { city: "Oslo" }], ["c", {}], ["d", { city: "Rome" }]]);
 });
+
+// ---- review round 2
+
+// @spec LLM-STREAM-029
+test("keepalive lines before a single JSON body still make it the whole reply", async () => {
+  const b = await serve((o) => {
+    o.write(": ping\n\n");
+    o.write(JSON.stringify(openaiBody("Looking.", [aCall("a", "get_weather", '{"city":"Oslo"}')], "tool_calls")));
+    o.end();
+  });
+  const evs = await collect(make("openai", b.url).stream(hello, { tools: [weather] }));
+  assert.deepEqual(evs.map((e) => e.type), ["text", "tool_call", "done"]);
+  assert.equal(evs.at(-1).result.finish, "tool_calls");
+});
+
+// @spec LLM-STREAM-029
+test("a JSON object after stream text, with no error field, is a stream ChatError", async () => {
+  const b = await serve((o) => {
+    o.write(txt("hi"));
+    o.write(JSON.stringify(openaiBody("late", undefined)) + "\n");
+    o.end();
+  });
+  const err = await failure(collect(make("openai", b.url).stream(hello, { tools: [weather] })));
+  assert.ok(err instanceof ChatError);
+  assert.equal(err.kind, "stream");
+});
+
+// @spec LLM-TOOL-007
+test("openai stream: an unindexed fragment carrying the id of an existing call joins that call", async () => {
+  const s = await serve((o) => {
+    o.write(frag(0, { id: "a", type: "function", function: { name: "get_weather", arguments: '{"city":' } }));
+    o.write(frag(undefined, { id: "a", function: { arguments: '"Oslo"}' } }));
+    o.write(fin("tool_calls"));
+    o.end();
+  });
+  const evs = await collect(make("openai", s.url).stream(hello, { tools: [weather] }));
+  const calls = evs.filter((e) => e.type === "tool_call").map((e) => e.call);
+  assert.deepEqual(calls, [{ id: "a", name: "get_weather", arguments: { city: "Oslo" } }]);
+});

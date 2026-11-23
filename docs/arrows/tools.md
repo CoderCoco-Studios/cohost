@@ -4,7 +4,7 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 
 ## Status
 
-**MAPPED**: designed and specified, not built. The LLD is written (2026-11-18) and `tools-specs.md` holds 109 specs, all `[ ]`. No code mentions MCP, tool calls or function calls.
+**MAPPED**: designed and specified, not built. The LLD is written (2026-11-18) and `tools-specs.md` holds 108 specs, all `[ ]`. No code mentions MCP, tool calls or function calls.
 
 ## References
 

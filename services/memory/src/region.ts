@@ -4,14 +4,14 @@ import type { MemoryStore } from "./store.js";
 import type { CortexState } from "./scheduler.js";
 import { answerViewersRequest, type ViewersAdminStore } from "./admin.js";
 import { buildNotesReply, type SurfaceStore } from "./surface.js";
-import { boundText, UNKNOWN_NAME } from "@cohost/shared/untrusted";
+import { boundText, UNKNOWN_NAME, viewerKey } from "@cohost/shared/untrusted";
 import { intakeName, textLimits } from "./limits.js";
 
 export interface MemoryDeps {
   cfg: Config;
   bus: Publisher;
   log: Logger;
-  store: Pick<MemoryStore, "touchViewer" | "touchSpeaker" | "remember" | "recall"> & SurfaceStore;
+  store: Pick<MemoryStore, "touchViewer" | "touchSpeaker" | "remember" | "forgetChat" | "recall"> & SurfaceStore;
   /** The store the owner's Viewers-page operations run against; without it `memory.viewers.request` is ignored (MEM-ADMIN-007). */
   admin?: ViewersAdminStore;
   /** Told the cortex's latest `brain.status`, so consolidation runs only while it is idle (MEM-CONSOL-002). */
@@ -29,7 +29,7 @@ const skipInjected = (d: { injected?: boolean; remember?: boolean }): boolean =>
 export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus, clock = Date.now }: MemoryDeps): (ev: BusEvent) => Promise<void> {
   return async (ev) => {
     switch (ev.type) {
-      // @spec MEM-WRITE-001, MEM-WRITE-006, MEM-WRITE-008, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-007, MEM-REG-005
+      // @spec MEM-WRITE-001, MEM-WRITE-006, MEM-WRITE-008, MEM-WRITE-009, MEM-VIEWER-001, MEM-VIEWER-002, MEM-VIEWER-007, MEM-VIEWER-008, MEM-VIEWER-009, MEM-VIEWER-010, MEM-REG-005
       case "chat.message": {
         const d = ev.data as BusEvent<"chat.message">["data"];
         if (skipInjected(d)) break; // no viewer row, no memory.viewer, no memory
@@ -40,15 +40,25 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
         // A nameless viewer with no id is no viewer: no row and no announcement (the memory row is still written when addressed).
         const nameless = !d.userId && user === UNKNOWN_NAME;
         // @spec MEM-VIEWER-006
-        const v = nameless ? undefined : await store.touchViewer(d.userId || user, user, { isSub: d.isSub }).catch((err) => {
+        // @spec MEM-VIEWER-008, MEM-VIEWER-009
+        const key = viewerKey({ platform: d.platform, userId: d.userId, user });
+        const v = nameless ? undefined : await store.touchViewer(key, user, { isSub: d.isSub }).catch((err) => {
           log.warn({ err: String(err), user }, "viewer upsert failed; no memory.viewer for this message");
           return undefined;
         });
         if (d.mentionsCohost) {
           // Announce who this is before the slow embed so the cortex has it when the reply is built.
-          if (v) await bus.publish("memory.viewer", { user, isNew: v.isNew, msgCount: v.msgCount, regular: v.regular });
-          await store.remember("chat", user, text);
+          if (v) await bus.publish("memory.viewer", { user, platform: d.platform, ...(d.userId ? { userId: d.userId } : {}), isNew: v.isNew, msgCount: v.msgCount, regular: v.regular });
+          await store.remember("chat", user, text, { platform: d.platform, userId: d.userId, messageId: d.messageId });
         }
+        break;
+      }
+      // @spec MEM-FORGET-001, MEM-FORGET-002, MEM-FORGET-003, MEM-FORGET-004, MEM-FORGET-005, MEM-FORGET-006, MEM-FORGET-007
+      case "chat.removed": {
+        const d = ev.data as BusEvent<"chat.removed">["data"];
+        await store.forgetChat(d).catch((err) => {
+          log.warn({ err: String(err), platform: d.platform, scope: d.scope }, "forgetting removed chat failed; the stored lines stay");
+        });
         break;
       }
       // @spec MEM-WRITE-002, MEM-WRITE-007, MEM-WRITE-008, MEM-VOICE-002
@@ -98,7 +108,7 @@ export function createMemoryHandler({ cfg, bus, store, admin, log, onBrainStatus
       // @spec MEM-SURF-001, MEM-SURF-005
       case "memory.notes.request": {
         const d = ev.data as BusEvent<"memory.notes.request">["data"];
-        const viewers = await buildNotesReply(store, cfg.brain.memory, d.viewers.map((v) => v.user), clock()).catch((err) => {
+        const viewers = await buildNotesReply(store, cfg.brain.memory, d.viewers, clock()).catch((err) => {
           // Neither the names nor any note text go in the log.
           log.warn({ err: String(err) }, "reading viewer notes failed; answering with none");
           return [];

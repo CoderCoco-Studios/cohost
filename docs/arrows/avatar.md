@@ -17,7 +17,7 @@ The `browser` driver is specified (AVATAR-BRW-*) and not built: its frame conten
 - docs/intent/avatar/avatar-design.md
 
 ### EARS
-- docs/intent/avatar/avatar-specs.md (91 specs: 57 `[x]`, 34 `[ ]`, 0 `[D]`; prefix `AVATAR`)
+- docs/intent/avatar/avatar-specs.md (91 specs: 68 `[x]`, 23 `[ ]`, 0 `[D]`; prefix `AVATAR`)
 
 ### Tests
 Files with `@spec AVATAR-` annotations:

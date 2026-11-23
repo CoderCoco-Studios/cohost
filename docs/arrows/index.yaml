@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "44 specs, all [x]. No open gaps. Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
+    next: "63 specs: 38 [x], 25 [ ], 0 [D] (the gaps are the provider construction, hosted choice, configuration, outage, egress and vision-dependency specs; see eyes.md). Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
     drift: null
 
   connections:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 138 [x], 35 [ ] (viewer identity by platform and user id, the platform and message id on chat rows, forgetting removed chat, and the streamed-speech clause writes MEM-WRITE-010 to 019). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 160 [x], 13 [ ] (streamed-speech clause writes MEM-WRITE-010 to 019; MEM-EVT-001, MEM-WRITE-003, MEM-RECALL-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "109 specs: 0 [x], 109 [ ] (the segment is designed and specified, not built). The cascade lines in the segments listed in tools.md are written; build the service, then audit."
+    next: "108 specs: 0 [x], 108 [ ] (the segment is designed and specified, not built). The cascade lines in the segments listed in tools.md are written; build the service, then audit."
     drift: null
 
   voice:

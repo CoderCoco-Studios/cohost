@@ -122,7 +122,7 @@ test("fps is the frames received in the last 2 s over 2, rounded, null unless li
     await c.next((m) => m.type === "frame" && (m.frame as { mouthOpen: number }).mouthOpen === (i + 1) / 10);
     r.clock.advance(100);
   }
-  r.clock.advance(100); // the 1 s tick: the frames are live, 6 of them in the last 2 s
+  r.clock.advance(300); // the 1 s tick at 2 s: the frames are live, 6 of them in the last 2 s
   await c.next((m) => m.type === "status" && m["state"] === "live");
   let s = await r.renderer();
   assert.equal(s.state, "live");

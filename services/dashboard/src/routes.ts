@@ -6,7 +6,7 @@ import { BodyTooLarge, readText } from "./body.js";
 import { AppliedView } from "./applied.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
 import { handleInject } from "./inject.js";
-import { handleUi, locateUiDir } from "./static.js";
+import { handleAvatarPage, handleUi, locateUiDir } from "./static.js";
 import { handleOptions, type OptionsDeps } from "./options.js";
 import { handleEgress } from "./egress.js";
 import { handleMouthRouting } from "./routing.js";
@@ -58,6 +58,8 @@ export interface DashboardDeps {
   docsDir?: string;
   /** The avatar model store, the applied view and `dashboard.models.max_bytes`. Defaults to the data dir's store and an empty view. */
   models?: { store: ModelStore; applied: AppliedView; maxBytes: number };
+  /** `GET /avatar/renderer`'s snapshot (the relay's status); absent in a test that does not run the relay. */
+  renderer?: () => object;
 }
 
 const LIFECYCLE = /^\/services\/([^/]+)\/(start|stop|restart)$/;
@@ -102,6 +104,14 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       const url = new URL(req.url ?? "/", "http://x");
       // @spec DASH-HTTP-001, DASH-BUILD-003, DASH-BUILD-004, DASH-BUILD-005
       if (handleUi(uiDir, d.cohostName, req, res, url)) return;
+      // @spec DASH-AVP-001, DASH-AVP-002
+      if (handleAvatarPage(uiDir, req, res, url)) return;
+      // @spec DASH-AVR-018
+      if (req.method === "GET" && url.pathname === "/avatar/renderer" && d.renderer) {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify(d.renderer()));
+        return;
+      }
       // @spec DASH-DOCS-001, DASH-DOCS-011
       if (handleDocs(docsDir, req, res, url)) return;
       // @spec DASH-SINK-001

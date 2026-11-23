@@ -127,6 +127,7 @@ test("the relay pings every 10 s and terminates a socket that answers no ping, a
   assert.equal(quiet.closed, false, "not terminated at 15 s");
   r.clock.advance(6_000);
   await quiet.until(() => quiet.closed);
+  await live.barrier(); // the answer to the ping at 20 s reaches the server before the clock moves on
   assert.equal(quiet.closed, true, "terminated by 21 s of silence");
   for (let i = 0; i < 4; i++) {
     r.clock.advance(10_000);
@@ -180,4 +181,48 @@ test("with no socket open at shutdown the reader was never started and nothing i
   const r = await relay(t);
   await r.stop();
   assert.deepEqual([r.bus.starts, r.bus.stops], [0, 0]);
+});
+
+// @spec DASH-AVR-032
+test("a remote address that is not loopback holds at most 2 renderer pages across both listeners; a third is 503 with retry-after 5, and the owner's loopback address is not limited", { skip: externalAddress() ? false : "no non-loopback interface" }, async (t) => {
+  const addr = externalAddress()!;
+  const r = await relay(t, { lanHost: "0.0.0.0" });
+  const a = await join_(r.lanPort, { host: addr });
+  const b = await join_(r.lanPort, { host: addr });
+  const over = await connect(r.lanPort, { host: addr });
+  assert.equal(over.result, 503);
+  if (over.result === 503) assert.equal(over.headers["retry-after"], "5");
+  assert.equal((await r.renderer()).pages.length, 2, "the refused upgrade completed no socket");
+  for (let i = 0; i < 2; i++) await join_(r.lanPort); // loopback addresses keep their own four places
+  assert.equal((await r.renderer()).pages.length, 4);
+  assert.ok(a && b);
+});
+
+// @spec DASH-AVR-033
+test("a socket that sends more than 20 messages in one second is closed with 1008; 20 in a second is not", async (t) => {
+  const r = await relay(t);
+  const ok = await join_(r.port);
+  for (let i = 0; i < 20; i++) ok.send("x");
+  await ok.barrier();
+  assert.equal(ok.closed, false, "20 messages in a second are within the rate");
+  r.clock.advance(1000);
+  const c = await join_(r.port);
+  for (let i = 0; i < 21; i++) c.send("x");
+  await once(c.ws, "close");
+  assert.equal(c.closeCode, 1008);
+  assert.equal((await r.renderer()).pages.length, 1, "the dropped socket no longer holds a place");
+});
+
+// @spec DASH-AVR-035
+test("a send whose data has left the socket is not stuck: the clock passing 5 s before its completion callback runs does not terminate the socket", async (t) => {
+  const r = await relay(t);
+  const c = await join_(r.port);
+  await r.bus.until(() => r.bus.reading);
+  r.clock.toTick();
+  r.bus.state("vmc");
+  r.clock.advance(1000); // a status goes out; its completion callback has not run yet
+  r.clock.advance(5_000); // synchronously past the 5 s limit
+  assert.deepEqual(await c.next((m) => m.type === "status"), { type: "status", state: "off", driver: "vmc" });
+  assert.equal(c.closed, false, "nothing was buffered in the socket, so the send was not stuck");
+  assert.equal((await r.renderer()).pages.length, 1);
 });

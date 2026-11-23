@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import type { WebSocketServer } from "ws";
 import type { Logger } from "@cohost/config";
 import { isLoopback } from "@cohost/control";
+import type { AvatarRelay, Listener } from "./avatar-relay.js";
 
 /** The full-surface port and the LAN listener's port: `dashboard.port` and `dashboard.lan_port` of the loaded config, and nothing else. */
 // @spec DASH-HTTP-009, DASH-HOST-001
@@ -16,7 +17,7 @@ export function resolvePorts(dashboard: { port: number; lan_port: number }): { p
 export function lanAllows(method: string, pathname: string): boolean {
   if (pathname === "/health") return true;
   if (method === "GET" && (pathname === "/" || pathname.startsWith("/audio/"))) return true;
-  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || pathname === "/avatar/model" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
+  if (method === "GET" || method === "HEAD") return pathname === "/favicon.svg" || pathname === "/avatar" || pathname === "/avatar/model" || (pathname.startsWith("/assets/") && pathname.length > "/assets/".length);
   return method === "POST" && pathname === "/sink";
 }
 
@@ -150,6 +151,8 @@ export interface ListenerOptions {
   /** The LAN listener's address; default all interfaces (tests pin loopback). */
   lanHost?: string;
   controlEnabled: boolean;
+  /** The renderer relay's upgrades (`/avatar/ws`); without it that path is a 400 (DASH-AVR-001). */
+  avatar?: Pick<AvatarRelay, "upgrade">;
   /** `dashboard.allowed_hosts`: host names the non-loopback listeners accept in `Host` besides address literals and `localhost` (DASH-HOST-009). */
   allowedHosts?: readonly string[];
   log: Pick<Logger, "info" | "warn" | "fatal">;
@@ -165,11 +168,17 @@ export interface Listeners {
   close(): Promise<void>;
 }
 
-function attachUpgrade(server: http.Server, wss: WebSocketServer, guard?: (req: http.IncomingMessage) => boolean): void {
+/**
+ * The WebSocket upgrades of one listener: `/ws` to the feed's server, `/avatar/ws` to the relay (DASH-AVR-001). The guard
+ * (Origin and Host) runs first, so a refused upgrade is a 403 whatever the relay's capacity (DASH-AVR-002).
+ */
+// @spec DASH-AVR-001, DASH-AVR-002, DASH-HOST-002
+function attachUpgrade(server: http.Server, wss: WebSocketServer, listener: Listener, avatar: Pick<AvatarRelay, "upgrade"> | undefined, guard?: (req: http.IncomingMessage) => boolean): void {
   server.on("upgrade", (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
     let pathname = "";
     try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { /* refused below */ }
     if (guard && !guard(req)) { socket.end("HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
+    if (pathname === "/avatar/ws" && avatar) { avatar.upgrade(req, socket, head, listener); return; }
     if (pathname !== "/ws") { socket.end("HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
   });
@@ -202,8 +211,8 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);
   // The loopback listener applies the loopback Host rule of DASH-HOST-004; every listener other machines can reach, the rule of DASH-HOST-009.
   const reachable = (req: http.IncomingMessage): boolean => hostPermitted(req.headers.host, allowedHosts) && wsOrigin(req);
-  attachUpgrade(full, o.wss, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : reachable);
-  attachUpgrade(lan, o.wss, reachable);
+  attachUpgrade(full, o.wss, "full", o.avatar, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : reachable);
+  attachUpgrade(lan, o.wss, "lan", o.avatar, reachable);
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const fullOk = await listen(full, o.bind, o.port, "full surface", o.log);
   const lanOk = fullOk && (await listen(lan, o.lanHost, o.lanPort, "LAN", o.log));

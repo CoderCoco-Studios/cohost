@@ -198,7 +198,7 @@ test("while the reader delivers nothing the state is never live, and the relay l
 
 // @spec DASH-AVR-021
 test("every change of the applied view pushes a view to every open socket, a preview's with the model name", async (t) => {
-  const r = await relay(t, { seed: { "Aiko.vrm": model("a"), "Bea.vrm": model("b") }, renderer: { model: "Aiko.vrm" } });
+  const r = await relay(t, { seed: { "Aiko.vrm": model("a"), "Bea.vrm": model("b", 64) }, renderer: { model: "Aiko.vrm" } });
   const a = await join_(r.port), b = await join_(r.lanPort), p = await join_(r.port, { preview: true });
   const versionOf = async () => ((await r.get("/avatar/model")).headers["etag"] as string).replace(/^W\//, "").replace(/^"|"$/g, "");
   const first = await versionOf();
@@ -232,7 +232,7 @@ test("a socket that cannot keep up gets the newest frame and, ahead of it, the n
   r.clock.advance(700); // the tick: the frames are live
   r.bus.state("vmc");
   r.clock.advance(1000); // the frames are 1.7 s old: a changed status while the send is blocked
-  await r.zoom(3.25); // a changed view while it is blocked
+  await r.zoom(2.75); // a changed view while it is blocked
   r.bus.batch({ headX: 42 }); // the newest frame
   await other.next((m) => m.type === "frame" && (m.frame as { headX: number }).headX === 42);
   sock.resume();
@@ -242,7 +242,7 @@ test("a socket that cannot keep up gets the newest frame and, ahead of it, the n
   assert.ok(frames < 40_000, `a slow socket skipped frames (${frames} of 40000 arrived), nothing queued`);
   const lastView = seen.findLastIndex((m) => m.type === "view"), lastStatus = seen.findLastIndex((m) => m.type === "status");
   assert.ok(lastView >= 0 && lastStatus >= 0, "view and status were sent before the newest frame");
-  assert.equal((seen[lastView]!["framing"] as { zoom: number }).zoom, 3.25);
+  assert.equal((seen[lastView]!["framing"] as { zoom: number }).zoom, 2.75);
   assert.equal(seen[lastStatus]!["driver"], "vmc");
 });
 
@@ -263,4 +263,20 @@ test("a socket whose send has not finished in 5 s is terminated; one that is mer
   r.clock.advance(1_500);
   await eventually(async () => (await r.renderer()).pages.length === 1, "the stuck socket terminated");
   assert.equal(ok.closed, false, "the other socket is untouched");
+});
+
+// @spec DASH-AVR-034
+test("a frame that fails AvatarFrameSchema is not sent, the next valid one is, and the warning is logged at most once per 10 s", async (t) => {
+  const r = await relay(t);
+  const c = await join_(r.port);
+  await r.bus.until(() => r.bus.reading);
+  r.bus.batch({ mouthOpen: 2 }, { mouthOpen: 3 }); // out of range twice in one batch
+  r.bus.batch({ mouthOpen: 0.4 });
+  assert.equal(((await c.next((m) => m.type === "frame")).frame as { mouthOpen: number }).mouthOpen, 0.4, "the first frame sent is the valid one");
+  assert.equal(r.rec.msgs("warn").filter((m) => m?.includes("avatar frame")).length, 1, "one warning for the batch");
+  r.clock.advance(5_000);
+  r.bus.batch({ expression: "x".repeat(65) });
+  r.clock.advance(5_000);
+  r.bus.batch({ headX: 91 });
+  assert.equal(r.rec.msgs("warn").filter((m) => m?.includes("avatar frame")).length, 2, "a second warning once 10 s have passed");
 });

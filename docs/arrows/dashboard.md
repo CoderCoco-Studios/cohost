@@ -4,7 +4,7 @@ The operator's web UI and HTTP/WebSocket API: the React UI (live feed, controls,
 
 ## Status
 
-**MAPPED.** 416 specs: 297 implemented, 119 gaps, 0 deferred. The gaps include DASH-UI-002, the streamed-line specs DASH-UI-041 and DASH-UI-054, the tools settings, the avatar renderer's relay, page and settings. The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH, DOCS) were audited on 2026-11-14; the React UI specs (DASH-UI, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route and allow-list edits they needed (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-HOST-008 to DASH-HOST-010) are implemented and tested under `services/dashboard/test/ui/` and `services/dashboard/test/`, and were not covered by the 2026-11-14 audit. DASH-DOCS-013, 014, 015 and 016 are docs-page content with no test: the docs build (`pnpm docs:build`) checks the pages' links and facts, and the statements were read against the code. Specs with no test annotation are listed under Coverage notes. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 421 specs: 330 implemented, 91 gaps, 0 deferred. The gaps include DASH-UI-002, the streamed-line specs DASH-UI-041 and DASH-UI-054, the tools settings, the avatar renderer's page (DASH-AVP-003 to 037) and settings. The avatar relay (DASH-AVR-001 to 021 and 030 to 035, with the `/avatar` page and `GET /avatar/renderer`, DASH-AVP-001 and 002, and the relay's share of DASH-HOST-002, DASH-CTRL-005, DASH-HTTP-010 and DASH-HTTP-016) was built under issue #217; DASH-AVR-014 and the plain-text rule of DASH-AVR-017 are only partly met (Coverage notes). The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH, DOCS) were audited on 2026-11-14; the React UI specs (DASH-UI, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route and allow-list edits they needed (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-HOST-008 to DASH-HOST-010) are implemented and tested under `services/dashboard/test/ui/` and `services/dashboard/test/`, and were not covered by the 2026-11-14 audit. DASH-DOCS-013, 014, 015 and 016 are docs-page content with no test: the docs build (`pnpm docs:build`) checks the pages' links and facts, and the statements were read against the code. Specs with no test annotation are listed under Coverage notes. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 **Egress marks.** `GET /egress` answers the engine and chat-model destinations of the saved config (DASH-EGR-001 to 004), the Services screen marks the rows that leave the LAN and the Settings screen repeats the note beside the engine keys (DASH-UI-037, DASH-SET-034); `GET /options/voices` is a Kokoro list only (DASH-OPT-001, DASH-OPT-005).
 
@@ -58,22 +58,23 @@ Orientation:
 12. `secrets.ts`, `options.ts`, `sensitive.ts`, `settings.ts` — `PUT /secrets/:path` and `PUT /secrets`, `GET /options/voices` and `GET /options/models`, the sensitive-key gate, and the settings editor routes.
 13. `egress.ts` — `GET /egress`: `egressDestinations` over the config the loader reads per request.
 14. `models.ts`, `model-routes.ts`, `applied.ts` — the avatar model store (`<dataDir>/dashboard/avatar-models/`: listing, the glTF head checks and metadata, derived upload names), its HTTP routes (`GET /avatar/model`, `GET`/`POST /avatar/models`, `GET`/`DELETE /avatar/models/<name>`: the streamed upload with its temporary file, idle timer, limits and commit under one lock) and the applied view (the model and framing set at start and after each `renderer` save; `settings.ts` runs the DASH-MDL-037 check and sets the view).
+15. `avatar-relay.ts` — the renderer relay: `/avatar/ws` on both listeners (admission with the 503 caps, the frame reader started by the first socket and stopped by the last, one slot per message type per socket with a 5 s stuck-send rule, ping and silence, the state of the Engine's `avatar.state` and frames, the inbound model report from loopback only, the rate limit), `GET /avatar/renderer`, and the applied-view push; its clock is injected. `static.ts` serves `GET`/`HEAD /avatar` with the Content-Security-Policy. Tests: `test/relay-rig.ts`, `relay-socket.test.ts`, `relay-messages.test.ts`, `relay-status.test.ts`, `relay-routes.test.ts`, and `packages/control/test/config.test.ts` for `isLoopbackPeer`.
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 14 | 0 | 3 |
+| HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 16 | 0 | 1 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 3 | 0 | 4 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 9 | 0 | 3 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-010 (006 retired) | 7 | 0 | 2 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-010 (006 retired) | 8 | 0 | 1 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
 | Test-input injection | DASH-INJ-001 to DASH-INJ-011 | 9 | 0 | 2 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
 | Web page | DASH-UI-001 to DASH-UI-037 (016 retired), DASH-UI-054 | 36 | 0 | 2 |
 | Streamed lines on the page | DASH-UI-038 to DASH-UI-053 (041 open) | 15 | 0 | 1 |
-| Host process and listeners | DASH-HOST-001 to DASH-HOST-010 | 8 | 0 | 2 |
+| Host process and listeners | DASH-HOST-001 to DASH-HOST-010 | 9 | 0 | 1 |
 | Stack control | DASH-STACK-001 to DASH-STACK-010 | 10 | 0 | 0 |
 | Docs site | DASH-DOCS-001 to DASH-DOCS-016 | 16 | 0 | 0 |
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-023 | 23 | 0 | 0 |
@@ -88,13 +89,13 @@ Orientation:
 | Settings screen | DASH-SET-001 to DASH-SET-034 | 32 | 0 | 2 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
 | Tools settings and confirmation | DASH-TOOL-001 to DASH-TOOL-025 | 0 | 0 | 25 |
-| Avatar renderer: applied view and relay | DASH-AVR-001 to DASH-AVR-030 (022, 025 absent) | 6 | 0 | 22 |
+| Avatar renderer: applied view and relay | DASH-AVR-001 to DASH-AVR-035 (022, 025 absent) | 33 | 0 | 0 |
 | Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 37 | 0 | 0 |
-| Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-037 | 0 | 0 | 37 |
+| Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-037 | 2 | 0 | 35 |
 | Avatar renderer: settings and visibility | DASH-AVS-001 to DASH-AVS-011 | 0 | 0 | 11 |
 
-**Summary:** 416 specs: 297 implemented, 119 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL-001 to 037, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The rest of the avatar renderer (the relay DASH-AVR-001 to 021 and 030, the page DASH-AVP, the settings DASH-AVS, DASH-BUILD-009 to -011, with DASH-HOST-002, DASH-BUILD-001, -007, DASH-CTRL-005, DASH-SET-002, DASH-SET-018 and DASH-HTTP-010, -016 revised for it) is specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented except DASH-UI-041, and DASH-UI-002 and DASH-UI-054 are open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 421 specs: 330 implemented, 91 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL-001 to 037, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The avatar relay (`services/dashboard/src/avatar-relay.ts`: DASH-AVR-001 to 021 and 030 to 035, `GET /avatar/renderer`, `GET`/`HEAD /avatar`, and the relay's listener and shutdown steps of DASH-HOST-002, DASH-CTRL-005, DASH-HTTP-010 and -016) is implemented and tested by `services/dashboard/test/relay-*.test.ts`. The page's script (DASH-AVP-003 to 037), the settings and Live-screen status (DASH-AVS, #218) and DASH-BUILD-009 to -011 are specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented except DASH-UI-041, and DASH-UI-002 and DASH-UI-054 are open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 
-Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`) and DASH-DOCS-013 to 016 (docs-page content, checked by the docs build). Manual checks for what an emulated DOM cannot cover (autoplay, OBS, 320 px layout, keyboard and screen-reader passes) are listed in the LLD's Manual verification and on the docs site's Single-PC checklist (`docs/advanced/testing/single-pc.md`).
+Partly met: DASH-AVR-014 (the bus gives no callback for a failed frame read, so the relay cannot observe the failure; it sends no frame and the state is never `live` once the frames age past 1 s, but for up to 1 s after a failure the last frame still reads `live`) and DASH-AVR-017 (the relay keeps the 200-character cut; the plain-text rule applies to the screens that show `detail`, which are #218). Implemented without a test `@spec` annotation: DASH-SINK-004 (its behaviour is `urls.voice()`, tested in `packages/config/test/config.test.ts`) and DASH-DOCS-013 to 016 (docs-page content, checked by the docs build). Manual checks for what an emulated DOM cannot cover (autoplay, OBS, 320 px layout, keyboard and screen-reader passes) are listed in the LLD's Manual verification and on the docs site's Single-PC checklist (`docs/advanced/testing/single-pc.md`).

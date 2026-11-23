@@ -6,14 +6,15 @@ import { INJECT_QUEUE_LIMIT, wavWrap } from "@cohost/shared";
 import { INJECT_READ_TIMEOUT_MS, INJECT_MAX_BYTES } from "../src/inject.js";
 import { createHttpCapture, type HttpCapture } from "../src/capture-http.js";
 import type { HearClip, HearOutcome } from "../src/capture.js";
-import { Hearing, stubTranscriber } from "../src/hearing.js";
+import { Hearing } from "../src/hearing.js";
+import { createBatchEngine } from "../src/engines.js";
 
 const wav = (ms: number) => wavWrap(Buffer.alloc((ms / 1000) * 32000), 16000, 1);
 
 /** An http capture on a free port, wired to the real Hearing path with the stub transcriber, unless `hear` is given. */
 async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; token?: string; accepts?: (tag: string) => boolean } = {}) {
   const bus = new FakeBus();
-  const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: stubTranscriber() });
+  const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: (w) => createBatchEngine("stub", testConfig().ears).transcribe(w) });
   const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src, id) => hearing.heardClip(c, s, src, id)), ...over });
   await cap.start();
   const url = (q = "") => `http://127.0.0.1:${cap.port}/audio${q}`;

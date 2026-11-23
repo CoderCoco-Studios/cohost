@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 91 [x], 102 [ ], 2 [D] (streamed-speech clause specs and the early-reply specs EARS-EARLY-001 to 026 are open gaps). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022)."
+    next: "195 specs: 139 [x], 54 [ ], 2 [D] (the Nemotron and Kyutai engines EARS-NEM and EARS-KYU, EARS-ECHO-002 (the audible-sink rule), the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are open). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022); the real streaming adapters are #188."
     drift: null
 
   salience:

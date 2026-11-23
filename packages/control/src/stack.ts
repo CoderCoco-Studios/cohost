@@ -1,4 +1,6 @@
-import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { configDir, findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES, loadConfig } from "@cohost/config";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
@@ -86,6 +88,7 @@ function isolationOf(envJson: string): Record<string, string> | undefined {
   return out;
 }
 
+const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split("\n")[0]!.slice(0, 300);
 const isLongRunning = (c: ContainerStatus): boolean => !ONE_SHOTS.includes(c.service);
 const isReady = (c: ContainerStatus): boolean => c.status === "running" && (c.health === undefined || c.health === "healthy");
 const describe = (c: ContainerStatus): string => `${c.service} (${c.status}${c.health ? `, ${c.health}` : ""})`;
@@ -227,11 +230,38 @@ export class StackController {
   // @spec CTRL-STACK-017
   rebuild(): Promise<StackResult> { return this.bringUp("rebuild"); }
 
-  // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005
+  // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005, CTRL-STACK-018
   launch(): Promise<StackResult> { return this.bringUp("launch"); }
+
+  /**
+   * Writes the one secret Launch hands a container by file: `voice.pocket.hf_token` to `data/tts-pocket-secret/hf_token` in the
+   * workspace root (the parent of the config directory, where secrets.yaml lives). The directory is always created; the file
+   * is rewritten on every launch and removed when the token is blank. Nothing else is written.
+   */
+  // @spec CTRL-STACK-019
+  private writePocketSecret(): { ok: true } | { ok: false; detail: string } {
+    let token: string;
+    try {
+      token = loadConfig(true).voice.pocket.hf_token;
+    } catch (err) {
+      return { ok: false, detail: `cannot read voice.pocket.hf_token: ${firstLine(err)}` };
+    }
+    const dir = join(dirname(configDir()), "data", "tts-pocket-secret");
+    try {
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, "hf_token");
+      if (token === "") rmSync(file, { force: true });
+      else writeFileSync(file, token, { mode: 0o600 });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, detail: `cannot write the tts-pocket token file: ${firstLine(err)}` };
+    }
+  }
 
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
+    const secret = this.writePocketSecret();
+    if (!secret.ok) return { ok: false, detail: secret.detail };
     const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
     if (!up.ok) return { ok: false, detail: up.detail };
     this.phase(kind, "waiting");

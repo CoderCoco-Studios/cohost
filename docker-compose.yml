@@ -111,6 +111,64 @@ services:  # @spec DEPLOY-COMPOSE-001
     volumes: [stt-cache:/home/ubuntu/.cache/huggingface/hub]
     ports: ["127.0.0.1:8000:8000"]
 
+  # ---------- optional speech engine servers (DEPLOY-ENG-001..020) ----------
+  # Each is built from a pinned source and runs behind its own profile; the owner enables it in COMPOSE_PROFILES in .env and
+  # selects it in config.yaml. Each caches its weights under /root/.cache, in its own volume. None is an application service:
+  # no SERVICE build argument, no x-ts-service anchor, no ./config mount, no env_file. Engine servers publish on loopback only.
+  tts-pocket:  # @spec DEPLOY-ENG-001, DEPLOY-ENG-004, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012, DEPLOY-ENG-014
+    image: cohost-tts-pocket:4.0.1
+    build:
+      context: https://github.com/kyutai-labs/pocket-tts.git#a922b912dfa366975294afb568d815b305acde5d   # tag v4.0.1
+    profiles: [pocket]
+    restart: unless-stopped
+    # The entrypoint exports the Pocket token for this server alone (DEPLOY-ENG-014, DEPLOY-ENG-019); the command is the
+    # upstream image's own ENTRYPOINT and CMD, which the cohost entrypoint replaces.
+    entrypoint: /cohost/entrypoint.sh
+    command: ["uv", "run", "pocket-tts", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8881:8000"]
+    volumes:
+      - tts-pocket-cache:/root/.cache
+      - ./docker/tts-pocket/entrypoint.sh:/cohost/entrypoint.sh:ro
+      - ./data/tts-pocket-secret:/run/cohost-secret:ro
+    healthcheck:  # @spec DEPLOY-ENG-012
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
+  stt-nemotron:  # @spec DEPLOY-ENG-002, DEPLOY-ENG-005, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012
+    image: cohost-stt-nemotron:0.3.0
+    build:
+      context: docker/stt-nemotron
+    profiles: [nemotron]
+    restart: unless-stopped
+    command: ["nemo-speech", "serve", "--host", "0.0.0.0", "--port", "8080", "--asr-model", "nvidia/nemotron-speech-streaming-en-0.6b"]
+    ports: ["127.0.0.1:8081:8080"]
+    volumes: [stt-nemotron-cache:/root/.cache]
+    healthcheck:  # @spec DEPLOY-ENG-012
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
+  stt-kyutai:  # @spec DEPLOY-ENG-003, DEPLOY-ENG-006, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012
+    image: cohost-stt-kyutai:0.6.4
+    build:
+      context: docker/stt-kyutai
+    profiles: [kyutai]
+    restart: unless-stopped
+    command: ["moshi-server", "worker", "--config", "/etc/moshi/stt.toml", "--addr", "0.0.0.0", "--port", "8080"]
+    ports: ["127.0.0.1:8082:8080"]
+    volumes: [stt-kyutai-cache:/root/.cache]
+    healthcheck:  # @spec DEPLOY-ENG-012
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+
   # ---------- co-host services ----------
   # chat also mounts ./data/chat: the refreshed Twitch token it persists there must survive the container being recreated.
   chat:  # @spec DEPLOY-COMPOSE-022
@@ -180,9 +238,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: voice } }
     ports: ["127.0.0.1:8700:8700"]   # for the host-run dashboard (audio proxy, /health); containers use http://voice:8700
-    depends_on:
+    depends_on:  # @spec DEPLOY-ENG-013, DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
       tts: { condition: service_started }
+      tts-pocket: { condition: service_started, required: false }
 
   avatar:
     <<: *ts-service
@@ -197,9 +256,11 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: ears } }
     profiles: [ears]  # @spec DEPLOY-COMPOSE-004
-    depends_on:  # @spec DEPLOY-COMPOSE-005
+    depends_on:  # @spec DEPLOY-COMPOSE-005, DEPLOY-ENG-013
       redis: { condition: service_healthy }
       stt: { condition: service_started }
+      stt-nemotron: { condition: service_started, required: false }
+      stt-kyutai: { condition: service_started, required: false }
 
   # The speaking half (writes her voice to the connectors' sinks). Off by default like ears: profile `mouth`. Waits for
   # redis only (the anchor's depends_on): it reaches voice by URL and covers a voice outage with its cached fallback clip.
@@ -222,3 +283,6 @@ volumes:  # @spec DEPLOY-COMPOSE-009
   pg18-data:
   ollama-data:
   stt-cache:
+  tts-pocket-cache:  # @spec DEPLOY-ENG-009, DEPLOY-COMPOSE-009
+  stt-nemotron-cache:
+  stt-kyutai-cache:

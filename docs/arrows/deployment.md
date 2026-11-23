@@ -6,9 +6,9 @@ Compose topology, the single parameterised Dockerfile, the Linux installer, CI w
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller reads `config.yaml` (DEPLOY-COMPOSE-008, -011), Compose carries no operator credential and mounts `./config` (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` is seeded and ignored (DEPLOY-INST-005, DEPLOY-REPO-003, DEPLOY-IMG-005), the dashboard ports are `config.yaml` keys (DEPLOY-INST-008, DEPLOY-HOST-002, -003), the dashboard UI build and its place in `build`, `typecheck`, `test` and `dashboard` (DEPLOY-REPO-002, DEPLOY-HOST-001) and the operator documentation, README quick start and Bedrock guidance follow (DEPLOY-README-002, -005, -007). Total 81 specs: 81 `[x]`, 0 `[ ]`, 0 `[D]`.
 
-**MAPPED** — 109 specs: 73 implemented, 0 deferred, 36 gaps (the engine servers and the avatar renderer's three, below); the last audit covered 79 specs and ran before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004, -005, -006, DEPLOY-README-002, -003, -005, -006 and the UI-build wording of DEPLOY-REPO-002, DEPLOY-REPO-003 and DEPLOY-HOST-001 closed; those are not covered by that audit. DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts` and DEPLOY-REPO-002 and 003 in `services/dashboard/test/root-scripts.test.ts`; the real `dashboard` script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED** — 109 specs: 96 implemented, 0 deferred, 13 gaps (DEPLOY-ENG-018 and -020, the manual readiness checks; the rest, below); the last audit covered 79 specs and ran before DEPLOY-INST-007, -011, -014, DEPLOY-HOST-003, -004, -005, -006, DEPLOY-README-002, -003, -005, -006 and the UI-build wording of DEPLOY-REPO-002, DEPLOY-REPO-003 and DEPLOY-HOST-001 closed; those are not covered by that audit. DEPLOY-HOST-001 and 006 are tested in `services/dashboard/test/docs-script.test.ts` and DEPLOY-REPO-002 and 003 in `services/dashboard/test/root-scripts.test.ts`; the real `dashboard` script was run on 2026-11-15 (Verification log). DEPLOY-HOST-005 is docs-page content verified by reading. DEPLOY-INST-007 and DEPLOY-INST-014 are checked by source-order tests of `scripts/install.sh`; no run of the installer on a clean machine has exercised them. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
-**Speech engine servers (design 2026-11-16, no code).** Three opt-in Compose profiles (`pocket`, `nemotron`, `kyutai`) build and run Pocket TTS, NeMo-Speech.cpp and `moshi-server`: image names `cohost-<service>:<version>`, sources pinned by full commit SHA or exact crate version, loopback ports, weight-cache volumes, GPU overlay entries, healthchecks and the Pocket token path are DEPLOY-ENG-001 to -018; the pin checks added to `scripts/lid-check.mjs` are DEPLOY-CI-010 and -011. Unverified: the servers' cache paths, VRAM, the Pocket and NeMo-Speech.cpp build times and whether the Pocket download needs the token.
+**Speech engine servers (design 2026-11-16; built in #190, readiness checks manual).** Three opt-in Compose profiles (`pocket`, `nemotron`, `kyutai`) build and run Pocket TTS, NeMo-Speech.cpp and `moshi-server`: image names `cohost-<service>:<version>`, sources pinned by full commit SHA or exact crate version, loopback ports, weight-cache volumes, GPU overlay entries, healthchecks and the Pocket token path are DEPLOY-ENG-001 to -018; the pin checks added to `scripts/lid-check.mjs` are DEPLOY-CI-010 and -011. Unverified: the servers' cache paths, VRAM, the Pocket and NeMo-Speech.cpp build times and whether the Pocket download needs the token.
 
 ## Orientation
 
@@ -28,13 +28,14 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (109 specs, prefix `DEPLOY`: 73 `[x]`, 36 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (109 specs, prefix `DEPLOY`: 96 `[x]`, 13 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts
 - packages/config/test/compose-consolidate.test.ts
 - packages/config/test/compose-models.test.ts
 - packages/config/test/compose-chat-data.test.ts
+- packages/config/test/compose-engines.test.ts (the engine servers' Compose, Dockerfile and script checks)
 - packages/config/test/installer.test.ts
 - packages/config/test/lid-check.test.ts
 - packages/config/test/pnpm-version.test.ts
@@ -46,6 +47,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 ### Code
 Files carrying `@spec DEPLOY-` annotations (trailing comments on mapping keys in the Compose files, appended to existing comment lines in `Dockerfile` and `scripts/install.sh`, full comment lines elsewhere):
 - docker-compose.yml, docker-compose.gpu.yml, Dockerfile, .dockerignore
+- docker/tts-pocket/entrypoint.sh, docker/stt-nemotron/Dockerfile, docker/stt-kyutai/Dockerfile (the engine servers, DEPLOY-ENG-*)
 - scripts/install.sh, scripts/compose-smoke.sh, scripts/lid-check.mjs, scripts/dev/bus-pub.ts, scripts/dev/bus-tail.ts, scripts/dev/stub-llm.ts, scripts/dev/stub-tts.ts
 - .github/workflows/test.yml, .github/workflows/compose-smoke.yml, .github/workflows/lid-check.yml, .github/workflows/pages.yml, .github/workflows/cla.yml, .github/workflows/docs-build.yml
 
@@ -71,24 +73,24 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
-| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-025 (no 016) | 24 | 24 | 0 | 0 |
+| Compose topology | DEPLOY-COMPOSE-001 to DEPLOY-COMPOSE-028 (no 016) | 27 | 20 | 0 | 7 |
+| Speech engine servers | DEPLOY-ENG-001 to DEPLOY-ENG-020 | 20 | 18 | 0 | 2 |
 | Container health | DEPLOY-HC-001 to DEPLOY-HC-002 | 2 | 2 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-014 | 14 | 14 | 0 | 0 |
-| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-009 | 9 | 9 | 0 | 0 |
-| Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-004 | 4 | 4 | 0 | 0 |
-| Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
+| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-011 | 11 | 11 | 0 | 0 |
+| Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-007 | 7 | 4 | 0 | 3 |
+| Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 5 | 0 | 1 |
 | Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-006 | 6 | 6 | 0 | 0 |
 | Documentation consistency | DEPLOY-README-001 to DEPLOY-README-007 | 7 | 7 | 0 | 0 |
 | Dev helpers | DEPLOY-DEV-001 to DEPLOY-DEV-003 | 3 | 3 | 0 | 0 |
 
-**Summary:** 73 of 109 specs implemented; 0 deferred; 36 open (the avatar renderer's DEPLOY-COMPOSE-028, DEPLOY-LIC-005 to -007, the speech engine servers: DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, and DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008 revised). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 96 of 109 specs implemented; 0 deferred; 13 open: DEPLOY-ENG-018 and -020 (the manual readiness checks, `[ ]` by design until a Docker host run), DEPLOY-COMPOSE-001, -004, -019, -021, -026, -027, -028, DEPLOY-LIC-005 to -007, DEPLOY-REPO-001. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
 ### Must Fix
-- Speech engine servers: three Compose services, their Dockerfiles under `docker/`, the overlay entries, `.env.example` and installer text, and the `lid-check` pin checks (DEPLOY-ENG-001 to -018, DEPLOY-CI-010, -011, DEPLOY-COMPOSE-001, -004, -009, DEPLOY-INST-008).
-None.
+- Two spec-test conflicts from #190, both reported and unresolved: `DEPLOY-COMPOSE-006` enumerates the published ports and the `packages/config/test/compose-standalone.test.ts` port test asserts that exact set, which DEPLOY-ENG-008 contradicts; the `packages/control/test/derived-lists.test.ts` check of MOD-MAN-008 applies to every Compose service with a `build:`, which the engine servers are not (MOD-MAN-008 is for the shared Dockerfile).
 
 ### Should Fix
 - Run `scripts/install.sh` once on a clean machine to observe DEPLOY-INST-007 and DEPLOY-INST-014 end to end (their tests check the script's source, not a run).

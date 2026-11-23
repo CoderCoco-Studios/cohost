@@ -247,7 +247,11 @@ test("no Compose file or Dockerfile carries the Pocket token as an environment e
 
 // @spec DEPLOY-ENG-016
 test("the Compose service names are the hosts of the default engine URLs", () => {
-  const cfg = ConfigSchema.parse({});
+  // The schema requires the sections that have no defaults (cohost, llm, vision, chat, avatar); the engine URLs default.
+  const cfg = ConfigSchema.parse({
+    cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
+    voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: {}, dashboard: {}, brain: {},
+  });
   const hosts = [new URL(cfg.voice.pocket.url), new URL(cfg.ears.nemotron.url), new URL(cfg.ears.kyutai.url)];
   assert.deepEqual(hosts.map((u) => u.hostname), ["tts-pocket", "stt-nemotron", "stt-kyutai"]);
   for (const u of hosts) assert.ok(base.services[u.hostname], `${u.hostname} is a Compose service`);

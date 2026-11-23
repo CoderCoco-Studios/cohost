@@ -39,9 +39,16 @@ test("the example's dependencies are cohost-bus by path, tokio and serde_json at
 });
 
 test("the example's own tests pass (the round trip skips itself without Redis)", needsCargo, () => { // @spec BUS-NAT-EX-002, BUS-NAT-EX-003, BUS-NAT-EX-004, BUS-NAT-EX-005
-  const r = spawnSync("cargo", ["test", "--manifest-path", "examples/Cargo.toml", "-p", "cohost-example-bus"], {
+  const r = spawnSync("cargo", ["test", "--manifest-path", "examples/Cargo.toml", "-p", "cohost-example-bus", "--", "--nocapture"], {
     cwd: root, encoding: "utf8", timeout: 570_000,
   });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
-  assert.match(r.stdout, /test result: ok\. 1 passed/);
+  assert.match(r.stdout, /test result: ok\. [1-9]\d* passed; 0 failed/);
+  assert.doesNotMatch(r.stdout, /[1-9]\d* failed/);
+  // With REDIS_URL set (CI) the round trip must have run: a skip is a failure, never a silent pass.
+  if ("REDIS_URL" in process.env) {
+    assert.doesNotMatch(r.stderr, /SKIP /, "the round trip was skipped although REDIS_URL is set");
+    assert.match(r.stderr, /RAN round_trip against /, "the round trip ran against Redis");
+  }
+  process.stderr.write(r.stderr.split("\n").filter((l) => /^(RAN|SKIP) /.test(l)).join("\n") + "\n");
 });

@@ -139,7 +139,7 @@ test("the hook sees the viewer's display name, the line, their current note text
   await t.store.deleteNote(gone.id, "  too personal ");
   await t.store.deleteNote(soft.id);
   await t.onEvent(t.chat({ text: "I just beat Celeste" }));
-  assert.deepEqual(t.inputs, [{ viewer: "Bob", line: "I just beat Celeste", notes: ["plays Hades"], suppressionReasons: ["too personal"] }]);
+  assert.deepEqual(t.inputs, [{ viewer: "Bob", line: "I just beat Celeste", origin: "chat", notes: ["plays Hades"], suppressionReasons: ["too personal"] }]);
 });
 
 // @spec MEM-CAPTURE-004, MEM-NOTE-009

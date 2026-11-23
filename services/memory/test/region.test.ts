@@ -44,7 +44,7 @@ test("every chat line counts toward the viewer; only lines addressed to the co-h
 test("a mention announces the viewer (with regular, no notes text) before the (slow) embed + store", async () => {
   const { onEvent, bus, calls } = setup({ msgCount: 30, isNew: false, regular: true });
   await onEvent(chat({ mentionsCohost: true }));
-  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", platform: "twitch", userId: "123", isNew: false, msgCount: 30, regular: true }]);
+  assert.deepEqual(bus.of("memory.viewer"), [{ user: "Bob", isNew: false, msgCount: 30, regular: true }]);
   assert.deepEqual(calls.map((c) => c.op), ["touchViewer", "remember"]);
   assert.deepEqual(calls[1]!.args, ["chat", "Bob", "hey Coco"]);
 });

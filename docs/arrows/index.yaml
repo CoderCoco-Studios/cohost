@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 114 [x], 59 [ ] (streamed-speech clause specs are open gaps). Notes (the counts above are current): 162 specs: 116 [x], 46 [ ] (chat safety: bounded rows, guarded capture, consolidation and reflection prompts; viewer identity by platform and user id; forgetting removed chat). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 138 [x], 35 [ ] (viewer identity by platform and user id, the platform and message id on chat rows, forgetting removed chat, and the streamed-speech clause writes MEM-WRITE-010 to 019). Bounded intake, nameless-viewer gate, capture and reflection/consolidation prompt quoting are done (#170). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:

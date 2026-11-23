@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { testConfig } from "@cohost/testing";
+import { untrustedNotice } from "@cohost/shared/untrusted";
 import { InMemoryStore } from "../src/fake-store.js";
 import { formatCursor, parseCursor } from "../src/cursor.js";
 import { runReflect, runReflectCommand } from "../src/reflect-run.js";
@@ -54,7 +55,7 @@ test("with more than 600 new memories each pass reads the next 600 and nothing i
   assert.equal(await t.memory.getMeta("last_reflection"), formatCursor({ ts: new Date(T0 + 599_000).toISOString(), id: 600 }));
   await t.run();
   assert.equal(t.transcriptLines(1), 50);
-  assert.match(t.prompts[1]!, /line 600\n/);
+  assert.match(t.prompts[1]!, /«line 600»\n/);
   assert.equal(t.saved.length, 2);
   await t.run(); // nothing new
   assert.equal(t.prompts.length, 2);
@@ -68,7 +69,7 @@ test("rows sharing the last row's timestamp are not skipped between passes", asy
   assert.equal(t.transcriptLines(0), 600);
   await t.run();
   assert.equal(t.transcriptLines(1), 100);
-  assert.match(t.prompts[1]!, /^[\s\S]*line 600\n/);
+  assert.match(t.prompts[1]!, /^[\s\S]*«line 600»\n/);
   assert.doesNotMatch(t.prompts[1]!, /line 599\n/);
 });
 

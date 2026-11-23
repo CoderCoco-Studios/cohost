@@ -440,14 +440,15 @@ test("memory.viewers.request validates each op and memory.viewers.reply its enve
 });
 
 // @spec BUS-EVT-001
-test("the catalogue is exactly the 28 documented event types, exported as EVENT_TYPES", () => {
+test("the catalogue is exactly the 34 documented event types, exported as EVENT_TYPES", () => {
   const expected = [
     "chat.message", "vision.summary", "speech.heard", "speech.partial", "brain.say", "brain.clause", "brain.status", "attention.focus", "affect.state",
     "memory.recall.request", "memory.recall.reply", "memory.viewer", "memory.notes.request", "memory.notes.reply",
     "memory.viewers.request", "memory.viewers.reply", "voice.utterance", "voice.playing", "voice.done", "voice.stop", "voice.failed", "avatar.state",
     "control", "inject.request", "inject.result", "service.lifecycle", "service.heartbeat", "chat.removed",
+    "tool.request", "tool.result", "tool.catalog", "tool.timer", "tool.confirm", "tool.answer",
   ];
-  assert.equal(EVENT_TYPES.length, 28);
+  assert.equal(EVENT_TYPES.length, 34);
   assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
   assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
 });

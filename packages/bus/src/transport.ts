@@ -38,6 +38,12 @@ export interface BusTransport {
   putUpload(id: string, bytes: Buffer, ttlMs: number): Promise<void>;
   /** GETDEL <prefix>:upload:<id> (BUS-UPL-002). */
   takeUpload(id: string): Promise<Buffer | null>;
+  /** HSET <prefix>:tools:timers <id> <json> (BUS-TIMER-001). */
+  putTimer(id: string, json: string): Promise<void>;
+  /** HDEL <prefix>:tools:timers <id> (BUS-TIMER-001). */
+  deleteTimer(id: string): Promise<void>;
+  /** HGETALL <prefix>:tools:timers as id and json pairs; an absent key is an empty list (BUS-TIMER-002). */
+  listTimers(): Promise<{ id: string; json: string }[]>;
   /** SET <prefix>:connector:<id> <json> PX leaseMs (CONN-REG-001). */
   writeRegistration(id: string, json: string, leaseMs: number): Promise<void>;
   /** GET <prefix>:connector:<id>. */

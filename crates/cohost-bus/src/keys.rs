@@ -25,6 +25,10 @@ impl Keys {
     pub fn upload(&self, id: &str) -> String {
         format!("{}:upload:{id}", self.prefix)
     }
+    /// `<prefix>:tools:timers`, the hash of pending tool timers (BUS-TIMER-001).
+    pub fn timers(&self) -> String {
+        format!("{}:tools:timers", self.prefix)
+    }
     /// `<prefix>:connector:<id>`
     pub fn connector(&self, id: &str) -> String {
         format!("{}:connector:{id}", self.prefix)
@@ -42,6 +46,7 @@ mod tests {
         assert_eq!(k.events(), "cohost:events");
         assert_eq!(k.health(), "cohost:health");
         assert_eq!(k.upload("u1"), "cohost:upload:u1");
+        assert_eq!(k.timers(), "cohost:tools:timers");
         assert_eq!(k.connector("discord"), "cohost:connector:discord");
         assert_eq!(Keys::new("t-1").events(), "t-1:events");
     }

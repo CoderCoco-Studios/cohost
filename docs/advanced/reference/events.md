@@ -27,10 +27,10 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
-| `attention.focus` | `salience` | `cortex` | `reason` (free text, such as `mentioned`), `score`, `focus` (optional: `kind` of `chat`, `speech` or `vision`, `who`, `platform` and `userId` (optional), `text`, `mention`), `timing`, `injected`, `remember` |
+| `attention.focus` | `salience` | `cortex` | `reason` (free text, such as `mentioned`), `score`, `focus` (optional: `kind` of `chat`, `speech`, `vision` or `reminder`, `source` (optional, the listening source of a speech focus), `who`, `platform` and `userId` (optional), `text`, `mention`), `timing`, `injected`, `remember` |
 | `affect.state` | `affect` | `salience`, `cortex`, `avatar` | `valence` (-1 to 1), `arousal` (0 to 1), `mood` (the nearest emotion), `cause` (optional) |
 | `brain.say` | `cortex`, `salience` (a [reflex](../../start/glossary.md#reflex)), the dashboard (unit-level injection) | `voice`, `avatar`, `affect`, `salience`, `cortex`, `memory` | `id`, `text`, `emotion`, `gesture` (optional), `reason` (optional), `route` (optional: the mouth outputs this line is for; absent means every enabled output), `more` (optional, `true` when later clauses follow as `brain.clause` events), `timing`, `injected`, `remember` |
-| `brain.clause` | `cortex` | `voice`, `mouth`, `memory`, `cortex`, `dashboard` | `id` (the line's `brain.say` id), `seq` (1 or more, counting from the `brain.say` text as clause 0), `text` (empty only on the closing event), `last` (optional, `true` on the closing event), `through` (required with `last`: the last `seq` sinks should expect audio for), `cut` (optional, only with `last`: why the reply ended early) |
+| `brain.clause` | `cortex` | `voice`, `mouth`, `memory`, `cortex`, `dashboard` | `id` (the line's `brain.say` id), `seq` (1 or more, counting from the `brain.say` text as clause 0), `text` (empty only on the closing event), `last` (optional, `true` on the closing event), `through` (required with `last`: the last `seq` sinks should expect audio for), `cut` (optional, only with `last`: why the reply ended early, one of `repeat`, `muted`, `busy`, `failed`, `length`, `stopped`, `timeout`, `vetoed` or `tools`) |
 | `brain.status` | `cortex` | `salience`, `memory` | `state` (`idle`, `thinking`, `speaking` or `muted`), `detail` (optional) |
 | `memory.recall.request` | `cortex` | `memory` | `id`, `query`, `k` (optional) |
 | `memory.recall.reply` | `memory` | `cortex` | `id`, `memories[]`: `ts`, `kind` (`chat`, `speech`, `self` or `note`), `who`, `text`, `similarity` (optional). An empty list is a valid answer |
@@ -56,10 +56,21 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
 | `control` | The dashboard | `affect`, `salience`, `cortex`, `mouth` | `cmd` (`mute`, `unmute`, `say`, `forget_context`, `reload_personality`, `pause`, `resume` or `set_routing`), `text` (for `say`), `target` (the service it is for; absent means every service), `routing` (for `set_routing`: output id to `enabled` and `gain_db`), `route` (for `say`) |
-| `inject.request` | The dashboard | The target service | `id`, `target` (`eyes`, `ears`, `chat` or `connector-discord`), `kind` (`image`, `audio` or `text`), `uploadId` (the bytes the dashboard stored in [Redis](../../start/glossary.md#redis)), `contentType`, `text`, `meta` (`user`, `platform`, `isMod`, `isSub`, `source`), `remember`. Binaries never ride the stream |
+| `inject.request` | The dashboard | The target service | `id`, `target` (`eyes`, `ears`, `chat`, `connector-discord` or `tools`), `kind` (`image`, `audio` or `text`), `uploadId` (the bytes the dashboard stored in [Redis](../../start/glossary.md#redis)), `contentType`, `text`, `meta` (`user`, `platform`, `isMod`, `isSub`, `source`), `remember`. Binaries never ride the stream |
 | `inject.result` | `eyes`, `ears`, `chat`, `connector-discord` | The dashboard | `id` (the request's id), `ok`, `detail` (optional) |
 | `service.lifecycle` | The dashboard, `cohostctl` | The dashboard feed | `service`, `action` (`start`, `stop` or `restart`), `by` (`dashboard` or `cohostctl`), `ok`, `detail` (optional). An audit record of each attempt |
 | `service.heartbeat` | Every service, on `cohost:health` | The dashboard's health tracker, `cohostctl status` | `service`, `instance` (unique per process), `pid`, `version`, `startedAt`, `state` (`starting`, `ready`, `degraded` or `stopping`), `deps` (name to `ok`, `down` or `n/a`), `mode` (`live`, `mock` or `off` by convention), `detail` (optional), `intervalMs` |
+
+## Tools
+
+| Type | Published by | Read by | Payload |
+| --- | --- | --- | --- |
+| `tool.request` | `cortex` | `tools` | `id`, `tool` (`[A-Za-z0-9_-]{1,64}`), `arguments` (an object), `origin` (`speech`, `guest`, `chat`, `vision`, `reminder`, `dashboard` or `idle`), `round` (an integer of at least 1), `listed`, `injected` (optional) |
+| `tool.result` | `tools` | `cortex`, the dashboard | `id`, `tool`, `status` (`ok`, `error`, `timeout` or `refused`), `reason` (optional: a refusal reason with `refused`, or `tool_error`, `unavailable` or `limit` with `error`), `content` (possibly empty), `durationMs`, `truncated` and `mock` (optional, the literal `true` only) |
+| `tool.catalog` | `tools` | `cortex`, the dashboard | `intervalMs`, `mode` (`live` or `mock`), `servers[]` (`name`, `state` of `ok`, `down`, `auth` or `mock`, `external`, `detail` (optional)), `tools[]` (`name`, `description`, `parameters`, `label`, `effect`, the booleans `enabled`, `acts`, `chat`, `confirm` and `offered`, and optional `server`, `title`, `hash` and `reason`) |
+| `tool.timer` | `tools` (and `salience`, which relays it to the dashboard with `missed`) | `salience`, the dashboard | `id`, `note`, `setAt` and `dueAt` (epoch milliseconds), `missed` (optional, the literal `true` only) |
+| `tool.confirm` | `tools` | the dashboard | `id`, `tool`, `arguments`, `origin`, `expiresAt` (epoch milliseconds) |
+| `tool.answer` | The dashboard | `tools` | `id`, `allow` |
 
 ## Timing stamps
 

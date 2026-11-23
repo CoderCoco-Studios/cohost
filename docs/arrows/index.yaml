@@ -50,7 +50,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "110 specs: 103 [x], 7 [ ] (SHARED-GUARD-003 and -028 to -030, the untrusted totality and tool notice; SHARED-ROT-001 to 003, the head rotation module)."
+    next: "110 specs: 107 [x], 3 [ ] (SHARED-ROT-001 to 003, the head rotation module)."
     drift: null
 
   module-contract:
@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "214 specs: 182 [x], 27 [ ], 5 [D] (streamed-speech clause specs and the early-reply specs BUS-EVT-052 to 060 are open gaps)."
+    next: "214 specs: 198 [x], 11 [ ], 5 [D] (the early-reply specs BUS-EVT-052 to 060, and BUS-EVT-001 and BUS-EVT-024 revised, are open gaps)."
     drift: null
 
   model-backends:

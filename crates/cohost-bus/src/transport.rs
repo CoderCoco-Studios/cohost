@@ -533,6 +533,44 @@ impl Transport {
         optional_bytes(&self.inner.cmd(cmd).await?)
     }
 
+    /// `HSET <prefix>:tools:timers <id> <json>` (BUS-TIMER-001).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-001
+    pub async fn put_timer(&self, id: &str, json: &str) -> Result<()> {
+        let mut cmd = redis::cmd("HSET");
+        cmd.arg(self.inner.keys.timers()).arg(id).arg(json);
+        self.inner.cmd(cmd).await.map(|_| ())
+    }
+
+    /// `HDEL <prefix>:tools:timers <id>` (BUS-TIMER-001).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-001
+    pub async fn delete_timer(&self, id: &str) -> Result<()> {
+        let mut cmd = redis::cmd("HDEL");
+        cmd.arg(self.inner.keys.timers()).arg(id);
+        self.inner.cmd(cmd).await.map(|_| ())
+    }
+
+    /// `HGETALL <prefix>:tools:timers` as id and json pairs; an absent key lists as empty (BUS-TIMER-002).
+    // @spec BUS-NAT-TRN-001, BUS-TIMER-002
+    pub async fn list_timers(&self) -> Result<Vec<(String, String)>> {
+        let mut cmd = redis::cmd("HGETALL");
+        cmd.arg(self.inner.keys.timers());
+        let Value::Array(parts) = self.inner.cmd(cmd).await? else {
+            return Err(unexpected("HGETALL"));
+        };
+        parts
+            .chunks(2)
+            .map(|pair| match pair {
+                [id, json] => Ok((
+                    String::from_utf8_lossy(&bytes_of(id).ok_or_else(|| unexpected("HGETALL"))?)
+                        .into_owned(),
+                    String::from_utf8_lossy(&bytes_of(json).ok_or_else(|| unexpected("HGETALL"))?)
+                        .into_owned(),
+                )),
+                _ => Err(unexpected("HGETALL")),
+            })
+            .collect()
+    }
+
     // @spec BUS-NAT-TRN-001, CONN-REG-001
     pub async fn write_registration(&self, id: &str, json: &str, lease_ms: u64) -> Result<()> {
         let mut cmd = redis::cmd("SET");

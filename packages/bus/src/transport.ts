@@ -4,6 +4,7 @@
  * (`FrameTransport`, "Frames path"). Types only. Specs: BUS-NAT-TRN-*, BUS-NAT-ACK-*, BUS-NAT-ERR-*, BUS-NAT-FRM-*.
  */
 import type { AudioDirection, DecodedFrame, Frame } from "./connector.js";
+import type { AvatarFrame, AvatarFrameEntry } from "./avatar-frame.js";
 
 export type EventStream = "events" | "health";
 
@@ -83,7 +84,12 @@ export interface FrameTransport {
    * pipeline on the publish connection (CONN-AUD-001). Resolves to the entry's id.
    */
   appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string>;
-  /** A frame reader with its own connection, for one `tailAudio` loop. */
+  /**
+   * XADD <prefix>:avatar.frames MAXLEN ~ AVATAR_FRAMES_MAXLEN * ts <Date.now()> data <json> and PEXPIRE <stream>
+   * AVATAR_FRAMES_TTL_MS in one pipeline on the publish connection (BUS-AVF-005). Resolves to the entry's id.
+   */
+  appendAvatarFrame(frame: AvatarFrame): Promise<string>;
+  /** A frame reader with its own connection, for one `tailAudio` or `tailAvatarFrames` loop. */
   openReader(): FrameReader;
   /** Disconnect the publish connection, if one was opened, and every reader; a blocked read rejects. Never rejects. */
   close(): Promise<void>;
@@ -92,6 +98,12 @@ export interface FrameTransport {
 export interface FrameReader {
   /** XREAD COUNT n BLOCK ms STREAMS <prefix>:audio.<dir>.<tag> <fromId>, each entry decoded by `decodeFrame` (never throws, CONN-BP-006). null on timeout. */
   readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null>;
+  /**
+   * XREAD COUNT 100 BLOCK ms STREAMS <prefix>:avatar.frames <fromId>, each entry decoded by decodeAvatarFrame. An entry
+   * that does not decode is skipped inside the call, which keeps reading until it has a frame or the block time is up,
+   * so a batch of undecodable entries never returns at once and makes the caller spin (BUS-AVF-008). null on timeout.
+   */
+  readAvatarFrames(fromId: string, blockMs: number): Promise<AvatarFrameEntry[] | null>;
   /** Disconnect this reader; a blocked read rejects with BUS_CLOSED. */
   close(): void;
 }

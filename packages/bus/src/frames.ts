@@ -8,6 +8,9 @@ import { Redis, type RedisOptions } from "ioredis";
 import {
   AUDIO_MAXLEN, AUDIO_STREAM_TTL_MS, decodeFrame, encodeFrame, type AudioDirection, type Frame,
 } from "./connector.js";
+import {
+  AVATAR_FRAMES_MAXLEN, AVATAR_FRAMES_TTL_MS, decodeAvatarFrame, type AvatarFrame, type AvatarFrameEntry,
+} from "./avatar-frame.js";
 import type { BusErrorCode, FrameEntry, FrameReader, FrameTransport, FrameTransportFactory } from "./transport.js";
 
 /** Longest a connect attempt may take before it counts as failed (BUS-NAT-FRM-006). */
@@ -18,6 +21,10 @@ const CODES = new Set<string>(["BUS_CONNECTION", "BUS_REDIS", "BUS_CLOSED", "BUS
 
 /** `<prefix>:audio.<dir>.<tag>` (BUS-AUD-001, BUS-NAT-RS-006). */
 export const audioStreamName = (prefix: string, dir: AudioDirection, tag: string): string => `${prefix}:audio.${dir}.${tag}`;
+
+/** `<prefix>:avatar.frames`: the browser avatar's frames, outside the event streams (BUS-AVF-001, BUS-NAT-RS-006). */
+// @spec BUS-AVF-001, BUS-NAT-RS-006
+export const avatarFramesStream = (prefix: string): string => `${prefix}:avatar.frames`;
 
 const coded = (code: BusErrorCode, message: string, cause?: unknown): Error & { code: BusErrorCode } =>
   Object.assign(new Error(message, { cause }), { code });
@@ -73,7 +80,20 @@ class IoredisFrameTransport implements FrameTransport {
 
   constructor(private readonly url: string, private readonly prefix: string, private readonly failFast: boolean) {}
 
-  async appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+  appendFrame(dir: AudioDirection, tag: string, frame: Frame): Promise<string> {
+    return this.write(audioStreamName(this.prefix, dir, tag), AUDIO_MAXLEN[dir], () => encodeFrame(frame), AUDIO_STREAM_TTL_MS);
+  }
+
+  // @spec BUS-AVF-003, BUS-AVF-005, BUS-AVF-009, BUS-AVF-010
+  appendAvatarFrame(frame: AvatarFrame): Promise<string> {
+    return this.write(avatarFramesStream(this.prefix), AVATAR_FRAMES_MAXLEN, () => ["ts", String(Date.now()), "data", JSON.stringify(frame)], AVATAR_FRAMES_TTL_MS);
+  }
+
+  /**
+   * XADD with the stream's cap and PEXPIRE in one pipeline on the publish connection: the connection, its first attempt
+   * and the no-queue rule are shared by every frame kind (BUS-NAT-FRM-005, BUS-NAT-FRM-008).
+   */
+  private async write(key: string, maxlen: number, fields: () => (string | Buffer)[], ttlMs: number): Promise<string> {
     if (this.closed) throw coded("BUS_CLOSED", "transport closed");
     if (!this.conn) {
       this.conn = open(this.url, { ...baseOptions(this.failFast), enableOfflineQueue: false, maxRetriesPerRequest: 0 });
@@ -84,12 +104,11 @@ class IoredisFrameTransport implements FrameTransport {
     const firstError = await this.first;
     if (this.closed) throw coded("BUS_CLOSED", "transport closed");
     if (redis.status !== "ready") throw toBusError(firstError ?? lastError() ?? new Error("connection down"), lastError());
-    const key = audioStreamName(this.prefix, dir, tag);
     let results: [Error | null, unknown][] | null;
     try {
       results = await redis.pipeline()
-        .xadd(key, "MAXLEN", "~", AUDIO_MAXLEN[dir], "*", ...encodeFrame(frame))
-        .pexpire(key, AUDIO_STREAM_TTL_MS)
+        .xadd(key, "MAXLEN", "~", maxlen, "*", ...fields())
+        .pexpire(key, ttlMs)
         .exec();
     } catch (err) {
       throw this.closed ? coded("BUS_CLOSED", "transport closed") : toBusError(err, lastError());
@@ -125,18 +144,44 @@ class IoredisFrameReader implements FrameReader {
   constructor(private readonly url: string, private readonly prefix: string, private readonly failFast: boolean, private readonly onClose: () => void) {}
 
   async readFrames(dir: AudioDirection, tag: string, fromId: string, count: number, blockMs: number): Promise<FrameEntry[] | null> {
+    const rows = await this.xread(audioStreamName(this.prefix, dir, tag), fromId, count, blockMs);
+    if (!rows) return null;
+    return rows.map(([id, fields]) => ({ id: id.toString(), decoded: decodeFrame(fields) }));
+  }
+
+  // @spec BUS-AVF-007, BUS-AVF-008, BUS-NAT-FRM-005, BUS-AVF-010
+  async readAvatarFrames(fromId: string, blockMs: number): Promise<AvatarFrameEntry[] | null> {
+    const key = avatarFramesStream(this.prefix);
+    const end = Date.now() + blockMs;
+    let cursor = fromId;
+    for (;;) {
+      const rows = await this.xread(key, cursor, 100, Math.max(1, end - Date.now()));
+      if (!rows) return null;
+      const out: AvatarFrameEntry[] = [];
+      for (const [id, fields] of rows) {
+        cursor = id.toString();
+        const frame = decodeAvatarFrame(fields);
+        if (frame) out.push({ id: cursor, frame });
+      }
+      if (out.length) return out;
+      if (Date.now() >= end) return null;
+    }
+  }
+
+  /** One blocking XREAD on this reader's own connection: the entries of the stream, or null on timeout. */
+  private async xread(key: string, fromId: string, count: number, blockMs: number): Promise<[Buffer | string, (Buffer | string)[]][] | null> {
     if (this.closed) throw coded("BUS_CLOSED", "reader closed");
     // A blocked read waits out a reconnect instead of failing (maxRetriesPerRequest null) and resumes from `fromId`.
     this.conn ??= open(this.url, { ...baseOptions(this.failFast), maxRetriesPerRequest: null });
     const { redis, lastError } = this.conn;
     let res: [Buffer | string, [Buffer | string, (Buffer | string)[]][]][] | null;
     try {
-      res = (await redis.xreadBuffer("COUNT", count, "BLOCK", blockMs, "STREAMS", audioStreamName(this.prefix, dir, tag), fromId)) as typeof res;
+      res = (await redis.xreadBuffer("COUNT", count, "BLOCK", blockMs, "STREAMS", key, fromId)) as typeof res;
     } catch (err) {
       throw this.closed ? coded("BUS_CLOSED", "reader closed") : toBusError(err, lastError());
     }
     if (!res) return null;
-    return (res[0]?.[1] ?? []).map(([id, fields]) => ({ id: id.toString(), decoded: decodeFrame(fields) }));
+    return res[0]?.[1] ?? [];
   }
 
   close(): void {

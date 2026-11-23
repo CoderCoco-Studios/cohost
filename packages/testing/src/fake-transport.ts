@@ -5,7 +5,7 @@
  * call after `close()` rejects `BUS_CLOSED`.
  */
 import type {
-  AckError, AudioDirection, BusErrorCode, BusReader, BusTransport, EntryFields, EventStream, Frame, FrameEntry, FrameReader,
+  AckError, AudioDirection, AvatarFrame, AvatarFrameEntry, BusErrorCode, BusReader, BusTransport, EntryFields, EventStream, Frame, FrameEntry, FrameReader,
   FrameTransport, FrameTransportFactory, GroupRead, RawEntry, TransportFactory,
 } from "@cohost/bus";
 
@@ -180,7 +180,7 @@ export class FakeReader implements BusReader {
   }
 }
 
-export type FrameMethod = "appendFrame" | "openReader" | "close" | "readFrames" | "readerClose";
+export type FrameMethod = "appendFrame" | "appendAvatarFrame" | "openReader" | "close" | "readFrames" | "readAvatarFrames" | "readerClose";
 export interface FrameCall { method: FrameMethod; args: unknown[]; reader?: number; at: number }
 
 /**
@@ -215,6 +215,14 @@ export class FakeFrameTransport implements FrameTransport {
     return (fn ? await fn(dir, tag, frame) : `${Date.now()}-${idSeq++}`) as string;
   }
 
+  /** Avatar frames (BUS-AVF-005). */
+  async appendAvatarFrame(frame: AvatarFrame): Promise<string> {
+    this.record("appendAvatarFrame", [frame]);
+    if (this.closed) throw busError("BUS_CLOSED", "transport closed");
+    const fn = this.script.appendAvatarFrame?.shift();
+    return (fn ? await fn(frame) : `${Date.now()}-${idSeq++}`) as string;
+  }
+
   openReader(): FrameReader {
     this.record("openReader", []);
     if (this.closed) throw busError("BUS_CLOSED", "transport closed");
@@ -240,6 +248,13 @@ export class FakeFrameReader implements FrameReader {
     if (this.closed || this.t.closed) throw busError("BUS_CLOSED", "reader closed");
     const fn = this.t.script.readFrames?.shift();
     return (fn ? await fn(dir, tag, fromId, count, blockMs) : await this.t.idle<FrameEntry[] | null>()) as FrameEntry[] | null;
+  }
+  /** BUS-AVF-007: `{ id, frame }` entries or null on timeout; unscripted reads wait until `close()`. */
+  async readAvatarFrames(fromId: string, blockMs: number): Promise<AvatarFrameEntry[] | null> {
+    this.t.record("readAvatarFrames", [fromId, blockMs], this.n);
+    if (this.closed || this.t.closed) throw busError("BUS_CLOSED", "reader closed");
+    const fn = this.t.script.readAvatarFrames?.shift();
+    return (fn ? await fn(fromId, blockMs) : await this.t.idle<AvatarFrameEntry[] | null>()) as AvatarFrameEntry[] | null;
   }
   close(): void { this.t.record("readerClose", [], this.n); this.closed = true; }
 }

@@ -67,8 +67,8 @@ test("exactly the marked keys are secret: SECRET_PATHS (the seventeen and the to
   assert.deepEqual([...SECRET_PATHS].sort(), [
     "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
     "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key",
-    "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "vision.obs.password",
-    "tools.servers.*.token", "voice.openai.api_key", "voice.pocket.hf_token",
+    "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "tools.servers.*.token",
+    "vision.obs.password", "voice.openai.api_key", "voice.pocket.hf_token",
   ]);
   assert.deepEqual(sectionSecrets("ears").sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);

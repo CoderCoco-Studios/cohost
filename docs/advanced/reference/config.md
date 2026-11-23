@@ -156,6 +156,7 @@ When to speak, and reflexes. The region scores unseen events at a poll every `ti
 | `brain.salience.reflexes[].emotion` | `surprised` | The emotion the line is said with |
 | `brain.salience.reflexes[].gesture` | none | An optional avatar gesture |
 | `brain.salience.reflexes[].cooldown_ms` | `30000` | This reflex's own cooldown |
+| `brain.salience.reminder_expiry_ms` | `1800000` | How long past its due time a reminder may still be spoken; a later one is dropped |
 
 ## `brain.affect`
 
@@ -418,6 +419,47 @@ The machines that count as your own network, for the egress rule: which destinat
 
 Private addresses, `localhost`, `host.docker.internal`, dotless names and `.local` names are on the LAN without an entry.
 
+## `tools`
+
+The MCP servers the co-host may call and the tools it may use. Nothing is enabled by absence: a tool runs only when `tools.allow` names it with `enabled: true`, and a server is called only for such a tool. Every server's token lives in `secrets.yaml` (`tools.servers.<name>.token`), never here.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `tools.mode` | `live` | `live` calls the configured servers; `mock` returns canned results and calls none. A blank value is `live` |
+| `tools.timeout_ms` | `10000` | Limit of one tool call before it counts as failed (ms, positive) |
+| `tools.confirm_timeout_ms` | `20000` | How long a request to confirm an acting tool waits for an answer (ms, positive) |
+| `tools.max_result_chars` | `1500` | Longest tool result that reaches the prompt (at least 64) |
+| `tools.max_concurrent` | `4` | Tool calls running at once across all servers (at least 1) |
+| `tools.catalog_ms` | `30000` | How often each server's tool list is read again (at least 5000 ms) |
+| `tools.max_tools_per_server` | `32` | Tools taken from one server's list (at least 1) |
+| `tools.max_tools` | `64` | Tools in the catalogue across all servers (at least 1) |
+| `tools.owner_sources` | `all` | `all`, or a list of listening source names whose speech counts as the owner's. Names follow `ears.sources` |
+| `tools.servers` | `{}` | Map from server name to its entry. A name is lower-case letters, digits and hyphens, starting with a letter, at most 32 characters. Sensitive: the addresses are sent private data |
+| `tools.servers.<name>.url` | required | An `http` or `https` address with no user name or password. A query parameter named `key`, `token`, `api_key`, `apikey`, `secret`, `auth`, `password` or `access_token` loads with one warning naming the server and the parameter |
+| `tools.servers.<name>.header` | `""` | The HTTP header the token is sent in. Blank means `Authorization` |
+| `tools.servers.<name>.external` | `false` | `true` treats the server as off the LAN whatever its host, for the egress rule |
+| `tools.allow` | `{}` | Map from tool name (`server__tool`, letters, digits, `_` and `-`, at most 64 characters) to its permission. Sensitive |
+| `tools.allow.<name>.enabled` | `false` | Whether the co-host may call this tool |
+| `tools.allow.<name>.acts` | `false` | The tool acts on something outside the chat |
+| `tools.allow.<name>.chat` | `false` | The tool speaks in chat. Cannot be true together with `acts` |
+| `tools.allow.<name>.confirm` | `true` | Ask the owner to confirm before an acting tool runs |
+| `tools.allow.<name>.hash` | `""` | The tool's definition hash, which the tools unit reads; empty by default |
+| `tools.allow.<name>.effect` | `read` | `read`, `acts` or `unlabelled`. Read only when `tools.mode` is `mock` |
+| `tools.timer` | map | The timer limits |
+| `tools.timer.max_active` | `5` | Timers the co-host may have running at once (at least 1) |
+| `tools.timer.max_minutes` | `120` | Longest timer, in minutes (at least 1) |
+| `tools.stream_info` | map | The stream information the co-host may read |
+| `tools.stream_info.cache_ms` | `30000` | How long the stream's title and game are remembered; 0 reads them every time |
+| `tools.reply` | map | The limits on the tool calls one reply may make |
+| `tools.reply.max_rounds` | `3` | Rounds of tool calls one reply may take (at least 1) |
+| `tools.reply.max_calls` | `3` | Tool calls one reply may make in all (at least 1) |
+| `tools.reply.budget_ms` | `30000` | Time one reply may spend on tool calls in all (at least 1 ms) |
+| `tools.reply.filler_after_ms` | `1500` | A call still running after this long gets a filler line; 0 says one at once |
+| `tools.reply.max_tokens` | `512` | The longest model answer, in tokens, for one tool-using step (at least 1) |
+| `tools.reply.filler_lines` | six lines | Lines said at random while a tool runs; each at most 200 characters. An empty list says none |
+
+A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, and so on) and never quotes a URL or the user name and password in it.
+
 ## Credentials (`secrets.yaml`)
 
 `config/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
@@ -441,3 +483,4 @@ Private addresses, `localhost`, `host.docker.internal`, dotless names and `.loca
 | `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights; only an owner who has accepted them needs it |
 | `chat.youtube.api_key` | `""` | The YouTube Data API key for the YouTube chat source |
 | `connections.discord.token` | `""` | The co-host's one Discord bot token, used only by the Discord connector. Invite the bot with Connect and Speak and enable the Server Members intent |
+| `tools.servers.<name>.token` | `""` | The credential sent to the MCP server named `<name>` in `config.yaml`, in the header `tools.servers.<name>.header` names. A token for a server `config.yaml` does not hold is not merged and is listed by path in the warning about keys that are not secret keys |

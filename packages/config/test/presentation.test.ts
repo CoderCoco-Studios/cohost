@@ -116,7 +116,7 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
     if (!w) continue;
     const node = nodeOf(k);
     switch (w.type) {
-      case "timezone": case "voice": case "sources": case "textarea": break;
+      case "timezone": case "voice": case "sources": case "textarea": case "mcp-servers": case "tool-list": break;
       case "model":
         assert.ok(KINDS.includes(w.kind), `${k}: model kind ${String(w.kind)}`);
         assert.equal(node.type, "string", `${k}: a model widget is on a string key`);
@@ -303,6 +303,6 @@ test("the network section entry stays in group System with a title, an about sen
   assert.equal(e?.group, "System");
   assert.ok(oneLine(e?.title) && oneLine(e?.about));
   assert.ok(oneLine(PRESENTATION.keys["network.lan"]?.help));
-  const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.name).sort();
+  const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.id).sort();
   for (const u of ["ears", "eyes", "voice"]) assert.ok(declaring.includes(u), u);
 });

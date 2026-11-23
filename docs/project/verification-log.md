@@ -196,7 +196,7 @@ Run against commit `f126b949cf41b503f28c7935d3c8522bb7b659d6` (the base on `main
 
 ### Not checked
 
-- The Rust bus example at run time: its heartbeat, consumer group, `<type> from <source>` lines and the `stopping` heartbeat (BUS-NAT-EX-002 to 005) need Redis and have not run. Those specs stay open; CI's `test.yml` provides Redis.
+- The Rust bus example at run time was not run on that machine (no Redis); it later ran in CI against Redis (BUS-NAT-EX-002 to 005, PR #247).
 - `to-wav-ffmpeg.sh` (EARS-EX-007's `ffmpeg` half): the test skips where `ffmpeg` is absent.
 - No page was walked end to end on a real stack. The dashboard Services tab was not viewed with the example service, the Rust program, the avatar driver or a hook server running, so what the pages say about the Services tab comes from reading `packages/control/src/health.ts`, `packages/modules/src/index.ts` and `services/dashboard/public/index.html`: a running service shows as `up` or `degraded`, a stopped one as `down`, and a hook shows as `hook.<name>` in the deps column only for the kinds `http` and `llm`.
 - The avatar driver was run against a UDP socket in a test, not against an avatar app. The three registration edits the page describes were not made and run.

@@ -4,7 +4,7 @@ The published documentation site: a VitePress site under `docs/` with a plain-la
 
 ## Status
 
-**MAPPED** — 156 specs: 155 implemented, 0 deferred, 1 gap (DOCS-THEME-017, the favicon). The README quick start (DOCS-README-003) and the ports the Environment page names (DOCS-FACT-004) follow the config-owned settings and are implemented and tested. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are built and tested: the docs check's Extend rules and `docs-guides.test.ts` (DOCS-GUIDE-001 to 026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), the twelve Extend pages and the reworded DOCS-PAGE-006. The example specs in the owning segments are implemented too, except BUS-NAT-EX-002 to 005 (the Rust bus example's round trip needs Redis and has not run; Verification log). The Dashboard tour (`guide/operate/dashboard.md`) and the HTTP routes page (`advanced/reference/http.md`) describe the React dashboard (dashboard DASH-DOCS-013 to 016), and the operator guides name its screens and controls. A separate audit has not been run.
+**MAPPED** — 156 specs: 155 implemented, 0 deferred, 1 gap (DOCS-THEME-017, the favicon). The README quick start (DOCS-README-003) and the ports the Environment page names (DOCS-FACT-004) follow the config-owned settings and are implemented and tested. The pages, loaders, sidebar data, config, docs check and theme (DOCS-THEME-001 to DOCS-THEME-056) exist and are tested; DOCS-THEME-049 was reviewed by eye on 2026-11-15 (Verification log); DOCS-THEME-017 stays open until the favicon's drawing is checked in a browser. DOCS-LIVE-001 to 013 (the live health table on the Service health page) are implemented and tested, and the dashboard-served site and table were observed in a browser on 2026-11-15 (Verification log). The extension guides (LLD § Extension guides) are built and tested: the docs check's Extend rules and `docs-guides.test.ts` (DOCS-GUIDE-001 to 026), the examples READMEs (DOCS-EX-002, DOCS-EX-005), the twelve Extend pages and the reworded DOCS-PAGE-006. The example specs in the owning segments are implemented too; the Rust bus example's round trip (BUS-NAT-EX-002 to 005) ran in CI against Redis. The Dashboard tour (`guide/operate/dashboard.md`) and the HTTP routes page (`advanced/reference/http.md`) describe the React dashboard (dashboard DASH-DOCS-013 to 016), and the operator guides name its screens and controls. A separate audit has not been run.
 
 ## Orientation
 
@@ -71,7 +71,7 @@ Cited with `<!-- impl: -->` (unannotated): the `docs:*` scripts in `package.json
 None.
 
 ### Should Fix
-1. Run the Rust bus example's round trip against Redis (BUS-NAT-EX-002..005, event-bus), then audit the extension guides and their example specs.
+1. Audit the extension guides and their example specs.
 2. Open the favicon (`docs/public/favicon.svg`) in a browser tab and confirm it draws the `idle` expression, then mark DOCS-THEME-017 `[x]`. Repeat the DOCS-THEME-049 review whenever the theme changes.
 
 ### Nice to Have

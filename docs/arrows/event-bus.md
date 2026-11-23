@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 162 `[x]`, 46 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 162 `[x]` specs, 147 have an `@spec` annotation in a test and 15 do not (listed under Work Required; recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 stay `[ ]`: their only evidence is `examples/rust-bus/tests/round_trip.rs`, which needs Redis and skips without it, and it has not run (no Redis where the example was written); CI's `test.yml` provides Redis. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 213 specs, 166 `[x]`, 42 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 166 `[x]` specs, 147 have an `@spec` annotation in a test and 15 do not (listed under Work Required; recounted 2026-11-22). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 are `[x]`: `examples/rust-bus/tests/round_trip.rs` ran against the Redis service of `test.yml` on PR #247 (the log line `RAN round_trip against redis://127.0.0.1:6379`), and that file fails, not skips, when `REDIS_URL` is set and Redis is unreachable. `packages/bus/test/example-rust-bus.test.ts` asserts the same under `pnpm test`, and a dedicated `test.yml` step fails on a `SKIP` line. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -86,13 +86,12 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Native: measurement gate | BUS-NAT-GATE-001, 004 to 007 (002, 003 retired) | 1 | 0 | 4 |
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 
-**Summary:** 213 specs: 162 implemented, 46 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060, with BUS-EVT-001 and BUS-EVT-024 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 213 specs: 166 implemented, 42 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060, with BUS-EVT-001 and BUS-EVT-024 revised) are gaps. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 
 - YouTube chat and forgetting (design 2026-11-16, no code): `chat.removed` (BUS-EVT-033 to BUS-EVT-035), `messageId` on `chat.message` (BUS-EVT-002), platform and user id on `attention.focus` and `memory.viewer` (BUS-EVT-010, BUS-EVT-036), `viewers` on the notes request and reply (BUS-EVT-020), and the 27-type count (BUS-EVT-001).
 ### Should Fix
-- Run the Rust example client's round trip against Redis (BUS-NAT-EX-002..005), then flip those specs and audit BUS-NAT-EX-001..005; the Extend pages cite them.
 
 ### Deferred (`[D]`)
 - BUS-NAT-GATE-001, 004, 005, 006 (merge gate): a one-time procedure; the measured events-path result is recorded in LLD § Measurement gate. BUS-NAT-RS-009 (add a Rust codec type with its fixtures): a procedure for future work, with no Rust service yet.

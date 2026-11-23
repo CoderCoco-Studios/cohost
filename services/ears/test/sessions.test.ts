@@ -91,8 +91,33 @@ test("the pre-roll (up to 200 ms) and the frames buffered while the session conn
   }, { loadVad: vad.load });
 });
 
-// @spec EARS-SES-003
-test("a buffered start that is not accepted within ears.stt_timeout_ms fails the session (EARS-SES-010)", { skip: "blocked on the owner: SttSession.push(pcm): void has no acknowledgement, so a push that is not accepted cannot be observed (see the edge-audit report)" }, () => {});
+// @spec EARS-SES-003, EARS-SES-010, EARS-ENG-007
+test("a buffered start the server does not accept within ears.stt_timeout_ms fails the session: the retained clip goes to the batch engine, and deps.stt says so", async () => {
+  const stt = fakeStt(() => "batch after a stuck start");
+  const s = fakeStreaming({ open: () => sleep(50), push: (_n, index) => (index === 0 ? new Promise<void>(() => {}) : undefined), finish: () => "unused" });
+  await run(cfg({ stt_timeout_ms: 100 }), s, stt, async (r) => {
+    await say(r);
+    await waitFor(() => r.heard().length === 1, "heard", 3000);
+    assert.equal(r.heard()[0]!.text, "batch after a stuck start");
+    assert.equal(stt.calls.length, 1, "one batch attempt");
+    assert.equal(s.sessions[0]!.finishCalls, 0);
+    assert.ok(s.sessions[0]!.aborted, "the stuck session is aborted");
+    await waitFor(() => r.lastHeartbeat()?.deps.stt === "down" && /buffered start not accepted after 100 ms/.test(r.lastHeartbeat()?.detail ?? ""), "outage recorded", 2000);
+  });
+});
+
+// @spec EARS-SES-003, EARS-SES-002
+test("a buffered start the server accepts is pushed in order and awaited frame by frame; the session then serves the utterance", async () => {
+  const stt = fakeStt(() => "unused");
+  const s = fakeStreaming({ open: () => sleep(50), push: () => sleep(5), finish: () => "accepted in order" });
+  await run(cfg({ stt_timeout_ms: 1000 }), s, stt, async (r) => {
+    await say(r);
+    await waitFor(() => r.heard().length === 1, "heard", 3000);
+    assert.equal(r.heard()[0]!.text, "accepted in order");
+    assert.equal(s.sessions[0]!.audio().length, 10 * FRAME_BYTES, "every frame reached the session");
+    assert.equal(stt.calls.length, 0);
+  });
+});
 
 // @spec EARS-SES-005, EARS-ECHO-004
 test("an echo-suppressed source opens no session and sends no audio to a streaming engine: a clip the gate lets through goes to the batch engine, one the gate blocks is dropped", async () => {

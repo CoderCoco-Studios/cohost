@@ -152,6 +152,8 @@ export interface FakeStreamingOptions {
   open?: (n: number, o: { signal: AbortSignal }) => void | Promise<void>;
   /** The final text; a throw or a never-settling promise is a failed `finish()`. Default: the last hypothesis. */
   finish?: (s: FakeSession) => string | Promise<string>;
+  /** Runs at every frame pushed (n counts sessions from 0, index the pushes of that session): a promise is the server taking the frame in time, or never. */
+  push?: (n: number, index: number) => void | Promise<void>;
   /** Readiness probe; absent means the engine has none (EARS-HLTH-008). */
   ping?: (signal: AbortSignal) => boolean | Promise<boolean>;
 }
@@ -184,7 +186,7 @@ export function fakeStreaming(o: FakeStreamingOptions = {}) {
       };
       sessions.push(s);
       const session: SttSession = {
-        push: (pcm) => { s.pushed.push(Buffer.from(pcm)); s.pushAt.push(Date.now()); },
+        push: (pcm) => { const index = s.pushed.length; s.pushed.push(Buffer.from(pcm)); s.pushAt.push(Date.now()); return o.push?.(n, index); },
         onHypothesis: (c) => { cb = c; },
         onEndOfTurn: () => {},
         finish: async () => { s.finishCalls++; return o.finish ? o.finish(s) : last; },

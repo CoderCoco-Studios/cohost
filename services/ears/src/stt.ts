@@ -176,6 +176,12 @@ export class SttRouter {
     this.d.log.warn({ engine: this.d.built.selected.name, reason }, "speech-to-text session failed");
   }
 
+  // @spec EARS-SES-003, EARS-ENG-007
+  /** The buffered start of a session, awaited under `ears.stt_timeout_ms`: a start the server does not accept in time fails the session. */
+  bufferedStart(start: Promise<void>): Promise<void> {
+    return withTimeout(start, this.d.timeoutMs, "buffered start not accepted");
+  }
+
   /** A session delivered its final (EARS-HLTH-011). */
   sessionFinal(): void {
     this.d.health.selectedOk();

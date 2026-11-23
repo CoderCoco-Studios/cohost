@@ -87,10 +87,13 @@ const msg = (err: unknown): string => (err instanceof Error ? err.message : Stri
 
 /** The streaming session of one utterance: `connecting` holds the audio until the session takes it (EARS-SES-002). */
 interface Stream {
-  state: "connecting" | "live" | "finishing" | "failed" | "done";
+  /** `starting`: connected, the buffered start is being pushed (EARS-SES-002, 003). */
+  state: "connecting" | "starting" | "live" | "finishing" | "failed" | "done";
   session?: SttSession;
-  /** Frames received while connecting, pushed in order once the session is live. */
+  /** Frames received while connecting or starting, pushed in order once the session is live. */
   pending: Buffer[];
+  /** A session that fails while it can serve: aborted, reported, and its waiting close falls back (EARS-SES-010). */
+  fail?: (err: unknown) => void;
   /** Aborts the connect when the source stops (EARS-SES-007). */
   ac: AbortController;
   /** The utterance closed while the connect was pending: its clip waits for the connect to settle (EARS-SES-004). */
@@ -221,7 +224,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     const s = o.stream;
     if (s?.state === "live" && s.session) return closeLive(o, s, clip, spk);
     // A connect still pending is waited for: its session takes the close when it connects, and only its failure falls back.
-    if (s?.state === "connecting") {
+    if (s?.state === "connecting" || s?.state === "starting") {
       s.closeWith = { clip, spk };
       return;
     }
@@ -316,12 +319,26 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
 
   // @spec EARS-SES-001, EARS-SES-002, EARS-SES-008, EARS-SES-009, EARS-SES-012
   /** Opens a session for a new utterance when one of `ears.max_stt_sessions` is free; the audio held so far waits for it. */
+  // @spec EARS-SES-001, EARS-SES-002, EARS-SES-003, EARS-SES-010
   const startSession = (o: Open): void => {
     const st = d.stream;
     if (!st || !st.router.slots.acquire()) return;
     o.slot = true;
     const s: Stream = { state: "connecting", pending: [...o.chunks], ac: new AbortController() };
     o.stream = s;
+    /** A session failing while it serves: aborted, reported, and a close waiting on it falls back to batch. */
+    s.fail = (err) => {
+      if (s.state !== "live" && s.state !== "starting") return;
+      s.session?.abort();
+      s.state = "failed";
+      releaseSlot(o);
+      st.router.sessionFailed(msg(err));
+      if (s.closeWith) {
+        const c = s.closeWith;
+        s.closeWith = undefined;
+        hearClip(c.clip, c.spk, o.name, true);
+      }
+    };
     st.router.openSession(s.ac.signal).then(
       (session) => {
         if (stopped) {
@@ -331,22 +348,24 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
           return;
         }
         s.session = session;
-        s.state = "live";
+        s.state = "starting";
         session.onHypothesis((t) => hypothesis(o, t));
-        void session.failed.then((err) => {
-          if (s.state !== "live") return;
-          s.state = "failed";
-          s.session?.abort();
-          releaseSlot(o);
-          st.router.sessionFailed(msg(err));
-        });
-        for (const c of s.pending) session.push(c);
-        s.pending = [];
-        if (s.closeWith) {
-          const c = s.closeWith;
-          s.closeWith = undefined;
-          closeLive(o, s, c.clip, c.spk);
-        }
+        void session.failed.then((err) => s.fail?.(err));
+        // the buffered start: each frame is pushed and, when the server returns a promise, awaited; frames that arrive meanwhile queue behind it
+        const pump = async (): Promise<void> => {
+          let c: Buffer | undefined;
+          while (s.state === "starting" && (c = s.pending.shift()) !== undefined) await session.push(c);
+          if (s.state === "starting") s.state = "live";
+        };
+        st.router.bufferedStart(pump()).then(
+          () => {
+            if (s.state !== "live" || !s.closeWith) return;
+            const c = s.closeWith;
+            s.closeWith = undefined;
+            closeLive(o, s, c.clip, c.spk);
+          },
+          (err) => s.fail?.(err),
+        );
       },
       () => {
         // the router reports an outage; a capacity refusal and a stop report nothing. Only here does a waiting close fall back.
@@ -383,8 +402,11 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     o.chunks.push(pcm); o.at.push(now);
     o.bytes += pcm.length;
     o.name = name;
-    if (o.stream?.state === "live") o.stream.session!.push(pcm);
-    else if (o.stream?.state === "connecting") o.stream.pending.push(pcm);
+    const os = o.stream;
+    if (os?.state === "live") {
+      const r = os.session!.push(pcm);
+      if (r) r.catch((err: unknown) => os.fail?.(err));
+    } else if (os?.state === "connecting" || os?.state === "starting") os.pending.push(pcm);
     if (o.held !== undefined) hypothesis(o, o.held);
     if (speech) { o.speechEnd = o.chunks.length; o.silentBytes = 0; } else o.silentBytes += pcm.length;
     if (d.maxUtteranceMs !== undefined && o.bytes >= d.maxUtteranceMs * BYTES_PER_MS) return close(sp);
@@ -460,6 +482,10 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
           releaseSlot(o);
         } else if (o.stream?.state === "connecting") {
           o.stream.ac.abort(new Error("source stopped")); // the connect is ended; its outcome is dropped (EARS-SES-007)
+        } else if (o.stream?.state === "starting") {
+          o.stream.state = "done";
+          o.stream.session?.abort();
+          releaseSlot(o);
         }
       }
       speakers.clear();

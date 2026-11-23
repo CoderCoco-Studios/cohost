@@ -47,7 +47,8 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
 /** One utterance's speech-to-text session of a streaming engine (EARS-SES-*). */
 export interface SttSession {
   /** Sends one 16 kHz mono s16le frame, in order. */
-  push(pcm: Buffer): void;
+  /** Sends one frame. A promise means the server has to accept it first; the buffered start is awaited under `ears.stt_timeout_ms` (EARS-SES-003). */
+  push(pcm: Buffer): void | Promise<void>;
   /** The whole hypothesis so far, each time it changes (EARS-PART-016). */
   onHypothesis(cb: (text: string) => void): void;
   onEndOfTurn(cb: () => void): void;

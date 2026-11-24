@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "161 specs: 155 [x], 6 [ ] (the Twitch removals CHAT-TW-014 to 017 held for the live check on #239; the open source-contract line CHAT-SRC-001; CHAT-HEALTH-011 needs a live check of the YouTube reader). The YouTube reader (CHAT-YT-*, CHAT-FORGET-002 to 005, CHAT-FILT-013) is built (#179)."
+    next: "161 specs: 155 [x], 6 [ ] (the Twitch removals CHAT-TW-014 to 017 held for the live check on #330; the open source-contract line CHAT-SRC-001; CHAT-HEALTH-011 needs a live check of the YouTube reader). The YouTube reader (CHAT-YT-*, CHAT-FORGET-002 to 005, CHAT-FILT-013) is built (#179)."
     drift: null
 
   eyes:
@@ -147,7 +147,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: eyes.md
-    next: "63 specs: 38 [x], 25 [ ], 0 [D] (the gaps are the provider construction, hosted choice, configuration, outage, egress and vision-dependency specs; see eyes.md). Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
+    next: "64 specs: 64 [x], 0 [ ], 0 [D]. Manual verification: the OBS WebSocket path against a real OBS (docs/advanced/testing/real-backends.md)."
     drift: null
 
   connections:
@@ -267,7 +267,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "91 specs: 68 [x], 23 [ ], 0 [D] (the driver-set revisions AVATAR-DRV-002 to 004, AVATAR-VMC-007, AVATAR-VTS-018, the parameter directions AVATAR-DIR-001 to 005 and the browser driver AVATAR-BRW-001 to 013 are open gaps)."
+    next: "91 specs: 90 [x], 1 [ ], 0 [D] (the gap is AVATAR-VTS-018, the VTube Studio parameter signs, a manual check against a real Live2D model)."
     drift: null
 
   dashboard:

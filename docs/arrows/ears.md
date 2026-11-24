@@ -6,7 +6,7 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 **PARTIAL**, 2026-11-23: the STT engine contract is built (`services/ears/src/engines.ts`, `stt.ts`, `health.ts`): batch engines `speaches`, `openai` and `stub`, engine selection and the batch fallback, streaming sessions with the batch fallback, streamed partials and the engine-aware `deps.stt` (EARS-ENG-001 to 012, EARS-SES-001 to 013, EARS-HLTH-003 to 012). The Nemotron publishes no partials (EARS-NEM-004: the wire cannot tell a suffix from a corrected whole text). The Nemotron and Kyutai adapters are built (`services/ears/src/nemotron.ts`, `kyutai.ts`; wired by `buildEngines`), with the Kyutai end of turn closing an utterance in `connector-source.ts` (EARS-NEM-001 to 007, EARS-KYU-001 to 014 `[x]`, tested against local fake servers; the live run against `stt-nemotron` and `stt-kyutai` is manual, #190). Early reply is built (`services/ears/src/connector-source.ts`, EARS-EARLY-001 to 026): one early snapshot per pause of a connector utterance under a batch engine, `speech.early`, `speech.retracted` on resumption, reuse of the early transcript as the final (`earlySeq`, `earlySttMs`), `earlyLate` for a call the close waited for, `closedAt` on every utterance ears closes itself, and the heartbeat counts (EARS-HEAR-012, EARS-PART-009 `[x]`); a streaming engine, an echo-suppressed source, `http`, `dir` and injection take no early snapshot. The spec file holds 195 specs: 188 `[x]`, 5 `[ ]`, 2 `[D]`. The echo gate (EARS-ECHO-001 to 009) is implemented except EARS-ECHO-002, reopened: the gate counts a `voice.done` from any sink, and the spec now admits only non-virtual sinks, so the code follows in the echo-gate issue. Each streamed clause is its own entry. The open specs are EARS-ECHO-002 and the desktop helper gaps. EARS-SES-003 is `[x]`: a buffered start the server does not accept within `ears.stt_timeout_ms` fails the session, tested through the router. The desktop capture helper is built in `crates/cohost-desktop-audio`: clip cutting, delivery and retry, token, usage exits and CI are tested (EARS-SRC-015, 017, 020, 021, 023). Its capture back ends (PulseAudio monitor, WASAPI loopback), default-device reopen and stop path are compiled but not verified on hardware (EARS-SRC-014, 018, 019, 022). Earlier: `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002).
 
-**AUDITED**, 2026-11-12: 93 specs, 89 implemented (`[x]`), 2 gaps (`[ ]`: the desktop capture helper, EARS-SRC-014 and 015, with CONN-DESK-001), 2 deferred (`[D]`: EARS-PART-015, EARS-SRC-016, the helper writing frames to `audio.in.desktop`, CONN-DESK-002). Open work is the helper alone. The docs site's extension guides added EARS-EX-001 to EARS-EX-007 (the example audio clients, the `curl` script and the conversion scripts), implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent), not yet audited; the spec file now holds 100 specs (96 `[x]`, 2 `[ ]`, 2 `[D]`).
+The docs site's extension guides' example audio clients, the `curl` script and the conversion scripts are EARS-EX-001 to EARS-EX-007, implemented and tested (the `ffmpeg` converter's test skips where `ffmpeg` is absent).
 
 ## Design
 
@@ -40,14 +40,16 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | IDs | Topic | Specs | Markers |
 | --- | --- | --- | --- |
 | EARS-START-001 to 008 | startup plans, consumer group | 6 | 6 `[x]` |
-| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 10 `[x]`, 1 `[ ]` (HEAR-012) |
+| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 11 `[x]` |
 | EARS-VAD-001 to 008 | endpointing | 8 | 8 `[x]` |
-| EARS-PART-001 to 022 | partial transcripts | 22 | 20 `[x]`, 1 `[ ]`, 1 `[D]` |
+| EARS-PART-001 to 022 | partial transcripts | 22 | 21 `[x]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
 | EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 13 `[x]`, 1 `[ ]`, 1 `[D]` |
 | EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 4 `[x]`, 3 `[ ]` |
 | EARS-CON-001 to 005 | connector sources | 5 | 5 `[x]` |
 | EARS-ECHO-001 to 009 | echo gate | 9 | 8 `[x]`, 1 `[ ]` |
+| EARS-EARLY-001 to 026 | early transcription | 26 | 26 `[x]` |
+| EARS-EX-001 to 007 | example audio clients and scripts | 7 | 7 `[x]` |
 | EARS-INJ-005 to 012 | audio injection | 7 | 7 `[x]` |
 | EARS-STUB-001 to 002 | stub transcriber | 2 | 2 `[x]` |
 | EARS-HLTH-001 to 012 | health | 12 | 12 `[x]` |
@@ -100,4 +102,4 @@ None.
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
-The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the checks in #239; EARS-SRC-016 follows when the helper writes frames.
+The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the hardware checks under #231 (also listed on the manual live-check issue #330); EARS-SRC-016 follows when the helper writes frames.

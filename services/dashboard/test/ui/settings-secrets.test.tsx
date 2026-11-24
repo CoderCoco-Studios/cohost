@@ -85,7 +85,7 @@ test("a failed secret write is shown beside the field with its status and detail
   assert.equal(document.body.innerHTML.includes("abc") && !(within(row("api_key")).getByLabelText("Api key") as HTMLInputElement).value, false);
 });
 
-// @spec DASH-SET-009, DASH-SECRET-011, DASH-SECRET-012
+// @spec DASH-SET-009, DASH-SET-030, DASH-SECRET-011, DASH-SECRET-012
 test("the two Bedrock keys are saved together with PUT /secrets so a half-set pair cannot be made, and a 400 shows on both fields", async () => {
   const b = await open("llm", { routes: { "PUT /secrets": { status: 400, json: { ok: false, detail: "llm.bedrock.access_key_id and llm.bedrock.secret_access_key must be set together", paths: ["llm.bedrock.access_key_id", "llm.bedrock.secret_access_key"] } } } });
   const user = userEvent.setup();

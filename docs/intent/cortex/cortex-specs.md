@@ -74,7 +74,7 @@ Design: [cortex-design.md § Provisional think](cortex-design.md#provisional-thi
 - [x] **CTX-PROV-035**: When a held provisional think is released, by a confirm or by an interjected confirm, the cortex shall clear the hold limit, and from then the limits of an ordinary think shall apply. <!-- test: services/cortex/test/provisional.test.ts -->
 - [x] **CTX-PROV-036**: When a held provisional think is released by a confirmation (CTX-PROV-019 or CTX-PROV-020), the cortex shall run the mute and busy re-check of CTX-GATE-013 and, when it fails, drop the think as an ordinary first-clause check does. <!-- test: services/cortex/test/provisional.test.ts -->
 - [x] **CTX-PROV-037**: When a held provisional think is released by a confirmation and passes the re-check, the cortex shall publish `brain.status` `thinking`. <!-- test: services/cortex/test/provisional.test.ts -->
-- [x] **CTX-PROV-038**: When a held provisional think is released by a confirmation and passes the re-check, the cortex shall publish the held clauses as an ordinary reply: the first as `brain.say` and each later one as `brain.clause` in order behind that re-check. <!-- test: services/cortex/test/provisional.test.ts -->
+- [x] **CTX-PROV-038**: When a held provisional think is released by a confirmation and passes the re-check, the cortex shall publish the held clauses as an ordinary reply: the first as `brain.say` and each later one as `brain.clause` in order behind that re-check. A line of the operator's, or another source's, that starts while the released clauses are being published does not stop the clauses already released; the re-check runs once, at the release. <!-- test: services/cortex/test/provisional.test.ts -->
 
 ## Interjected confirm (INTJ)
 

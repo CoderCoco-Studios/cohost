@@ -11,6 +11,11 @@ import {
 // main.ts does, over a scripted model.
 
 const MULTI = "[happy] First clause is here, second clause follows, and a third to end.";
+/**
+ * The hold limit used by these tests. It is long enough that the assertions made before it fire are not raced by the timer under load,
+ * and every test waits for the limit with a bounded wait, so the limit's own effect is what is checked.
+ */
+const LIMIT = 1000;
 const withoutIds = (events: unknown[]) => J(events).map((e: Record<string, unknown>) => { const { id: _id, ...rest } = e; return rest; });
 
 /** Starts a provisional think over `text` and waits until the model has been read to its end. */
@@ -317,7 +322,7 @@ test("a released think publishes brain.status thinking, then brain.say, then the
 // @spec CTX-PROV-010, CTX-PROV-014, CTX-PROV-016, CTX-PROV-029, CTX-PROV-031, CTX-PROV-032
 test("the hold limit counts from the start of the think: it aborts the stream even before a clause is ready, publishes idle and frees the cortex", async () => {
   // Long enough that the stream is still open when the test looks, even under load; the limit then ends it.
-  const s = setup({ cortex: { hold_limit_ms: 150 } });
+  const s = setup({ cortex: { hold_limit_ms: LIMIT } });
   const g = gate();
   s.llm.rounds.push({ text: MULTI, gate: g.promise });
   await s.cortex.onEvent(provisional());
@@ -336,7 +341,7 @@ test("the hold limit counts from the start of the think: it aborts the stream ev
 
 // @spec CTX-PROV-014, CTX-PROV-033
 test("when the hold limit ends a think while a line of someone else is pending, the status is speaking", async () => {
-  const s = setup({ cortex: { hold_limit_ms: 80 } });
+  const s = setup({ cortex: { hold_limit_ms: LIMIT } });
   s.llm.rounds.push({ text: MULTI });
   await s.cortex.onEvent(provisional());
   await streamed(s);
@@ -349,7 +354,7 @@ test("when the hold limit ends a think while a line of someone else is pending, 
 
 // @spec CTX-PROV-014, CTX-PROV-023
 test("a confirm that arrives after the limit ended the think is an ordinary focus", async () => {
-  const s = setup({ cortex: { hold_limit_ms: 40 } });
+  const s = setup({ cortex: { hold_limit_ms: LIMIT } });
   await hold(s);
   await waitFor(() => s.statuses().at(-1) === "idle", "limit");
   s.llm.rounds.push({ text: "[happy] Half past noon, I think." });
@@ -361,7 +366,7 @@ test("a confirm that arrives after the limit ended the think is an ordinary focu
 
 // @spec CTX-PROV-035, CTX-PROV-021
 test("a release clears the hold limit: a confirmed think still reading the stream is not ended by it", async () => {
-  const s = setup({ cortex: { hold_limit_ms: 80 } });
+  const s = setup({ cortex: { hold_limit_ms: LIMIT } });
   const g = gate();
   s.llm.rounds.push({ text: MULTI, hold: g.promise });
   await s.cortex.onEvent(provisional());
@@ -369,7 +374,8 @@ test("a release clears the hold limit: a confirmed think still reading the strea
   assert.equal(s.says().length, 0, "held until the confirm");
   await s.cortex.onEvent(confirm());
   await waitFor(() => s.says().length === 1, "released say");
-  await sleep(200); // past the limit
+  assert.equal(s.llm.calls.length, 1, "the released think is the one model call");
+  await sleep(LIMIT + 150); // past the limit, which the release cleared
   assert.equal(s.llm.ended[0], undefined, "the stream is still open");
   assert.equal(s.statuses().filter((x) => x === "idle").length, 0, "the limit did not end the released think");
   g.open();
@@ -887,4 +893,55 @@ test("a brain.clause that fails mid-release closes the reply failed: the line is
   assert.equal(s.says().length, 1);
   assert.ok(!s.line().some((e) => e.text === "second clause follows,"), "the failed clause was not published");
   assert.deepEqual(clausesFrom(s, 0).filter((c) => c[2] === "failed"), [["", true, "failed", 1, 0]], "the reply closes failed");
+});
+
+/** A release whose output `pred` names is held in flight, a halt (stop or mute) lands on it, and the clauses published after the halt are returned. */
+async function haltInFlight(text: string, pred: (type: string, data: { last?: true; text?: string; seq?: number }) => boolean, halt: "stop" | "mute", cortex: Record<string, unknown> = {}) {
+  const s = setup({ cortex });
+  s.llm.rounds.push({ text });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  const g = gate();
+  const real = s.bus.publish.bind(s.bus);
+  let once = true;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (once && pred(type, data as never)) { once = false; await g.promise; }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  const p = s.cortex.onEvent(confirm());
+  await sleep(15);
+  const atHalt = s.bus.published.length;
+  if (halt === "stop") await s.cortex.stop();
+  else await s.cortex.onEvent(control("mute"));
+  g.open();
+  await p;
+  await sleep(80);
+  return { s, afterHalt: clausesFrom(s, atHalt), hit: !once };
+}
+
+// @spec CTX-STREAM-028, CTX-STREAM-037, CTX-PROV-038
+test("a halt during a one-clause reply's in-flight brain.say publishes no further clause, under stop and under mute", async () => {
+  for (const halt of ["stop", "mute"] as const) {
+    const { afterHalt, hit } = await haltInFlight("[happy] Just one short clause here.", (t) => t === "brain.say", halt);
+    assert.equal(hit, true, `${halt}: the say was held in flight`);
+    assert.deepEqual(afterHalt, [], `${halt}: the one-clause reply has no clause after the say`);
+  }
+});
+
+// @spec CTX-STREAM-028, CTX-STREAM-037, CTX-PROV-038
+test("a halt during the last content clause's in-flight publish closes nothing a second time, under stop and under mute", async () => {
+  for (const halt of ["stop", "mute"] as const) {
+    const { afterHalt, hit } = await haltInFlight(MULTI, (t, d) => t === "brain.clause" && d.last === true && d.text !== "", halt);
+    assert.equal(hit, true, `${halt}: the last clause was held in flight`);
+    assert.deepEqual(afterHalt, [["and a third to end.", true, null, 2, 2]], `${halt}: only the in-flight last clause, no second closing clause`);
+  }
+});
+
+// @spec CTX-STREAM-028, CTX-STREAM-037, CTX-PROV-038
+test("a halt during the queued closing clause (length cut) publishes that closing clause once, under stop and under mute", async () => {
+  for (const halt of ["stop", "mute"] as const) {
+    const { afterHalt, hit } = await haltInFlight(MULTI, (t, d) => t === "brain.clause" && d.last === true && d.text === "", halt, { max_clauses: 2 });
+    assert.equal(hit, true, `${halt}: the closing clause was held in flight`);
+    assert.deepEqual(afterHalt, [["", true, "length", 2, 1]], `${halt}: the closing clause is published once, through the clause before it`);
+  }
 });

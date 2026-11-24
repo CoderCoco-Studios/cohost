@@ -838,6 +838,7 @@ export class Cortex {
         await bus.publish("brain.clause", {
           id: line.id!, seq: o.seq, text: "", last: true, through: o.through!, ...(o.cut ? { cut: o.cut } : {}),
         });
+        line.outClosed = true;
         await this.settle(line.id!);
         return;
       }
@@ -901,7 +902,8 @@ export class Cortex {
         }
         h.released = true;
         // A stop that came during the release closes the line here, once, after the publish in flight (CTX-STREAM-037).
-        if (line.stopped && !line.closed && line.id !== undefined) {
+        if (line.stopped && !line.outClosed && line.id !== undefined) {
+          line.closed = false;
           line.lastSeq = line.lastProduced = line.lastOut; // the line closes through what reached the bus
           await this.closeLine(line, line.haltCut ?? "stopped");
         }

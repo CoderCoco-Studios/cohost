@@ -233,23 +233,44 @@ test("a tool call parks the think: the text before it is held, no tool.request u
 });
 
 // @spec CTX-PROV-009
-test("the filler clock and the call budget count from the first tool.request after the confirmation, not from the park", async () => {
-  // The hold outlasts both clocks (400 ms) so a clock that counted from the park would have fired by the confirm. The answer comes
-  // in a few ms, well inside the 400 ms, so the reply itself cannot race the filler's clock on a loaded machine.
-  const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 400, budget_ms: 400, filler_lines: ["Hold on a sec."] } } });
+test("the call budget counts from the first tool.request after the confirmation, not from the park", async () => {
+  // The hold outlasts the 400 ms budget, so a budget that counted from the park would be spent before the confirm. The answer
+  // comes in a few ms, well inside it, and the filler is out of reach (60 s) so only the budget is under test.
+  const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 60_000, budget_ms: 400, filler_lines: ["Hold on a sec."] } } });
   s.llm.rounds.push({ text: "[happy] Let me check the clock.", calls: [call("c1")] }, { text: "[happy] It is noon." });
   s.bus.answerAfterMs = 5;
   await s.cortex.onEvent(provisional());
   await streamed(s);
-  await sleep(500); // longer than both clocks
+  await sleep(500); // longer than the budget
   assert.equal(s.bus.requests.length, 0, "no tool.request during the hold");
   assert.equal(s.says().length, 0, "no line during the hold");
   await s.cortex.onEvent(confirm());
-  await waitFor(() => s.llm.calls.length === 2, "the second round ran: the budget was not spent during the hold");
+  await waitFor(() => s.line().some((e) => e.text === "It is noon."), "the second round is spoken");
+  assert.equal(s.bus.requests.length, 1, "the request went out after the confirm: the budget was not spent during the hold");
+  assert.ok(!s.line().some((e) => e.text === "Sorry, I couldn't find that out."), "no give-up line");
+});
+
+// @spec CTX-PROV-009
+test("the filler clock counts from the first tool.request after the confirmation, not from the park", async () => {
+  // The hold outlasts the 100 ms filler clock. A clock counted from the park would have fired at the confirm, before the request
+  // went out; so the filler must be observed no earlier than 100 ms after the request. The 20 ms slack covers the gap between
+  // arming the timer and publishing the request; a park-based clock is about 100 ms early, far outside it.
+  const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 100, budget_ms: 60_000, filler_lines: ["Hold on a sec."] } } });
+  s.llm.rounds.push({ calls: [call("c1")] }, { text: "[happy] It is noon." });
+  s.bus.answerAfterMs = 300;
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  await sleep(150); // longer than the filler clock
+  assert.equal(s.bus.requests.length, 0, "no tool.request during the hold");
+  await s.cortex.onEvent(confirm());
+  let fillerAt: number | undefined;
+  await waitFor(() => {
+    if (fillerAt === undefined && s.line().some((e) => e.text === "Hold on a sec.")) fillerAt = Date.now();
+    return fillerAt !== undefined;
+  }, "the filler is spoken", 2000);
   assert.equal(s.bus.requests.length, 1, "the request went out after the confirm");
-  const spoken = [...s.says(), ...s.line()].map((x) => x.text);
-  assert.deepEqual(spoken.filter((t) => t === "Hold on a sec."), [], "no filler: the result came inside filler_after_ms of the request");
-  assert.ok(spoken.includes("It is noon."), "the result was spoken");
+  assert.ok(fillerAt! >= s.bus.reqAt[0]! + 80, `filler observed ${fillerAt! - s.bus.reqAt[0]!} ms after the request, want at least 100 (20 ms slack)`);
+  await waitFor(() => s.line().some((e) => e.text === "It is noon."), "the second round is spoken", 2000);
 });
 
 // @spec CTX-PROV-025, CTX-PROV-019, CTX-PROV-030, CTX-SAY-006

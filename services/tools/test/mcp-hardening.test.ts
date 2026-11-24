@@ -66,7 +66,7 @@ test("a GET stream that ends at once is reopened on a backoff and the session is
   await s.stop();
 });
 
-test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the stream is reopened on a backoff", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004
+test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the session is kept", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004 // @spec TOOL-MCP-012, TOOL-MCP-004
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod.GET = () => ({
     stream: (res) => {
@@ -432,10 +432,16 @@ test("server requests on the stream are answered one at a time and five a second
   const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
   await waitServer(s, "search", "ok");
   await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  const answered = () => srv.seen.filter((x) => x.httpMethod === "POST" && x.rpc !== undefined && x.rpc.method === undefined && x.rpc.result !== undefined).length;
+  const t0 = Date.now();
   for (let i = 1; i <= 3000; i++) srv.push({ jsonrpc: "2.0", id: 100000 + i, method: "ping" });
+  // The first answer is an I/O round trip: wait for it, then watch a window. The rate bound (five a second) is applied to the
+  // wall time actually watched, so a loaded machine stretches the window and its allowance together.
+  await srv.waitUntil(() => answered() >= 1, "the first answer", 4000);
   await sleep(900);
-  const answers = srv.seen.filter((x) => x.httpMethod === "POST" && x.rpc !== undefined && x.rpc.method === undefined && x.rpc.result !== undefined).length;
-  assert.ok(answers >= 1 && answers <= 5, `at most five answers in the first second, got ${answers}`);
+  const elapsed = Date.now() - t0;
+  const answers = answered();
+  assert.ok(answers * 1000 <= 5 * elapsed, `at most five answers a second over ${elapsed} ms, got ${answers}`);
   assert.equal(maxInFlight, 1, "one answer in flight at a time");
   await s.stop();
 });

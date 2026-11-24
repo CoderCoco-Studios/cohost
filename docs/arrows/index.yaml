@@ -199,7 +199,7 @@ arrows:
     drift: null
 
   memory:
-    status: PARTIAL
+    status: MAPPED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 171 [x], 2 [ ] (MEM-SURF-006, MEM-VOICE-007). YouTube viewer retention is an owner decision in the LLD."
+    next: "174 specs: 174 [x], 0 [ ]. YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:

@@ -53,8 +53,13 @@ export interface MemoryBackend {
   /** Count one chat line for the viewer: upsert by `key` (a `viewerKey`, stored as given, MEM-VIEWER-008), keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
   touchViewer(userKey: string, display: string, opts?: { isSub?: boolean }): Promise<ViewerTouch>;
   getViewer(userKey: string): Promise<ViewerRow | undefined>;
-  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do (MEM-SURF-006). Reads only rows MEM-VIEWER-011 allows. */
+  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do, any key form. Reads only rows MEM-VIEWER-011 allows. */
   findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
+  /**
+   * The name-keyed viewer (MEM-SURF-006) whose display equals `name` case-insensitively, the latest `last_seen` when several do: a chat row keyed
+   * `<platform>:name:<name>` or an owner placeholder (MEM-REG-003). Never an id-keyed chat row or a voice row, whatever its display.
+   */
+  findNameKeyedViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
   /** The viewer's row, created with `msg_count` 0 when missing (claiming a matching placeholder like `touchViewer` does) and never counting a message: capture's way to write a note before the `memory` group has seen the line (MEM-CAPTURE-011). */
   ensureViewer(userKey: string, display: string): Promise<ViewerRow>;
   /**
@@ -414,22 +419,21 @@ export class MemoryStore implements MemoryBackend {
     return rows[0] && this.toViewer(rows[0]);
   }
 
-  // @spec MEM-SURF-002, MEM-VOICE-007
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const { rows } = await this.query<ViewerSql>(
       `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${READABLE_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`,
       [name],
     );
-    if (rows[0]) return this.toViewer(rows[0]);
-    // No viewer is called that: the name may be a linked Discord id's display name.
-    const alias = await this.query<ViewerSql>(
-      `SELECT ${VIEWER_COLS.split(", ").map((c) => `v.${c}`).join(", ")}
-         FROM viewer_links l JOIN viewers v ON v.user_key = l.user_key
-        WHERE lower(l.discord_display) = lower($1) AND ${READABLE_VIEWER_V}
-        ORDER BY l.updated_at DESC, l.discord_id LIMIT 1`,
+    return rows[0] && this.toViewer(rows[0]);
+  }
+
+  // @spec MEM-SURF-006, MEM-VOICE-007
+  async findNameKeyedViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    const { rows } = await this.query<ViewerSql>(
+      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${NAME_KEYED_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`,
       [name],
     );
-    return alias.rows[0] && this.toViewer(alias.rows[0]);
+    return rows[0] && this.toViewer(rows[0]);
   }
 
   // @spec MEM-VOICE-001
@@ -808,6 +812,8 @@ const VIEWER_COLS = "user_key, display, msg_count, regular_manual, is_sub, place
 /** MEM-VIEWER-011: the rows a lookup may read (see `isReadableViewer` in notes.ts). */
 const READABLE_VIEWER = "(placeholder OR user_key ~ '^[^:]+:(id|name):' OR user_key LIKE 'discord:%')";
 const READABLE_VIEWER_V = "(v.placeholder OR v.user_key ~ '^[^:]+:(id|name):' OR v.user_key LIKE 'discord:%')";
+/** MEM-SURF-006: the rows a no-platform notes entry may reach, the name-keyed ones (`isNameKeyed` in notes.ts). */
+const NAME_KEYED_VIEWER = "(placeholder OR user_key ~ '^[^:]+:name:')";
 
 interface MemoryRow {
   id: number;

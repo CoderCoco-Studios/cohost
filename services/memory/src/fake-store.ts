@@ -3,7 +3,7 @@ import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
 import type { ChatIds, ChatRemoval, Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
-  checkedDiscordId, clamp01, effectiveStrength, isReadableViewer, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  checkedDiscordId, clamp01, effectiveStrength, isNameKeyed, isReadableViewer, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type DeletionRow, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -110,18 +110,22 @@ export class InMemoryStore implements MemoryBackend {
     return v && isReadableViewer(v) ? { ...v } : undefined;
   }
 
-  // @spec MEM-SURF-006, MEM-VOICE-007, MEM-VIEWER-011
+  // @spec MEM-VIEWER-011
   async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    return this.latestByDisplay(name, (r) => isReadableViewer(r));
+  }
+
+  // @spec MEM-SURF-006, MEM-VOICE-007
+  async findNameKeyedViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+    return this.latestByDisplay(name, (r) => isNameKeyed(r));
+  }
+
+  private latestByDisplay(name: string, admits: (r: ViewerRow) => boolean): ViewerRow | undefined {
     const want = name.toLowerCase();
     const v = [...this.viewers.values()]
-      .filter((r) => isReadableViewer(r) && r.display.toLowerCase() === want)
+      .filter((r) => admits(r) && r.display.toLowerCase() === want)
       .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
-    if (v) return { ...v };
-    const alias = [...this.links.entries()]
-      .filter(([, l]) => l.discordDisplay?.toLowerCase() === want && this.viewers.has(l.userKey))
-      .sort(([ia, a], [ib, b]) => b.updatedAt - a.updatedAt || (ia < ib ? -1 : 1))[0];
-    const linked = alias && this.viewers.get(alias[1].userKey);
-    return linked && isReadableViewer(linked) ? { ...linked } : undefined;
+    return v && { ...v };
   }
 
   // @spec MEM-VOICE-001

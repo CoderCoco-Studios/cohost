@@ -67,19 +67,19 @@ Orientation:
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 7 | 0 | 0 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 12 | 0 | 0 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-010 (006 retired) | 9 | 0 | 0 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-010 | 9 | 0 | 0 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
-| Test-input injection | DASH-INJ-001 to DASH-INJ-011 | 11 | 0 | 0 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-012 | 12 | 0 | 0 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
-| Web page | DASH-UI-001 to DASH-UI-037 (016 retired), DASH-UI-054 | 37 | 0 | 0 |
-| Streamed lines on the page | DASH-UI-038 to DASH-UI-053 | 16 | 0 | 0 |
+| Web page | DASH-UI-001 to DASH-UI-037 (016 retired) | 37 | 0 | 0 |
+| Streamed lines on the page | DASH-UI-038 to DASH-UI-054 | 16 | 0 | 1 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-010 | 10 | 0 | 0 |
 | Stack control | DASH-STACK-001 to DASH-STACK-010 | 10 | 0 | 0 |
 | Docs site | DASH-DOCS-001 to DASH-DOCS-016 | 16 | 0 | 0 |
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-023 | 23 | 0 | 0 |
 | Build and serving | DASH-BUILD-001 to DASH-BUILD-011 | 6 | 0 | 5 |
-| Secret write | DASH-SECRET-001 to DASH-SECRET-014 | 14 | 0 | 0 |
+| Secret write | DASH-SECRET-001 to DASH-SECRET-015 | 15 | 0 | 0 |
 | Pick lists | DASH-OPT-001 to DASH-OPT-005 | 5 | 0 | 0 |
 | Egress marks | DASH-EGR-001 to DASH-EGR-004 | 4 | 0 | 0 |
 | Access dialog | DASH-ACC-001 to DASH-ACC-012 | 12 | 0 | 0 |

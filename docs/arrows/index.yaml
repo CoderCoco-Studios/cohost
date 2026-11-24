@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 57 [x], 4 [ ] (MOD-MAN-010; MOD-TEST-005, -007, -008; #211 owns the tools `as: tool` cases, and -007 also needs a live Docker run)."
+    next: "61 specs: 59 [x], 2 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check)."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 230 [x], 1 [ ] (CFG-SEC-018 waits on DASH-SECRET-014). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "231 specs: 231 [x], 0 [ ]. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "421 specs: 330 [x], 91 [ ] (the avatar renderer page script and settings DASH-AVP-003 to 037 and DASH-AVS, the tools settings, DASH-UI-002, DASH-UI-041 and DASH-UI-054 are open gaps)."
+    next: "424 specs: 370 [x], 54 [ ] (the avatar renderer page script and settings DASH-AVP-003 to 037 and DASH-AVS, and DASH-UI-054 are open gaps)."
     drift: null
 
   control-plane:

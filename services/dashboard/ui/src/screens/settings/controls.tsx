@@ -43,7 +43,7 @@ export interface ControlProps {
 /** Whether a control is one a `<label for>` can name (a native single control). */
 export const isLabelable = (c: Control): boolean => ["select", "number", "text", "textarea", "lines", "timezone", "json"].includes(c.kind);
 /** Whether a control brings its own label and help (the shared pickers and the secret field). */
-export const isEmbedded = (c: Control): boolean => ["model", "voice", "secret", "mcp-servers", "tool-list"].includes(c.kind);
+export const isEmbedded = (c: Control): boolean => ["model", "voice", "secret", "mcp-servers", "tool-list", "avatar-model"].includes(c.kind);
 
 const asString = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
@@ -254,5 +254,7 @@ export function FieldControl(p: ControlProps): ReactNode {
     case "mcp-servers":
     case "tool-list":
       return null; // rendered by the row (ToolSettings.tsx), which reads the section's secrets and the tool catalog
+    case "avatar-model":
+      return null; // rendered by the row (AvatarRenderer.tsx), which reads the section's framing keys for the live preview
   }
 }

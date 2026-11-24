@@ -30,6 +30,8 @@ export interface Runtime {
   audio: Audio;
   /** The page clock, for "last seen" ages and elapsed times. */
   now: () => number;
+  /** The browser's local storage for the page's per-browser conveniences (a remembered choice); undefined when the browser refuses it. */
+  local?: Storage;
 }
 
 const safe = <T,>(get: () => T): T | undefined => { try { return get(); } catch { return undefined; } };
@@ -43,5 +45,5 @@ export function createRuntime(deps: RuntimeDeps = {}): Runtime {
   const feed = createFeed({ url: deps.wsUrl ?? feedUrl(), createSocket: deps.createSocket, setTimeout: deps.setTimeout, clearTimeout: deps.clearTimeout, now });
   const theme = createTheme({ storage: local, root: deps.themeRoot });
   const audio = createAudio({ feed, sink: (report, opts) => api.sink(report, opts), createAudio: deps.createAudio, enabled: deps.sink, setTimeout: deps.setTimeout, clearTimeout: deps.clearTimeout });
-  return { access, api, feed, theme, audio, now };
+  return { access, api, feed, theme, audio, now, local };
 }

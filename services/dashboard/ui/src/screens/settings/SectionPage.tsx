@@ -4,6 +4,7 @@ import { ErrorState, LoadingState } from "../../components/StateBlocks";
 import { FieldControl, isEmbedded, isLabelable, type Wiring } from "./controls";
 import { usePickLists } from "./picklists";
 import { RowShell } from "./RowShell";
+import { AvatarRenderer } from "./AvatarRenderer";
 import { SaveBar } from "./SaveBar";
 import { SecretPair, SecretRow, pairOf } from "./secrets";
 import { McpServers, ToolList } from "./ToolSettings";
@@ -11,6 +12,9 @@ import { keyGroups, matchIssue, noteFor, sourceLabel, type JsonSchema, type KeyM
 import { useSettings, useSettingsState, type SectionState } from "./store";
 import { egressNote, useEgress, type EgressEntry } from "../../state/egress";
 import { validateKey, type Errors } from "./validate";
+
+/** What a live section's save says about the units that read it (DASH-SET-002). */
+export const LIVE_LINE = "a save applies at once, open pages included, and restarts nothing";
 
 /** The settings keys whose engine or provider sends private data somewhere, and the service that sends it (DASH-SET-034). */
 const EGRESS_KEYS: Record<string, EgressEntry["service"]> = {
@@ -59,7 +63,8 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
   const wiring: Wiring = { id, describedBy, invalid: !!errors[""] || !!edit?.error };
   return (
     <RowShell section={section.path} name={km.key} path={path} label={km.label} labelFor={isLabelable(km.control) ? id : undefined} hideLabel={embedded} source={sourceLabel(info)}>
-      {km.control.kind === "mcp-servers" ? <McpServers section={section} km={km} st={st} /> : km.control.kind === "tool-list" ? <ToolList section={section} km={km} st={st} /> : <FieldControl control={km.control} label={km.label} value={value} settled={info?.value} schema={km.schema} unit={km.unit} wiring={wiring} help={km.help}
+      {km.control.kind === "mcp-servers" ? <McpServers section={section} km={km} st={st} /> : km.control.kind === "tool-list" ? <ToolList section={section} km={km} st={st} />
+        : km.control.kind === "avatar-model" ? <AvatarRenderer section={section} km={km} st={st} /> : <FieldControl control={km.control} label={km.label} value={value} settled={info?.value} schema={km.schema} unit={km.unit} wiring={wiring} help={km.help}
         placeholder={undefined} models={picks.models} voices={picks.voices} errors={errors}
         onChange={(v, error) => settings.edit(section.path, km.key, v, error)} />}
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
@@ -76,7 +81,8 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
   );
 }
 
-function Group({ title, section, keys, st, picks, egress }: { title: string; section: SectionModel; keys: KeyModel[]; st: SectionState; picks: ReturnType<typeof usePickLists>; egress: EgressEntry[] }) {
+/** A group of keys. `liveNote` puts the live section's save line at its head (a member of a page; the page header carries the primary's). */
+function Group({ title, section, keys, st, picks, egress, liveNote }: { title: string; section: SectionModel; keys: KeyModel[]; st: SectionState; picks: ReturnType<typeof usePickLists>; egress: EgressEntry[]; liveNote?: boolean }) {
   const done = new Set<string>();
   const rows = keys.flatMap((km) => {
     if (done.has(km.key)) return [];
@@ -92,6 +98,7 @@ function Group({ title, section, keys, st, picks, egress }: { title: string; sec
   return (
     <details className="sgroup" open>
       <summary>{title}</summary>
+      {liveNote && section.live ? <p className="help live-note">A save applies at once, open pages included, and restarts nothing.</p> : null}
       <div>{rows}</div>
     </details>
   );
@@ -134,7 +141,8 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
         {primary.about ? <p className="muted">{primary.about}</p> : null}
         <p className="small muted">
           {`config.yaml · `}<code className="mono">{primary.path}</code>{` · ${count} ${count === 1 ? "setting" : "settings"} · `}
-          {primary.services.length > 0 ? `read by ${primary.services.join(", ")} · changes apply when they restart` : "read by the dashboard itself · applies at its next start"}
+          {primary.services.length > 0 ? `read by ${primary.services.join(", ")}` : "read by the dashboard itself"}
+          {primary.live ? ` · ${LIVE_LINE}` : primary.services.length > 0 ? " · changes apply when they restart" : " · applies at its next start"}
         </p>
       </div>
       <div className="card-b">
@@ -144,7 +152,7 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
             <>
               <UnknownKeys paths={members.flatMap((m) => sections[m.path]?.unknown ?? [])} />
               {keyGroups(full).map((g) => <Group key={g.id || "general"} title={g.title} section={full} keys={g.keys} st={sections[primary.path]!} picks={picks} egress={egress} />)}
-              {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} egress={egress} />; })}
+              {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} egress={egress} liveNote />; })}
             </>
           )}
       </div>

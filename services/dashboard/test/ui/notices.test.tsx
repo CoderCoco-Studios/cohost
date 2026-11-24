@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, manifestLicence, type BundledPackage } from "../../ui/notices";
+import { Script } from "node:vm";
+import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, manifestLicence, substituteNoticesName, type BundledPackage } from "../../ui/notices";
 
 const MIT = "Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software ...";
 const pkg = (over: Partial<BundledPackage> = {}): BundledPackage => ({ name: "left-pad", version: "1.3.0", license: "MIT", workspace: false, files: [{ name: "LICENSE", text: MIT }], ...over });
@@ -125,4 +126,21 @@ test("a manifest's licence is its license string or object type; the legacy lice
   assert.equal(manifestLicence({}), undefined);
   assert.equal(manifestLicence({ licenses: [] }), undefined);
   assert.equal(manifestLicence({ licenses: [{}] }), undefined);
+});
+
+// @spec DASH-AVS-011
+test("the sentinel literal is replaced as a whole string in the quote it was written with, and nothing that only resembles it is touched", () => {
+  const src = 'const B = "__COHOST_NOTICES_NAME__"; const g = globalThis.__COHOST_NOTICES__; const o = { __COHOST_NOTICES__: 1, ...x, __COHOST_NOTICES_NAME__: 2 }; const s = "a__COHOST_NOTICES_NAME__"; const q = \'__COHOST_NOTICES_NAME__\'; const t = `__COHOST_NOTICES_NAME__`;';
+  const out = substituteNoticesName(src, "third-party-notices-abcd1234.txt");
+  assert.equal(out, 'const B = "third-party-notices-abcd1234.txt"; const g = globalThis.__COHOST_NOTICES__; const o = { __COHOST_NOTICES__: 1, ...x, __COHOST_NOTICES_NAME__: 2 }; const s = "a__COHOST_NOTICES_NAME__"; const q = \'third-party-notices-abcd1234.txt\'; const t = `third-party-notices-abcd1234.txt`;');
+  assert.doesNotThrow(() => new Script(out), "the substituted script still parses");
+});
+
+// @spec DASH-AVS-011
+test("a sentinel quoted inside another string, or as the text of a tagged template, is replaced in its own quote and the script still parses", () => {
+  const src = "const a = 'say \"__COHOST_NOTICES_NAME__\" now'; const b = tag`__COHOST_NOTICES_NAME__`; const c = \"__COHOST_NOTICES_NAME__\";";
+  const out = substituteNoticesName(src, "third-party-notices-abcd1234.txt");
+  assert.ok(!out.includes("__COHOST_NOTICES_NAME__"), "no sentinel is left");
+  assert.doesNotThrow(() => new Script(out), "the substituted script still parses");
+  assert.ok(out.includes("tag`third-party-notices-abcd1234.txt`"), "the tagged template keeps its backtick quote");
 });

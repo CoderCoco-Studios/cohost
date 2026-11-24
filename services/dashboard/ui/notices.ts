@@ -127,3 +127,22 @@ export function buildNotices(packages: readonly BundledPackage[]): Notices {
   const hash = createHash("sha256").update(text).digest("hex").slice(0, 8);
   return { text, fileName: `third-party-notices-${hash}.txt` };
 }
+
+/**
+ * The string literal the UI source holds for the notices file name (ui/src/app/notices.ts, DASH-AVS-011). The notices plugin
+ * replaces the whole literal, quotes included, with the file name as a string in each entry script.
+ */
+export const NOTICES_SENTINEL = "__COHOST_NOTICES_NAME__";
+
+/**
+ * Replaces the sentinel literal in an entry script with the notices file name. Only the literal is replaced: a member access of
+ * a name that merely resembles it (the fallback global `globalThis.__COHOST_NOTICES__`), a property key and a longer string stay.
+ */
+// @spec DASH-AVS-011
+export function substituteNoticesName(code: string, fileName: string): string {
+  // The minifier may write the literal with any of the three quotes (rolldown emits a template literal). The replacement keeps the
+  // quote it matched, so a sentinel inside another string or a tagged template stays a literal of the same kind and still parses.
+  let out = code;
+  for (const q of ['"', "'", "`"]) out = out.split(`${q}${NOTICES_SENTINEL}${q}`).join(`${q}${fileName}${q}`);
+  return out;
+}

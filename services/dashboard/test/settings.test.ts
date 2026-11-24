@@ -369,6 +369,6 @@ test("GET /config/schema serves the avatar-model and slider widgets and live: tr
   const renderer = sections.find((s) => s.path === "renderer")!;
   assert.equal(renderer.live, true);
   assert.deepEqual(renderer.keys["model"]!.widget, { type: "avatar-model" });
-  assert.deepEqual(renderer.keys["turn"]!.widget, { type: "slider" });
+  assert.deepEqual(renderer.keys["turn"]!.widget, { type: "slider", step: 1 });
   for (const s of sections.filter((x) => x.path !== "renderer")) assert.equal("live" in s, false, `${s.path} has no live field`);
 });

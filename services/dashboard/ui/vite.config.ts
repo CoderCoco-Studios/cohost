@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { createDevProxy } from "./dev-proxy";
-import { buildNotices, isLicenceFile, manifestLicence, type BundledPackage } from "./notices";
+import { buildNotices, isLicenceFile, manifestLicence, substituteNoticesName, type BundledPackage } from "./notices";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -55,7 +55,8 @@ function readPackage(dir: string, name: string): BundledPackage {
 
 /**
  * Writes `assets/third-party-notices-<hash>.txt` for the packages every entry bundles, and names it on the first line of
- * each entry script. A licence the allow-list refuses, or a package with no licence text, fails the build (DEPLOY-LIC-005 to -007).
+ * each entry script. The file name also replaces the notices sentinel literal in each entry, so the Avatar settings can link to it.
+ * A licence the allow-list refuses, or a package with no licence text, fails the build (DEPLOY-LIC-005 to -007).
  */
 function thirdPartyNotices(): Plugin {
   return {
@@ -77,7 +78,8 @@ function thirdPartyNotices(): Plugin {
       const { text, fileName } = buildNotices([...found.values()]);
       this.emitFile({ type: "asset", fileName: `assets/${fileName}`, source: text });
       for (const item of Object.values(bundle)) {
-        if (item.type === "chunk" && item.isEntry) item.code = `/* Third-party notices: assets/${fileName} */\n${item.code}`;
+        if (item.type !== "chunk" || !item.isEntry) continue;
+        item.code = `/* Third-party notices: assets/${fileName} */\n${substituteNoticesName(item.code, fileName)}`;
       }
     },
   };

@@ -117,7 +117,10 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
     const node = nodeOf(k);
     switch (w.type) {
       case "timezone": case "voice": case "sources": case "textarea": case "mcp-servers": case "tool-list": case "avatar-model": break;
-      case "slider": assert.equal(node.type, "number", `${k}: a slider is on a numeric key`); break;
+      case "slider":
+        assert.equal(node.type, "number", `${k}: a slider is on a numeric key`);
+        if (w.step !== undefined) assert.ok(Number.isFinite(w.step) && w.step > 0, `${k}: a slider step is finite and above 0`);
+        break;
       case "model":
         assert.ok(KINDS.includes(w.kind), `${k}: model kind ${String(w.kind)}`);
         assert.equal(node.type, "string", `${k}: a model widget is on a string key`);
@@ -336,7 +339,10 @@ test("live is true on the renderer section alone, and sectionPresentation carrie
 // @spec CFG-PRES-020
 test("renderer.model gets the avatar-model widget, renderer.turn the slider, and none of the renderer keys nor dashboard.models.max_bytes is sensitive", () => {
   assert.deepEqual(PRESENTATION.keys["renderer.model"]!.widget, { type: "avatar-model" });
-  assert.deepEqual(PRESENTATION.keys["renderer.turn"]!.widget, { type: "slider" });
+  assert.deepEqual(PRESENTATION.keys["renderer.turn"]!.widget, { type: "slider", step: 1 });
+  assert.deepEqual(PRESENTATION.keys["renderer.zoom"]!.widget, { type: "slider", step: 0.05 });
+  assert.deepEqual(PRESENTATION.keys["renderer.offset_y"]!.widget, { type: "slider", step: 0.01 });
+  assert.equal(PRESENTATION.keys["renderer.offset_y"]!.label, "Vertical position");
   for (const k of [...sectionKeyPaths("renderer"), "dashboard.models.max_bytes"]) assert.notEqual(PRESENTATION.keys[k]?.sensitive, true, `${k} is not sensitive`);
   assert.equal((sectionJsonSchema("renderer") as any).properties.turn.minimum, -90);
 });

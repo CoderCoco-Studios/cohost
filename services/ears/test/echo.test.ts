@@ -241,7 +241,7 @@ test("a virtual voice.done for a recorded clause neither removes it nor closes t
   for (const extra of [{}, { interrupted: true }, { final: true }]) {
     await run(cfg({ echo_tail_ms: 0 }), async (t) => {
       await t.deliver(playing("u1")); // discord sink: recorded
-      await t.deliver(virtualDone("u1", 0, extra)); // the dashboard finished first
+      await t.deliver(virtualDone("u1", 0, extra)); // voice's virtual timer finished first
       await t.say();
       await settle();
       assert.equal(t.r.heard().length, 0, `still gated: ${JSON.stringify(extra)}`);
@@ -298,7 +298,22 @@ test("a virtual voice.done of one clause leaves a line's other clauses and the m
   });
 });
 
+// The real dashboard sink is not virtual: its done closes the gate like Discord's (EARS-ECHO-002).
+const dashboardDone = (id: string, seq = 0) => event("voice.done", { id, seq, sink: "dashboard" } as never);
+
 // @spec EARS-ECHO-002
+test("a dashboard voice.done removes the recorded clause and closes the gate (the dashboard is a real sink)", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(playing("u1")); // discord sink: recorded
+    await t.deliver(dashboardDone("u1"));
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard once the dashboard done closed the gate");
+  });
+});
+
+// @spec EARS-ECHO-002
+// Regression guard, not a new-behaviour test: this already passed on the old code, which ignored the sink on a
+// done for an unknown id. It keeps a virtual done for an unrecorded clause from opening a window or throwing.
 test("a virtual voice.done for an id never recorded is a no-op: it opens no window and does not throw", async () => {
   await run(cfg({ echo_tail_ms: 5_000 }), async (t) => {
     await t.deliver(virtualDone("ghost", 7));

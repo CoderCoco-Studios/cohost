@@ -128,7 +128,7 @@ test("the same refusal covers service-level text, image and audio, and bus-level
 });
 
 // @spec MOD-TEST-005, DASH-INJ-011
-test("service-level text with as: tool is for the tools unit: refused 409 while tools is down or unknown, accepted 202 while it is up, and chat's state does not matter", { todo: "waits on #211 (as: tool route, DASH-INJ-011)" }, async () => {
+test("service-level text with as: tool is for the tools unit: refused 409 while tools is down or unknown, accepted 202 while it is up, and chat's state does not matter", async () => {
   const env = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
   const send = (t: Awaited<ReturnType<typeof boot>>) =>
     fetch(`${t.base}/inject/text`, { method: "POST", headers: { authorization: "Bearer s3cret" }, body: JSON.stringify({ level: "service", as: "tool", text: "stream_info" }) });

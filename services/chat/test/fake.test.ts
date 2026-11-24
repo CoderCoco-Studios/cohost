@@ -94,3 +94,18 @@ test("the fake source reports reading at once, before any line", async () => {
   assert.deepEqual(states, ["reading"]);
   stop();
 });
+
+// @spec CHAT-SRC-001
+test("the fake source is starting until started, then reading for good: it never reports waiting, retrying or stopped", async () => {
+  mock.timers.enable({ apis: ["setInterval"] });
+  try {
+    const idle = new FakeSource({ cohostName: cfg.cohost.name, intervalMs: 8000 });
+    assert.equal(idle.state().state, "starting", "before start");
+    const { states, started, stop, published } = run();
+    await started;
+    mock.timers.tick(8000 * 6);
+    assert.equal(published.length, 5, "six scripted lines, the one '!' line filtered: lines keep flowing while the source reads");
+    stop();
+    assert.deepEqual(states, ["reading"], "every report is reading, including through stop");
+  } finally { mock.timers.reset(); }
+});

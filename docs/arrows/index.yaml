@@ -135,7 +135,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "161 specs: 155 [x], 6 [ ] (the Twitch removals CHAT-TW-014 to 017 held for the live check on #330; the open source-contract line CHAT-SRC-001; CHAT-HEALTH-011 needs a live check of the YouTube reader). The YouTube reader (CHAT-YT-*, CHAT-FORGET-002 to 005, CHAT-FILT-013) is built (#179)."
+    next: "161 specs: 156 [x], 5 [ ] (the Twitch removals CHAT-TW-014 to 017 held for the live check on #330; CHAT-HEALTH-011 needs a live check of the YouTube reader). The YouTube reader (CHAT-YT-*, CHAT-FORGET-002 to 005, CHAT-FILT-013) is built (#179)."
     drift: null
 
   eyes:

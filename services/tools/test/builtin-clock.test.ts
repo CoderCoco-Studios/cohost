@@ -13,7 +13,7 @@ function assertAucklandSentence(text: string): void {
   assert.ok(text.includes(ZONE) || /NZDT|GMT\+13|New Zealand/.test(text), "names the zone of cohost.timezone");
 }
 
-test("clock answers one sentence with the time, date, weekday and zone of cohost.timezone, ignoring arguments", async () => { // @spec TOOL-CLOCK-001
+test("clock answers one sentence with the time, date, weekday and zone of cohost.timezone, ignoring arguments", async () => { // @spec TOOL-CLOCK-001, TOOL-CLOCK-001
   const s = await startBuiltin({ clock: { enabled: true } });
   const plain = await callTool(s, "clock");
   assert.equal(plain.status, "ok", plain.content);

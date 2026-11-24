@@ -192,12 +192,15 @@ export class CallPipeline {
     if (known === undefined) return refuse("unknown_tool"); // TOOL-CALL-002
     if (!known.enabled) return refuse("not_enabled");
     if (known.label !== "read" && !known.acts) return refuse("acts_not_allowed"); // TOOL-CALL-003
-    if (this.deps.mode === "live") { // TOOL-CALL-004: no pin is checked in mock mode
+    // @spec TOOL-CALL-004, TOOL-PIN-005: no pin is checked in mock mode, nor for a built-in tool.
+    if (this.deps.mode === "live" && known.builtin === undefined) {
       if (known.recordedHash === "") return refuse("not_approved");
       if (known.hash !== known.recordedHash) return refuse("definition_changed");
     }
     if (known.serverState === "down" || known.serverState === "auth") return refuse("server_down"); // TOOL-CALL-005
     if (!originAllows(known, req.origin)) return refuse("origin_not_allowed"); // TOOL-CALL-006
+    // @spec TOOL-CALL-007
+    if (known.builtin !== undefined && !known.builtin.accepts(req.arguments)) return refuse("invalid_arguments");
     if (Buffer.byteLength(JSON.stringify(req.arguments) ?? "", "utf8") > ARGUMENTS_MAX_BYTES) return refuse("invalid_arguments"); // TOOL-CALL-021
 
     // 2. Admit (TOOL-CALL-009): a confirmation waiting holds a slot too.
@@ -212,10 +215,10 @@ export class CallPipeline {
     this.admitted.set(req.id, entry);
     h.admit(entry);
 
-    // 3. Confirm (TOOL-CONF-001, TOOL-CONF-006, TOOL-CONF-008). The built-in timer is not in this set.
+    // 3. Confirm. The built-in timer is not asked (@spec TOOL-CONF-001, TOOL-CONF-006, TOOL-CONF-008).
     const skip = !known.confirm && req.round === 1 && !req.injected
       && (req.origin === "dashboard" || (req.origin === "speech" && req.listed));
-    if (known.effect === "acts" && this.deps.mode === "live" && !skip) {
+    if (known.effect === "acts" && this.deps.mode === "live" && !skip && known.builtin === undefined) {
       const decision = await this.confirm(req, readWall + this.deps.limits.confirmTimeoutMs); // TOOL-CONF-002
       if (decision !== "allow") return finish(DECISION_OUTCOME[decision]);
     }
@@ -226,16 +229,21 @@ export class CallPipeline {
       const timedOut = new Promise<{ kind: "timeout" }>((resolve) => {
         timer = setTimeout(() => resolve({ kind: "timeout" }), this.deps.limits.timeoutMs);
       });
-      const sent = (async () => known.source.call(known.own, req.arguments, ctl.signal))();
+      const sent = (async () => known.invoke(req.arguments, ctl.signal))();
       const outcome = await Promise.race([
-        sent.then((r) => ({ kind: "answer" as const, r }), (err: unknown) => ({ kind: "failed" as const, text: err instanceof SourceFailed ? err.text : undefined })),
+        sent.then((r) => ({ kind: "answer" as const, r }), (err: unknown) => (
+          err instanceof SourceFailed
+            ? { kind: "failed" as const, reason: err.reason, text: err.text }
+            : { kind: "failed" as const, reason: "unavailable" as const, text: undefined }
+        )),
         timedOut,
       ]);
       if (outcome.kind === "timeout") {
         ctl.abort();
         return finish({ status: "timeout", content: TIMEOUT_TEXT });
       }
-      if (outcome.kind === "failed") return finish({ status: "error", reason: "unavailable", content: outcome.text ?? UNAVAILABLE_TEXT }); // TOOL-CALL-012
+      // TOOL-CALL-012 for a source; TOOL-CALL-017 for a built-in tool's own reason (`unavailable` or `limit`).
+      if (outcome.kind === "failed") return finish({ status: "error", reason: outcome.reason, content: outcome.text ?? UNAVAILABLE_TEXT });
 
       // 5. Shape (a malformed result throws here and ends as unavailable) and 6. publish (TOOL-CALL-019).
       return finish(shape(outcome.r, this.deps.limits.maxResultChars));

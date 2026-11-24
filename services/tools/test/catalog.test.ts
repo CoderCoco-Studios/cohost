@@ -4,12 +4,16 @@ import assert from "node:assert/strict";
 import { FakeSource, def, on, pinOf, search, startTools, waitFor } from "./helpers.js";
 
 const names = (s: { catalogs: () => { tools: { name: string }[] }[] }) => s.catalogs().at(-1)!.tools.map((t) => t.name);
+/** The built-in tools, which the catalog always lists first under their bare names (TOOL-CAT-001). */
+const BUILTIN = ["clock", "stream_info", "memory_lookup", "timer"];
+/** The catalog's MCP tools only: the built-in names removed. */
+const mcpNames = (s: { catalogs: () => { tools: { name: string }[] }[] }) => names(s).filter((n) => !BUILTIN.includes(n));
 
 test("MCP tools are named <server>__<tool>; a name outside [A-Za-z0-9_-] is not listed", async () => { // @spec TOOL-CAT-001
   const src = new FakeSource("search", [def("web"), def("bad.name"), def("sp ace")]);
   const s = await startTools({ servers: { search }, allow: { search__web: on("web") } }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["search__web"]);
+  assert.deepEqual(mcpNames(s), ["search__web"]);
   assert.equal(s.entry("search__web").server, "search");
   await s.stop();
 });
@@ -21,7 +25,7 @@ test("a tool is not listed for a long qualified name or a schema over 4000 chara
   const src = new FakeSource("search", [def("web"), def(tooLong), def("fat", { parameters: bigSchema }), def("bad.name"), def(fits)]);
   const s = await startTools({ servers: { search }, allow: {} }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["search__web", `search__${fits}`]);
+  assert.deepEqual(mcpNames(s), ["search__web", `search__${fits}`]);
   const server = s.catalogs().at(-1)!.servers.find((x) => x.name === "search")!;
   assert.match(server.detail ?? "", /\b3\b/, "the detail says how many tools were not listed");
   await s.stop();
@@ -33,7 +37,7 @@ test("a schema of exactly 4000 serialized characters is listed", async () => { /
   assert.equal(JSON.stringify(exact).length, 4000);
   const s = await startTools({ servers: { search }, allow: {} }, [new FakeSource("search", [def("web", { parameters: exact })])]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["search__web"]);
+  assert.deepEqual(mcpNames(s), ["search__web"]);
   await s.stop();
 });
 
@@ -159,7 +163,7 @@ test("tool.catalog is published when ready, on a change of tools or server state
     src.defs = [def("web"), def("more")];
     src.change();
     await waitFor(() => s.catalogs().length === 2, "catalog after a tool list change");
-    assert.deepEqual(names(s), ["search__web", "search__more"]);
+    assert.deepEqual(mcpNames(s), ["search__web", "search__more"]);
 
     src.state = "down";
     src.change();
@@ -187,7 +191,7 @@ test("the catalog describes the marks of the config loaded at start: config is r
     mock.timers.tick(5000);
     await waitFor(() => s.catalogs().length === 2, "second catalog");
     assert.equal(s.cfgLoads, 1, "the config is not read again");
-    assert.equal(s.catalogs().at(-1)!.tools[0]!.enabled, true);
+    assert.equal(s.entry("search__web")!.enabled, true);
     await s.stop();
   } finally { mock.timers.reset(); }
 });
@@ -196,7 +200,8 @@ test("at most max_tools_per_server tools of one server are listed, and the cut t
   const src = new FakeSource("search", [def("a"), def("b"), def("c"), def("d")]);
   const s = await startTools({ servers: { search }, allow: {}, max_tools_per_server: 2 }, [src]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["search__a", "search__b"], "the first tools in the server's own order are kept");
+  assert.deepEqual(mcpNames(s), ["search__a", "search__b"], "the first tools in the server's own order are kept");
+  assert.deepEqual(names(s).slice(0, 4), BUILTIN, "the built-in tools come first, outside the per-server limit");
   assert.match(s.catalogs().at(-1)!.servers[0]!.detail ?? "", /\b2\b/, "two tools were left out");
   await s.stop();
 });
@@ -206,10 +211,10 @@ test("at most max_tools are listed in all, servers in tools.servers order, enabl
   const alpha = new FakeSource("alpha", [def("a"), def("b")]);
   const s = await startTools({
     servers: { zeta: { url: "https://z.example.com/mcp" }, alpha: { url: "https://a.example.com/mcp" } },
-    allow: { alpha__b: on("b") }, max_tools: 3,
+    allow: { alpha__b: on("b") }, max_tools: 3 + BUILTIN.length, // the four built-ins count first (TOOL-CAT-013)
   }, [alpha, zeta]); // the order the sources are handed over must not decide
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["zeta__a", "zeta__b", "alpha__a"]);
+  assert.deepEqual(mcpNames(s), ["zeta__a", "zeta__b", "alpha__a"]);
   assert.equal(s.entry("alpha__b"), undefined, "a tool past the limit cannot be enabled");
   const alphaServer = s.catalogs().at(-1)!.servers.find((x) => x.name === "alpha")!;
   assert.match(alphaServer.detail ?? "", /\b1\b/);
@@ -219,7 +224,7 @@ test("at most max_tools are listed in all, servers in tools.servers order, enabl
 test("an allow entry naming no listed tool is offered to nothing and does not appear in the catalog", async () => { // @spec TOOL-CAT-015
   const s = await startTools({ servers: { search }, allow: { search__ghost: on("ghost"), gone__x: on("x"), search__web: on("web") } }, [new FakeSource("search", [def("web")])]);
   await waitFor(() => s.catalogs().length > 0, "catalog");
-  assert.deepEqual(names(s), ["search__web"]);
+  assert.deepEqual(mcpNames(s), ["search__web"]);
   assert.equal(s.catalogs().at(-1)!.tools.some((t) => t.offered && t.name !== "search__web"), false);
   await s.stop();
 });

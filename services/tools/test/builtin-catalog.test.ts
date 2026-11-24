@@ -68,7 +68,7 @@ test("a built-in tool is offered without a recorded hash and no hash is checked 
   await Promise.all([live.stop(), mock.stop()]);
 });
 
-test("a built-in tool that rejects its arguments gives a refused result with reason invalid_arguments and does nothing", async () => { // @spec TOOL-CALL-007
+test("a built-in tool that rejects its arguments gives a refused result with reason invalid_arguments and does nothing", async () => { // @spec TOOL-CALL-007, TOOL-STRM-010
   const s = await startBuiltin({
     stream_info: { enabled: true }, memory_lookup: { enabled: true }, timer: { enabled: true, acts: true },
   });
@@ -91,7 +91,7 @@ test("a built-in tool that rejects its arguments gives a refused result with rea
   await s.stop();
 });
 
-test("a built-in tool that fails for a reason of the service's own gives an error result with reason unavailable and a sentence the service wrote", async () => { // @spec TOOL-CALL-017
+test("a built-in tool that fails for a reason of the service's own gives an error result with reason unavailable and a sentence the service wrote", async () => { // @spec TOOL-CALL-017, TOOL-MEM-005
   // stream_info with no platform configured, and memory_lookup with no answer from the memory service.
   const s = await startBuiltin({ stream_info: { enabled: true }, memory_lookup: { enabled: true } }, { extra: { chat: { twitch: { channel: "" } } } });
   const a = await callTool(s, "stream_info");

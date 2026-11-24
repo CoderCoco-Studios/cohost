@@ -5,7 +5,8 @@
 import { createHash } from "node:crypto";
 import type { EventInput } from "@cohost/bus";
 import { offLanHost, type Config } from "@cohost/config";
-import type { SourceState, SourceTool, ToolSource } from "./source.js";
+import type { SourceCallResult, SourceState, SourceTool, ToolSource } from "./source.js";
+import type { BuiltinTool } from "./builtin/types.js";
 
 export type Mode = "live" | "mock";
 export type Label = "read" | "acts" | "unlabelled";
@@ -62,10 +63,14 @@ export function effectOf(label: Label, acts: boolean): Effect {
 /** A tool the catalog lists, with what the pipeline and the publication need. */
 export interface KnownTool {
   name: string;
-  server: string;
+  /** The server's name; absent for a built-in tool (TOOL-CAT-009). */
+  server?: string;
   /** The source's own name for the tool. */
   own: string;
-  source: ToolSource;
+  /** Runs the tool with its arguments: the source's call, or the built-in tool's (TOOL-CALL-001 step 4). */
+  invoke: (args: Record<string, unknown>, signal: AbortSignal) => Promise<SourceCallResult>;
+  /** The built-in tool behind the entry; absent for an MCP tool. */
+  builtin?: BuiltinTool;
   title?: string;
   description: string;
   parameters: Record<string, unknown>;
@@ -144,13 +149,19 @@ const STATE_WORDS: Record<SourceState, string> = { ok: "connected", down: "not c
  * tools only.
  */
 // @spec TOOL-CAT-001, TOOL-CAT-002, TOOL-CAT-003, TOOL-CAT-005, TOOL-CAT-006, TOOL-CAT-007, TOOL-CAT-008, TOOL-CAT-009, TOOL-CAT-010, TOOL-CAT-013, TOOL-CAT-014, TOOL-CAT-015, TOOL-PIN-003, TOOL-PIN-004, TOOL-PIN-005
-export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode: Mode): Snapshot {
+export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode: Mode, builtins: readonly BuiltinTool[] = []): Snapshot {
   const lan = cfg.network?.lan ?? [];
   const bySource = new Map(sources.map((s) => [s.name, s] as const));
   const tools: KnownTool[] = [];
   const byName = new Map<string, KnownTool>();
   const servers: CatalogServer[] = [];
-  let total = 0;
+  // The built-in tools come first and are always listed, counted in the limits before any server (TOOL-CAT-013).
+  for (const b of builtins) {
+    const known = builtinTool(cfg, b, mode);
+    tools.push(known);
+    byName.set(known.name, known);
+  }
+  let total = tools.length;
 
   for (const [server, entry] of Object.entries(cfg.tools.servers)) {
     const source = bySource.get(server);
@@ -198,6 +209,25 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
   return { mode, tools, servers, byName, enabledNames };
 }
 
+/** A built-in tool's entry: its bare name, no server and no hash (TOOL-PIN-005); the reasons it is not offered (TOOL-CAT-007). */
+// @spec TOOL-CAT-001, TOOL-CAT-004, TOOL-PIN-002, TOOL-PIN-005
+function builtinTool(cfg: Config, b: BuiltinTool, mode: Mode): KnownTool {
+  const allow = cfg.tools.allow[b.name];
+  const enabled = allow?.enabled ?? false;
+  const acts = allow?.acts ?? false;
+  const effect = effectOf(b.label, acts);
+  const known: KnownTool = {
+    name: b.name, own: b.name, invoke: (args, signal) => b.call(args, signal), builtin: b,
+    description: cutDescription(b.description), parameters: b.parameters,
+    label: b.label, effect, enabled, acts, chat: allow?.chat ?? false, confirm: allow?.confirm ?? true,
+    recordedHash: "", serverState: mode === "mock" ? "mock" : "ok", offered: false,
+  };
+  if (!enabled) known.reason = "not_enabled";
+  else if (b.label !== "read" && !acts) known.reason = "acts_not_allowed";
+  else known.offered = true;
+  return known;
+}
+
 function listTool(cfg: Config, source: ToolSource, server: string, name: string, def: SourceTool, state: SourceState, mode: Mode): KnownTool {
   const allow = cfg.tools.allow[name];
   const enabled = allow?.enabled ?? false;
@@ -209,7 +239,7 @@ function listTool(cfg: Config, source: ToolSource, server: string, name: string,
     ? definitionHash({ name, title: def.title, description: def.description, parameters: def.parameters, label })
     : undefined;
   const known: KnownTool = {
-    name, server, own: def.name, source,
+    name, server, own: def.name, invoke: (args, signal) => source.call(def.name, args, signal),
     description: cutDescription(def.description), parameters: def.parameters,
     label, effect, enabled, acts, chat: allow?.chat ?? false, confirm: allow?.confirm ?? true,
     recordedHash, serverState: state, offered: false,
@@ -232,7 +262,7 @@ function listTool(cfg: Config, source: ToolSource, server: string, name: string,
 export function publishedTool(t: KnownTool): EventInput<"tool.catalog">["tools"][number] {
   return {
     name: t.name,
-    server: t.server,
+    ...(t.server !== undefined ? { server: t.server } : {}),
     ...(t.title !== undefined ? { title: t.title } : {}),
     description: t.description,
     parameters: t.parameters,

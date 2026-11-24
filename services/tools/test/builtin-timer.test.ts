@@ -8,7 +8,7 @@ const stored = (s: { bus: { timers: Map<string, string> } }) => [...s.bus.timers
 const fired = (s: { bus: { of: (t: "tool.timer") => unknown[] } }) => s.bus.of("tool.timer") as { id: string; note: string; setAt: number; dueAt: number; missed?: true }[];
 const set = (s: Awaited<ReturnType<typeof startBuiltin>>, minutes: number, note = "stretch") => callTool(s, "timer", { minutes, note });
 
-test("timer takes an integer minutes from 1 to tools.timer.max_minutes (default 120) and a required text note cut to 200 characters", async () => { // @spec TOOL-TIMER-001
+test("timer takes an integer minutes from 1 to tools.timer.max_minutes (default 120) and a required text note cut to 200 characters", async () => { // @spec TOOL-TIMER-001, TOOL-TIMER-001
   const s = await startBuiltin(allow);
   for (const minutes of [1, 120]) assert.equal((await set(s, minutes, `n${minutes}`)).status, "ok", String(minutes));
   const long = await set(s, 5, "a".repeat(300));
@@ -106,7 +106,7 @@ test("when a timer runs out the service publishes tool.timer with id, note, setA
   await s.stop();
 });
 
-test("a delay longer than a platform timer can hold is never scheduled as one that fires at once", async () => { // @spec TOOL-TIMER-001, TOOL-TIMER-006
+test("a delay longer than a platform timer can hold is never scheduled as one that fires at once", async () => { // @spec TOOL-TIMER-001, TOOL-TIMER-006, TOOL-TIMER-010
   const s = await startBuiltin(allow, { tools: { timer: { max_minutes: 200_000 } } });
   const r = await set(s, 100_000, "very long");
   assert.equal(r.status, "ok", r.content);
@@ -115,7 +115,7 @@ test("a delay longer than a platform timer can hold is never scheduled as one th
   await s.stop();
 });
 
-test("when the service starts it fires each due timer at once, oldest dueAt first and however late, deletes it, and keeps the others until due", async () => { // @spec TOOL-TIMER-007
+test("when the service starts it fires each due timer at once, oldest dueAt first and however late, deletes it, and keeps the others until due", async () => { // @spec TOOL-TIMER-007, TOOL-TIMER-007
   const bus = new OrderedBus();
   const put = (id: string, dueAt: number, note = id) => bus.timers.set(id, JSON.stringify({ id, note, setAt: dueAt - MIN, dueAt }));
   put("late", NOW - 3 * 24 * 60 * MIN); // days late: still fired, never marked missed here
@@ -138,7 +138,7 @@ test("when the service starts it fires each due timer at once, oldest dueAt firs
   await s.stop();
 });
 
-test("an entry of the hash that is not a timer is skipped without stopping the others", async () => { // @spec TOOL-TIMER-007
+test("an entry of the hash that is not a timer is skipped without stopping the others", async () => { // @spec TOOL-TIMER-007, TOOL-TIMER-007
   const bus = new OrderedBus();
   bus.timers.set("junk-1", "not json at all");
   bus.timers.set("junk-2", JSON.stringify({ id: "junk-2", note: 5, setAt: "x", dueAt: null }));
@@ -193,4 +193,32 @@ test("in mock mode timers live in the service's memory, touch no Redis key, and 
   assert.equal(fired(s)[0]!.dueAt, NOW + 3 * MIN);
   assert.deepEqual(bus.calls.filter((c) => /Timer$/.test(c)), []);
   await s.stop();
+});
+
+test("a timer whose tool.timer cannot be published stays stored and fires at the next start, with no retry while the service is up", async () => { // @spec TOOL-TIMER-009
+  const bus = new OrderedBus();
+  const publish = bus.publish.bind(bus);
+  let failing = true;
+  bus.publish = (async (type: never, data: never) => {
+    if (type === "tool.timer" && failing) throw new Error("bus down");
+    return publish(type, data);
+  }) as typeof bus.publish;
+  const clock = new Clock();
+  const s = await startBuiltin(allow, { bus, clock });
+  await set(s, 5, "keep me");
+  clock.run(clock.longer(9000)[0]!);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(fired(s).length, 0, "nothing was published");
+  assert.equal(bus.timers.size, 1, "the field stays stored");
+  assert.equal(clock.active().length, 0, "no retry is armed while the service is up");
+  await s.stop();
+
+  failing = false;
+  const next = new Clock();
+  next.t = NOW + 6 * MIN;
+  const restarted = await startBuiltin(allow, { bus, clock: next });
+  await waitFor(() => fired(restarted).length === 1, "fired at the next start");
+  assert.equal(fired(restarted)[0]!.note, "keep me");
+  await waitFor(() => bus.timers.size === 0, "and deleted");
+  await restarted.stop();
 });

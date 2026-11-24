@@ -66,8 +66,9 @@ interface Conn {
   /** A list is running; a notification that arrives meanwhile sets `dirty` and one more list runs after it (TOOL-MCP-004). */
   relisting: boolean;
   dirty: boolean;
-  /** When the last list started; the next waits until the gap has passed. */
-  lastListAt: number;
+  /** When the last list ended and how long it took: the next list waits for the gap, which scales with the list (TOOL-MCP-004). */
+  lastListEnd: number;
+  lastListMs: number;
   waiting?: ReturnType<typeof setTimeout>;
   lost: Promise<void>;
   end: () => void;
@@ -242,6 +243,8 @@ export class McpSource implements ToolSource {
   readonly detail: string | undefined;
   private current: SourceState = "down";
   private tools: SourceTool[] = [];
+  /** The JSON of `tools` as last published, compared with each new list (serialized once per list). */
+  private toolsKey: string | undefined;
   private conn: Conn | undefined;
   private readonly url: string;
   private readonly header: string;
@@ -316,9 +319,15 @@ export class McpSource implements ToolSource {
   /** Waits `ms` with the shared sleep (a test's fake when it gives one), ending at once when the source closes. */
   private pause(ms: number): Promise<void> {
     if (ms <= 0 || this.stopping) return Promise.resolve();
-    const stopped = new Promise<void>((r) => this.stopCtl.signal.addEventListener("abort", () => r(), { once: true }));
-    const wait = this.retry.sleep ? this.retry.sleep(ms) : new Promise<void>((r) => setTimeout(r, ms));
-    return Promise.race([wait, stopped]);
+    const signal = this.stopCtl.signal;
+    // The listener and the timer are released whichever ends the wait first, so waits do not pile up listeners (TOOL-MCP-003).
+    const held: { stop?: () => void; timer?: ReturnType<typeof setTimeout> } = {};
+    const wait = this.retry.sleep ? this.retry.sleep(ms) : new Promise<void>((r) => { held.timer = setTimeout(r, ms); });
+    const stopped = new Promise<void>((r) => { held.stop = () => r(); signal.addEventListener("abort", held.stop, { once: true }); });
+    return Promise.race([wait, stopped]).finally(() => {
+      clearTimeout(held.timer);
+      if (held.stop !== undefined) signal.removeEventListener("abort", held.stop);
+    });
   }
 
   /**
@@ -361,12 +370,18 @@ export class McpSource implements ToolSource {
     this.inflightSession = session;
     try {
       await this.notify("notifications/initialized", undefined, session, signal);
+      const listStart = Date.now();
       const tools = await this.listAll(session, signal);
+      const listEnd = Date.now();
       if (this.stopping) throw new Down();
       const conn = this.newConn(session);
+      // The connect list counts for the gap to the first re-list, as any list does (TOOL-MCP-004).
+      conn.lastListEnd = listEnd;
+      conn.lastListMs = listEnd - listStart;
       this.conn = conn;
       this.inflightSession = undefined;
       this.tools = tools;
+      this.toolsKey = safeJson(tools);
       this.setState("ok");
       this.emit();
       void this.runStream(conn);
@@ -383,7 +398,7 @@ export class McpSource implements ToolSource {
   private newConn(session: string | undefined): Conn {
     let end!: () => void;
     const lost = new Promise<void>((r) => { end = r; });
-    return { session, ctl: new AbortController(), relisting: false, dirty: false, lastListAt: Date.now(), lost, end };
+    return { session, ctl: new AbortController(), relisting: false, dirty: false, lastListEnd: Date.now(), lastListMs: 0, lost, end };
   }
 
   /** Ends a connection once: the stream and the timer stop, the state follows, and the supervisor reconnects. */
@@ -406,14 +421,17 @@ export class McpSource implements ToolSource {
   private async relist(conn: Conn): Promise<void> {
     if (conn.lostBy !== undefined || this.stopping) return;
     if (conn.relisting || conn.waiting !== undefined) { conn.dirty = true; return; }
-    const wait = conn.lastListAt + this.relistGapMs - Date.now();
+    // The gap starts when the last list ended and is at least four times that list's duration, so a slow server's lists cannot
+    // keep the service busy (TOOL-MCP-004).
+    const gap = Math.max(this.relistGapMs, 4 * conn.lastListMs);
+    const wait = conn.lastListEnd + gap - Date.now();
     if (wait > 0) {
       conn.waiting = setTimeout(() => { conn.waiting = undefined; void this.relist(conn); }, wait);
       return;
     }
     conn.relisting = true;
     conn.dirty = false;
-    conn.lastListAt = Date.now();
+    const started = Date.now();
     try {
       const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
       let tools: SourceTool[];
@@ -426,12 +444,15 @@ export class McpSource implements ToolSource {
       if (conn.lostBy !== undefined) return;
       // The catalog is published only when the list changed (main.ts compares the published catalog).
       const next = safeJson(tools);
-      if (next === undefined || next !== safeJson(this.tools)) {
+      if (next === undefined || next !== this.toolsKey) {
         this.tools = tools;
+        this.toolsKey = next;
         this.emit();
       }
     } finally {
       conn.relisting = false;
+      conn.lastListEnd = Date.now();
+      conn.lastListMs = conn.lastListEnd - started;
     }
     if (conn.dirty && conn.lostBy === undefined) void this.relist(conn);
   }

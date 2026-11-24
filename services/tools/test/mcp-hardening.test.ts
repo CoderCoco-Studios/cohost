@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { FakeMcp, toolJson } from "./mcp-server.js";
 import { approved, catalogServer, catalogTool, entry, startMcp, waitFor, waitServer } from "./mcp-helpers.js";
 import { resultOf } from "./helpers.js";
-import { eventData } from "../src/mcp.js";
+import { eventData, McpSource } from "../src/mcp.js";
+import { buildSnapshot } from "../src/catalog.js";
+import { testConfig } from "@cohost/testing";
+import { getEventListeners } from "node:events";
+import { FakeSource } from "./helpers.js";
 import { everythingOut } from "./mcp-helpers.js";
 
 const web = toolJson("web");
@@ -434,10 +438,14 @@ test("list_changed at one every millisecond for 1.5 s costs at most one list per
   await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
   const lists0 = srv.rpcs("tools/list").length;
   const cat0 = s.catalogs().length;
+  const t0 = Date.now();
   for (let i = 0; i < 1500; i++) { srv.notify("notifications/tools/list_changed"); await sleep(1); }
   await sleep(300);
+  const elapsed = Date.now() - t0;
   const lists = srv.rpcs("tools/list").length - lists0;
-  assert.ok(lists <= 10, `at most one list per 200 ms gap, got ${lists}`);
+  // One list per gap of 200 ms, counted over the wall time the flood actually took (a loaded machine stretches it).
+  const allowed = Math.ceil(elapsed / 200) + 2;
+  assert.ok(lists <= allowed, `at most one list per 200 ms gap over ${elapsed} ms: ${lists} lists, allowed ${allowed}`);
   assert.ok(s.catalogs().length - cat0 <= 1, "the unchanged list published no catalog");
   await s.stop();
 });
@@ -521,4 +529,86 @@ test("a server ping is answered with an empty result", async () => { // @spec TO
   assert.deepEqual(answer.rpc!.result, {});
   assert.equal(answer.rpc!.error, undefined);
   await s.stop();
+});
+
+// ---- TOOL-MCP-004: the gap starts when a list ends, and a slow list stretches it
+
+test("a slow list stretches the gap to four times its own duration", async () => { // @spec TOOL-MCP-004
+  const srv = await FakeMcp.start({ tools: [web] });
+  const arrivals: number[] = [];
+  const ends: number[] = [];
+  srv.byMethod["tools/list"] = async (_seen, ctx) => {
+    arrivals.push(Date.now());
+    await sleep(150);
+    ends.push(Date.now());
+    return ctx.result({ tools: [web] });
+  };
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } }, { mcp: { relistGapMs: 20 } });
+  await waitServer(s, "search", "ok");
+  await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  for (let i = 0; i < 150; i++) { srv.notify("notifications/tools/list_changed"); await sleep(10); }
+  await sleep(1500);
+  assert.ok(arrivals.length >= 3, `at least two re-lists after the first, got ${arrivals.length - 1}`);
+  for (let i = 0; i + 1 < arrivals.length; i++) {
+    const gap = arrivals[i + 1]! - ends[i]!;
+    assert.ok(gap >= 500, `gap after list ${i} is ${gap} ms, want about 600 ms (four times the 150 ms list)`);
+  }
+  await s.stop();
+});
+
+// ---- TOOL-MCP-003: pause releases its listener
+
+test("a backoff wait releases its abort listener whichever ends it, so waits do not pile up listeners", async () => { // @spec TOOL-MCP-003
+  const src = new McpSource("search", { url: "https://search.example.com/mcp", header: "", token: "", external: false }, testConfig({}), {});
+  const signal = (src as unknown as { stopCtl: AbortController }).stopCtl.signal;
+  const pause = (src as unknown as { pause: (ms: number) => Promise<void> }).pause.bind(src);
+  const before = getEventListeners(signal, "abort").length;
+  for (let i = 0; i < 300; i++) await pause(1);
+  assert.equal(getEventListeners(signal, "abort").length, before, "no listener left behind by 300 waits that ended first");
+  const waiting = pause(60_000);
+  assert.equal(getEventListeners(signal, "abort").length, before + 1, "a wait in progress holds one listener");
+  await src.close();
+  await waiting;
+  assert.equal(getEventListeners(signal, "abort").length, before, "closing ends the wait and releases its listener");
+});
+
+// ---- TOOL-SVC-008: the sources close at once
+
+test("closing the service closes its sources at once: two sessions whose DELETE hangs take about one timeout, not two", async () => { // @spec TOOL-SVC-008
+  const a = await FakeMcp.start({ tools: [web] });
+  const b = await FakeMcp.start({ tools: [web] });
+  // Each DELETE records when it arrives: sources that close at once send both at the same moment, a serial close sends the second
+  // only after the first has timed out (about 1 s later). Comparing arrivals is independent of how loaded the machine is.
+  let aAt = 0;
+  let bAt = 0;
+  a.byMethod.DELETE = () => { aAt = Date.now(); return { hang: true }; };
+  b.byMethod.DELETE = () => { bAt = Date.now(); return { hang: true }; };
+  const s = await startMcp({ servers: { aa: entry(a), bb: entry(b) }, allow: {} });
+  await waitServer(s, "aa", "ok");
+  await waitServer(s, "bb", "ok");
+  await s.stop();
+  assert.ok(aAt > 0 && bAt > 0, "both sessions were closed");
+  assert.ok(Math.abs(bAt - aAt) < 500, `the DELETEs arrived ${Math.abs(bAt - aAt)} ms apart: they ran together`);
+});
+
+// ---- TOOL-CAT-013 / TOOL-CAT-014: the limits are counted before any schema is checked
+
+test("the per-server limit is counted before any schema is checked: only the tools that may be listed are checked", async () => { // @spec TOOL-CAT-013, TOOL-CAT-014
+  const defs = Array.from({ length: 3000 }, (_, i) => ({ name: `t${i}`, description: "d", parameters: { type: "object", __probe: true } as Record<string, unknown> }));
+  const src = new FakeSource("search", defs);
+  const cfg = testConfig({ tools: { servers: { search: { url: "https://search.example.com/mcp" } }, allow: {}, max_tools_per_server: 32 } });
+  const orig = JSON.stringify;
+  let probes = 0;
+  JSON.stringify = ((v: unknown, ...rest: unknown[]) => {
+    if (v !== null && typeof v === "object" && (v as { __probe?: unknown }).__probe === true) probes++;
+    return (orig as (...a: unknown[]) => string).call(JSON, v, ...rest);
+  }) as typeof JSON.stringify;
+  try {
+    const snap = buildSnapshot(cfg, [src], "live");
+    assert.equal(snap.tools.length, 32);
+    assert.match(snap.servers[0]!.detail, /2968 left out/);
+    assert.ok(probes <= 32, `checked ${probes} schemas for 3000 tools`);
+  } finally {
+    JSON.stringify = orig;
+  }
 });

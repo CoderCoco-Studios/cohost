@@ -162,11 +162,17 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     for (const def of source?.list() ?? []) {
       if (source === undefined) break; // unreachable: an absent source lists nothing
       const name = `${server}__${def.name}`;
-      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX || !schemaListable(def.parameters)) {
+      // The cheap checks come first: the limits are counted before any schema is serialized, so a server with thousands of
+      // tools costs one check per tool it may list (TOOL-CAT-013, TOOL-CAT-014).
+      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX) {
         left++;
         continue;
       }
       if (listed >= cfg.tools.max_tools_per_server || total >= cfg.tools.max_tools) {
+        left++;
+        continue;
+      }
+      if (!schemaListable(def.parameters)) {
         left++;
         continue;
       }

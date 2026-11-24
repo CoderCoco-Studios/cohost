@@ -163,7 +163,8 @@ export async function toolsMain(
 
   // Shutdown runs in reverse: refuse the calls and confirmations first, then stop the timer, then close the sources
   // (TOOL-SVC-008). The bus is closed by runService after these steps.
-  onStop(async () => { for (const s of sources) await s.close().catch(() => undefined); });
+  // Every source closes at once, so a slow session close does not hold up the others (TOOL-SVC-008).
+  onStop(async () => { await Promise.allSettled(sources.map((s) => s.close())); });
   onStop(() => clearInterval(timer));
   onStop(() => pipeline.shutdown());
 

@@ -222,3 +222,67 @@ test("a timer whose tool.timer cannot be published stays stored and fires at the
   await waitFor(() => bus.timers.size === 0, "and deleted");
   await restarted.stop();
 });
+
+test("a delay longer than one timer can wait is armed in steps: the first step publishes nothing and the last fires once at dueAt", async () => { // @spec TOOL-TIMER-010
+  const s = await startBuiltin(allow, { tools: { timer: { max_minutes: 200_000 } } });
+  await set(s, 100_000, "long");
+  const dueAt = NOW + 100_000 * MIN;
+  let step = s.clock.longer(9000)[0]!;
+  assert.equal(step.ms, 2 ** 31 - 1, "the first step is the largest delay");
+  for (;;) {
+    assert.ok(step.ms <= 2 ** 31 - 1, `a wait of ${step.ms} ms overflows setTimeout`);
+    if (step.ms < 2 ** 31 - 1) break;
+    s.clock.run(step);
+    assert.equal(fired(s).length, 0, "no fire before dueAt");
+    step = s.clock.longer(9000)[0]!;
+  }
+  assert.equal(step.ms, dueAt - s.clock.t, "the last step waits for dueAt");
+  s.clock.run(step);
+  await waitFor(() => fired(s).length === 1, "fired at dueAt");
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(fired(s).length, 1, "exactly one fire");
+  assert.equal(fired(s)[0]!.dueAt, dueAt);
+  await s.stop();
+});
+
+test("a due time no Date can show is refused as invalid_arguments before anything is stored; the largest one that fits is set", async () => { // @spec TOOL-TIMER-010
+  const bus = new OrderedBus();
+  const s = await startBuiltin(allow, { bus, tools: { timer: { max_minutes: 200_000_000_000 } } });
+  const limit = Math.floor((8.64e15 - NOW) / MIN);
+  const ok = await set(s, limit, "last one");
+  assert.equal(ok.status, "ok", ok.content);
+  const bad = await set(s, limit + 1, "too late");
+  assert.equal(bad.status, "refused");
+  assert.equal(bad.reason, "invalid_arguments");
+  assert.equal(stored(s).length, 1, "the refused timer is not stored");
+  assert.equal(s.clock.longer(9000).length, 1, "nor armed");
+  await s.stop();
+});
+
+test("a timer call that arrives before the stored timers are read counts them toward max_active", async () => { // @spec TOOL-TIMER-004, TOOL-TIMER-007
+  const bus = new OrderedBus();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  bus.timers.set("stored", JSON.stringify({ id: "stored", note: "a", setAt: NOW, dueAt: NOW + 30 * MIN }));
+  const listed = bus.listTimers.bind(bus);
+  bus.listTimers = async () => { await gate; return listed(); };
+  const s = await startBuiltin(allow, { bus, tools: { timer: { max_active: 1 } } });
+  const pending = callTool(s, "timer", { minutes: 5, note: "early" });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(s.results().some((r) => r.tool === "timer"), false, "the call waits for the read");
+  release();
+  assert.equal((await pending).reason, "limit");
+  await s.stop();
+});
+
+test("a stored field whose id is not the field is skipped and does not fire", async () => { // @spec TOOL-TIMER-007
+  const bus = new OrderedBus();
+  bus.timers.set("field-a", JSON.stringify({ id: "field-b", note: "wrong", setAt: NOW - MIN, dueAt: NOW - 1 }));
+  const s = await startBuiltin(allow, { bus });
+  await waitFor(() => bus.calls.includes("listTimers"), "read at start");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(fired(s).length, 0);
+  assert.equal(bus.timers.has("field-a"), true, "skipped, left stored");
+  await s.stop();
+});
+

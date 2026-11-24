@@ -30,7 +30,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CAT-010**: The catalog shall list every configured server with its `name`, its `state` (`ok`, `down`, `auth` or `mock`), `external` and a `detail` sentence.
 - [x] **TOOL-CAT-011**: The service shall publish `tool.catalog` when it becomes ready, whenever the list of tools or the state of a server changes, and otherwise every `tools.catalog_ms` (default 30000), with `intervalMs` equal to `tools.catalog_ms`.
 - [x] **TOOL-CAT-012**: The catalog shall describe the marks of the `config.yaml` the service loaded when it started.
-- [x] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`.
+- [x] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`. The four built-in tools are always listed, first and outside those limits, so a `tools.max_tools` below four still lists them and the catalog then holds more tools than `tools.max_tools` allows.
 - [x] **TOOL-CAT-014**: When tools of a server are left out by a limit, the service shall not list them and shall state how many in that server's `detail`.
 - [x] **TOOL-CAT-015**: An entry of `tools.allow` that names no listed tool shall be offered to nothing.
 
@@ -138,7 +138,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-MEM-001**: The `memory_lookup` tool shall take a text argument `query` and an optional integer `k` from 1 to 8, default 4.
 - [x] **TOOL-MEM-002**: When `memory_lookup` is called, the service shall publish `memory.recall.request` with a fresh uuid `id`, the query and `k`, and shall read no database.
 - [x] **TOOL-MEM-003**: The service shall take as the answer the `memory.recall.reply` whose `id` equals its request's and shall ignore every other reply.
-- [x] **TOOL-MEM-004**: The service shall render each recalled memory as one line `- (YYYY-MM-DD) <who>: <text>`, the date in `cohost.timezone`, with `who` through `speakerLabel` at `viewer_text.max_name_chars` and the text through `boundText` at `viewer_text.max_chars`.
+- [x] **TOOL-MEM-004**: The service shall render each recalled memory as one line `- (YYYY-MM-DD) <who>: <text>`, the date in `cohost.timezone`, with `who` through `speakerLabel` at `viewer_text.max_name_chars`; a `chat` or `note` memory's text is an untrusted quote through `quoteUntrusted` at `viewer_text.max_chars`, so a quote mark in it cannot close the quote, and a `speech` or `self` memory's text is bounded with `boundText` at the same limit. The lookup searches the memories of every viewer, as cortex recall does.
 - [x] **TOOL-MEM-005**: The built-in wait of a lookup, and of each platform call of `stream_info` (TOOL-STRM-005), shall end at `min(floor(0.9 × tools.timeout_ms), 2^31−1)` milliseconds after it starts, so before the call limit (TOOL-CALL-010) ends the call. If no matching `memory.recall.reply` arrives before the lookup's wait ends, then `memory_lookup` shall end with an `error` result of reason `unavailable`; a reply that arrives later shall change nothing, and the wait shall be cancelled once the call ends.
 - [x] **TOOL-MEM-006**: While `memory_lookup` is enabled, the heartbeat shall carry `memory` as `ok` after an answer, `down` after a lookup that got none, and `n/a` before the first and in mock mode; it shall carry no `memory` dependency while `memory_lookup` is not enabled.
 
@@ -172,9 +172,9 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Hardening of the built-in tools (TOOL-STRM, TOOL-MEM, TOOL-TIMER)
 
-The lines below are the owner-approved hardening of the built-in tools, added with #207.
+The built-in tools validate their inputs, bound and quote the text they show, and confine their platform calls as the lines below state.
 
-- [x] **TOOL-STRM-009**: The service shall bound each stream title and category it shows with `boundText` at 100 characters, so that a title is one line with no control or bidi character.
+- [x] **TOOL-STRM-009**: The service shall bound each stream title and category it shows with `boundText` at 100 characters and show it as an untrusted quote through `quoteUntrusted`, so that a quote mark in it cannot close the quote and the text is one line with no control or bidi character.
 - [x] **TOOL-STRM-010**: If `stream_info` is given a `platform` other than `twitch` or `youtube`, then it shall refuse the request with reason `invalid_arguments` and call no platform.
 - [x] **TOOL-STRM-011**: When a platform reports that its channel or video is not live, the service shall answer `ok` with a sentence saying so, and shall not treat it as a failure.
 - [x] **TOOL-STRM-012**: The service shall read a platform's response body only up to 1 MiB; a longer body shall be dropped and count as a failed platform.
@@ -184,4 +184,4 @@ The lines below are the owner-approved hardening of the built-in tools, added wi
 - [x] **TOOL-MEM-007**: If `memory_lookup` is given a `query` that is blank after trimming, it shall refuse the request with reason `invalid_arguments` and publish no `memory.recall.request`; a `query` longer than `viewer_text.max_chars` shall be cut to that length before it is published.
 - [x] **TOOL-MEM-008**: The service shall render at most `k` memory lines, and an empty answer shall be an `ok` result whose content is one sentence with no memory line.
 - [x] **TOOL-TIMER-009**: If `tool.timer` cannot be published when a timer runs out, then the service shall leave the timer's field in the hash and shall not delete it, so that it fires at the next start; no retry runs while the service is up.
-- [x] **TOOL-TIMER-010**: A timer whose delay is longer than 2^31−1 milliseconds shall be armed in steps of at most 2^31−1 milliseconds and shall fire only at its `dueAt`, so that any `tools.timer.max_minutes` works with no configuration change.
+- [x] **TOOL-TIMER-010**: A timer whose delay is longer than 2^31−1 milliseconds shall be armed in steps of at most 2^31−1 milliseconds and shall fire only at its `dueAt`. A `timer` call whose due time would be past the latest instant a Date holds (8.64e15 epoch milliseconds) shall be refused as `invalid_arguments` before anything is stored or armed. Any `tools.timer.max_minutes` up to the largest delay whose due time that holds works, with no configuration change.

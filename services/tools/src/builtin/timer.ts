@@ -9,6 +9,8 @@ import type { Config, Logger } from "@cohost/config";
 import { boundText } from "@cohost/shared/untrusted";
 import { SourceFailed, type SourceCallResult } from "../source.js";
 import { MINUTE_MS, zoned } from "./format.js";
+/** The latest instant a `Date` holds, in epoch milliseconds: a due time past it cannot be shown (TOOL-TIMER-010). */
+export const MAX_DATE_MS = 8.64e15;
 import type { BuiltinSeams, BuiltinTool } from "./types.js";
 
 /** The longest delay `setTimeout` takes; a longer one would fire at once (TOOL-TIMER-001). */
@@ -46,6 +48,9 @@ export function parseStored(field: string, json: string): Omit<Pending, "cancel"
 export class TimerTool {
   private readonly pending = new Map<string, Pending>();
   private stopped = false;
+  /** Resolves once the stored timers are read at start; a timer call waits for it, so the limit counts them (TOOL-TIMER-004). */
+  private readonly loaded: Promise<void>;
+  private markLoaded: () => void = () => {};
 
   constructor(
     private readonly cfg: Config,
@@ -54,7 +59,10 @@ export class TimerTool {
     private readonly store: TimerStore,
     private readonly log: Pick<Logger, "info" | "warn" | "error">,
     private readonly mock: boolean,
-  ) {}
+  ) {
+    this.loaded = new Promise<void>((resolve) => { this.markLoaded = resolve; });
+    if (mock) this.markLoaded();
+  }
 
   tool(): BuiltinTool {
     const max = this.cfg.tools.timer.max_minutes;
@@ -72,7 +80,9 @@ export class TimerTool {
       label: "acts",
       accepts: (args) => {
         const m = args.minutes;
-        return typeof m === "number" && Number.isInteger(m) && m >= 1 && m <= max && typeof args.note === "string" && boundText(args.note, NOTE_MAX) !== "";
+        if (!(typeof m === "number" && Number.isInteger(m) && m >= 1 && m <= max && typeof args.note === "string" && boundText(args.note, NOTE_MAX) !== "")) return false;
+        // A due time that no Date can show is refused before anything is stored (TOOL-TIMER-010).
+        return this.seams.now() + m * MINUTE_MS <= MAX_DATE_MS;
       },
       call: (args) => this.setTimer(args),
     };
@@ -82,6 +92,14 @@ export class TimerTool {
   // @spec TOOL-TIMER-007
   async load(): Promise<void> {
     if (this.mock) return;
+    try {
+      await this.readStored();
+    } finally {
+      this.markLoaded();
+    }
+  }
+
+  private async readStored(): Promise<void> {
     let stored: { id: string; json: string }[];
     try {
       stored = await this.bus.listTimers();
@@ -113,6 +131,7 @@ export class TimerTool {
   /** Sets one timer: the limit is checked and the slot reserved before the store is written (TOOL-TIMER-004). */
   // @spec TOOL-TIMER-001, TOOL-TIMER-003, TOOL-TIMER-004, TOOL-TIMER-005, TOOL-MOCK-006
   private async setTimer(args: Record<string, unknown>): Promise<SourceCallResult> {
+    await this.loaded;
     const zone = this.cfg.cohost.timezone;
     if (this.pending.size >= this.cfg.tools.timer.max_active) {
       throw new SourceFailed("The timers are all running; one must run out before another can be set.", "limit");

@@ -21,8 +21,8 @@ Every built-in tool is off until you turn it on under **Settings**, **Tools**, i
 | --- | --- | --- |
 | `clock` | Tells the time, date, weekday and zone, in the zone set by `cohost.timezone`. | Nothing. |
 | `stream_info` | Tells whether your stream is live on Twitch or YouTube, with its title, viewer count, how long it has been live and, for Twitch, its category. | The Twitch and YouTube app credentials you already set for chat. |
-| `memory_lookup` | Looks up what the co-host remembers about a query, when the memories in its reply were not the ones it needed. It asks the memory service and reads no database. | Nothing. The memory service must be running. |
-| `timer` | Sets a timer, from 1 minute up to `tools.timer.max_minutes` (120 by default), with a note. When it runs out the co-host says the note in its own words. | Nothing. |
+| `memory_lookup` | Looks up what the co-host remembers about a query, when the memories in its reply were not the ones it needed. It searches the memories of every viewer, as the co-host's own recall does. It asks the memory service and reads no database. | Nothing. The memory service must be running. |
+| `timer` | Sets a timer, from 1 minute up to `tools.timer.max_minutes` (120 by default), with a note. When it runs out the co-host says the note in its own words. It needs both its **enabled** and its **acts** marks: without the acts mark the catalog does not offer it, and a call is refused as `acts_not_allowed`. | Nothing. |
 
 Each answer is one short result, cut to `tools.max_result_chars`. The clock answers one sentence: `It is 03:05:09 on Tuesday, 2026-11-24 in Pacific/Auckland.`
 
@@ -30,7 +30,7 @@ Each answer is one short result, cut to `tools.max_result_chars`. The clock answ
 
 `stream_info` is the only built-in tool that calls outside your machine. It calls two platform APIs, and only these:
 
-- **Twitch.** It asks Twitch for an app access token with your Twitch client ID and client secret, then asks whether the channel in `chat.twitch.channel` is live. It sends the channel name and the app token. It never uses a user token, and it sends no chat text.
+- **Twitch.** It asks Twitch for an app access token with your Twitch client ID and client secret, then asks whether the channel in `chat.twitch.channel` is live. It sends the channel name, the app token, and the client ID in its `Client-Id` header. It never uses a user token, and it sends no chat text.
 - **YouTube.** It asks the YouTube Data API about the video in `chat.youtube.video`, with your YouTube API key in a request header. It sends the video ID and the key. It sends no chat text.
 
 Both calls go over `https` only, to `id.twitch.tv`, `api.twitch.tv` and `www.googleapis.com`. Nothing else is contacted, and no redirect is followed. A platform that does not answer within the call's time limit counts as one failed platform, and the other platform's answer is still given. An answer is kept for `tools.stream_info.cache_ms` (30 seconds by default), so the co-host does not ask on every reply; a failed call is never kept.
@@ -45,7 +45,7 @@ A timer is kept in [Redis](../../start/glossary.md#redis), in the hash `<prefix>
 - A timer still to run is kept until its time comes.
 - A timer that could not be announced stays stored and is announced at the next start.
 
-The co-host cannot cancel or list its timers. At most `tools.timer.max_active` (5 by default) run at once; a further request is refused until one runs out. A timer set for longer than one timer can wait at a time (about 24 days) is handled in steps, so any `tools.timer.max_minutes` works.
+The co-host cannot cancel or list its timers. At most `tools.timer.max_active` (5 by default) run at once; a call over that limit ends as an `error` result with the reason `limit`, and no timer is set, until one runs out. A timer set for longer than one timer can wait at a time (about 24 days) is handled in steps, so any `tools.timer.max_minutes` works.
 
 In [mock mode](../../start/glossary.md#mock-mode) (the isolated start), timers live in the service's memory only, and a restart loses them.
 

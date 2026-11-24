@@ -8,6 +8,7 @@ import { parseVideoValue } from "@cohost/shared";
 import type { DepStatus } from "../catalog.js";
 import { SourceFailed, type SourceCallResult } from "../source.js";
 import { duration, platformText } from "./format.js";
+import { quoteUntrusted } from "@cohost/shared/untrusted";
 import type { BuiltinSeams, BuiltinTool } from "./types.js";
 import { withDeadline, PlatformFailed, type Why, readCapped } from "./platform.js";
 
@@ -32,15 +33,19 @@ export type Facts =
   | { live: false }
   | { live: true; title: string; viewers?: number; category?: string; startedAt?: number };
 
+/** The longest a quoted platform title or category is shown, in code points (TOOL-STRM-009). */
+const PLATFORM_QUOTE_MAX = 100;
+
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
 
 /** The one sentence a live or offline platform answer reads as (TOOL-STRM-002). */
 export function renderFacts(label: string, f: Facts, now: number): string {
   if (!f.live) return `${label}: not live.`;
-  const bits = [`"${f.title === "" ? "untitled" : f.title}"`];
+  // Quoted as untrusted text, so a title cannot close its own quotes (TOOL-STRM-009).
+  const bits = [quoteUntrusted(f.title === "" ? "untitled" : f.title, PLATFORM_QUOTE_MAX)];
   if (f.viewers !== undefined) bits.push(`${f.viewers} viewer${f.viewers === 1 ? "" : "s"}`);
-  if (f.category !== undefined && f.category !== "") bits.push(`in ${f.category}`);
+  if (f.category !== undefined && f.category !== "") bits.push(`in ${quoteUntrusted(f.category, PLATFORM_QUOTE_MAX)}`);
   if (f.startedAt !== undefined) bits.push(`for ${duration(now - f.startedAt)}`);
   return `${label}: live, ${bits.join(", ")}.`;
 }

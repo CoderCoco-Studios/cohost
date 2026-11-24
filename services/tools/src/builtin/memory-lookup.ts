@@ -7,7 +7,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { DepStatus } from "../catalog.js";
 import { SourceFailed, type SourceCallResult } from "../source.js";
-import { boundText, speakerLabel } from "@cohost/shared/untrusted";
+import { boundText, quoteUntrusted, speakerLabel } from "@cohost/shared/untrusted";
 import { zoned } from "./format.js";
 import type { BuiltinSeams, BuiltinTool } from "./types.js";
 
@@ -90,9 +90,12 @@ export class MemoryLookup {
       throw new SourceFailed("The memory service did not answer in time.");
     }
     this.state = "ok";
-    const lines = memories.slice(0, k).map((m) =>
-      `- (${zoned(m.ts, cohost.timezone).date}) ${speakerLabel(m.who, viewer.max_name_chars)}: ${boundText(m.text, viewer.max_chars)}`,
-    );
+    // The text is quoted as the cortex quotes a recalled memory: chat and note memories are untrusted quotes, the
+    // co-host's own speech and self lines are bounded text (TOOL-MEM-004).
+    const lines = memories.slice(0, k).map((m) => {
+      const text = m.kind === "speech" || m.kind === "self" ? boundText(m.text, viewer.max_chars) : quoteUntrusted(m.text, viewer.max_chars);
+      return `- (${zoned(m.ts, cohost.timezone).date}) ${speakerLabel(m.who, viewer.max_name_chars)}: ${text}`;
+    });
     return { content: [{ type: "text", text: lines.length > 0 ? lines.join("\n") : "Nothing was recalled for that query." }] };
   }
 

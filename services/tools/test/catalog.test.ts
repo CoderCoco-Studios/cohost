@@ -250,3 +250,12 @@ test("the pin is the SHA-256 of the canonical JSON of the cut values: nested key
   assert.equal(s.entry("search__web").offered, true, "and offers the tool when the owner approved it");
   await s.stop();
 });
+
+test("the four built-ins are always listed, so a max_tools below four still lists them", async () => { // @spec TOOL-CAT-013
+  const s = await startTools({ servers: { search }, allow: {}, max_tools: 2 }, [new FakeSource("search", [def("a")])]);
+  await waitFor(() => s.catalogs().length > 0, "catalog");
+  assert.deepEqual(names(s), BUILTIN, "the built-ins are listed, past the limit");
+  assert.match(s.catalogs().at(-1)!.servers[0]!.detail ?? "", /1 left out/);
+  await s.stop();
+});
+

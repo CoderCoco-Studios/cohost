@@ -62,6 +62,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | Connect | OBS and the voice on stream | `guide/connect/obs.md` | The sink Browser Source on the same PC and on a second PC, the screenshot sense (`eyes`) and obs-websocket |
 | Connect | Avatar | `guide/connect/avatar.md` | VTube Studio (2D) and VRM through a VMC app (3D), expressions |
 | Connect | MCP tool servers | `guide/connect/mcp.md` | Adding an MCP server, approving its tools, off-LAN flags, what leaves the machine |
+| Connect | Built-in tools | `guide/connect/built-in-tools.md` | Clock, stream info, memory lookup and timers, what stream info sends to Twitch and YouTube, timers across a restart |
 | Tune | Personality | `guide/tune/personality.md` | `personality.md`, the dashboard editor, the `## Learned` block |
 | Tune | When it talks | `guide/tune/talkativeness.md` | Talkativeness, cooldowns, idle chatter, reflexes |
 | Tune | Mood | `guide/tune/mood.md` | What the mood is, how it decays, what it changes |

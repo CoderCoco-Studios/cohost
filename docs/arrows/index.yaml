@@ -175,7 +175,7 @@ arrows:
     drift: null
 
   salience:
-    status: PARTIAL
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "168 specs: 143 [x], 24 [ ], 1 [D]. The open 23 are SAL-INTJ (the interjection half of early reply, #226) and SAL-BARGE-001 (revised by the early-reply work, waits on #226). Early reply's salience half (SAL-PROV-001 to 034, SAL-IN-001 and 007, SAL-FOCUS-004 and 006, SAL-TRIG-001 and 002) is built. Counting a burst once, the guarded scorer prompt (#172), viewer keys, chat.removed forgetting (#182) and due timer reminders (#209, SAL-REM) are built. 1 [D] is SAL-TRIG-010."
+    next: "168 specs: 167 [x], 0 [ ], 1 [D]. The interjection half of early reply (SAL-INTJ-001 to 023, #226) is built, with SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 met. Early reply's salience half (SAL-PROV-001 to 034, SAL-IN-001 and 007, SAL-FOCUS-004 and 006, SAL-TRIG-001 and 002) is built. Counting a burst once, the guarded scorer prompt (#172), viewer keys, chat.removed forgetting (#182) and due timer reminders (#209, SAL-REM) are built. 1 [D] is SAL-TRIG-010."
     drift: null
 
   affect:

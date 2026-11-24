@@ -63,6 +63,25 @@ With `barge_in: true` (off by default, because it has not been tried live yet), 
 
 A source that can hear the co-host's own voice, such as a capture of your desktop sound, would otherwise make the co-host answer itself. That source is deaf while a line plays and for `ears.echo_tail_ms` afterwards (1500). `ears.echo_suppress_sources` lists those sources (default `desktop`). Discord already filters the bot's own audio.
 
+## Interjecting
+
+With `interject: true` (off by default, because it has not been tried live yet), the co-host may answer a sentence while the speaker is still talking, instead of waiting for them to finish. This happens only when the early reply is already being prepared (`ears.early.enabled` on) and the speaker pauses and then carries on. The co-host then starts its prepared answer, and the sentence goes into the window as an unfinished line before it.
+
+It is a chance, not a rule. Each time it is eligible, the co-host draws once and asks only when the draw is below `interject_chance` (0.15). It asks only when the early sentence has at least `interject_min_words` (4) words, and at least `interject_min_gap_ms` (120000, two minutes) has passed since the last interjection it actually spoke. If the co-host does not speak the answer, no gap is charged.
+
+When the speaker finishes, what happens depends on the rest of the sentence:
+
+- A short continuation of fewer than `interject_followup_min_words` (3) words is ignored. The co-host does not answer it.
+- With `interject_yield: true` (the default), a longer continuation stops the interjected line if it is still playing, and the co-host then answers the whole sentence. The yield applies whether or not `barge_in` is on.
+- With `interject_yield: false`, the line is not stopped for the continuation. It talks over the speaker for the length of the line, unless `barge_in` is on and its conditions hold.
+
+| You want | Change |
+| --- | --- |
+| Interjections rare | Lower `interject_chance` (try 0.05), or raise `interject_min_gap_ms`. |
+| No interjections at all | Leave `interject` off, or set `interject_chance` to 0. |
+| The co-host to let the speaker finish | Keep `interject_yield` on. |
+| The co-host to talk over the speaker for its full line | Set `interject_yield` to `false`. This is the one case where the co-host does not give way to someone who speaks over it. |
+
 ## Reflexes
 
 A reflex is a reaction that skips the thinking. You give it a pattern to look for and some lines to say. When an [event](../../start/glossary.md#event) matches, the co-host says one of the lines instantly, with no language model in the loop. That suits things that should get a reaction before anyone has time to think: a death on screen, a raid.

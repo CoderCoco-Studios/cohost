@@ -3,6 +3,7 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
+import { normalizeKey } from "@cohost/shared/untrusted";
 import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-memory";
 import { Scheduler, type Decision } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
@@ -27,7 +28,25 @@ interface Held {
   prevState?: "idle" | "thinking" | "speaking" | "muted";
   prevSince?: number;
   since?: number;
+  /** The focus's own fields, kept so an interjection can confirm it (SAL-INTJ-006). */
+  speaker: string;
+  text: string;
+  source?: string;
+  timing?: { audioEndedAt: number; closedAt?: number };
 }
+
+/** An interjection request pending cortex's answer: a `brain.say` records it spoken, a status or the limit drops it (SAL-INTJ-006). */
+interface Pending {
+  utteranceId: string;
+  seq: number;
+  speaker: string;
+  text: string;
+  scored: ContextEvent[];
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** An interjection cortex spoke: the early text, the id of the line that carried it and the time (SAL-INTJ-021). */
+interface Spoken { utteranceId: string; text: string; lineId: string; at: number }
 
 /** The score of the last early transcript, kept for the final that may reuse it (SAL-PROV-007). */
 interface EarlyScore { utteranceId: string; seq: number; text: string; score: number }
@@ -50,6 +69,27 @@ export interface SalienceDeps {
   now?: () => number;
   /** The service's heartbeat: a pause shows as its standing detail `paused` (SAL-HEALTH-004). */
   heartbeat?: Pick<Heartbeat, "setDetail">;
+  /**
+   * The injectable random source of the interjection draw, in [0, 1) (default `Math.random`). It is read once per retraction
+   * that meets every other interjection condition, and not otherwise (SAL-INTJ-004). Tests inject a fixed value.
+   */
+  random?: () => number;
+}
+
+/** The words of a transcript as SAL-BARGE-005 counts them: whitespace-separated tokens holding a letter or a number. */
+function wordsOf(text: string): string[] {
+  return text.split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t));
+}
+
+/**
+ * The words a final adds beyond the early text (SAL-INTJ-011). Words are compared under `normalizeKey`; when the final begins with
+ * the early text the words after it number the same as the difference of the two counts, so the count is that difference, never
+ * below zero.
+ */
+function wordsAdded(early: string, final: string): number {
+  const a = wordsOf(early).map(normalizeKey);
+  const b = wordsOf(final).map(normalizeKey);
+  return Math.max(0, b.length - a.length);
 }
 
 /** The salience region's state and event handling; index.ts wires it to the bus and the tick timer. */
@@ -83,6 +123,17 @@ export class Salience {
   private earlyInFlight?: EarlyPass;
   /** The score of the last early transcript (SAL-PROV-007). */
   private earlyScore?: EarlyScore;
+  /** The interjection request pending cortex's answer, if any (SAL-INTJ-006). */
+  private interjection?: Pending;
+  /** The last eight interjections cortex spoke, oldest first (SAL-INTJ-021). */
+  private readonly interjected: Spoken[] = [];
+  /** When the last interjection was spoken: the gap of SAL-INTJ-003 is counted from it. */
+  private lastInterjectedAt?: number;
+  /** Finals that arrived while an interjection request was pending, in arrival order (SAL-INTJ-023). */
+  private readonly heldFinals: BusEvent[] = [];
+  /** The id of the line that last set the cortex state to `speaking`, whoever spoke it (SAL-INTJ-009). */
+  private speakingLineId?: string;
+  private readonly random: () => number;
   /** Utterances whose final has arrived, newest last, bounded: an early transcript of one of them starts no pass (SAL-PROV-009). */
   private readonly finals = new Set<string>();
   /** Due timer reminders, held apart from working memory: a reminder never enters a transcript (SAL-REM-001). */
@@ -91,6 +142,7 @@ export class Salience {
   constructor(private d: SalienceDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
     this.now = d.now ?? (() => performance.now());
+    this.random = d.random ?? Math.random;
     this.cortexSince = this.now();
     this.control = controlFor("salience", {
       pause: () => { this.ctx.holdArrivals(); void this.withdraw("paused"); }, // @spec SAL-PROV-018
@@ -123,15 +175,9 @@ export class Salience {
       case "speech.heard": { // @spec SAL-IN-002
         const d = ev.data as BusEvent<"speech.heard">["data"];
         this.noteFinal(d.utteranceId);
-        const entry = this.ctx.push(ev);
-        if (entry) this.speechInfo.set(entry, { source: d.source, utteranceId: d.utteranceId, earlySeq: d.earlySeq, text: d.text }); // @spec SAL-FOCUS-003
-        this.scheduler.noteActivity();
-        await this.bargeIn(d); // @spec SAL-BARGE-001, SAL-BARGE-003
-        // A final that answers the held provisional focus is confirmed or withdraws it first (SAL-PROV-013, SAL-PROV-015).
-        const confirmed = entry !== undefined && (await this.resolveFinal(d, entry));
-        const fired = await this.reflex("speech", d.text, entry);
-        if (fired) this.handledEarly(d.utteranceId); // a reflex marks the final seen: it is handled (SAL-PROV-034)
-        if (!fired && !confirmed) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
+        // A final that arrives while an interjection request is pending waits for its answer, without holding the handler (SAL-INTJ-023).
+        if (this.interjection) { this.heldFinals.push(ev); break; }
+        await this.final(ev);
         break;
       }
       // Early reply (SAL-IN-007, SAL-TRIG-002): an early transcript starts only the early pass; neither it nor a retraction enters
@@ -146,7 +192,7 @@ export class Salience {
         const pass = this.earlyInFlight;
         if (pass && pass.utteranceId === d.utteranceId && pass.seq === d.seq) pass.retracted = true; // @spec SAL-PROV-009
         const h = this.held;
-        if (h && h.utteranceId === d.utteranceId && h.seq === d.seq) await this.withdraw("resumed", h); // @spec SAL-PROV-016
+        if (h && h.utteranceId === d.utteranceId && h.seq === d.seq) await this.retractHeld(h); // @spec SAL-PROV-016, SAL-INTJ-001, SAL-INTJ-005
         break;
       }
       // A timer is never chat, speech or vision: it is held as a reminder, and it starts no decision pass (SAL-REM-007).
@@ -169,8 +215,11 @@ export class Salience {
         this.cortexState = "speaking";
         this.cortexSince = this.now();
         this.reflexLine = reason.startsWith("reflex:"); // @spec SAL-BARGE-006
+        this.speakingLineId = d.id; // @spec SAL-INTJ-009
         // The cortex's own line is the one neither reflex-prefixed nor `operator`; only it replaces the remembered line (SAL-BUSY-005).
         if (!this.reflexLine && reason !== "operator") this.cortexLine = { id: d.id, more: d.more === true };
+        // A cortex line answers a pending interjection request: the interjection was spoken (SAL-INTJ-007).
+        if (this.interjection && !this.reflexLine && reason !== "operator") this.interjectionSpoken(d.id); // @spec SAL-INTJ-007
         this.barged = false; // @spec SAL-BARGE-010
         await this.withdraw("superseded"); // @spec SAL-PROV-020, SAL-PROV-031 (the state set above stands)
         break;
@@ -187,6 +236,8 @@ export class Salience {
         const d = ev.data as BusEvent<"brain.status">["data"];
         this.cortexState = d.state;
         this.cortexSince = this.now();
+        // A status other than `thinking` before any say: cortex did not speak the interjection (SAL-INTJ-008).
+        if (this.interjection && d.state !== "thinking") this.interjectionDropped(); // @spec SAL-INTJ-008
         break;
       }
       case "affect.state": // @spec SAL-IN-004
@@ -214,6 +265,7 @@ export class Salience {
     this.cortexState = "speaking";
     this.cortexSince = this.now();
     this.reflexLine = true; // from now, before the echo arrives; @spec SAL-BARGE-006
+    this.speakingLineId = undefined; // a reflex line is not the interjected line (SAL-INTJ-009)
     await this.d.bus.publish("brain.say", { id: randomUUID(), text: hit.text, emotion: hit.emotion, gesture: hit.gesture, reason: `reflex: ${hit.rule}`, ...propagatedFlags(trigger) }); // @spec SAL-INJ-004
     return true;
   }
@@ -228,8 +280,7 @@ export class Salience {
     if (!cfg.barge_in || this.control.paused || this.control.muted) return;
     if (this.cortexState !== "speaking" || !this.busy() || this.reflexLine || this.barged) return;
     if (!d.source || !cfg.barge_in_sources.includes(d.source)) return;
-    const words = d.text.split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t)).length;
-    if (words < cfg.barge_in_min_words) return;
+    if (wordsOf(d.text).length < cfg.barge_in_min_words) return; // @spec SAL-BARGE-005
     try {
       await this.d.bus.publish("voice.stop", { reason: "barge-in" });
     } catch (err) {
@@ -252,6 +303,9 @@ export class Salience {
     try {
       if (this.control.paused || this.deciding || this.held || this.finals.has(d.utteranceId)) return; // @spec SAL-PROV-003
       if (this.control.muted || this.busy() || this.scheduler.cooling()) return; // @spec SAL-PROV-005
+      // An utterance whose interjection was spoken starts a provisional focus only for a follow-up of enough words (SAL-INTJ-015).
+      const spoken = this.spokenFor(d.utteranceId);
+      if (spoken && wordsAdded(spoken.text, d.text) < this.d.cfg.brain.salience.interject_followup_min_words) return; // @spec SAL-INTJ-015
       // A line a reflex answers is left to the final; the match stamps no rule's cooldown (SAL-PROV-004).
       if (this.reflexes.matches("speech", d.text, this.now())) return; // @spec SAL-PROV-004
       const transient: ContextEvent = {
@@ -291,7 +345,10 @@ export class Salience {
     const timing = d.timing?.audioEndedAt !== undefined
       ? { audioEndedAt: d.timing.audioEndedAt, ...(d.timing.closedAt !== undefined ? { closedAt: d.timing.closedAt } : {}) }
       : undefined;
-    const h: Held = { utteranceId: d.utteranceId, seq: d.seq, reason: "engaged", score: decision.score, scored: decision.scored };
+    const h: Held = {
+      utteranceId: d.utteranceId, seq: d.seq, reason: "engaged", score: decision.score, scored: decision.scored,
+      speaker: d.speaker, text: d.text, ...(d.source !== undefined ? { source: d.source } : {}), ...(timing ? { timing } : {}),
+    };
     h.prevState = this.cortexState;
     h.prevSince = this.cortexSince;
     this.held = h;
@@ -434,6 +491,174 @@ export class Salience {
         return;
       }
     }
+  }
+
+  /**
+   * The final of an utterance (SAL-IN-002 onward). A spoken interjection of the utterance first applies its rule set: a short
+   * continuation is marked seen and decides nothing (SAL-INTJ-010); else the yield stops the interjected line (SAL-INTJ-009) and
+   * the barge-in check is skipped; else the ordinary barge-in check applies (SAL-INTJ-012). The final is appended as an ordinary
+   * line in every case (SAL-INTJ-013).
+   * @spec SAL-IN-002, SAL-BARGE-001, SAL-BARGE-003, SAL-TRIG-001, SAL-INTJ-009, SAL-INTJ-010, SAL-INTJ-012, SAL-INTJ-013, SAL-INTJ-022
+   */
+  private async final(ev: BusEvent): Promise<void> {
+    const d = ev.data as BusEvent<"speech.heard">["data"];
+    const entry = this.ctx.push(ev);
+    if (entry) this.speechInfo.set(entry, { source: d.source, utteranceId: d.utteranceId, earlySeq: d.earlySeq, text: d.text }); // @spec SAL-FOCUS-003
+    this.scheduler.noteActivity();
+    const spoken = this.spokenFor(d.utteranceId);
+    let stopped = false;
+    if (spoken) {
+      if (wordsAdded(spoken.text, d.text) < this.d.cfg.brain.salience.interject_followup_min_words) { // @spec SAL-INTJ-010
+        if (entry) this.ctx.markSeenEvents([entry]);
+        return;
+      }
+      // A failed yield is handled as a stop that did not happen: the line keeps its state and takes no barge-in either (SAL-BARGE-009).
+      if (this.d.cfg.brain.salience.interject_yield) stopped = (await this.yieldTo(spoken)) !== "none"; // @spec SAL-INTJ-009
+    }
+    if (!stopped) await this.bargeIn(d); // @spec SAL-BARGE-001, SAL-BARGE-003, SAL-INTJ-012
+    // A final that answers the held provisional focus is confirmed or withdraws it first (SAL-PROV-013, SAL-PROV-015).
+    const confirmed = entry !== undefined && (await this.resolveFinal(d, entry));
+    const fired = await this.reflex("speech", d.text, entry);
+    if (fired) this.handledEarly(d.utteranceId); // a reflex marks the final seen: it is handled (SAL-PROV-034)
+    if (!fired && !confirmed) this.triggerOnSpeech(); // @spec SAL-TRIG-001, SAL-TRIG-003
+  }
+
+  /** The record of an interjection cortex spoke for this utterance, if one is kept (SAL-INTJ-021). */
+  private spokenFor(utteranceId: string | undefined): Spoken | undefined {
+    return utteranceId === undefined ? undefined : this.interjected.find((r) => r.utteranceId === utteranceId);
+  }
+
+  /**
+   * A retraction of the held provisional focus: asks for an interjection when every condition of SAL-INTJ-001 to SAL-INTJ-004
+   * holds, else withdraws it as `resumed` (SAL-INTJ-005).
+   * @spec SAL-PROV-016, SAL-INTJ-001, SAL-INTJ-005
+   */
+  private async retractHeld(h: Held): Promise<void> {
+    if (this.interjectionAllowed(h)) { await this.askInterjection(h); return; } // @spec SAL-INTJ-006
+    await this.withdraw("resumed", h); // @spec SAL-PROV-016
+  }
+
+  /**
+   * The gates of an interjection, in the order the spec lists them. The draw comes last, so it is made once per retraction and only
+   * when every other gate holds (SAL-INTJ-004).
+   * @spec SAL-INTJ-001, SAL-INTJ-002, SAL-INTJ-003, SAL-INTJ-004
+   */
+  private interjectionAllowed(h: Held): boolean {
+    const cfg = this.d.cfg.brain.salience;
+    if (!cfg.interject || this.control.paused || this.control.muted) return false; // @spec SAL-INTJ-001
+    if (wordsOf(h.text).length < cfg.interject_min_words) return false; // @spec SAL-INTJ-002
+    if (this.lastInterjectedAt !== undefined && this.now() - this.lastInterjectedAt < cfg.interject_min_gap_ms) return false; // @spec SAL-INTJ-003
+    return this.random() < cfg.interject_chance; // @spec SAL-INTJ-004
+  }
+
+  /**
+   * Asks cortex to speak the prepared reply: an interjected confirm of the held focus, with the focus's fields and timing. The
+   * request is pending until cortex answers, and the cortex state is `thinking` meanwhile (SAL-INTJ-006, SAL-INTJ-018).
+   * @spec SAL-INTJ-006, SAL-INTJ-018
+   */
+  private async askInterjection(h: Held): Promise<void> {
+    // The confirm follows its focus on the bus, as a confirm does (SAL-PROV-013): a focus that never went out asks nothing.
+    if (h.focused && !(await h.focused)) { this.dropUnsent(h); return; }
+    if (this.held !== h) return;
+    this.held = undefined;
+    clearTimeout(h.timer);
+    this.earlyScore = undefined;
+    this.cortexState = "thinking"; // @spec SAL-INTJ-006
+    const since = this.cortexSince = this.now();
+    const p: Pending = { utteranceId: h.utteranceId, seq: h.seq, speaker: h.speaker, text: h.text, scored: h.scored };
+    this.interjection = p;
+    p.timer = setTimeout(() => this.interjectionLimit(p), this.d.cfg.brain.salience.unresolved_limit_ms); // @spec SAL-INTJ-018
+    (p.timer as { unref?: () => void }).unref?.();
+    try {
+      await this.d.bus.publish("attention.resolve", {
+        utteranceId: h.utteranceId, seq: h.seq, outcome: "confirm", interjected: true, reason: h.reason, score: h.score,
+        focus: { kind: "speech", who: h.speaker, text: h.text, ...(h.source !== undefined ? { source: h.source } : {}) },
+        ...(h.timing ? { timing: h.timing } : {}),
+      });
+    } catch (err) {
+      this.d.log.error({ err }, "attention.resolve interjection publish failed");
+      if (this.interjection === p) {
+        this.interjection = undefined;
+        clearTimeout(p.timer);
+        if (this.cortexState === "thinking" && this.cortexSince === since) this.cortexState = "idle";
+        void this.drainHeldFinals();
+      }
+    }
+  }
+
+  /**
+   * cortex spoke the interjected reply: the gap starts now, the scored events are seen, the early text enters the window as the
+   * speaker's unfinished line and the record is kept (SAL-INTJ-007, SAL-INTJ-019, SAL-INTJ-020, SAL-INTJ-021).
+   * @spec SAL-INTJ-007, SAL-INTJ-019, SAL-INTJ-020, SAL-INTJ-021, SAL-INTJ-023
+   */
+  private interjectionSpoken(lineId: string): void {
+    const p = this.interjection;
+    if (!p) return;
+    this.interjection = undefined;
+    clearTimeout(p.timer);
+    const at = this.now();
+    this.lastInterjectedAt = at; // @spec SAL-INTJ-007
+    this.ctx.markSeenEvents(p.scored); // @spec SAL-INTJ-019
+    this.ctx.pushUnfinished(p.utteranceId, p.speaker, p.text, Date.now()); // @spec SAL-INTJ-020
+    this.interjected.push({ utteranceId: p.utteranceId, text: p.text, lineId, at }); // @spec SAL-INTJ-021
+    if (this.interjected.length > 8) this.interjected.shift();
+    void this.drainHeldFinals();
+  }
+
+  /**
+   * cortex answered with a status other than `thinking` before any say: nothing was spoken, so no gap and nothing seen (SAL-INTJ-008).
+   * The utterance then has no record, so a later early transcript is an ordinary early pass that may ask again (SAL-INTJ-016).
+   * @spec SAL-INTJ-008, SAL-INTJ-016
+   */
+  private interjectionDropped(): void {
+    const p = this.interjection;
+    if (!p) return;
+    this.interjection = undefined;
+    clearTimeout(p.timer);
+    void this.drainHeldFinals();
+  }
+
+  /** The unresolved limit of a pending request: cortex is idle, the gap is not charged and nothing is published (SAL-INTJ-018). */
+  private interjectionLimit(p: Pending): void {
+    if (this.interjection !== p) return;
+    this.interjection = undefined;
+    this.cortexState = "idle"; // @spec SAL-INTJ-018
+    this.cortexSince = this.now();
+    void this.drainHeldFinals();
+  }
+
+  /**
+   * Handles the finals held for a pending request, in arrival order, once no request is pending (SAL-INTJ-023). Not awaited by the
+   * handler that releases them: a final is decided as an ordinary line once its turn comes.
+   * @spec SAL-INTJ-023
+   */
+  private async drainHeldFinals(): Promise<void> {
+    while (!this.interjection && this.heldFinals.length > 0) {
+      const ev = this.heldFinals.shift()!;
+      try { await this.final(ev); }
+      catch (err) { this.d.log.error({ err }, "held final failed"); }
+    }
+  }
+
+  /**
+   * The yield of SAL-INTJ-009: when the interjected line still plays, stops it by its id and frees the state and the cooldown, whether
+   * or not `barge_in` is on. Reports `none` when the line is not playing, `stopped` on the publish, `failed` when it did not go out.
+   * @spec SAL-INTJ-009, SAL-INTJ-017, SAL-BARGE-002, SAL-BARGE-009
+   */
+  private async yieldTo(rec: Spoken): Promise<"none" | "stopped" | "failed"> {
+    // The remembered cortex line is the interjected one, and it is the line that last set `speaking`: a reflex or operator line that
+    // set it later does not count.
+    if (!(this.cortexState === "speaking" && this.busy() && this.cortexLine?.id === rec.lineId && this.speakingLineId === rec.lineId)) return "none";
+    try {
+      await this.d.bus.publish("voice.stop", { reason: "yield", ids: [rec.lineId] });
+    } catch (err) {
+      this.d.log.error({ err }, "voice.stop yield publish failed");
+      return "failed";
+    }
+    this.cortexState = "idle";
+    this.cortexSince = this.now();
+    this.scheduler.clearCooldown();
+    return "stopped";
   }
 
   private busy(): boolean {

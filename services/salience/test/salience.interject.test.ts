@@ -288,7 +288,9 @@ test("interject: a final adding fewer than interject_followup_min_words is marke
   const published = e.bus.published.length;
   await e.s.onEvent(heard(`${EARLY} you died`)); // adds two words and matches the rule
   await flush();
-  assert.equal(says(e).length, 1, "only the interjected line: no reflex answer");
+  // The cortex line that answers the request is injected via onEvent, not published, so salience's bus holds no brain.say: a short
+  // continuation takes no reflex and publishes nothing.
+  assert.equal(says(e).length, 0, "no reflex answer and no brain.say for a short continuation");
   assert.equal(e.bus.published.length, published);
 });
 
@@ -299,7 +301,8 @@ test("interject: the added words follow the early text word by word under normal
     ["look at this one. right now yes", true],        // punctuation is kept, so not a prefix: 7 - 4 = 3
     ["look at this one. right now", false],           // 6 - 4 = 2
     ["look at", false],                               // never below zero
-    ["totally different words here now ok", true],    // not a prefix: 7 - 4 = 3
+    ["totally different words here right now ok", true], // not a prefix: 7 - 4 = 3, meets the minimum of 3
+    ["totally different words here now ok", false],   // not a prefix: 6 - 4 = 2, below the minimum of 3
   ];
   for (const [fin, yields] of cases) {
     const e = setup({}, { draw: 0 });

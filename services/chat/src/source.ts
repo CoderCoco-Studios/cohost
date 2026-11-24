@@ -7,6 +7,7 @@ export type ChatSourceName = "twitch" | "youtube" | "fake";
 /** The platforms a `chat.message` can name. */
 export type ChatPlatform = "twitch" | "youtube";
 
+// @spec CHAT-SRC-001
 /** The one state vocabulary every source reports. */
 export type ChatSourceState = "starting" | "waiting" | "reading" | "retrying" | "stopped";
 

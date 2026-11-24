@@ -59,7 +59,7 @@ The chat service reports what Twitch removes: a deleted line, a ban, a timeout, 
 
 cohost never sends a delete, ban or timeout to Twitch. It only reports what Twitch did.
 
-Whether Twitch sends these removal notices to the anonymous, read-only connection has not been checked against a live channel yet. It is on the manual check list for #239.
+Whether Twitch sends these removal notices to the anonymous, read-only connection has not been checked against a live channel yet. It is on the manual check list for #330.
 
 ## How you know it worked
 

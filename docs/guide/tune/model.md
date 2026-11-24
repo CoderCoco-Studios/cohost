@@ -40,6 +40,16 @@ pnpm cohostctl restart affect
 
 Or press **Save** on the dashboard's **Settings** screen and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The **Settings** screen edits both: ordinary keys are written to `config.yaml`, and an API key or password has a masked field (marked **Set** or **Not set**) that writes `secrets.yaml` and needs your control token.
 
+## Streaming and tools
+
+Two things the co-host asks of a model are worth knowing before you choose one.
+
+**Streaming.** The co-host speaks a reply a clause at a time as the model writes it, so the wait before it starts talking is the time to the first clause, not to the whole reply. All four providers stream, so there is nothing to switch on. If a server answers with one whole reply instead of a stream, the co-host still speaks it; it just arrives late. A reply that stalls (no output within `llm.timeout_ms`, 60000 ms by default, or a pause that long between pieces) fails: with nothing said yet the co-host stays quiet that turn (unless it was waiting on a tool: then it says it could not find that out), and with some clauses already spoken the line ends cut short.
+
+**Tools.** When you turn on [tools](../connect/built-in-tools.md), the model may ask for one in the middle of a reply, and the co-host runs it and lets the model continue. No tool is on by default, so tool use never reaches a model you have not chosen for it. Whether the model can use tools is up to the model: cohost sends the tools it is given and does not guess. A local Ollama model may have no tool support, and a server that rejects the request fails that reply rather than being retried without tools. A model that accepts tools and never asks for one simply writes text, which is normal. A model that writes a tool call out as plain text is spoken as text, not run. Pick a model that supports tool calling before you enable tools.
+
+The same goes for pictures: a model for [vision](#pictures-for-the-vision-model) must accept images, and cohost cannot tell when a model accepts them and ignores them.
+
 ## Local GPU (the default)
 
 ```yaml
@@ -119,7 +129,7 @@ The `claude` keys tune how Claude answers:
 | --- | --- |
 | `effort` | How hard it thinks. `low` suits one-line replies. |
 | `max_tokens` | A cap on thinking and the reply together, so leave it roomier than the 120 used for local models. |
-| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only, and only for a reply that is not streamed (no co-host service streams a reply yet). |
+| `fallbacks` | If a safety check declines a reply, retry on another Claude model. Claude API only, and only for a reply that is not streamed. The co-host's own replies are streamed (see [Streaming and tools](#streaming-and-tools)), so this applies to calls that wait for a whole reply. |
 
 ## Claude through Amazon Bedrock
 

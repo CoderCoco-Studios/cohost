@@ -15,7 +15,7 @@ The in-process rolling window of recent perception events (`Context`), its seen/
 - docs/intent/working-memory/working-memory-design.md
 
 ### EARS
-- docs/intent/working-memory/working-memory-specs.md (74 specs: 67 `[x]`, 6 `[ ]`, 1 `[D]`)
+- docs/intent/working-memory/working-memory-specs.md (74 specs: 73 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests
 - packages/working-memory/test/context.test.ts (pure, no Redis)

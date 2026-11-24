@@ -18,7 +18,7 @@ function wiring(over: { resetGroup?: () => Promise<void> } = {}) {
   return { calls, start, fatals, opts: () => subscribed };
 }
 
-// @spec CTX-START-003, CTX-EVT-001, CTX-EVT-008, CTX-FORGET-001
+// @spec CTX-START-003, CTX-EVT-001, CTX-EVT-008, CTX-EVT-009, CTX-FORGET-001
 test("startup: idle, then the cortex group exists (resetGroup), then subscribe at latest, then ready", async () => {
   const w = wiring();
   await w.start();
@@ -28,9 +28,11 @@ test("startup: idle, then the cortex group exists (resetGroup), then subscribe a
   assert.equal(o.start, "latest");
   assert.equal("fromNow" in o, false);
   assert.deepEqual([...(o.types as string[])].sort(), [
-    "affect.state", "attention.focus", "brain.clause", "brain.say", "chat.message", "chat.removed", "control",
+    "affect.state", "attention.focus", "attention.resolve", "brain.clause", "brain.say", "chat.message", "chat.removed", "control",
     "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "tool.catalog", "tool.result", "vision.summary", "voice.done", "voice.failed", "voice.playing", "voice.stop", "voice.utterance",
   ]);
+  assert.ok(!(o.types as string[]).includes("speech.partial"), "an interim transcript is not speech to the cortex");
+  assert.ok(!(o.types as string[]).includes("speech.early"));
 });
 
 // @spec CTX-START-003

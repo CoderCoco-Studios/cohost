@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "173 specs: 170 [x], 3 [ ] (MEM-RECALL-007, MEM-SURF-006, MEM-VOICE-007). YouTube viewer retention is an owner decision in the LLD."
+    next: "173 specs: 171 [x], 2 [ ] (MEM-SURF-006, MEM-VOICE-007). YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 235 [x], 49 [ ], 1 [D]. The tool loop (#210) is built. Open: CTX-PROV-001 to 038; CTX-INTJ-001 to 006; CTX-EVT-001, 009; CTX-GATE-001; CTX-SAY-006; CTX-START-002."
+    next: "285 specs: 284 [x], 0 [ ], 1 [D]. The tool loop (#210) and the early reply (#225: CTX-PROV, CTX-INTJ, CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) are built."
     drift: null
 
   tools:
@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "127 specs: 97 [x], 30 [ ], 0 [D]. The MCP client (TOOL-MCP-001..028, TOOL-CALL-011, TOOL-CALL-012, TOOL-PIN-002, TOOL-PIN-005) is done under #206 but unverified against a real server. Open: the built-in tools TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER, the built-in halves of TOOL-CAT-001, TOOL-CAT-004, TOOL-CAT-013, TOOL-CALL-007, TOOL-CALL-017 and mock TOOL-MOCK-005/006 (#207)."
+    next: "138 specs: 138 [x], 0 [ ], 0 [D]. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
     drift: null
 
   voice:

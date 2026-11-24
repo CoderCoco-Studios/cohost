@@ -41,6 +41,7 @@ export const sidebar = [
           { text: 'OBS and the voice on stream', link: '/guide/connect/obs' },
           { text: 'Avatar', link: '/guide/connect/avatar' },
           { text: 'MCP tool servers', link: '/guide/connect/mcp' },
+          { text: 'Built-in tools', link: '/guide/connect/built-in-tools' },
         ],
       },
       {

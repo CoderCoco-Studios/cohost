@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**PARTIAL.** The spec file holds 285 specs: 284 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The early reply (CTX-PROV, CTX-INTJ, and CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) closed with #225. The LLD has open questions (a repeat on a mention) and #225's readings are open owner questions in its PR body.
+**PARTIAL.** The spec file holds 285 specs: 284 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The early reply (CTX-PROV, CTX-INTJ, and CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) closed with #225. The LLD has an open question (a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -66,7 +66,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 173 `[x]`, 111 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 284 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -153,4 +153,4 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 ## Work Required
 
 - None open in the spec file (Spec Coverage above). The LLD's open question: a repeat on a mention.
-- Owner-approved readings of #225 (the no-line result publishes only its status, the mute's `muted` is the only status for a held end, `confirmedAt` is the resolve's arrival, interjected release takes the final's timing) were approved by the owner in review round 1 of #225 and are written into the specs.
+- The early-reply readings are current intent and are written into the specs and the LLD: the no-line result publishes only its status; a held think's end publishes no status of its own when a mute, pause or operator `say` ends it; `confirmedAt` is the time the resolve arrived; an interjected release takes the final's timing.

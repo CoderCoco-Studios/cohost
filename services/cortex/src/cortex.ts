@@ -131,6 +131,12 @@ interface Line {
   lastProduced: number;
   /** The published clauses, cleaned, in order. */
   published: string[];
+  /** The `seq` of the last output that reached the bus (-1 before it): where a stop mid-release closes the line through (CTX-STREAM-037). */
+  lastOut: number;
+  /** The reply's end reached the bus (a `last` output or the closing clause): nothing is left to close. */
+  outClosed?: boolean;
+  /** Why a release in flight was halted: the cut its line closes with (CTX-STREAM-037, CTX-CTRL-008). */
+  haltCut?: LineCut;
   emotion: Emotion;
   gesture?: string;
   criticEndedAt?: number;
@@ -203,6 +209,8 @@ interface Held {
   resolve: () => void;
   /** Publishes the queued output and marks the think released; set by readReply. */
   drain: () => Promise<void>;
+  /** The drain is publishing: a stop leaves the line's close to the drain (CTX-STREAM-037). */
+  draining?: boolean;
   /** A publish that failed during the release; think() rethrows it. */
   error?: unknown;
 }
@@ -328,7 +336,9 @@ export class Cortex {
   private turn?: object;
   /** The utterance and seq of the held think last released: a redelivered confirm for it is ignored (CTX-PROV-023). */
   private lastReleased?: { utteranceId?: string; seq?: number };
-  /** Set by `stop()`: no think starts after it (CTX-PROV-016). */
+  /** The held think whose release is in flight, from its start until its end (CTX-PROV-038). */
+  private releasing?: Held;
+  /** Set by `stop()`: no think starts after it (CTX-STREAM-037). */
   private stopped = false;
 
   constructor(private d: CortexDeps) {
@@ -546,7 +556,7 @@ export class Cortex {
   /** `focusedAt` is the `attention.focus` envelope `ts`; a direct call without one leaves that stamp off. */
   async think(focus: Focus, focusedAt?: number): Promise<void> {
     const { cfg, log } = this.d;
-    if (this.stopped) return; // a stopped cortex starts no think (CTX-PROV-016)
+    if (this.stopped) return; // a stopped cortex starts no think (CTX-STREAM-037)
     // An ordinary focus replaces a held think as an ordinary one would (CTX-PROV-015, CTX-PROV-018): nothing is published for the ended think.
     if (focus.provisional !== true && this.held !== undefined) await this.endHeld(this.held, { status: false });
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
@@ -699,6 +709,7 @@ export class Cortex {
    */
   private async stopOwnLines(reason: "muted" | "paused"): Promise<void> {
     this.abandonWait(); // a tool wait ends with the mute or pause (CTX-TOOL-037)
+    this.haltRelease("muted"); // a release in flight publishes nothing more after a mute or pause (CTX-CTRL-008)
     const ids = [...this.pending].filter(([, p]) => p.own !== undefined).map(([id]) => id);
     if (!ids.length) return;
     for (const id of ids) {
@@ -720,7 +731,7 @@ export class Cortex {
    */
   private async readReply(messages: ChatMessage[], r: ReplyRequest): Promise<void> {
     const { cfg, llm, critic, log, bus } = this.d;
-    if (r.hold?.ended || this.stopped) return; // ended, or stopped, before its reading began (CTX-PROV-016)
+    if (r.hold?.ended || this.stopped) return; // ended, or stopped, before its reading began (CTX-PROV-016, CTX-STREAM-037)
     // @spec CTX-STREAM-033
     const { clause_min_chars: min, clause_max_chars: max, max_clauses: maxClauses } = cfg.brain.cortex;
     const tcfg = cfg.tools.reply;
@@ -728,7 +739,7 @@ export class Cortex {
     const offer = r.tools;
     const offering = offer.length > 0;
     const line: Line = {
-      ctrl: new AbortController(), lastSeq: -1, lastProduced: -1, published: [], emotion: "neutral", closed: false, exited: false, stopped: false,
+      ctrl: new AbortController(), lastSeq: -1, lastProduced: -1, lastOut: -1, published: [], emotion: "neutral", closed: false, exited: false, stopped: false,
       counted: 0, checked: [], emotionFixed: false, criticAsked: false, waited: false, waiting: false,
       ...(r.hold === undefined ? {} : { hold: r.hold }),
     };
@@ -857,9 +868,11 @@ export class Cortex {
           this.endSpeaking(id); // a line that never reached the bus is not pending
           throw err;
         });
+        line.lastOut = o.seq;
+        if (o.last) line.outClosed = true;
         r.onSaid();
         // @spec CTX-STREAM-018
-        await this.status("speaking", o.text);
+        if (!line.stopped) await this.status("speaking", o.text); // a say already in flight at a stop is the last thing the line says
         if (o.last) await this.settle(id);
         return;
       }
@@ -868,6 +881,8 @@ export class Cortex {
       const p = this.pending.get(id);
       const wasOutstanding = p !== undefined && this.outstanding(p);
       await bus.publish("brain.clause", { id, seq: o.seq, text: o.text, ...(o.last ? { last: true as const, through: o.seq } : {}) });
+      line.lastOut = o.seq;
+      if (o.last) line.outClosed = true;
       if (p && this.pending.get(id) === p) this.armValve(id, p, !wasOutstanding);
       if (o.last) await this.settle(id);
     };
@@ -877,8 +892,19 @@ export class Cortex {
     if (r.hold !== undefined) {
       const h = r.hold;
       h.drain = async () => {
-        while (h.queue.length > 0) await publishOut(h.queue.shift()!);
+        h.draining = true;
+        try {
+          // A stop ends the loop: the queue is dropped and the publish in flight is the last one (CTX-STREAM-037).
+          while (h.queue.length > 0 && !line.exited) await publishOut(h.queue.shift()!);
+        } finally {
+          h.draining = false;
+        }
         h.released = true;
+        // A stop that came during the release closes the line here, once, after the publish in flight (CTX-STREAM-037).
+        if (line.stopped && !line.closed && line.id !== undefined) {
+          line.lastSeq = line.lastProduced = line.lastOut; // the line closes through what reached the bus
+          await this.closeLine(line, line.haltCut ?? "stopped");
+        }
       };
     }
 
@@ -1342,6 +1368,9 @@ export class Cortex {
     this.abandonWait();
     if (this.held !== undefined) await this.endHeld(this.held, { status: false });
     for (const id of [...this.pending.keys()]) this.endSpeaking(id);
+    // A release in flight outlives the reading of its stream: its queue is dropped and its line stopped. Its drain closes the line after
+    // any publish in flight; a release still before its drain publishes nothing more (CTX-STREAM-037).
+    if (this.haltRelease("stopped")) return;
     const line = this.line;
     if (!line) return;
     line.stopped = true;
@@ -1565,6 +1594,23 @@ export class Cortex {
     if (opts.status) await this.statusLogged(this.noLineState());
   }
 
+  /**
+   * Halts the release in flight, if any: its queue is dropped and its stream aborted. Its drain closes the line with `cut` after any
+   * publish in flight; a release still before its drain publishes nothing more. False when no release is in flight.
+   */
+  private haltRelease(cut: LineCut): boolean {
+    const h = this.releasing;
+    if (h === undefined || h.released || h.line === undefined) return false;
+    const rl = h.line;
+    rl.stopped = true;
+    rl.haltCut = cut;
+    h.queue.length = 0;
+    rl.closed = rl.outClosed === true; // a closed mark set by a dropped output does not count
+    rl.exited = true;
+    rl.ctrl.abort();
+    return true;
+  }
+
   /** Ends a held think for a line of the cortex's own, or a pause or mute, which publish their own status (CTX-PROV-012, CTX-PROV-027). */
   private async dropHeld(status: boolean): Promise<void> {
     if (this.held !== undefined) await this.endHeld(this.held, { status });
@@ -1584,6 +1630,7 @@ export class Cortex {
     h.flags = rel.flags;
     if (rel.interjected) h.interjected = true;
     this.lastReleased = { utteranceId: h.utteranceId, seq: h.seq };
+    this.releasing = h;
     try {
       if (h.none && h.queue.length === 0) {
         h.released = true;
@@ -1605,14 +1652,22 @@ export class Cortex {
       await this.status("thinking", h.reason); // CTX-PROV-037
       await h.drain();
     } catch (err) {
-      // A publish that fails during the release ends the think: nothing more is published for it, and think() reports the failure.
+      // A publish that fails during the release ends the think: nothing more is held for it, and think() reports the failure.
       h.error = err;
       h.ended = true;
       h.released = true;
       h.queue.length = 0;
-      if (h.line !== undefined) { h.line.stopped = true; h.line.exited = true; h.line.ctrl.abort(); }
+      const line = h.line;
+      // A line already begun is closed `failed`, so its reply does not stay half-published (CTX-STREAM-024 to 026).
+      if (line !== undefined && line.id !== undefined) {
+        line.closed = line.outClosed === true; // a closed mark set by a dropped output does not count
+        line.lastSeq = line.lastProduced = line.lastOut; // the line closes through what reached the bus
+        await this.closeLine(line, "failed").catch(() => {});
+      }
+      if (line !== undefined) { line.stopped = true; line.exited = true; line.ctrl.abort(); }
       this.statusOwed = false;
     } finally {
+      if (this.releasing === h) this.releasing = undefined;
       h.resolve();
     }
   }

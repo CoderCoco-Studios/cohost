@@ -668,7 +668,7 @@ test("a replaced held think does not clear the replacement's thinking flag: a th
   await waitFor(() => s.says().length === 1, "B finishes");
 });
 
-// @spec CTX-PROV-016, CTX-PROV-031, CTX-PROV-033
+// @spec CTX-PROV-016, CTX-PROV-031, CTX-PROV-033, CTX-STREAM-037
 test("stop() ends a held think silently, and a late confirm after it speaks nothing", async () => {
   const s = setup();
   await holdOpen(s);
@@ -786,4 +786,105 @@ test("stop() during the recall wait: the think makes no model call", async () =>
   await sleep(100);
   assert.equal(s.llm.calls.length, 0);
   assert.equal(s.says().length, 0);
+});
+
+/** The clause events published after index `from`: text, last, cut, seq and through. */
+const clausesFrom = (s: S, from: number) =>
+  s.bus.published.slice(from).filter((e) => e.type === "brain.clause").map((e) => {
+    const d = e.data as { text: string; seq: number; last?: true; cut?: string; through?: number };
+    return [d.text, d.last ?? null, d.cut ?? null, d.seq, d.through ?? null];
+  });
+
+// @spec CTX-STREAM-037, CTX-PROV-038
+test("stop() during a release's brain.say publish: the say in flight is the last line, no later clause or speaking status, and the line closes stopped", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  const g = gate();
+  const real = s.bus.publish.bind(s.bus);
+  let once = true;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (type === "brain.say" && once) { once = false; await g.promise; }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  const p = s.cortex.onEvent(confirm());
+  await sleep(10);
+  await s.cortex.stop();
+  const atStop = s.bus.published.length;
+  g.open();
+  await p;
+  await sleep(80);
+  assert.deepEqual(clausesFrom(s, atStop), [["", true, "stopped", 1, 0]], "only the closing clause follows the say, through the one clause that was published");
+  assert.ok(!s.bus.published.slice(atStop).some((e) => e.type === "brain.status" && (e.data as { state: string }).state === "speaking"), "no speaking status after stop");
+  assert.equal(s.says().length, 1);
+  assert.ok(!s.line().some((e) => e.text === "second clause follows,"), "the held clauses are dropped");
+});
+
+// @spec CTX-STREAM-037, CTX-PROV-038
+test("stop() during a release with the stream still open: the release's first output is the last, the stream is aborted and the line closes stopped", async () => {
+  const s = setup();
+  const hold = gate();
+  s.llm.rounds.push({ text: "[happy] Only one clause here, then more", hold: hold.promise });
+  await s.cortex.onEvent(provisional());
+  await opened(s);
+  const g = gate();
+  const real = s.bus.publish.bind(s.bus);
+  let once = true;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (type === "brain.say" && once) { once = false; await g.promise; }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  const p = s.cortex.onEvent(confirm());
+  await sleep(10);
+  await s.cortex.stop();
+  const atStop = s.bus.published.length;
+  g.open();
+  await p;
+  hold.open();
+  await sleep(80);
+  assert.deepEqual(clausesFrom(s, atStop), [["", true, "stopped", 1, 0]]);
+  assert.equal(s.llm.endedAborted[0], true, "the model stream was aborted");
+});
+
+// @spec CTX-CTRL-008, CTX-STREAM-037, CTX-PROV-038
+test("a mute during a release's brain.say publish closes the line muted and publishes no later clause", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  const g = gate();
+  const real = s.bus.publish.bind(s.bus);
+  let once = true;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (type === "brain.say" && once) { once = false; await g.promise; }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  const p = s.cortex.onEvent(confirm());
+  await sleep(10);
+  await s.cortex.onEvent(control("mute"));
+  const atMute = s.bus.published.length;
+  g.open();
+  await p;
+  await sleep(80);
+  assert.deepEqual(clausesFrom(s, atMute), [["", true, "muted", 1, 0]]);
+});
+
+// @spec CTX-STREAM-024, CTX-STREAM-037, CTX-PROV-038
+test("a brain.clause that fails mid-release closes the reply failed: the line is not left half-published", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  const real = s.bus.publish.bind(s.bus);
+  let failed = false;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (type === "brain.clause" && !failed) { failed = true; throw new Error("bus down"); }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  await s.cortex.onEvent(confirm());
+  await sleep(80);
+  assert.equal(s.says().length, 1);
+  assert.ok(!s.line().some((e) => e.text === "second clause follows,"), "the failed clause was not published");
+  assert.deepEqual(clausesFrom(s, 0).filter((c) => c[2] === "failed"), [["", true, "failed", 1, 0]], "the reply closes failed");
 });

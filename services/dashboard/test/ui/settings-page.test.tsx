@@ -816,3 +816,70 @@ test("a row whose control brings its own label (model, voice, secret) shows that
   for (const c of embedded) assert.ok(c.closest(".srow")!.querySelector(".srow-l .label[aria-hidden='true']"), "the row label is the one shown");
   assert.ok(document.querySelector(".srow-c:not(.embedded) input.field, .srow-c:not(.embedded) select.field"), "plain rows are not embedded");
 });
+
+// ---- the `live` section and the `slider` widget (issue #219) -------------------------------------------------------------------
+
+/** The fixture schema with `plain` marked `live` and given a wide number key with the `slider` widget and one without. */
+function liveSchema(services: string[] = []) {
+  const plain = schemaPayload.sections.find((s) => s.path === "plain")!;
+  const props = (plain.schema as { properties: Record<string, unknown> }).properties;
+  return {
+    ...schemaPayload,
+    sections: schemaPayload.sections.map((s) => s.path !== "plain" ? s : {
+      ...plain, live: true, services,
+      schema: { type: "object", properties: { ...props, turn: { type: "number", minimum: -90, maximum: 90, default: 0 }, wide: { type: "number", minimum: -90, maximum: 90, default: 0 } } },
+      keys: { turn: { help: "Turns it.", unit: "deg", widget: { type: "slider" }, label: "Turn" }, wide: { help: "Wide.", label: "Wide" } },
+    }),
+  };
+}
+const plainWithTurn = { section: "plain", etag: "p1", unknown: [], keys: {
+  speak_rate_ms: { source: "default", editable: true, value: 10 }, deep_thing: { source: "default", editable: true, value: false },
+  turn: { source: "literal", editable: true, value: 0, raw: "0" }, wide: { source: "literal", editable: true, value: 0, raw: "0" } } };
+
+// @spec DASH-SET-002
+test("a section the schema marks live says a save applies at once, open pages included, and restarts nothing, whether or not a unit reads it", async () => {
+  for (const services of [[], ["voice"]]) {
+    const b = await open("plain", { schema: liveSchema(services), routes: { "GET /config/plain": { json: plainWithTurn } } });
+    const header = text(screen.getByRole("heading", { level: 1 }).closest(".card-h"));
+    assert.match(header, /a save applies at once/i);
+    assert.match(header, /open pages included/i);
+    assert.match(header, /restarts nothing/i);
+    assert.doesNotMatch(header, /changes apply when they restart/);
+    assert.doesNotMatch(header, /applies at its next start/);
+    assert.match(header, /config\.yaml · plain · \d+ settings?/, "the path and the count stay");
+    b.unmount();
+  }
+});
+
+// @spec DASH-SET-002
+test("a section that is not live keeps its line: read by units and applies when they restart", async () => {
+  await open("demo");
+  assert.match(text(screen.getByText(/\d+ settings · /)), /changes apply when they restart/);
+  assert.doesNotMatch(text(screen.getByRole("heading", { level: 1 }).closest(".card-h")), /restarts nothing/);
+});
+
+// @spec DASH-SET-018
+test("a key whose widget is slider is a slider with printed ends and an exact box whatever its range; the same range without the hint is a number box", async () => {
+  await open("plain", { schema: liveSchema(), routes: { "GET /config/plain": { json: plainWithTurn } } });
+  const turn = within(row("turn")).getByRole("slider", { name: "Turn" });
+  assert.deepEqual([turn.getAttribute("min"), turn.getAttribute("max")], ["-90", "90"]);
+  assert.ok(within(row("turn")).getByRole("spinbutton", { name: "Turn value" }));
+  assert.ok(within(row("turn")).getByText("deg"));
+  assert.equal(within(row("wide")).queryByRole("slider"), null, "span 180 without the hint stays a number box");
+  assert.ok(within(row("wide")).getByRole("spinbutton", { name: "Wide" }));
+  fireEvent.change(turn, { target: { value: "30" } });
+  assert.equal((within(row("turn")).getByRole("spinbutton", { name: "Turn value" }) as HTMLInputElement).value, "30", "kept in step");
+});
+
+// @spec DASH-SET-018
+test("a slider widget on a key with no bounds, or on a non-number, is treated as absent and never hides the key", async () => {
+  const schema = liveSchema();
+  const plain = schema.sections.find((s) => s.path === "plain")!;
+  (plain.schema as { properties: Record<string, unknown> }).properties.turn = { type: "number" };
+  (plain.keys as Record<string, unknown>).deep_thing = { help: "x", widget: { type: "slider" } };
+  await open("plain", { schema, routes: { "GET /config/plain": { json: plainWithTurn } } });
+  assert.ok(row("turn"), "the unbounded key is shown");
+  assert.equal(within(row("turn")).queryByRole("slider"), null);
+  assert.ok(within(row("turn")).getByRole("spinbutton", { name: "Turn" }));
+  assert.ok(within(row("deep_thing")).getByRole("switch"), "a boolean keeps its switch");
+});

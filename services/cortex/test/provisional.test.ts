@@ -234,19 +234,22 @@ test("a tool call parks the think: the text before it is held, no tool.request u
 
 // @spec CTX-PROV-009
 test("the filler clock and the call budget count from the first tool.request after the confirmation, not from the park", async () => {
-  const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 200, budget_ms: 200, filler_lines: ["Hold on a sec."] } } });
-  s.llm.rounds.push({ calls: [call("c1")] }, { text: "[happy] It is noon." });
-  s.bus.answerAfterMs = 60;
+  // The hold outlasts both clocks (400 ms) so a clock that counted from the park would have fired by the confirm. The answer comes
+  // in a few ms, well inside the 400 ms, so the reply itself cannot race the filler's clock on a loaded machine.
+  const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 400, budget_ms: 400, filler_lines: ["Hold on a sec."] } } });
+  s.llm.rounds.push({ text: "[happy] Let me check the clock.", calls: [call("c1")] }, { text: "[happy] It is noon." });
+  s.bus.answerAfterMs = 5;
   await s.cortex.onEvent(provisional());
   await streamed(s);
-  await sleep(320); // longer than both clocks
-  assert.equal(s.bus.requests.length, 0, "no tool.request and no line during the hold");
-  assert.equal(s.says().length, 0);
+  await sleep(500); // longer than both clocks
+  assert.equal(s.bus.requests.length, 0, "no tool.request during the hold");
+  assert.equal(s.says().length, 0, "no line during the hold");
   await s.cortex.onEvent(confirm());
-  await waitFor(() => s.says().length >= 1, "a line");
   await waitFor(() => s.llm.calls.length === 2, "the second round ran: the budget was not spent during the hold");
-  assert.equal(s.says()[0]!.text, "It is noon.", "no filler: the result came inside filler_after_ms of the request");
-  assert.equal(s.says().length, 1);
+  assert.equal(s.bus.requests.length, 1, "the request went out after the confirm");
+  const spoken = [...s.says(), ...s.line()].map((x) => x.text);
+  assert.deepEqual(spoken.filter((t) => t === "Hold on a sec."), [], "no filler: the result came inside filler_after_ms of the request");
+  assert.ok(spoken.includes("It is noon."), "the result was spoken");
 });
 
 // @spec CTX-PROV-025, CTX-PROV-019, CTX-PROV-030, CTX-SAY-006

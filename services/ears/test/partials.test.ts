@@ -546,7 +546,10 @@ test("a reused early transcript is the final even with a partial in flight: noth
     return "hello there my friend";
   });
   await run(stt, cfg({ silence_ms: 700, partial_step_ms: 150, stt_timeout_ms: 5000, early: { enabled: true, after_ms: 100 } }), async (r) => {
-    await feed(r.bus, 10, { gapMs: 15 });
+    // The frames arrive in one synchronous burst: the early snapshot (due 100 ms after the last frame) then always precedes the
+    // partial step (due 150 ms after the utterance opened), so the first STT call is the early one. Spaced frames let a load
+    // stall run the partial step first, and the gate would then hold the early call and nothing would publish.
+    await feed(r.bus, 10);
     lastFrameAt = Date.now();
     await waitFor(() => r.heard().length === 1, "speech.heard while a partial is in flight", 3000);
     const h = r.heard()[0]!;

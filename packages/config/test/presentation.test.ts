@@ -336,7 +336,10 @@ test("live is true on the renderer section alone, and sectionPresentation carrie
 // @spec CFG-PRES-020
 test("renderer.model gets the avatar-model widget, renderer.turn the slider, and none of the renderer keys nor dashboard.models.max_bytes is sensitive", () => {
   assert.deepEqual(PRESENTATION.keys["renderer.model"]!.widget, { type: "avatar-model" });
-  assert.deepEqual(PRESENTATION.keys["renderer.turn"]!.widget, { type: "slider" });
+  assert.deepEqual(PRESENTATION.keys["renderer.turn"]!.widget, { type: "slider", step: 1 });
+  assert.deepEqual(PRESENTATION.keys["renderer.zoom"]!.widget, { type: "slider", step: 0.05 });
+  assert.deepEqual(PRESENTATION.keys["renderer.offset_y"]!.widget, { type: "slider", step: 0.01 });
+  assert.equal(PRESENTATION.keys["renderer.offset_y"]!.label, "Vertical position");
   for (const k of [...sectionKeyPaths("renderer"), "dashboard.models.max_bytes"]) assert.notEqual(PRESENTATION.keys[k]?.sensitive, true, `${k} is not sensitive`);
   assert.equal((sectionJsonSchema("renderer") as any).properties.turn.minimum, -90);
 });

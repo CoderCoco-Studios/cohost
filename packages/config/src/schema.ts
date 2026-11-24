@@ -589,7 +589,7 @@ export const ConfigSchema = z.object({
     model: z.string().max(80).refine((v) => v === "" || RENDERER_MODEL_NAME.test(v), "must be empty or a .vrm file name: a letter or digit first, then letters, digits, spaces, dots, underscores or hyphens, ending in .vrm").default(""), // @spec CFG-SCH-098
     /** Camera distance multiplier. */
     zoom: z.number().min(0.5).max(3).default(1), // @spec CFG-SCH-099
-    /** Vertical framing offset, in metres. */
+    /** Vertical framing offset, in frame heights: 0 is centred, a positive value raises the model. */
     offset_y: z.number().min(-1.5).max(1.5).default(0), // @spec CFG-SCH-099
     /** Yaw of the model in degrees. */
     turn: z.number().min(-90).max(90).default(0), // @spec CFG-SCH-099

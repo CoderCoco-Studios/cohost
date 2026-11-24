@@ -36,6 +36,8 @@ export type Control =
   | { kind: "timezone" }
   | { kind: "model"; modelKind: ModelKind }
   | { kind: "voice" }
+  /** The `.vrm` models of the dashboard's model store, with the renderer's live preview around them (screens/settings/AvatarRenderer.tsx). */
+  | { kind: "avatar-model" }
   | { kind: "secret" }
   | { kind: "objects"; props: ItemProp[] }
   /** The `tools.servers` map and the `tools.allow` map, each with a widget of its own (screens/settings/ToolSettings.tsx). */
@@ -63,6 +65,8 @@ export interface SectionModel {
   group: string;
   about: string;
   page?: string;
+  /** The section's saves apply at once to a running unit, which is restarted by nothing (`live` in `GET /config/schema`, DASH-SET-002). */
+  live: boolean;
   services: string[];
   keys: KeyModel[];
 }
@@ -107,6 +111,7 @@ function labelled(values: unknown[], widget: unknown): Option[] {
  * an unknown hint, an unknown model kind or a hint on a type it does not fit is treated as absent (DASH-SET-013).
  * Inside a card (`inItem`) an enum is always a select (design: the array-of-objects row).
  */
+// @spec DASH-SET-018
 export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?: unknown } | undefined, opts: { secret?: boolean; inItem?: boolean } = {}): Control {
   if (opts.secret) return { kind: "secret" };
   const widget = isObj(pres?.widget) ? pres!.widget : undefined;
@@ -115,6 +120,7 @@ export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?:
   if (wtype === "mcp-servers") return { kind: "mcp-servers" };
   if (wtype === "tool-list") return { kind: "tool-list" };
   if (t === "string" && !schema.enum) {
+    if (wtype === "avatar-model") return { kind: "avatar-model" };
     if (wtype === "timezone") return { kind: "timezone" };
     if (wtype === "voice") return { kind: "voice" };
     if (wtype === "model" && typeof widget!.kind === "string" && MODEL_KINDS.includes(widget!.kind)) return { kind: "model", modelKind: widget!.kind as ModelKind };
@@ -132,8 +138,12 @@ export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?:
   }
   if (t === "integer" || t === "number") {
     const min = num(schema.minimum), max = num(schema.maximum);
-    if (min !== undefined && max !== undefined && max - min <= 100 && max > min) {
-      return { kind: "slider", min, max, step: t === "integer" ? 1 : max - min <= 2 ? 0.01 : 0.05 };
+    // A `slider` hint makes the key a slider whatever the span of its range (DASH-SET-018); a hint on a key with no bounds is absent.
+    const bounded = min !== undefined && max !== undefined && max > min;
+    if (bounded && (wtype === "slider" || max - min <= 100)) {
+      const hinted = num(widget?.step);
+      const step = hinted !== undefined && hinted > 0 ? hinted : t === "integer" ? 1 : max - min <= 2 ? 0.01 : 0.05;
+      return { kind: "slider", min, max, step };
     }
     return { kind: "number" };
   }
@@ -196,6 +206,7 @@ export function parseSchema(payload: unknown): SchemaModel {
       group: str(raw.group) ?? titleOf(path.split(".")[0]!),
       about: str(raw.about) ?? "",
       page: str(raw.page),
+      live: raw.live === true,
       services: Array.isArray(raw.services) ? raw.services.filter((s): s is string => typeof s === "string") : [],
       keys: found.map((f) => keyModel(f.key, f.schema, isObj(pres[f.key]) ? pres[f.key] as Record<string, unknown> : undefined, secrets)),
     });

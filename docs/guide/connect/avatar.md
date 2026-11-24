@@ -102,9 +102,11 @@ Under `browser` in `config/expressions.yaml`, each emotion names the VRM express
 
 The browser driver ignores `gestures`, because a VRM has no hotkeys.
 
-::: aside
-The relay and its status route are in place, and `/avatar` answers a "not built" page until the renderer page itself lands with #218. Remove this note when #218 merges.
-:::
+### Choosing, previewing and framing a model
+
+Pick the model and frame it on the Settings screen's Avatar page, in the **Avatar renderer** group. Upload a `.vrm` file there or copy it into the model store (see [Avatar models](../operate/dashboard.md#avatar-models)), choose its row, and the preview beside the list shows the choice before you save: it is the same page OBS loads, drawn in a frame over a checkerboard, so a transparent background shows as it will on stream. Save applies the model and framing to every open renderer page at once, and nothing restarts. Zoom, vertical position and turn move the model in the frame; Reset framing returns all three to their defaults.
+
+Read the terms the model's author attaches before you stream it: cohost does not enforce them.
 
 ## Getting the avatar into OBS
 

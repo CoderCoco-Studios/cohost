@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "427 specs: 402 [x], 25 [ ] (the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037; the avatar settings DASH-AVS-001 to 011 (#219); DASH-SET-002, DASH-SET-018 and DASH-UI-054 are open gaps)."
+    next: "427 specs: 416 [x], 11 [ ] (the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
     drift: null
 
   control-plane:

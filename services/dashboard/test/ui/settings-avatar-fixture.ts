@@ -24,12 +24,12 @@ export const avatarSchema = {
           turn: { type: "number", minimum: -90, maximum: 90, default: 0 },
         },
       },
-      // Mirrors the real presentation: only `turn` carries a `slider` hint, and no key carries a step.
+      // Mirrors the real presentation (packages/config/src/presentation.ts): each framing key carries its slider step.
       keys: {
         model: { help: "The .vrm model file.", widget: { type: "avatar-model" }, label: "Model" },
-        zoom: { help: "How close the camera is.", label: "Zoom" },
-        offset_y: { help: "Moves the model up or down.", label: "Vertical position" },
-        turn: { help: "Turns the model.", unit: "deg", widget: { type: "slider" }, label: "Turn" },
+        zoom: { help: "How close the camera is.", label: "Zoom", widget: { type: "slider", step: 0.05 } },
+        offset_y: { help: "Moves the model up or down.", label: "Vertical position", widget: { type: "slider", step: 0.01 } },
+        turn: { help: "Turns the model.", unit: "deg", widget: { type: "slider", step: 1 }, label: "Turn" },
       },
     },
   ],

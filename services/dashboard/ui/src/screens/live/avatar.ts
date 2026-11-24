@@ -23,14 +23,19 @@ export function avatarParams(d: Record<string, unknown> | undefined): AvatarPara
   };
 }
 
-/** The face's SVG geometry for the parameters (the driver's own mapping: head offset and roll, eye size and gaze, mouth curve). */
+/**
+ * The face's SVG geometry for the parameters, drawn as a viewer sees the face (AVATAR-DIR-001 to AVATAR-DIR-005): a positive
+ * `headX` moves it left, a positive `headY` down, a positive `headZ` rolls its top to the right (SVG's clockwise rotation), and
+ * a positive `eyeX` moves the eyes right and a positive `eyeY` up (DASH-UI-054).
+ */
+// @spec DASH-UI-054
 export function faceGeometry(p: AvatarParams) {
   const open = 4 + p.mouthOpen * 22, smile = p.mouthSmile * 10;
   return {
-    head: `translate(${p.headX * 0.8} ${-p.headY * 0.8}) rotate(${p.headZ} 100 100)`,
+    head: `translate(${-p.headX * 0.8} ${p.headY * 0.8}) rotate(${p.headZ} 100 100)`,
     eyeRy: Math.max(0.5, 9 * (1 - p.blink)),
-    eyeLeft: { cx: 75 + p.eyeX * 4, cy: 88 + p.eyeY * 3 },
-    eyeRight: { cx: 125 + p.eyeX * 4, cy: 88 + p.eyeY * 3 },
+    eyeLeft: { cx: 75 + p.eyeX * 4, cy: 88 - p.eyeY * 3 },
+    eyeRight: { cx: 125 + p.eyeX * 4, cy: 88 - p.eyeY * 3 },
     mouth: `M80 128 Q100 ${128 + smile + open} 120 128 Q100 ${128 + smile - open * 0.3} 80 128`,
   };
 }

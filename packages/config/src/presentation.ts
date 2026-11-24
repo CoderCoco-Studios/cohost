@@ -28,8 +28,11 @@ export type Widget =
   | { type: "tool-list" }
   /** The `.vrm` models in the dashboard's model store, chosen by name. */
   | { type: "avatar-model" }
-  /** A number between the key's schema minimum and maximum, moved by a slider. */
-  | { type: "slider" };
+  /**
+   * A number between the key's schema minimum and maximum, moved by a slider. `step` is the slider's step; the page takes
+   * the integer step of an integer key and 0.01 or 0.05 otherwise when it is absent.
+   */
+  | { type: "slider"; step?: number };
 
 /** One property of an array-of-objects key's item. */
 export interface ItemPresentation { help: string; label?: string; unit?: string }
@@ -316,9 +319,9 @@ const keys: Record<string, KeyPresentation> = {
   "avatar.driver": { help: "Which avatar app the co-host drives: vtube-studio talks to VTube Studio, vmc sends to a VMC receiver, browser draws the avatar in the browser renderer, and null means no avatar app, so the co-host is dashboard-only." },
   // @spec CFG-PRES-020
   "renderer.model": { help: "The .vrm model file the browser renderer loads from the model store on the dashboard, chosen by name. Leave it empty to draw the built-in placeholder model.", widget: { type: "avatar-model" }, label: "Model" },
-  "renderer.zoom": { help: "How close the camera is to the model: 1 is the default framing, higher is closer and lower pulls back. It takes 0.5 to 3.", label: "Zoom" },
-  "renderer.offset_y": { help: "Moves the model up or down in the frame: 0 is centred, a positive value raises it and a negative value lowers it. It takes -1.5 to 1.5.", label: "Vertical offset" },
-  "renderer.turn": { help: "Turns the model left or right in degrees: 0 faces the camera, and the range is -90 to 90.", unit: "deg", widget: { type: "slider" }, label: "Turn" },
+  "renderer.zoom": { help: "How close the camera is to the model: 1 is the default framing, higher is closer and lower pulls back. It takes 0.5 to 3.", label: "Zoom", widget: { type: "slider", step: 0.05 } },
+  "renderer.offset_y": { help: "Moves the model up or down in the frame: 0 is centred, a positive value raises it and a negative value lowers it. It takes -1.5 to 1.5.", label: "Vertical position", widget: { type: "slider", step: 0.01 } },
+  "renderer.turn": { help: "Turns the model left or right in degrees: 0 faces the camera, and the range is -90 to 90.", unit: "deg", widget: { type: "slider", step: 1 }, label: "Turn" },
   "avatar.fps": { help: "How many times per second the avatar's pose is updated. Higher looks smoother but sends more updates to the avatar app.", unit: "fps", label: "Update rate" },
   "avatar.smoothing": { help: "How quickly the avatar's head, eyes and expression move toward their target, from 0 to 1. Higher is snappier and more abrupt; lower is slower and more floaty." },
   "avatar.idle_motion": { help: "When on, the avatar's head and eyes drift gently while the co-host is idle, and a bit more while it talks, so it never looks frozen. Off keeps it still apart from blinking and speaking." },

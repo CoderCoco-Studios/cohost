@@ -254,7 +254,7 @@ test("a file over the limit, or one without a .vrm extension, is refused before 
   assert.match(text(screen.getByRole("alert")), /\.vrm/);
   pick(vrm("Model.VRM.exe"));
   await settle();
-  assert.equal(b.app.fetch.callsTo("POST /avatar/models").length, 0, "nothing was sent");
+  assert.equal(b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models")).length, 0, "nothing was sent");
 });
 
 // @spec DASH-AVS-004
@@ -262,7 +262,7 @@ test("an upload of exactly the limit is sent; a .VRM extension in capitals is ac
   const b = await open({ routes: { "POST /avatar/models": { status: 201, json: { ok: true, model: model("Max.vrm") } } } });
   pick(vrm("Max.VRM", MAX_BYTES));
   await settle(6);
-  assert.equal(b.app.fetch.callsTo("POST /avatar/models").length, 1);
+  assert.equal(b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models")).length, 1);
 });
 
 // @spec DASH-AVS-004
@@ -271,7 +271,7 @@ test("an upload POSTs the raw file to /avatar/models?name=<file name> with progr
   pick(vrm("New.vrm"));
   await settle();
   assert.ok(within(group()).getByRole("progressbar"), "progress shows while the upload runs");
-  const call = b.app.fetch.callsTo("POST /avatar/models")[0]!;
+  const call = b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models"))[0]!;
   assert.equal(nameParam(call.path).get("name"), "New.vrm");
   assert.equal(nameParam(call.path).get("replace"), null);
   assert.ok(call.raw instanceof Blob || call.raw instanceof File || call.raw instanceof ArrayBuffer || call.raw instanceof Uint8Array, "the body is the file, not JSON or form data");
@@ -306,12 +306,12 @@ test("a 409 that names a name asks Replace <name>? in a dialog; Cancel sends not
   assert.match(text(dialog), /Replace Kiki\.vrm\?/);
   await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
   await settle();
-  assert.equal(b.app.fetch.callsTo("POST /avatar/models").length, 1, "Cancel sends nothing");
+  assert.equal(b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models")).length, 1, "Cancel sends nothing");
   pick(vrm("Kiki.vrm"));
   await settle(6);
   await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^Replace/ }));
   await settle(6);
-  const calls = b.app.fetch.callsTo("POST /avatar/models");
+  const calls = b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models"));
   assert.equal(nameParam(calls.at(-1)!.path).get("replace"), "1");
   assert.equal(nameParam(calls.at(-1)!.path).get("name"), "Kiki.vrm");
   assert.equal(screen.queryByRole("dialog"), null);
@@ -336,7 +336,7 @@ test("a 401 asks for the control token through the Access dialog and retries the
   b.app.rt.access.setToken("control", "tok", "tab");
   act(() => b.app.rt.access.resolvePrompt(true));
   await settle(8);
-  assert.equal(b.app.fetch.callsTo("POST /avatar/models").at(-1)!.headers.authorization, "Bearer tok");
+  assert.equal(b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models")).at(-1)!.headers.authorization, "Bearer tok");
   pick(vrm("Other.vrm"));
   b.app.rt.access.lock("control");
   await settle(6);
@@ -369,7 +369,7 @@ test("only one upload runs from the page: a second file while one runs is not se
   await settle();
   pick(vrm("Two.vrm"));
   await settle();
-  assert.equal(b.app.fetch.callsTo("POST /avatar/models").length, 1);
+  assert.equal(b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models")).length, 1);
   await act(async () => { gate({ status: 201, json: { ok: true, model: model("One.vrm") } }); });
 });
 

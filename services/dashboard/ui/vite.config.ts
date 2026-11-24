@@ -53,9 +53,14 @@ function readPackage(dir: string, name: string): BundledPackage {
   return { name: manifest.name ?? name, version: manifest.version ?? "0.0.0", license, workspace: false, files };
 }
 
+/** The build-time constant the notices plugin replaces with the hashed notices file name (DASH-AVS-011, read in ui/src/app/notices.ts). */
+// @spec DASH-AVS-011
+const NOTICES_CONSTANT = "__COHOST_NOTICES__";
+
 /**
  * Writes `assets/third-party-notices-<hash>.txt` for the packages every entry bundles, and names it on the first line of
- * each entry script. A licence the allow-list refuses, or a package with no licence text, fails the build (DEPLOY-LIC-005 to -007).
+ * each entry script. The file name also replaces `__COHOST_NOTICES__` in each entry, so the Avatar settings can link to it.
+ * A licence the allow-list refuses, or a package with no licence text, fails the build (DEPLOY-LIC-005 to -007).
  */
 function thirdPartyNotices(): Plugin {
   return {
@@ -77,7 +82,8 @@ function thirdPartyNotices(): Plugin {
       const { text, fileName } = buildNotices([...found.values()]);
       this.emitFile({ type: "asset", fileName: `assets/${fileName}`, source: text });
       for (const item of Object.values(bundle)) {
-        if (item.type === "chunk" && item.isEntry) item.code = `/* Third-party notices: assets/${fileName} */\n${item.code}`;
+        if (item.type !== "chunk" || !item.isEntry) continue;
+        item.code = `/* Third-party notices: assets/${fileName} */\n${item.code.split(NOTICES_CONSTANT).join(JSON.stringify(fileName))}`;
       }
     },
   };

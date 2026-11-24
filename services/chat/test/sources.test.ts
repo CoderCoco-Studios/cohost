@@ -235,7 +235,7 @@ test("the 30 s timer is cancelled once every source has had an outcome, and on s
   await r.stop();
 });
 
-// @spec CHAT-SRC-009, CHAT-HEALTH-003, CHAT-HEALTH-009
+// @spec CHAT-SRC-001, CHAT-SRC-009, CHAT-HEALTH-003, CHAT-HEALTH-009
 test("each source's dependency follows its own state: ok only while reading", async () => {
   const r = rig({ chat: { sources: ["twitch", "youtube"], youtube: YT } }, { twitch: twitchStub, youtube: youtubeStub });
   try {

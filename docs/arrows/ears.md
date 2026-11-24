@@ -40,9 +40,9 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | IDs | Topic | Specs | Markers |
 | --- | --- | --- | --- |
 | EARS-START-001 to 008 | startup plans, consumer group | 6 | 6 `[x]` |
-| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 10 `[x]`, 1 `[ ]` (HEAR-012) |
+| EARS-HEAR-001 to 012 | listening and transcription, audio-end stamp | 11 | 11 `[x]` |
 | EARS-VAD-001 to 008 | endpointing | 8 | 8 `[x]` |
-| EARS-PART-001 to 022 | partial transcripts | 22 | 20 `[x]`, 1 `[ ]`, 1 `[D]` |
+| EARS-PART-001 to 022 | partial transcripts | 22 | 21 `[x]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
 | EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 13 `[x]`, 1 `[ ]`, 1 `[D]` |
 | EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 4 `[x]`, 3 `[ ]` |
@@ -100,4 +100,4 @@ None.
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
-The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the checks in #239; EARS-SRC-016 follows when the helper writes frames.
+The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the checks in #330 (the manual live checks of the capability epics); EARS-SRC-016 follows when the helper writes frames.

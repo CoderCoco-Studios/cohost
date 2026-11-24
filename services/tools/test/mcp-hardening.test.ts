@@ -470,7 +470,7 @@ test("a schema is listed up to 64 levels deep, and a deeper or larger one is lef
   const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
   await waitServer(s, "search", "ok");
   assert.ok(JSON.stringify(nest(100)).length < 4000, "the 100-level schema is under the size limit: only its depth refuses it");
-  assert.deepEqual(s.catalogs().at(-1)!.tools.map((t) => t.name), ["search__l64"]);
+  assert.deepEqual(s.catalogs().at(-1)!.tools.filter((t) => t.server !== undefined).map((t) => t.name), ["search__l64"]);
   assert.match(catalogServer(s, "search")!.detail, /3 left out/);
   await s.stop();
 });

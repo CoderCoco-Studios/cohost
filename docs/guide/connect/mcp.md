@@ -6,7 +6,7 @@ track: simple
 
 # MCP tool servers
 
-By the end of this page you will know how to add an [MCP](../../start/glossary.md#mcp) server to the co-host, which of its tools the co-host may use, and what each call sends and returns. An MCP server is a web service you run or trust that offers tools, such as a web search. The co-host calls its tools in the middle of a reply when the model asks for one.
+The co-host also has four built-in tools (clock, stream info, memory lookup and timers) that need no server; see [Built-in tools](built-in-tools.md). By the end of this page you will know how to add an [MCP](../../start/glossary.md#mcp) server to the co-host, which of its tools the co-host may use, and what each call sends and returns. An MCP server is a web service you run or trust that offers tools, such as a web search. The co-host calls its tools in the middle of a reply when the model asks for one.
 
 ## What you need
 

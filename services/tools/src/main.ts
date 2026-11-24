@@ -9,13 +9,14 @@ import { createLogger, egressDestinations, type Config } from "@cohost/config";
 import { createInjectHandler, runService, type HealthPublisher, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
 import { buildSnapshot, publishedServers, publishedTool, type DepStatus, type Mode, type Snapshot } from "./catalog.js";
 import { CallPipeline, type ToolRequest } from "./calls.js";
+import { BuiltinTools, type BuiltinEnv } from "./builtin/index.js";
 import { healthOf, type Health } from "./health.js";
 import { mockSources } from "./mock.js";
 import { mcpSources, type McpEnv } from "./mcp.js";
 import type { ToolSource } from "./source.js";
 
 /** What `toolsMain` needs from a Bus; tests pass a fake. */
-export type ToolsBus = Publisher & HealthPublisher & Pick<Bus, "subscribe" | "resetGroup" | "stop">;
+export type ToolsBus = Publisher & HealthPublisher & Pick<Bus, "subscribe" | "resetGroup" | "stop" | "putTimer" | "deleteTimer" | "listTimers">;
 
 /** The process-level collaborators of the service, replaceable so a test runs it without Redis, signals or exit. */
 export type ToolsEnv = Pick<RunServiceOptions<ToolsBus>, "loadConfig" | "createBus" | "onShutdown" | "exit" | "log" | "stopTimeoutMs"> & {
@@ -23,6 +24,8 @@ export type ToolsEnv = Pick<RunServiceOptions<ToolsBus>, "loadConfig" | "createB
   createSources?: (cfg: Config) => ToolSource[];
   /** The MCP client's seam: the backoff and the setup timeout of each server connection (TOOL-MCP-014). */
   mcp?: McpEnv;
+  /** The built-in tools' seams: `fetch` for the platform calls, the epoch clock and the one scheduler of every wait. */
+  builtin?: BuiltinEnv;
 };
 
 /** The dependencies the heartbeat reads: none until the service has checked its sources (TOOL-SVC-004). */
@@ -55,6 +58,7 @@ export async function toolsMain(
   const { cfg, bus, log, heartbeat, onStop } = ctx;
   const mode: Mode = cfg.tools.mode;
   const sources: ToolSource[] = mode === "mock" ? mockSources(cfg) : (env.createSources ?? ((c) => mcpSources(c, env.mcp)))(cfg);
+  const builtins = new BuiltinTools({ cfg, mode, bus, log, env: env.builtin ?? {} });
   // @spec TOOL-MCP-007, TOOL-MCP-011: one start warning for each egress entry of a server that is off the LAN, naming the server and the host.
   if (mode === "live") {
     for (const e of egressDestinations(cfg)) {
@@ -68,8 +72,9 @@ export async function toolsMain(
   let checked = false;
   let latest: Health = { deps: {}, detail: "", degraded: false };
   let lastKey: string | undefined;
-  const snapshot = (): Snapshot => buildSnapshot(cfg, sources, mode);
-  health.deps = () => (checked ? latest.deps : {});
+  const snapshot = (): Snapshot => buildSnapshot(cfg, sources, mode, builtins.tools);
+  // The built-ins' dependencies are read live (TOOL-STRM-007, TOOL-MEM-006); the servers' are as the last check left them.
+  health.deps = () => ({ ...(checked ? latest.deps : {}), ...builtins.deps() });
 
   const pipeline = new CallPipeline({
     mode,
@@ -122,8 +127,12 @@ export async function toolsMain(
       case "inject.request":
         inject(ev as BusEvent<"inject.request">);
         return;
+      case "memory.recall.reply":
+        // @spec TOOL-MEM-003
+        builtins.memoryReply(ev.data as BusEvent<"memory.recall.reply">["data"]);
+        return;
       default:
-        return; // memory.recall.reply: memory_lookup, #207
+        return;
     }
   };
 
@@ -131,6 +140,8 @@ export async function toolsMain(
     log.error({ err }, "fatal");
     exit(1);
   });
+  // The stored timers are read and armed once the group exists (TOOL-TIMER-007); a due one fires at once.
+  void builtins.start().catch(() => log.error("built-in tools failed to start"));
 
   /** Publishes the catalog when it changed, or always when forced, and sets the heartbeat from its dependencies. */
   const refresh = (force: boolean): void => {
@@ -167,13 +178,14 @@ export async function toolsMain(
   onStop(async () => { await Promise.allSettled(sources.map((s) => s.close())); });
   onStop(() => clearInterval(timer));
   onStop(() => pipeline.shutdown());
+  onStop(() => builtins.stop()); // cancels the timers' waits and ends the lookups; pending timers stay stored (TOOL-SVC-008)
 
   log.info({ mode, servers: Object.keys(cfg.tools.servers).length, sources: sources.length }, "tools online");
 }
 
 /** The service entry: bootstrap, then `toolsMain`. */
 export function runTools(env: ToolsEnv = {}): Promise<void> {
-  const { createSources, mcp, ...boot } = env;
+  const { createSources, mcp, builtin, ...boot } = env;
   const exit = boot.exit ?? ((code: number) => process.exit(code));
   const log = boot.log ?? createLogger("tools");
   const health: HealthRef = { deps: () => ({}) };
@@ -184,7 +196,7 @@ export function runTools(env: ToolsEnv = {}): Promise<void> {
       mode: cfg.tools.mode === "mock" ? "mock" : "live", // TOOL-SVC-005
       deps: () => health.deps(),
     }),
-    main: (ctx) => toolsMain(ctx, { createSources, mcp }, health, exit),
+    main: (ctx) => toolsMain(ctx, { createSources, mcp, builtin }, health, exit),
     ...boot,
     log,
   }).catch((err) => { log.error({ err }, "fatal"); exit(1); }); // a bus that cannot be built is a startup failure too

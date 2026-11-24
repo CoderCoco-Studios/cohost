@@ -35,11 +35,12 @@ export interface SourceCallResult {
 }
 
 /**
- * A call that failed in the source's transport. Its text is a sentence the source wrote, never text from the server; the
- * pipeline shows it as the `unavailable` result's content (TOOL-CALL-012). Any other rejection shows the pipeline's own sentence.
+ * A call that failed: in a source's transport (MCP, `unavailable`, TOOL-CALL-012), or in a built-in tool for a reason of the
+ * service's own (`unavailable` or `limit`, TOOL-CALL-017, TOOL-TIMER-004). Its text is a sentence the service wrote, never
+ * text from a server; the pipeline shows it as the `error` result's content. Any other rejection shows the pipeline's own sentence.
  */
 export class SourceFailed extends Error {
-  constructor(readonly text: string) { super(text); }
+  constructor(readonly text: string, readonly reason: "unavailable" | "limit" = "unavailable") { super(text); }
 }
 
 export interface ToolSource {

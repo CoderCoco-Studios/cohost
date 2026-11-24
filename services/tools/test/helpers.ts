@@ -125,6 +125,8 @@ export async function startTools(
    * `tools.catalog_ms` after validation (the schema's minimum is 5000 ms).
    */
   live?: { mcp?: Record<string, unknown>; catalogMs?: number },
+  /** Extra `ToolsEnv` members, for the built-in tools' seams (`builtin`, see builtin-helpers.ts). */
+  env: Record<string, unknown> = {},
 ): Promise<Started> {
   const shutdown: (() => void | Promise<void>)[] = [];
   let stopped = false;
@@ -159,6 +161,7 @@ export async function startTools(
     onShutdown: (fn: () => void | Promise<void>) => { shutdown.push(fn); },
     exit: (code: number) => { exits.push(code); },
     log: log.log,
+    ...env,
     ...(live === undefined ? { createSources: () => { s.sourcesBuilt++; return sources; } } : { mcp: live.mcp }),
   } as never);
   started.push(s);

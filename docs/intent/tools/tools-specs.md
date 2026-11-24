@@ -18,10 +18,10 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Tools and the catalog (TOOL-CAT)
 
-- [ ] **TOOL-CAT-001**: The service shall give the built-in tools the names `clock`, `stream_info`, `memory_lookup` and `timer`, and an MCP tool the name `<server>__<tool>` made of the server's name from `tools.servers` and the tool's own name. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-CAT-001**: The service shall give the built-in tools the names `clock`, `stream_info`, `memory_lookup` and `timer`, and an MCP tool the name `<server>__<tool>` made of the server's name from `tools.servers` and the tool's own name.
 - [x] **TOOL-CAT-002**: If an MCP tool's server name or own name has a character outside `[A-Za-z0-9_-]`, or its qualified name is longer than 64 characters, or its argument schema serializes to more than 4000 characters or nests more than 64 levels deep, then the service shall not list the tool and shall count it in the server's `detail`.
 - [x] **TOOL-CAT-003**: When the service lists an MCP tool, it shall cut the tool's description to 400 characters and its title to 100.
-- [ ] **TOOL-CAT-004**: The service shall give `timer` the label `acts` and `clock`, `stream_info` and `memory_lookup` the label `read`. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-CAT-004**: The service shall give `timer` the label `acts` and `clock`, `stream_info` and `memory_lookup` the label `read`.
 - [x] **TOOL-CAT-005**: When the service lists an MCP tool, it shall give it the label `read` for the annotation `readOnlyHint: true`, `acts` for `readOnlyHint: false` and `unlabelled` when the tool has no such annotation.
 - [x] **TOOL-CAT-006**: A tool shall be `offered` only while it is enabled in `tools.allow`, its server is `ok` or `mock` (or it is built in), its label is `read` or its `acts` mark is true, and, for an MCP tool outside mock mode, its definition matches its pinned hash (TOOL-PIN-004).
 - [x] **TOOL-CAT-007**: When a tool is not offered, the catalog shall give it a `reason`, the first that applies of `not_enabled`, `acts_not_allowed`, `not_approved`, `changed` and `server_down`, and shall give an offered tool no `reason`.
@@ -30,7 +30,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CAT-010**: The catalog shall list every configured server with its `name`, its `state` (`ok`, `down`, `auth` or `mock`), `external` and a `detail` sentence.
 - [x] **TOOL-CAT-011**: The service shall publish `tool.catalog` when it becomes ready, whenever the list of tools or the state of a server changes, and otherwise every `tools.catalog_ms` (default 30000), with `intervalMs` equal to `tools.catalog_ms`.
 - [x] **TOOL-CAT-012**: The catalog shall describe the marks of the `config.yaml` the service loaded when it started.
-- [ ] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-CAT-013**: The service shall list at most `tools.max_tools_per_server` (default 32) tools of one server and at most `tools.max_tools` (default 64) tools in all, counting every tool whether or not it is enabled and taking the built-in tools first and then the servers in the order of `tools.servers`. The four built-in tools are always listed first, whatever the limits: they count toward `tools.max_tools`, so a `tools.max_tools` below four still lists them and the catalog then holds more tools than `tools.max_tools` allows.
 - [x] **TOOL-CAT-014**: When tools of a server are left out by a limit, the service shall not list them and shall state how many in that server's `detail`.
 - [x] **TOOL-CAT-015**: An entry of `tools.allow` that names no listed tool shall be offered to nothing.
 
@@ -59,7 +59,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-004**: While `tools.mode` is not `mock`, if the requested MCP tool has no recorded hash, then the service shall publish a `refused` result with reason `not_approved`, and if its hash differs, one with reason `definition_changed`.
 - [x] **TOOL-CALL-005**: If the requested MCP tool's server is `down` or `auth`, then the service shall publish a `refused` result with reason `server_down` without sending a request to the server.
 - [x] **TOOL-CALL-006**: If the origin does not allow the requested tool (TOOL-ORIG-002 to TOOL-ORIG-005), then the service shall publish a `refused` result with reason `origin_not_allowed`.
-- [ ] **TOOL-CALL-007**: If a built-in tool rejects a request's arguments, then the service shall publish a `refused` result with reason `invalid_arguments`. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-CALL-007**: If a built-in tool rejects a request's arguments, then the service shall publish a `refused` result with reason `invalid_arguments`.
 - [x] **TOOL-CALL-008**: The service shall not validate the arguments of an MCP tool against the server's schema.
 - [x] **TOOL-CALL-009**: While `tools.max_concurrent` (default 4) calls hold a slot, a call waiting for its confirmation included, the service shall refuse a further request at once with reason `busy` and shall not queue it.
 - [x] **TOOL-CALL-010**: The service shall start the call limit `tools.timeout_ms` (default 10000) when it sends the call, and shall publish a `timeout` result when it passes.
@@ -69,7 +69,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-CALL-014**: When an MCP result has no text part and has structured content, the service shall put the serialized structured content before the notes of TOOL-CALL-013, and when it has neither shall publish an empty `content`.
 - [x] **TOOL-CALL-015**: When the result text is longer than `tools.max_result_chars` (default 1500), the service shall cut it to that length ending in `…` and set `truncated` to true.
 - [x] **TOOL-CALL-016**: When an MCP server flags a result as an error, the service shall publish an `error` result with reason `tool_error` and keep the server's text.
-- [ ] **TOOL-CALL-017**: When a tool fails for a reason of the service's own (a missing credential, no answer from the memory service), the service shall publish an `error` result with reason `unavailable`. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-CALL-017**: When a tool fails for a reason of the service's own (a missing credential, no answer from the memory service), the service shall publish an `error` result with reason `unavailable`.
 - [x] **TOOL-CALL-018**: The `content` of a `refused`, `timeout` or `unavailable` result shall be a sentence the service wrote and no text from a server.
 - [x] **TOOL-CALL-019**: The `tool.result` shall carry `id`, `tool`, `status`, `reason` where one applies, `content`, `truncated` where set, `durationMs` from the moment the service read the request, and, in mock mode, `mock` true.
 - [x] **TOOL-CALL-020**: The service shall not retry a call.
@@ -120,38 +120,38 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 ## Built-in tool: clock (TOOL-CLOCK)
 
-- [ ] **TOOL-CLOCK-001**: When `clock` is called, the service shall answer with one sentence stating the current time, the date, the weekday and the zone named by `cohost.timezone`, and shall ignore any arguments.
+- [x] **TOOL-CLOCK-001**: When `clock` is called, the service shall answer with one sentence of the form `It is HH:mm:ss on <weekday>, YYYY-MM-DD in <zone>.`, the time, date, weekday and zone being those of the current time in the zone named by `cohost.timezone`, and shall ignore any arguments.
 
 ## Built-in tool: stream info (TOOL-STRM)
 
-- [ ] **TOOL-STRM-001**: The `stream_info` tool shall take an optional argument `platform` of `twitch` or `youtube`, answering for that platform when it is given and for every platform that has a channel or video configured when it is not.
-- [ ] **TOOL-STRM-002**: When `stream_info` answers for a platform, it shall state whether the stream is live and, while it is, the title, the viewer count and how long it has been live, and for Twitch the category.
-- [ ] **TOOL-STRM-003**: For Twitch the service shall call Get Streams for `chat.twitch.channel` with `chat.twitch.client_id` and an app access token it obtains and refreshes with `chat.twitch.client_secret`, and shall use no user token.
-- [ ] **TOOL-STRM-004**: For YouTube the service shall look up the video that `parseVideoValue` reads from `chat.youtube.video`, with `chat.youtube.api_key`.
-- [ ] **TOOL-STRM-005**: The `stream_info` tool shall return one result: `ok` when at least one platform answered, with a sentence in its text naming each platform that did not and why, and an `error` result with reason `unavailable` when none answered, including when no platform is configured.
-- [ ] **TOOL-STRM-006**: The service shall cache a `stream_info` answer for a platform for `tools.stream_info.cache_ms` (default 30000), answer a repeated call from the cache and cache no failed call.
-- [ ] **TOOL-STRM-007**: While `stream_info` is enabled, the heartbeat shall carry `stream.twitch` and `stream.youtube` as `ok` after an answer, `down` after a failed call and `n/a` for a platform whose channel, video or credentials are missing, and shall carry neither while it is not enabled.
-- [ ] **TOOL-STRM-008**: The service shall send a platform only the channel or video id and the credential and no chat text.
+- [x] **TOOL-STRM-001**: The `stream_info` tool shall take an optional argument `platform` of `twitch` or `youtube`, answering for that platform when it is given and for every platform that has a channel or video configured when it is not.
+- [x] **TOOL-STRM-002**: When `stream_info` answers for a platform, it shall state whether the stream is live and, while it is, the title, the viewer count and how long it has been live, and for Twitch the category.
+- [x] **TOOL-STRM-003**: For Twitch the service shall call Get Streams for `chat.twitch.channel` with `chat.twitch.client_id` and an app access token it obtains and refreshes with `chat.twitch.client_secret`, and shall use no user token.
+- [x] **TOOL-STRM-004**: For YouTube the service shall look up the video that `parseVideoValue` reads from `chat.youtube.video`, with `chat.youtube.api_key`.
+- [x] **TOOL-STRM-005**: The `stream_info` tool shall return one result: `ok` when at least one platform answered, with a sentence in its text naming each platform that did not and why, and an `error` result with reason `unavailable` when none answered, including when no platform is configured. Each platform's call has its own deadline of the built-in wait (TOOL-MEM-005); a platform that does not answer before it is one failed platform, and the other platform's answer still counts.
+- [x] **TOOL-STRM-006**: The service shall cache a `stream_info` answer for a platform for `tools.stream_info.cache_ms` (default 30000), answer a repeated call from the cache and cache no failed call.
+- [x] **TOOL-STRM-007**: While `stream_info` is enabled, the heartbeat shall carry `stream.twitch` and `stream.youtube` as `ok` after an answer, `down` after a failed call, and `n/a` before the platform's first call, for a platform whose channel, video or credentials are missing, and in mock mode; it shall carry neither while `stream_info` is not enabled.
+- [x] **TOOL-STRM-008**: The service shall send a platform only the channel or video id and the credential and no chat text.
 
 ## Built-in tool: memory lookup (TOOL-MEM)
 
-- [ ] **TOOL-MEM-001**: The `memory_lookup` tool shall take a text argument `query` and an optional integer `k` from 1 to 8, default 4.
-- [ ] **TOOL-MEM-002**: When `memory_lookup` is called, the service shall publish `memory.recall.request` with a fresh uuid `id`, the query and `k`, and shall read no database.
-- [ ] **TOOL-MEM-003**: The service shall take as the answer the `memory.recall.reply` whose `id` equals its request's and shall ignore every other reply.
-- [ ] **TOOL-MEM-004**: The service shall render each recalled memory as one line `- (YYYY-MM-DD) <who>: <text>`, the date in `cohost.timezone`, with `who` through `speakerLabel` at `viewer_text.max_name_chars` and the text through `boundText` at `viewer_text.max_chars`.
-- [ ] **TOOL-MEM-005**: If no matching `memory.recall.reply` arrives within the call limit, then `memory_lookup` shall end with an `error` result of reason `unavailable`.
-- [ ] **TOOL-MEM-006**: While `memory_lookup` is enabled, the heartbeat shall carry `memory` as `ok` after an answer, `down` after a lookup that got none and `n/a` before the first, and no `memory` dependency while it is not enabled.
+- [x] **TOOL-MEM-001**: The `memory_lookup` tool shall take a text argument `query` and an optional integer `k` from 1 to 8, default 4.
+- [x] **TOOL-MEM-002**: When `memory_lookup` is called, the service shall publish `memory.recall.request` with a fresh uuid `id`, the query and `k`, and shall read no database.
+- [x] **TOOL-MEM-003**: The service shall take as the answer the `memory.recall.reply` whose `id` equals its request's and shall ignore every other reply.
+- [x] **TOOL-MEM-004**: The service shall render each recalled memory as one line `- (YYYY-MM-DD) <who>: <text>`, the date in `cohost.timezone`, with `who` through `speakerLabel` at `viewer_text.max_name_chars`; a `chat` or `note` memory's text is an untrusted quote through `quoteUntrusted` at `viewer_text.max_chars`, so a quote mark in it cannot close the quote within the tool result (the prompt's outer quote for the whole result is the prompt-level guard, SHARED-GUARD-028), and a `speech` or `self` memory's text is bounded with `boundText` at `brain.input_limits.speech_max_chars`, as cortex renders it. The lookup searches the memories of every viewer, as cortex recall does.
+- [x] **TOOL-MEM-005**: The built-in wait of a lookup, and of each platform call of `stream_info` (TOOL-STRM-005), shall end at `min(floor(0.9 × tools.timeout_ms), 2^31−1)` milliseconds after it starts, so before the call limit (TOOL-CALL-010) ends the call. If no matching `memory.recall.reply` arrives before the lookup's wait ends, then `memory_lookup` shall end with an `error` result of reason `unavailable`; a reply that arrives later shall change nothing, and the wait shall be cancelled once the call ends.
+- [x] **TOOL-MEM-006**: While `memory_lookup` is enabled, the heartbeat shall carry `memory` as `ok` after an answer, `down` after a lookup that got none, and `n/a` before the first and in mock mode; it shall carry no `memory` dependency while `memory_lookup` is not enabled.
 
 ## Built-in tool: timer (TOOL-TIMER)
 
-- [ ] **TOOL-TIMER-001**: The `timer` tool shall take an integer `minutes` from 1 to `tools.timer.max_minutes` (default 120) and a required text `note`, and shall cut the note to 200 characters.
-- [ ] **TOOL-TIMER-002**: If `minutes` is not an integer in its range, or `note` is missing, not text or empty after trimming, then the `timer` tool shall be refused with reason `invalid_arguments`.
-- [ ] **TOOL-TIMER-003**: When `timer` starts a timer, it shall answer with a sentence stating when the timer will fire.
-- [ ] **TOOL-TIMER-004**: While `tools.timer.max_active` (default 5) timers are pending, a further `timer` call shall end with an `error` result of reason `limit`.
-- [ ] **TOOL-TIMER-005**: When a timer starts in live mode, the service shall store it in the Redis hash `<prefix>:tools:timers` under the field `id` with the JSON `{id, note, setAt, dueAt}` and no other member.
-- [ ] **TOOL-TIMER-006**: When a timer runs out, the service shall publish `tool.timer` with its `id`, `note`, `setAt` and `dueAt` and then delete its field from the hash.
-- [ ] **TOOL-TIMER-007**: When the service starts in live mode, it shall read the hash and publish `tool.timer` at once, oldest `dueAt` first and whatever the lateness, for each timer already due and delete it from the hash as TOOL-TIMER-006 says, and keep each other timer until its `dueAt`.
-- [ ] **TOOL-TIMER-008**: The service shall provide no tool to cancel or list timers.
+- [x] **TOOL-TIMER-001**: The `timer` tool shall take an integer `minutes` from 1 to `tools.timer.max_minutes` (default 120) and a required text `note`, and shall bound the note with `boundText` at 200 characters, which also collapses line breaks, removes control and bidi characters and ends a cut with `…`.
+- [x] **TOOL-TIMER-002**: If `minutes` is not an integer in its range, or `note` is missing, not text or empty after trimming, then the `timer` tool shall be refused with reason `invalid_arguments`.
+- [x] **TOOL-TIMER-003**: When `timer` starts a timer, it shall answer with one sentence of the form `Timer set. It fires at HH:mm on <weekday>, YYYY-MM-DD (<zone>).`, the time being the due time in the zone named by `cohost.timezone`.
+- [x] **TOOL-TIMER-004**: While `tools.timer.max_active` (default 5) timers are pending, a further `timer` call shall end with an `error` result of reason `limit`. A `timer` call shall count the stored timers first: it waits until they are read at start, and a call the pipeline has already ended while it waits (its call limit or the service stopping) shall store and arm nothing.
+- [x] **TOOL-TIMER-005**: When a timer starts in live mode, the service shall store it in the Redis hash `<prefix>:tools:timers` under the field `id` with the JSON `{id, note, setAt, dueAt}` and no other member.
+- [x] **TOOL-TIMER-006**: When a timer runs out, the service shall publish `tool.timer` with its `id`, `note`, `setAt` and `dueAt` and then delete its field from the hash.
+- [x] **TOOL-TIMER-007**: When the service starts in live mode, it shall read the hash and publish `tool.timer` at once, oldest `dueAt` first and whatever the lateness, for each timer already due and delete it from the hash as TOOL-TIMER-006 says, and keep each other timer until its `dueAt`. A field is not a timer, and is skipped without stopping the other timers, when its value is not a JSON object of the four members of TOOL-TIMER-005, when its `id` is not the field, when its `note` is not text that is non-blank after trimming, or when its `setAt` or `dueAt` is not a safe integer; the skipped field stays in the hash.
+- [x] **TOOL-TIMER-008**: The service shall provide no tool to cancel or list timers.
 
 ## Mock mode (TOOL-MOCK)
 
@@ -159,8 +159,8 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-MOCK-002**: While `tools.mode` is `mock`, the state of every configured server in the catalog shall be `mock`.
 - [x] **TOOL-MOCK-003**: While `tools.mode` is `mock`, each `tools.allow` entry named `<server>__<tool>` for a configured server shall be a tool with the description `a mock tool`, an argument schema that accepts any object and the label of the entry's `effect` key, `read` when absent.
 - [x] **TOOL-MOCK-004**: While `tools.mode` is `mock`, a call to an MCP tool shall answer `mock <name> answered` followed by the arguments as JSON.
-- [ ] **TOOL-MOCK-005**: While `tools.mode` is `mock`, `clock` shall behave as in live mode, `stream_info` shall answer a live stream titled `Mock stream` with 42 viewers and one hour, and `memory_lookup` shall answer one fixed memory line. Open until the built-in tools land; owned by #207.
-- [ ] **TOOL-MOCK-006**: While `tools.mode` is `mock`, `timer` shall keep its timers in the service's memory and publish `tool.timer` for each when it is due. Open until the built-in tools land; owned by #207.
+- [x] **TOOL-MOCK-005**: While `tools.mode` is `mock`, `clock` shall behave as in live mode, `stream_info` shall answer a live stream titled `Mock stream` with 42 viewers and one hour, and `memory_lookup` shall answer one fixed memory line.
+- [x] **TOOL-MOCK-006**: While `tools.mode` is `mock`, `timer` shall keep its timers in the service's memory and publish `tool.timer` for each when it is due.
 - [x] **TOOL-MOCK-007**: While `tools.mode` is `mock`, every `tool.result` shall carry `mock` true.
 - [x] **TOOL-MOCK-008**: While `tools.mode` is `mock`, the service shall offer a mock tool only for an enabled entry and shall apply the marks, the origin rules, the call limit and the result limit as in live mode.
 
@@ -169,3 +169,19 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-INJ-001**: When an `inject.request` with target `tools` and kind `text` arrives, the service shall read its text as the JSON `{"tool", "arguments"}` and run the call through the pipeline with origin `dashboard`, round 1, `listed` false and `injected` true.
 - [x] **TOOL-INJ-002**: When an injected call has produced a `tool.result`, the service shall answer `inject.result` with `ok` true and a `detail` giving the status and the duration, whatever the status.
 - [x] **TOOL-INJ-003**: If the text of an injection for `tools` is not that JSON, then the service shall answer `inject.result` with `ok` false and a `detail` naming the problem and shall publish no `tool.result`.
+
+## Hardening of the built-in tools (TOOL-STRM, TOOL-MEM, TOOL-TIMER)
+
+The built-in tools validate their inputs, bound and quote the text they show, and confine their platform calls as the lines below state.
+
+- [x] **TOOL-STRM-009**: The service shall bound each stream title and category it shows with `boundText` at 100 characters and show it as an untrusted quote through `quoteUntrusted`, so that a quote mark in it cannot close the quote within the tool result (the prompt's outer quote for the whole result is the prompt-level guard, SHARED-GUARD-028), and the text is one line with no control or bidi character. A category that is blank after this bound is not shown.
+- [x] **TOOL-STRM-010**: If `stream_info` is given a `platform` other than `twitch` or `youtube`, then it shall refuse the request with reason `invalid_arguments` and call no platform.
+- [x] **TOOL-STRM-011**: When a platform reports that its channel or video is not live, the service shall answer `ok` with a sentence saying so, and shall not treat it as a failure.
+- [x] **TOOL-STRM-012**: The service shall read a platform's response body only up to 1 MiB; a longer body shall be dropped and count as a failed platform.
+- [x] **TOOL-STRM-013**: The service shall send the YouTube API key in the `x-goog-api-key` header and never in the request URL.
+- [x] **TOOL-STRM-014**: The service shall call only `https` URLs on `id.twitch.tv`, `api.twitch.tv` and `www.googleapis.com`, shall follow no redirect, shall count a 3xx answer as a failed platform, and shall give every platform request an abort signal.
+- [x] **TOOL-STRM-015**: The service shall keep every credential and token out of results, events, log lines and heartbeats, and any platform's error text out of its results: a failed platform is described by a sentence the service wrote.
+- [x] **TOOL-MEM-007**: If `memory_lookup` is given a `query` that is blank after trimming, it shall refuse the request with reason `invalid_arguments` and publish no `memory.recall.request`; a `query` longer than `viewer_text.max_chars` shall be cut to that length before it is published.
+- [x] **TOOL-MEM-008**: The service shall render at most `k` memory lines, and an empty answer shall be an `ok` result whose content is one sentence with no memory line.
+- [x] **TOOL-TIMER-009**: If `tool.timer` cannot be published when a timer runs out, then the service shall leave the timer's field in the hash and shall not delete it, so that it fires at the next start; no retry runs while the service is up.
+- [x] **TOOL-TIMER-010**: A timer whose delay is longer than 2^31−1 milliseconds shall be armed in steps of at most 2^31−1 milliseconds and shall fire only at its `dueAt`. A `timer` call whose due time would be past the latest instant a Date holds (8.64e15 epoch milliseconds) shall be refused as `invalid_arguments` at look-up, before anything is stored or armed; if the clock passes that bound while the call waits for the stored timers, the call shall end with an `error` result of reason `unavailable` and store and arm nothing. Any `tools.timer.max_minutes` up to the largest delay whose due time that holds works, with no configuration change.

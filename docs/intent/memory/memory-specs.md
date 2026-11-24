@@ -45,7 +45,7 @@ Design: [memory-design.md](memory-design.md). Prefix `MEM`. `[x]` = implemented,
 - [x] **MEM-RECALL-004**: When recalling, the memory service shall drop any result whose similarity is below `brain.memory.min_similarity` (default 0.35), keeping results equal to it. <!-- openspec: memory § Recall --> <!-- test: services/memory/test/memory.test.ts, services/memory/test/fake-store.test.ts -->
 - [x] **MEM-RECALL-005**: If `k` is 0 or less, the memory store shall return an empty list without embedding or querying. <!-- openspec: memory § Recall --> <!-- test: services/memory/test/memory.test.ts, services/memory/test/fake-store.test.ts -->
 - [x] **MEM-RECALL-006**: If embedding or the recall query fails, the Postgres store shall log a warning and return an empty list, so the memory service still publishes a `memory.recall.reply`. <!-- openspec: memory § Recall --> <!-- test: services/memory/test/memory.test.ts -->
-- [ ] **MEM-RECALL-007**: When a `memory.recall.request` arrives, the memory service shall answer it in the same way whichever service published it (the cortex for a reply's focus, the tools service for `memory_lookup`), and shall publish the reply with the request's `id` only.
+- [x] **MEM-RECALL-007**: When a `memory.recall.request` arrives, the memory service shall answer it in the same way whichever service published it (the cortex for a reply's focus, the tools service for `memory_lookup`), and shall publish the reply with the request's `id` only.
 
 ## Stores and schema
 

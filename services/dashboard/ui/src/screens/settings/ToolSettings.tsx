@@ -106,8 +106,8 @@ export function McpServers({ section, km, st }: { section: SectionModel; km: Key
     if (why) { setRefusal(why); return; }
     if (CONTROL_CHARS.test(token.trim())) { setRefusal("The token must be a single line of printable characters."); return; }
     setRefusal(undefined); setBusy(true);
-    // A token already stored under this name would be merged into the new server: it is cleared first, a clear always works (DASH-TOOL-007).
-    const cleared = await settings.setSecrets(section.path, { [`servers.${name}.token`]: null }, `Clear a stored token of ${name}`);
+    // A token already stored under this name would be merged into the new server: it is cleared first, with a single-path null that the route accepts for any name (DASH-TOOL-007). The clear is part of a save that may still fail, so it offers no restart.
+    const cleared = await settings.setSecrets(section.path, { [`servers.${name}.token`]: null }, `Clear a stored token of ${name}`, { offerRestart: false });
     if (!cleared.ok) { setRefusal(`Could not clear the token stored under ${name}, so the server was not added: ${cleared.detail}`); setBusy(false); return; }
     settings.edit(section.path, km.key, { ...mapOf(current(), km.key), [name]: { url, ...(header ? { header } : {}), ...(external ? { external: true } : {}) } });
     await settings.run([section.path], false);
@@ -196,9 +196,10 @@ function Labelled({ label, help, children }: { label: string; help: string; chil
 const BUILT_IN = "Built in";
 const LABELS: Record<CatalogTool["label"], string> = { read: "Read only", acts: "Changes things", unlabelled: "Not labelled by the server" };
 
-/** The entry's mark as the catalog reports it, to say where the saved mark will differ until tools restarts (DASH-TOOL-021). */
+/** Whether the saved value (Allowed, or a mark) differs from the catalog's, so it applies only when tools restarts (DASH-TOOL-021). */
+// @spec DASH-TOOL-021
 function marksDiffer(e: Entry, t: CatalogTool): boolean {
-  return (e.acts === true) !== t.acts || (e.chat === true) !== t.chat || (e.confirm !== false) !== t.confirm;
+  return (e.enabled === true) !== t.enabled || (e.acts === true) !== t.acts || (e.chat === true) !== t.chat || (e.confirm !== false) !== t.confirm;
 }
 
 interface Row {

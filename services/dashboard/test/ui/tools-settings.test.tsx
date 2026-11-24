@@ -228,6 +228,8 @@ test("a map write that fails (409 changed file, 400 invalid) sends no secret: a 
     await user.click(screen.getByRole("button", { name: "Add server" }));
     await save();
     assert.equal(secretCalls(b.app).filter((c) => !(c.body ?? "").includes("null")).length, 0, `no token is set: ${putStatus}`);
+    // the clear ran before the failed map write, and it offers no restart: the page names none
+    assert.equal(screen.queryByRole("region", { name: "Restart needed" }), null, `no restart offered: ${putStatus}`);
     assert.equal(document.body.innerHTML.includes("mcp-SECRET-78"), false, "and the typed token is not echoed into the page");
     b.unmount();
     document.body.innerHTML = "";
@@ -500,14 +502,15 @@ test("a definition that changes between the owner reading it and saving is never
   assert.equal(entry.hash, "seen-1", "the definition the owner read is the one approved, never the changed one");
 });
 
-// @spec DASH-TOOL-016
-test("a tool approved in the unsaved edit shows as approved: no `Not approved yet` note, and its Allowed switch is on", async () => {
+// @spec DASH-TOOL-017
+test("a tool approved in the unsaved edit (its entry carries the catalog's hash) hides the not-approved note and shows Allowed on, and until tools restarts the row says the mark applies when tools restarts", async () => {
   await open({ yaml: "tools:\n  allow: {}\n", cat: catalog([{ name: "weather__post", label: "acts", effect: "acts", server: "weather", hash: "hash-Q", reason: "not_approved", description: "Posts." }]) });
   assert.match(text(toolRow("weather__post")), /Not approved yet/);
   await userEvent.setup().click(sw(toolRow("weather__post"), "Allowed"));
   await settle(1);
   assert.doesNotMatch(text(toolRow("weather__post")), /Not approved yet/);
   assert.equal(sw(toolRow("weather__post"), "Allowed").checked, true);
+  assert.match(text(toolRow("weather__post")), /Applies when tools restarts/, "the catalog reflects the saved marks only after tools restarts");
 });
 
 // @spec DASH-TOOL-017

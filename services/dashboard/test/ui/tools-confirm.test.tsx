@@ -288,7 +288,8 @@ test("an origin the page does not know is shown as an unknown source, never as i
   skewed(app, 0);
   confirm(app, { origin: "constructor" }, "o1");
   confirm(app, { origin: "<b>x</b>" }, "o2");
-  for (const id of ["o1", "o2"]) {
+  confirm(app, { origin: "__proto__" }, "o3");
+  for (const id of ["o1", "o2", "o3"]) {
     assert.match(bar(id)!.textContent!, /an unknown source/, id);
     assert.doesNotMatch(bar(id)!.textContent!, /function|Object|<b>/, id);
   }

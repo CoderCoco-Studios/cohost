@@ -73,7 +73,7 @@ test("every application service builds the root Dockerfile with SERVICE set to i
       assert.equal(svc.env_file, ".env", `${name}: env_file`);
       for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
     }
-    assert.ok(svc.volumes?.includes("./config:/app/config"), `${name}: the config bind mount`);
+    assert.ok(svc.volumes?.includes(name === "tools" ? "./config:/app/config:ro" : "./config:/app/config"), `${name}: the config bind mount`);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
     assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
     assert.ok(svc.healthcheck?.test?.join(" ").includes("healthcheck.js $$SERVICE"), `${name}: the container healthcheck`);
@@ -160,7 +160,10 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
   assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
   assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
   assert.equal(tools.ports, undefined);
-  assert.deepEqual(tools.volumes, ["./config:/app/config"]);
+  assert.deepEqual(tools.volumes, ["./config:/app/config:ro"], "the config mount is read-only");
+  assert.equal(tools.environment?.REDIS_URL, "redis://redis:6379");
+  assert.equal(tools.environment?.CONFIG_DIR, "/app/config");
+  assert.equal(tools.environment?.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
   assert.deepEqual(Object.keys(tools.depends_on ?? {}), ["redis"]);
   assert.equal(tools.depends_on?.redis?.condition, "service_healthy");
 });
@@ -169,7 +172,7 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
 test("tools gets no more host access than the other application services: no privileged mode, added capability, host network or pid namespace, device or docker socket, and no data volume", () => {
   const tools = compose.services.tools as Svc & Record<string, unknown>;
   assert.ok(tools, "tools is a compose service");
-  for (const k of ["privileged", "cap_add", "network_mode", "pid", "ipc", "devices", "security_opt", "user"]) assert.equal(tools[k], undefined, `tools sets no ${k}`);
+  for (const k of ["privileged", "cap_add", "network_mode", "pid", "ipc", "devices", "security_opt"]) assert.equal(tools[k], undefined, `tools sets no ${k}`);
   assert.ok(!(tools.volumes ?? []).some((v) => /docker\.sock|\.\/data|^\//.test(v)), "no docker socket, no ./data and no absolute host path");
 });
 

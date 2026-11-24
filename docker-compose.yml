@@ -260,7 +260,7 @@ services:  # @spec DEPLOY-COMPOSE-001
       CONFIG_DIR: /app/config
       COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
     volumes:
-      - ./config:/app/config
+      - ./config:/app/config:ro   # read-only: tools never writes config (DEPLOY-COMPOSE-026)
 
   # @spec DEPLOY-COMPOSE-028
   avatar:

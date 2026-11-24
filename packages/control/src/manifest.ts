@@ -55,7 +55,7 @@ const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName"
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
-    config: ["chat", "viewer_text"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
+    config: ["chat", "viewer_text", "cohost"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
     groups: ["salience"], defaultMode: "fresh",

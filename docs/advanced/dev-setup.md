@@ -31,7 +31,7 @@ cohost is a pnpm workspace (`pnpm-workspace.yaml` lists `packages/*` and `servic
 
 | Path | Holds |
 | --- | --- |
-| `services/*` | One folder per service. Each is one `src/index.ts` that builds a `Bus` and runs on the shared runtime: `chat`, `eyes`, `ears`, `mouth`, `connector-discord`, `salience`, `affect`, `memory`, `cortex`, `voice`, `avatar`, `dashboard` |
+| `services/*` | One folder per service. Each is one `src/index.ts` that builds a `Bus` and runs on the shared runtime: `chat`, `eyes`, `ears`, `mouth`, `connector-discord`, `salience`, `affect`, `memory`, `cortex`, `tools`, `voice`, `avatar`, `dashboard` |
 | `packages/bus` | `@cohost/bus`: the typed bus client, the zod [event](../start/glossary.md#event) registry (`src/events.ts`) and the loader for the native addon |
 | `packages/config` | `@cohost/config`: the config schema (`src/schema.ts`), the loader and the settings editor |
 | `packages/control` | `@cohost/control`: the service manifest, the [Compose](../start/glossary.md#docker-compose) runtime, the stack controller, the health tracker and the `cohostctl` command |

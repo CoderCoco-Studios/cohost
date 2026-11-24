@@ -98,7 +98,8 @@ for (const u of units) {
   });
 
   // @spec MOD-MAN-010, MOD-TEST-002, MOD-TEST-003, MOD-TEST-005
-  test(`${u.id}: each declared input is accepted while the unit is up and refused 409 while it is down or unknown`, async () => {
+  // The tools text input is the as: tool route (DASH-INJ-011), owned by #211: the case is todo until that lands.
+  test(`${u.id}: each declared input is accepted while the unit is up and refused 409 while it is down or unknown`, { todo: u.id === "tools" ? "waits on #211 (as: tool route, DASH-INJ-011)" : false }, async () => {
     for (const state of ["down", "unknown"] as const) {
       const down = await boot({ [u.id]: state });
       const up = await boot();

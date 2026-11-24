@@ -558,8 +558,10 @@ test("a call cut off by the token cap is no call: a warning, and the heartbeat d
 test("the cortex waits tools.timeout_ms plus 2000 ms for a read tool and then answers The tool did not answer in time.", async () => {
   const s = await ready();
   s.bus.auto = undefined;
+  // The wait's timer is armed before the request is published, so the bound is measured from before the think, not from reqAt.
+  const t0 = Date.now();
   await think(s, [{ text: "[happy] Checking.", calls: [call("c1")] }, { text: "[happy] Sorry about that." }]);
-  const waited = s.llm.callAt[1]! - s.bus.reqAt[0]!;
+  const waited = s.llm.callAt[1]! - t0;
   assert.ok(waited >= 2015 && waited < 2400, `waited ${waited} ms`);
   const [m] = s.toolMsgs(1);
   assert.equal(m!.content, "The tool did not answer in time.", "a fixed sentence, not quoted");
@@ -570,14 +572,16 @@ test("the cortex waits tools.timeout_ms plus 2000 ms for a read tool and then an
 test("an acting tool other than timer also gets tools.confirm_timeout_ms; timer does not", async () => {
   const s = await ready({ catalog: [actingTool("send")], tools: { timeout_ms: 20, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
   s.bus.auto = undefined;
+  const t0 = Date.now();
   await think(s, [{ text: "[happy] Sending.", calls: [call("c1", "send")] }, { text: "[happy] Sorry about that." }]);
-  const waited = s.llm.callAt[1]! - s.bus.reqAt[0]!;
+  const waited = s.llm.callAt[1]! - t0;
   assert.ok(waited >= 2615 && waited < 3100, `waited ${waited} ms`);
 
   const t = await ready({ catalog: [actingTool("timer")], tools: { timeout_ms: 20, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
   t.bus.auto = undefined;
+  const t0t = Date.now();
   await think(t, [{ text: "[happy] Timing.", calls: [call("c1", "timer")] }, { text: "[happy] Sorry about that." }]);
-  const timerWait = t.llm.callAt[1]! - t.bus.reqAt[0]!;
+  const timerWait = t.llm.callAt[1]! - t0t;
   assert.ok(timerWait >= 2015 && timerWait < 2500, `waited ${timerWait} ms`);
 });
 
@@ -1087,12 +1091,15 @@ test("a voice.stop for another line, or one while no clause is published, leaves
 
 // @spec CTX-SAY-008, CTX-STREAM-012
 test("the critic is asked once, on the first model clause, and criticEndedAt is the time its call returned", async () => {
-  const s = await ready({ critic: async () => { await sleep(30); return { ok: true }; } });
+  // The stamp is compared with the critic's own start, not with a fixed sum: a 30 ms timer can read 29 ms on Date.now.
+  let criticStartedAt = 0;
+  const s = await ready({ critic: async () => { criticStartedAt = Date.now(); await sleep(30); return { ok: true }; } });
   s.bus.auto = () => ({ delayMs: 40 });
   await think(s, [{ text: "[happy] Let me check on that.", calls: [call("c1")] }, { text: "[happy] It is noon now. That is the time." }]);
   assert.deepEqual(s.criticCalls.map((i) => i.text), ["Let me check on that."], "not asked about later clauses");
   const say = s.bus.rawSay[0]!;
-  assert.ok(say.timing!.criticEndedAt! >= say.timing!.llmStartedAt! + 30);
+  assert.ok(say.timing!.criticEndedAt! >= criticStartedAt && criticStartedAt > 0, "criticEndedAt is no earlier than the critic's own call");
+  assert.ok(say.timing!.llmStartedAt! <= criticStartedAt, "the critic runs after the model call started");
   assert.ok(say.timing!.criticEndedAt! <= s.bus.reqAt[0]!, "it returned before the request was published");
 });
 

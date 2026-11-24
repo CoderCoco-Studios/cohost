@@ -25,7 +25,7 @@ test("every unit carries config, uses, pause and test (inputs and observe)", () 
 // @spec MOD-MAN-002
 test("config sections are the declared ones and each is a path of ConfigSchema", () => {
   const want: Record<string, string[]> = {
-    chat: ["chat", "viewer_text"], eyes: ["vision", "network"], ears: ["ears", "network"],
+    chat: ["chat", "viewer_text", "cohost"], eyes: ["vision", "network"], ears: ["ears", "network"],
     salience: ["brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     affect: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"],
     memory: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],

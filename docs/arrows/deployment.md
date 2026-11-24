@@ -61,7 +61,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 **Purpose:** Turn the repository into a running stack (Compose), a verified build (CI), a published site (Pages) and a licensed, contributable project (AGPL-3.0-only plus a commercial licence; CLA). Owns no cohost runtime logic.
 
 **Key Components:**
-1. `docker-compose.yml` — 5 infra services (redis, postgres, ollama, tts, stt), the one-shot `models`, the `maintenance`-profile one-shots `consolidate` and `reembed` (memory image), and 12 application services: eleven from the `x-ts-service` anchor (which passes the isolation env through) and `tools`, which takes the base anchor and a least-privilege environment of its own (DEPLOY-COMPOSE-026); `eyes` / `ears` / `mouth` / `connector-discord` behind profiles (`eyes`, `ears`, `mouth`, `discord`).
+1. `docker-compose.yml` — 5 infra services (redis, postgres, ollama, tts, stt), the one-shot `models`, the `maintenance`-profile one-shots `consolidate` and `reembed` (memory image), and 12 application services: eleven from the `x-ts-service` anchor (which passes the isolation env through) and `tools`, which takes the base anchor, a least-privilege environment of its own and a read-only `./config` mount (DEPLOY-COMPOSE-026); `eyes` / `ears` / `mouth` / `connector-discord` behind profiles (`eyes`, `ears`, `mouth`, `discord`).
 2. `Dockerfile` — a Rust `native` stage plus `base` / `build` / `runtime` on node:26-slim; whole workspace compiled once per image; `SERVICE` selects the entrypoint; no prune.
 3. Container healthcheck — `node packages/control/dist/healthcheck.js $SERVICE` from `@cohost/control`.
 4. `docker-compose.gpu.yml` — NVIDIA overlay for ollama, tts, stt, selected via `COMPOSE_FILE`.

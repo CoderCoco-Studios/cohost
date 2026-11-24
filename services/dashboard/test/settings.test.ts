@@ -250,6 +250,15 @@ test("a saved tools section restarts exactly the running units that read it (sal
   assert.deepEqual(((await r.json()) as any).restart, ["salience", "cortex", "tools"]);
 });
 
+// @spec MOD-CFG-015, MOD-MAN-002
+test("a saved cohost section restarts the running units that read it, chat among them, in manifest order", async () => {
+  const running = ["chat", "cortex", "tools", "voice", "avatar"].map((service) => ({ service, status: "running" }));
+  const t = await boot({ stack: { services: running } });
+  const r = await t.put("/config/cohost", { etag: sha(t.text()), values: { timezone: "America/New_York" } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(((await r.json()) as any).restart, ["chat", "cortex", "tools"]);
+});
+
 // @spec MOD-CFG-015
 test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
   const t = await boot();

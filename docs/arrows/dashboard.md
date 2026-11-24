@@ -67,7 +67,7 @@ Orientation:
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 7 | 0 | 0 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 12 | 0 | 0 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-010 | 9 | 0 | 0 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-010 (006 retired) | 9 | 0 | 0 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
 | Test-input injection | DASH-INJ-001 to DASH-INJ-012 | 12 | 0 | 0 |
@@ -94,7 +94,7 @@ Orientation:
 | Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-037 | 2 | 0 | 35 |
 | Avatar renderer: settings and visibility | DASH-AVS-001 to DASH-AVS-011 | 0 | 0 | 11 |
 
-**Summary:** 424 specs: 370 implemented, 54 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL-001 to 037, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The avatar relay (`services/dashboard/src/avatar-relay.ts`: DASH-AVR-001 to 021 and 030 to 035, `GET /avatar/renderer`, `GET`/`HEAD /avatar`, and the relay's listener and shutdown steps of DASH-HOST-002, DASH-CTRL-005, DASH-HTTP-010 and -016) is implemented and tested by `services/dashboard/test/relay-*.test.ts`. The page's script (DASH-AVP-003 to 037), the settings and Live-screen status (DASH-AVS, #218) and DASH-BUILD-009 to -011 are specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented except DASH-UI-041, and DASH-UI-002 and DASH-UI-054 are open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 424 specs: 370 implemented, 54 gaps, 0 deferred. The avatar model store, its routes and the applied view (DASH-MDL-001 to 037, the applied lines DASH-AVR-023, 024, 026 to 029, and DASH-HTTP-015) are implemented in `services/dashboard/src/models.ts`, `model-routes.ts` and `applied.ts`. The avatar relay (`services/dashboard/src/avatar-relay.ts`: DASH-AVR-001 to 021 and 030 to 035, `GET /avatar/renderer`, `GET`/`HEAD /avatar`, and the relay's listener and shutdown steps of DASH-HOST-002, DASH-CTRL-005, DASH-HTTP-010 and -016) is implemented and tested by `services/dashboard/test/relay-*.test.ts`. The page's script (DASH-AVP-003 to 037), the settings and Live-screen status (DASH-AVS, #218) and DASH-BUILD-009 to -011 are specified and not built. The streamed-line page specs (DASH-UI-038 to DASH-UI-053) are implemented, and DASH-UI-054 is open. The clause specs of the streamed-speech design (CLAUSE, STREAM, REL and the per-segment streamed-line sections) are gaps. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Coverage notes
 

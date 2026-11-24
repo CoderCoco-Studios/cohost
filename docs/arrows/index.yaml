@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "424 specs: 370 [x], 54 [ ] (the avatar renderer page script and settings DASH-AVP-003 to 037 and DASH-AVS, and DASH-UI-054 are open gaps)."
+    next: "427 specs: 402 [x], 25 [ ] (the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037; the avatar settings DASH-AVS-001 to 011 (#219); DASH-SET-002, DASH-SET-018 and DASH-UI-054 are open gaps)."
     drift: null
 
   control-plane:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 104 [x], 5 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-LIC-005 to -007)."
+    next: "109 specs: 107 [x], 2 [ ] (DEPLOY-ENG-018 and -020, manual)."
     drift: null
 
   docs-site:

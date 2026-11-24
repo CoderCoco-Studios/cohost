@@ -81,7 +81,8 @@ const PENDING = new Set<string>([
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
-    if (name === "node_modules" || name === "dist" || name === "test" || name === "models" || name.startsWith(".")) continue;
+    // dist-ui is the UI build output (minified third-party code, not source): the scan reads source only.
+    if (name === "node_modules" || name === "dist" || name === "dist-ui" || name === "test" || name === "models" || name.startsWith(".")) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) sourceFiles(p, out);
     else if (/\.(ts|tsx|mjs|js)$/.test(name) && !name.endsWith(".d.ts")) out.push(p);

@@ -24,6 +24,28 @@ Without the browser source I am just talking to myself in a very expensive way. 
 - OBS. For the eyes you need version 28 or newer, which has obs-websocket built in.
 - For a second PC: both machines on the same network, and the second PC's firewall letting you reach the AI PC on port 3001.
 
+## Steps: the avatar renderer in OBS
+
+Use this with `avatar.driver: "browser"` ([browser renderer](avatar.md#browser-renderer)) to draw the 3D model on stream.
+
+1. In OBS, add a new **Browser Source** to your scene.
+
+2. For the address, enter the renderer page. On the same computer use the dashboard's own port; from a second PC use the LAN port as in the voice steps above:
+
+   ```text
+   http://localhost:3000/avatar
+   ```
+
+   ```text
+   http://<ai-pc-ip>:3001/avatar
+   ```
+
+3. Set the source's size to your canvas (or the area the avatar should fill). The page's background is transparent, and it draws nothing but the model.
+
+4. Press OK. The page loads the model the dashboard's applied model names and follows the face's frames. Until the first frame it shows the rest pose; it returns to the rest pose when the frames stop.
+
+The page has no sound and plays nothing. Its 3D libraries are MIT-licensed; the notices that go with the build are in `services/dashboard/dist-ui/assets/` as `third-party-notices-<hash>.txt`, and the first line of the page's script names that file.
+
 ## Steps: the voice on stream, same PC
 
 Use this when OBS runs on the same computer as the dashboard.

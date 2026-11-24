@@ -29,7 +29,7 @@ test("config sections are the declared ones and each is a path of ConfigSchema",
     salience: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     affect: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"],
     memory: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
-    cortex: ["brain.cortex", "brain.memory", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
+    cortex: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     voice: ["voice", "network"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
     tools: ["tools", "cohost", "chat", "viewer_text", "network"],
   };

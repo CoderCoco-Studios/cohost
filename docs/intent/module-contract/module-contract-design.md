@@ -75,7 +75,7 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | salience | `brain.salience`, `brain.cortex`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm`, `tools` | affect, cortex | yes | `chat.message`, `speech.heard`, `vision.summary` | `attention.focus`, `brain.say` |
 | affect | `brain.affect`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | yes | `chat.message`, `speech.heard`, `vision.summary`, `brain.say` | `affect.state` |
 | memory | `brain.memory`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | no | `chat.message`, `memory.recall.request` | `memory.recall.reply`, `memory.viewer` |
-| cortex | `brain.cortex`, `brain.memory`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm`, `tools` | salience, affect, memory, tools | yes | `attention.focus` | `brain.status`, `brain.say` |
+| cortex | `brain.cortex`, `brain.memory`, `brain.salience`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm`, `tools` | salience, affect, memory, tools | yes | `attention.focus` | `brain.status`, `brain.say` |
 | tools | `tools`, `cohost`, `chat`, `viewer_text`, `network` | memory | no | `text` (service; target `tools`, a JSON object naming the tool and its arguments) | `tool.result`, `inject.result` |
 | voice | `voice`, `network` | | no | `brain.say` | `voice.utterance`, `voice.playing`, `voice.done` |
 | mouth | `mouth` | voice | no | `brain.say` (through voice) | `voice.playing`, `voice.done`, `voice.failed` |

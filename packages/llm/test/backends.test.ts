@@ -945,6 +945,24 @@ test("claude: with no signal complete() is bounded by llm.timeout_ms: a black-ho
   }
 });
 
+// @spec LLM-CHAT-018, LLM-ERR-005
+test("claude: the complete() timeout bounds the whole call: a 5xx first attempt, then a retry that hangs, rejects at llm.timeout_ms with TimeoutError", async () => {
+  for (const kind of claudeKinds) {
+    const b = await claudeBackend(async ({ res, n }) => {
+      if (n === 1) { sendJson(res, "anthropic-error-401.json", 503, noRetryWait); return; }
+      await sleepMs(30_000);
+    });
+    const timeout = 300;
+    const started = Date.now();
+    const err = await failure(claude(kind, b.fetch, { timeout_ms: timeout }).complete(user("hi")));
+    const elapsed = Date.now() - started;
+    assert.equal(err?.name, "TimeoutError", kind);
+    assert.equal(err instanceof ChatError, false, `${kind}: a timeout is not a ChatError`);
+    assert.ok(elapsed < timeout * 2, `${kind}: failed after ${elapsed} ms, not one timeout per attempt`);
+    assert.equal(b.seen.length, 2, `${kind}: the failed attempt and the hanging retry, and no third`);
+  }
+});
+
 // @spec LLM-CLAUDE-019, LLM-CLAUDE-022, LLM-CLAUDE-032
 test("claude: the hostile environment changes nothing on complete() and stream() either (credential, endpoint, headers, betas)", async () => {
   await withEnv(HOSTILE_SDK_ENV, async () => {

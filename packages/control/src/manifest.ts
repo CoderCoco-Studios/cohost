@@ -74,7 +74,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("cortex", {
     requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" },
-    config: ["brain.cortex", "brain.memory", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], uses: ["salience", "affect", "memory", "tools"], pause: true,
+    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], uses: ["salience", "affect", "memory", "tools"], pause: true,
     test: { inputs: ["attention.focus"], observe: ["brain.status", "brain.say"] },
   }),
   // The tool-calling unit (services/tools, TOOL-SVC-*): it answers a tool call from cortex over the bus and reads no

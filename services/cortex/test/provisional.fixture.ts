@@ -131,7 +131,7 @@ export function setup(o: SetupOpts = {}) {
   bus.cortex = cortex;
   if (o.withTool) {
     void cortex.onEvent(event("tool.catalog", {
-      intervalMs: 600_000, mode: "live", servers: [{ name: "builtin", state: "ok", external: false }],
+      intervalMs: 600_000, mode: "live", servers: [{ name: "builtin", state: "ok", external: false, left_out: 0 }],
       tools: [{ name: "clock", description: "clock tool", parameters: { type: "object", properties: {} }, label: "read", effect: "read", enabled: true, acts: false, chat: false, confirm: true, offered: true }],
     }, "tools"));
   }

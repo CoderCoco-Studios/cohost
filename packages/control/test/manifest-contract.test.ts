@@ -9,7 +9,7 @@ const SERVICE_LEVEL = ["text", "image", "audio"];
 
 // @spec MOD-MAN-001
 test("every unit carries config, uses, pause and test (inputs and observe)", () => {
-  assert.equal(units.length, 11);
+  assert.equal(units.length, 12);
   for (const s of units) {
     assert.ok(Array.isArray(s.config) && s.config.length > 0, `${s.id} config`);
     assert.ok(Array.isArray(s.uses), `${s.id} uses`);
@@ -25,12 +25,13 @@ test("every unit carries config, uses, pause and test (inputs and observe)", () 
 // @spec MOD-MAN-002
 test("config sections are the declared ones and each is a path of ConfigSchema", () => {
   const want: Record<string, string[]> = {
-    chat: ["chat", "viewer_text"], eyes: ["vision", "network"], ears: ["ears", "network"],
-    salience: ["brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"],
+    chat: ["chat", "viewer_text", "cohost"], eyes: ["vision", "network"], ears: ["ears", "network"],
+    salience: ["brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     affect: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"],
     memory: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
-    cortex: ["brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm"],
+    cortex: ["brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     voice: ["voice", "network"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
+    tools: ["tools", "cohost", "chat", "viewer_text", "network"],
   };
   for (const [id, config] of Object.entries(want)) assert.deepEqual(findService(id)!.config, config, id);
   for (const s of units) for (const sec of s.config) assert.ok(schemaAt(sec), `${s.id}: ${sec} is not a config path`);
@@ -38,7 +39,7 @@ test("config sections are the declared ones and each is a path of ConfigSchema",
 
 // @spec MOD-MAN-003
 test("uses are the declared ones and requires is a subset of uses", () => {
-  const want: Record<string, string[]> = { salience: ["affect", "cortex"], cortex: ["salience", "affect", "memory"], mouth: ["voice"], avatar: ["voice"] };
+  const want: Record<string, string[]> = { salience: ["affect", "cortex"], cortex: ["salience", "affect", "memory", "tools"], tools: ["memory"], mouth: ["voice"], avatar: ["voice"] };
   for (const s of units) assert.deepEqual(s.uses, want[s.id] ?? [], s.id);
   for (const s of SERVICE_MANIFEST) for (const r of s.requires ?? []) assert.ok(s.uses.includes(r), `${s.id} requires ${r} without using it`);
 });
@@ -55,14 +56,15 @@ test("test inputs and observed types are the declared ones and name registered b
     salience: ["chat.message", "speech.heard", "vision.summary"],
     affect: ["chat.message", "speech.heard", "vision.summary", "brain.say"],
     memory: ["chat.message", "memory.recall.request"],
-    cortex: ["attention.focus"], voice: ["brain.say"], mouth: ["brain.say"], avatar: ["brain.say", "affect.state"], "connector-discord": ["audio"],
+    cortex: ["attention.focus"], voice: ["brain.say"], mouth: ["brain.say"], avatar: ["brain.say", "affect.state"], "connector-discord": ["audio"], tools: ["text"],
   };
   const observe: Record<string, string[]> = {
     chat: ["chat.message", "inject.result"], eyes: ["vision.summary", "inject.result"], ears: ["speech.heard", "inject.result"],
     salience: ["attention.focus", "brain.say"], affect: ["affect.state"], memory: ["memory.recall.reply", "memory.viewer"],
     cortex: ["brain.status", "brain.say"], voice: ["voice.utterance", "voice.playing", "voice.done"],
-    mouth: ["voice.playing", "voice.done", "voice.failed"], avatar: ["avatar.state"], "connector-discord": ["inject.result"],
+    mouth: ["voice.playing", "voice.done", "voice.failed"], avatar: ["avatar.state"], "connector-discord": ["inject.result"], tools: ["tool.result", "inject.result"],
   };
+  assert.ok(findService("tools"), "the tools unit is declared");
   const registered = new Set<string>(EVENT_TYPES);
   const barred = (t: string) => t === "service.heartbeat" || t === "service.lifecycle" || /^memory\.(notes|viewers)\./.test(t);
   for (const s of units) {
@@ -78,8 +80,7 @@ test("test inputs and observed types are the declared ones and name registered b
 test("every name in a unit's isolatedEnv is an isolation override of the config package, and every override is used by a unit", () => {
   const used = new Set(SERVICE_MANIFEST.flatMap((s) => Object.keys(s.isolatedEnv)));
   for (const name of used) assert.ok(Object.hasOwn(ISOLATION_OVERRIDES, name), `${name} is in ISOLATION_OVERRIDES`);
-  // TEMPORARY (#204): TOOLS_MODE is used by the `tools` unit, which arrives with #208; until then it is the one override no unit names.
-  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).filter((n) => n !== "TOOLS_MODE").sort());
+  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).sort());
 });
 
 // @spec MOD-MAN-013

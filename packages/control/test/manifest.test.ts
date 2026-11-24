@@ -34,14 +34,19 @@ test("the tracker's known list and the CLI's list are the manifest's application
 // @spec CTRL-MANIFEST-002, CTRL-MANIFEST-003
 test("flags and defaults match the spec", () => {
   assert.equal(findService("dashboard"), undefined);
-  assert.equal(SERVICE_MANIFEST.length, 19);
-  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(0, 16), ["chat", "salience", "affect", "memory", "cortex", "voice", "avatar", "eyes", "ears", "mouth", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]);
-  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(16).sort(), ["stt-kyutai", "stt-nemotron", "tts-pocket"]);
+  assert.equal(SERVICE_MANIFEST.length, 20);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(0, 17), ["chat", "salience", "affect", "memory", "cortex", "tools", "voice", "avatar", "eyes", "ears", "mouth", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(17).sort(), ["stt-kyutai", "stt-nemotron", "tts-pocket"]);
+  const tools = findService("tools")!;
+  assert.equal(tools.composeName, "tools");
+  assert.equal(tools.pnpmFilter, "@cohost/tools");
+  assert.equal(tools.infra, false);
+  assert.equal(tools.requires, undefined, "an isolated tools start brings up no other unit (MOD-TEST-008: no memory service running)");
   assert.equal(findService("cortex")!.pnpmFilter, "@cohost/cortex");
   assert.equal(findService("redis")!.pnpmFilter, undefined);
   assert.equal(findService("redis")!.infra, true);
   assert.equal(findService("postgres")!.infra, true);
-  for (const id of ["salience", "affect", "cortex", "voice", "avatar", "chat", "eyes", "ears", "mouth", "connector-discord"]) {
+  for (const id of ["salience", "affect", "cortex", "tools", "voice", "avatar", "chat", "eyes", "ears", "mouth", "connector-discord"]) {
     assert.equal(findService(id)!.defaultMode, "fresh", id);
     assert.deepEqual(findService(id)!.groups, [id], id);
   }
@@ -83,9 +88,10 @@ test("unknown ids are not found", () => {
 });
 
 // @spec CTRL-HEALTH-005
-test("the known list is the eleven app services, mouth and connector-discord among them, without dashboard", () => {
+test("the known list is the twelve app services, tools, mouth and connector-discord among them, without dashboard", () => {
   const ids = appServiceIds();
-  assert.equal(ids.length, 11);
+  assert.equal(ids.length, 12);
+  assert.ok(ids.includes("tools"));
   assert.ok(ids.includes("mouth"));
   assert.ok(ids.includes("connector-discord"));
   assert.equal(ids.includes("dashboard"), false);
@@ -103,6 +109,7 @@ test("the isolation presets are exactly the specified ones; every other unit has
     ears: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
     mouth: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
     "connector-discord": { CONNECTIONS_DISCORD_ENABLED: "false" },
+    tools: { TOOLS_MODE: "mock" },
   };
   for (const s of SERVICE_MANIFEST) assert.deepEqual(s.isolatedEnv, expected[s.id] ?? {}, s.id);
 });

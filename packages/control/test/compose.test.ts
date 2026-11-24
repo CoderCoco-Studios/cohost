@@ -91,7 +91,10 @@ test("every image in both Compose files carries an exact version tag", () => {
 
 // @spec DEPLOY-COMPOSE-025
 test("every application service mounts ./config:/app/config, and no Compose entry carries an operator credential", () => {
-  for (const [name, s] of appServices) assert.ok(s.volumes?.includes("./config:/app/config"), `${name} mounts ./config:/app/config`);
+  for (const [name, s] of appServices) {
+    const mount = name === "tools" ? "./config:/app/config:ro" : "./config:/app/config"; // tools is read-only (DEPLOY-COMPOSE-026)
+    assert.ok(s.volumes?.includes(mount), `${name} mounts ${mount}`);
+  }
   assert.ok(base.services.models!.volumes?.includes("./config:/app/config"), "models mounts ./config");
 
   // The environment names an operator credential (a SECRET_PATHS key) never get: each key's leaf, as an environment name.

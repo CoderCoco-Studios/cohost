@@ -33,6 +33,8 @@ const SAMPLES: Record<string, unknown> = {
 const KIND_ROUTE: Record<string, { path: (unit: string) => string; type?: string; body: string }> = {
   text: { path: () => "/inject/text", body: JSON.stringify({ level: "service", text: "hi" }) },
   image: { path: () => "/inject/image", type: "image/png", body: "PNG" },
+  /** The `tools` unit's text input is a tool call: service-level text with `as: "tool"`, answered for the unit `tools` (DASH-INJ-011). */
+  "text:tools": { path: () => "/inject/text", body: JSON.stringify({ level: "service", as: "tool", text: "stream_info" }) },
   audio: { path: (unit) => `/inject/audio?target=${unit}`, type: "audio/wav", body: "RIFF" },
 };
 
@@ -63,7 +65,8 @@ async function boot(states: Record<string, HealthState> = {}) {
 }
 
 test("the table covers every application unit and each declares config and test inputs", () => {
-  assert.equal(units.length, 11);
+  assert.equal(units.length, 12);
+  assert.ok(units.some((u) => u.id === "tools"), "the tools unit has a row");
   for (const u of units) assert.ok(u.config.length > 0 && u.test.inputs.length > 0, u.id);
 });
 
@@ -95,14 +98,16 @@ for (const u of units) {
   });
 
   // @spec MOD-MAN-010, MOD-TEST-002, MOD-TEST-003, MOD-TEST-005
-  test(`${u.id}: each declared input is accepted while the unit is up and refused 409 while it is down or unknown`, async () => {
+  // The tools text input is the as: tool route (DASH-INJ-011), owned by #211: the case is todo until that lands.
+  test(`${u.id}: each declared input is accepted while the unit is up and refused 409 while it is down or unknown`, { todo: u.id === "tools" ? "waits on #211 (as: tool route, DASH-INJ-011)" : false }, async () => {
     for (const state of ["down", "unknown"] as const) {
       const down = await boot({ [u.id]: state });
       const up = await boot();
       for (const input of u.test.inputs) {
         const send = async (t: Awaited<ReturnType<typeof boot>>) => {
-          if (KIND_ROUTE[input]) {
-            const k = KIND_ROUTE[input]!;
+          const kind = input === "text" && u.id === "tools" ? "text:tools" : input;
+          if (KIND_ROUTE[kind]) {
+            const k = KIND_ROUTE[kind]!;
             return fetch(`${t.base}${k.path(u.id)}`, { method: "POST", body: k.body, headers: { ...t.auth, ...(k.type ? { "content-type": k.type } : {}) } });
           }
           assert.ok(input in EventPayloads, `${u.id}: ${input} is neither a service-level kind nor a bus event type`);
@@ -111,7 +116,7 @@ for (const u of units) {
         };
         const refused = await send(down);
         assert.equal(refused.status, 409, `${u.id}/${input} while ${state}`);
-        assert.deepEqual(await refused.json(), { ok: false, detail: `service not running: ${input === "text" ? "chat" : input === "image" ? "eyes" : u.id}` });
+        assert.deepEqual(await refused.json(), { ok: false, detail: `service not running: ${input === "text" ? (u.id === "tools" ? "tools" : "chat") : input === "image" ? "eyes" : u.id}` });
         const accepted = await send(up);
         assert.equal(accepted.status, 202, `${u.id}/${input} while up`);
       }

@@ -554,13 +554,20 @@ test("a call cut off by the token cap is no call: a warning, and the heartbeat d
 
 // ---- waits ----
 
+/** The gap between arming a wait's timer and publishing its request, allowed for under load (the timer is armed first). */
+const WAIT_TOLERANCE_MS = 40;
+/** How late a wait may answer: the lower bound is what the mutation checks rely on; this only catches a wait that never ends, and allows for stalls under CPU load. */
+const WAIT_OVERRUN_MS = 1500;
+
 // @spec CTX-TOOL-019
 test("the cortex waits tools.timeout_ms plus 2000 ms for a read tool and then answers The tool did not answer in time.", async () => {
-  const s = await ready();
+  const s = await ready({ tools: { timeout_ms: 300 } });
   s.bus.auto = undefined;
   await think(s, [{ text: "[happy] Checking.", calls: [call("c1")] }, { text: "[happy] Sorry about that." }]);
+  // The timer is armed just before the request is published (reqAt), so the wait is measured from the publish. Dropping
+  // timeout_ms, or arming 100 ms short, falls below the bound.
   const waited = s.llm.callAt[1]! - s.bus.reqAt[0]!;
-  assert.ok(waited >= 2015 && waited < 2400, `waited ${waited} ms`);
+  assert.ok(waited >= 2300 - WAIT_TOLERANCE_MS && waited < 2300 + WAIT_OVERRUN_MS, `waited ${waited} ms`);
   const [m] = s.toolMsgs(1);
   assert.equal(m!.content, "The tool did not answer in time.", "a fixed sentence, not quoted");
   assert.equal(m!.isError, true);
@@ -568,17 +575,17 @@ test("the cortex waits tools.timeout_ms plus 2000 ms for a read tool and then an
 
 // @spec CTX-TOOL-019
 test("an acting tool other than timer also gets tools.confirm_timeout_ms; timer does not", async () => {
-  const s = await ready({ catalog: [actingTool("send")], tools: { timeout_ms: 20, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
+  const s = await ready({ catalog: [actingTool("send")], tools: { timeout_ms: 300, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
   s.bus.auto = undefined;
   await think(s, [{ text: "[happy] Sending.", calls: [call("c1", "send")] }, { text: "[happy] Sorry about that." }]);
   const waited = s.llm.callAt[1]! - s.bus.reqAt[0]!;
-  assert.ok(waited >= 2615 && waited < 3100, `waited ${waited} ms`);
+  assert.ok(waited >= 2900 - WAIT_TOLERANCE_MS && waited < 2900 + WAIT_OVERRUN_MS, `waited ${waited} ms`);
 
-  const t = await ready({ catalog: [actingTool("timer")], tools: { timeout_ms: 20, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
+  const t = await ready({ catalog: [actingTool("timer")], tools: { timeout_ms: 300, confirm_timeout_ms: 600, reply: { filler_after_ms: 60_000 } } });
   t.bus.auto = undefined;
   await think(t, [{ text: "[happy] Timing.", calls: [call("c1", "timer")] }, { text: "[happy] Sorry about that." }]);
   const timerWait = t.llm.callAt[1]! - t.bus.reqAt[0]!;
-  assert.ok(timerWait >= 2015 && timerWait < 2500, `waited ${timerWait} ms`);
+  assert.ok(timerWait >= 2300 - WAIT_TOLERANCE_MS && timerWait < 2300 + WAIT_OVERRUN_MS, `waited ${timerWait} ms`);
 });
 
 const STATUSES: { status: Result["status"]; reason?: Result["reason"]; isError: boolean }[] = [
@@ -1087,12 +1094,16 @@ test("a voice.stop for another line, or one while no clause is published, leaves
 
 // @spec CTX-SAY-008, CTX-STREAM-012
 test("the critic is asked once, on the first model clause, and criticEndedAt is the time its call returned", async () => {
-  const s = await ready({ critic: async () => { await sleep(30); return { ok: true }; } });
+  // The stamp is compared with the moment the fake critic returned, not with a fixed sum: a 30 ms timer can read 29 ms on Date.now.
+  let criticReturnedAt = 0;
+  const s = await ready({ critic: async () => { await sleep(30); criticReturnedAt = Date.now(); return { ok: true }; } });
   s.bus.auto = () => ({ delayMs: 40 });
   await think(s, [{ text: "[happy] Let me check on that.", calls: [call("c1")] }, { text: "[happy] It is noon now. That is the time." }]);
   assert.deepEqual(s.criticCalls.map((i) => i.text), ["Let me check on that."], "not asked about later clauses");
   const say = s.bus.rawSay[0]!;
-  assert.ok(say.timing!.criticEndedAt! >= say.timing!.llmStartedAt! + 30);
+  assert.ok(criticReturnedAt > 0, "the critic returned");
+  assert.ok(say.timing!.criticEndedAt! >= criticReturnedAt, "criticEndedAt is no earlier than the critic's return");
+  assert.ok(say.timing!.llmStartedAt! <= say.timing!.criticEndedAt!, "the model call started before the critic ended");
   assert.ok(say.timing!.criticEndedAt! <= s.bus.reqAt[0]!, "it returned before the request was published");
 });
 

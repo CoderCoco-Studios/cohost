@@ -44,7 +44,7 @@ test("needs lists each used unit that is down, stale, crash-looping or unknown, 
 // @spec MOD-LIFE-001
 test("a unit with nothing in uses carries no needs; a unit with uses and every one up carries an empty list", () => {
   const { tracker } = setup();
-  for (const id of ["salience", "affect", "memory", "cortex"]) tracker.ingest(hb(id));
+  for (const id of ["salience", "affect", "memory", "cortex", "tools"]) tracker.ingest(hb(id)); // cortex uses tools (MOD-MAN-003)
   assert.equal("needs" in entry(tracker, "chat"), false);
   assert.deepEqual(entry(tracker, "cortex").needs, []);
 });

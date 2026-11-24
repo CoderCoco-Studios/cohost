@@ -299,13 +299,13 @@ test("tools.servers gets the mcp-servers widget and tools.allow the tool-list wi
 });
 
 // @spec CFG-PRES-014
-test("the network section entry stays in group System with a title, an about sentence and a help for network.lan, and the manifest declares it for voice, ears and eyes (the tools unit joins in #208)", () => {
+test("the network section entry stays in group System with a title, an about sentence and a help for network.lan, and the manifest declares it for voice, ears, eyes and tools (and no other unit)", () => {
   const e = PRESENTATION.sections["network"];
   assert.equal(e?.group, "System");
   assert.ok(oneLine(e?.title) && oneLine(e?.about));
   assert.ok(oneLine(PRESENTATION.keys["network.lan"]?.help));
   const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.id).sort();
-  for (const u of ["ears", "eyes", "voice"]) assert.ok(declaring.includes(u), u);
+  assert.deepEqual(declaring, ["ears", "eyes", "tools", "voice"]);
 });
 
 // @spec CFG-PRES-018

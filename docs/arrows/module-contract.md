@@ -6,13 +6,13 @@ The four obligations every application service meets (dashboard-configurable thr
 
 Under the one-place configuration design ([decision](../decisions/config-in-one-place.md)) the settings editor reports secrets as set or not set, lists the units that run an isolation override, serves the presentation table with the schema and answers the success and error shapes of MOD-CFG-001 to -021, the sensitive-key gate (MOD-CFG-007) and `?dryRun=1` (MOD-CFG-013) included, both realized by the dashboard's Settings screen. MOD-UI-001 to -006 are retired lines whose behaviour is the dashboard's DASH-SET-*, marked `[x]` like the dashboard's other retired lines. The MOD-CFG and MOD-UI specs total 28: 25 `[x]`, 3 `[ ]`, 0 `[D]`.
 
-**MAPPED.** 54 of 61 specs implemented, 7 gaps (MOD-MAN-002, -003, -005, -010, MOD-TEST-005, -007, -008); MOD-MAN-013 and -014 (the engine units) are built in #190. Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its Settings screen (MOD-CFG; MOD-UI is retired to the dashboard's DASH-SET-*), dependents shown `needs` in the Services screen (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test side sheet and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). The docs site's extension guides added MOD-EX-001 to MOD-EX-005 (the `now-playing` example service), implemented and tested, not yet audited. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 57 of 61 specs implemented, 4 gaps (MOD-MAN-010, MOD-TEST-005, -007, -008); MOD-MAN-013 and -014 (the engine units) are built in #190. The `tools` unit is declared in the manifest (MOD-MAN-002, -003, -005) and passes its contract tests; its text input and refusal through `as: "tool"` wait on #211, which MOD-MAN-010 and MOD-TEST-005 and -008 need. Built: the manifest declarations and derived lists, every unit entering through `runService` (MOD-MAN-009, enforced by `packages/control/test/derived-lists.test.ts` and each service's `contract.test.ts`; per-unit settings, restart and input checks in MOD-MAN-010), the settings editor and its Settings screen (MOD-CFG; MOD-UI is retired to the dashboard's DASH-SET-*), dependents shown `needs` in the Services screen (MOD-LIFE), pause and resume buttons (MOD-PAUSE), the test side sheet and `POST /inject/event` (MOD-TEST-001 to 006). MOD-TEST-007, the isolated stack answering every declared input, runs against the whole stack under Docker (`services/dashboard/test/live-stack.e2e.test.ts`, gated on `COHOST_LIVE_STACK=1`). The docs site's extension guides added MOD-EX-001 to MOD-EX-005 (the `now-playing` example service), implemented and tested, not yet audited. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 ## Spec Coverage
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-014 | 7 | 0 | 7 |
+| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-014 | 13 | 0 | 1 |
 | Settings editor | MOD-CFG-001 to MOD-CFG-022 | 22 | 0 | 0 |
 | Lifecycle and health | MOD-LIFE-001 to MOD-LIFE-003 | 3 | 0 | 0 |
 | Pause and resume | MOD-PAUSE-001 to MOD-PAUSE-003 | 3 | 0 | 0 |
@@ -20,12 +20,12 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 | Page (retired to DASH-SET-*) | MOD-UI-001 to MOD-UI-006 | 6 | 0 | 0 |
 | Example service | MOD-EX-001 to MOD-EX-005 | 5 | 0 | 0 |
 
-**Summary:** 54 of 61 specs implemented; 0 deferred; 7 open (MOD-MAN-002, -003, -005, -010, MOD-TEST-005, -007, -008). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 57 of 61 specs implemented; 0 deferred; 4 open (MOD-MAN-010, MOD-TEST-005, -007, -008). The six MOD-UI lines are retired placeholders and carry no test. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work required
 
 - YouTube chat (design 2026-11-16): the twelve secret keys of CFG-SEC-003 (MOD-CFG-002).
-None outstanding.
+- #211 (the `as: "tool"` text injection, DASH-INJ-011) owns the open tools cases: the tools text row of MOD-MAN-010, the tools refusal and acceptance of MOD-TEST-005, and MOD-TEST-008 (the isolated tools unit answers a tool call with `inject.result` and `tool.result`). MOD-TEST-007 also needs a live Docker run with the tools unit, which is not in the verification log yet.
 
 ## References
 
@@ -36,7 +36,7 @@ None outstanding.
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (61 specs: 54 `[x]`, 7 `[ ]`, 0 `[D]`)
+- docs/intent/module-contract/module-contract-specs.md (61 specs: 57 `[x]`, 4 `[ ]`, 0 `[D]`)
 
 ### Code
 - packages/control/src/manifest.ts, health.ts

@@ -10,11 +10,30 @@
 #   docker compose --profile mouth up -d # add the speaker (writes her voice to the sinks)
 #   docker compose --profile discord up -d # add the Discord connector (the one bot login: source and sink `discord`)
 #   docker compose --profile eyes up -d  # add OBS vision
-#   docker compose run --rm consolidate  # one-shot viewer-note pass (profile tools; best-effort, see below)
+#   docker compose run --rm consolidate  # one-shot viewer-note pass (profile maintenance; best-effort, see below)
 #   docker compose run --rm reembed      # one-shot vector migration after changing the embedder (memory stopped first)
 
-x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLOY-COMPOSE-024
+# The settings every application service gets, whatever its environment: the restart policy, the host gateway, the bus
+# dependency and the container healthcheck. A service that must hold less (tools, DEPLOY-COMPOSE-026) takes this block
+# alone and states its own environment.
+x-ts-service-base: &ts-base  # @spec DEPLOY-COMPOSE-026
   restart: unless-stopped
+  extra_hosts:
+    - "host.docker.internal:host-gateway"   # reach OBS / VTube Studio on the host (Linux)
+  depends_on:
+    redis:
+      condition: service_healthy
+  # Healthy = the newest heartbeat on cohost:health is younger than 3x its interval and not
+  # "stopping". $SERVICE is baked into the image (see Dockerfile). Applies to every app service.
+  healthcheck:  # @spec DEPLOY-HC-001
+    test: ["CMD-SHELL", "node packages/control/dist/healthcheck.js $$SERVICE"]
+    interval: 10s
+    timeout: 5s
+    retries: 3
+    start_period: 30s
+
+x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLOY-COMPOSE-024
+  <<: *ts-base
   env_file: .env
   # The environment every application service gets: the in-network addresses, and the one pass-through for an isolated
   # start. Operator settings live in config/config.yaml and credentials in config/secrets.yaml (the ./config mount below);
@@ -32,19 +51,6 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
     COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
   volumes:
     - ./config:/app/config
-  extra_hosts:
-    - "host.docker.internal:host-gateway"   # reach OBS / VTube Studio on the host (Linux)
-  depends_on:
-    redis:
-      condition: service_healthy
-  # Healthy = the newest heartbeat on cohost:health is younger than 3x its interval and not
-  # "stopping". $SERVICE is baked into the image (see Dockerfile). Applies to every app service.
-  healthcheck:  # @spec DEPLOY-HC-001
-    test: ["CMD-SHELL", "node packages/control/dist/healthcheck.js $$SERVICE"]
-    interval: 10s
-    timeout: 5s
-    retries: 3
-    start_period: 30s
 
 services:  # @spec DEPLOY-COMPOSE-001
   # ---------- infrastructure ----------
@@ -198,7 +204,7 @@ services:  # @spec DEPLOY-COMPOSE-001
       ollama: { condition: service_started }
 
   # One-shot viewer-note consolidation (the memory image, `consolidate` entry point): run it by hand after
-  # shutting the AI down, `docker compose run --rm consolidate` (or `cohostctl consolidate`). Profile `tools`
+  # shutting the AI down, `docker compose run --rm consolidate` (or `cohostctl consolidate`). Profile `maintenance`
   # keeps it out of `docker compose up`. Best-effort: memory catches up at its next start if it never runs.
   # No redis: the entry point never opens the bus. Inherits the anchor's env_file, environment, volumes
   # (./config) and extra_hosts; depends_on is restated because a service's own map replaces the anchor's.
@@ -207,7 +213,7 @@ services:  # @spec DEPLOY-COMPOSE-001
     build: { context: ., args: { SERVICE: memory } }
     command: ["node", "services/memory/dist/consolidate.js"]
     restart: "no"
-    profiles: [tools]  # @spec DEPLOY-COMPOSE-004
+    profiles: [maintenance]  # @spec DEPLOY-COMPOSE-004
     healthcheck: { disable: true }  # no heartbeat to check: the one-shot never joins the bus
     depends_on:
       postgres: { condition: service_healthy }
@@ -215,13 +221,13 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # One-shot vector migration (the memory image, `reembed` entry point): after changing the embedder to one with another
   # vector size the memory service refuses to start ("memories table has vector(N)"); stop it, then run
-  # `docker compose run --rm reembed` (or `cohostctl reembed`) to re-embed every stored row. Profile `tools`, no redis.
+  # `docker compose run --rm reembed` (or `cohostctl reembed`) to re-embed every stored row. Profile `maintenance`, no redis.
   reembed:  # @spec DEPLOY-COMPOSE-021
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
     command: ["node", "services/memory/dist/reembed.js"]
     restart: "no"
-    profiles: [tools]  # @spec DEPLOY-COMPOSE-004
+    profiles: [maintenance]  # @spec DEPLOY-COMPOSE-004
     healthcheck: { disable: true }  # no heartbeat to check: the one-shot never joins the bus
     depends_on:
       postgres: { condition: service_healthy }
@@ -242,6 +248,19 @@ services:  # @spec DEPLOY-COMPOSE-001
       redis: { condition: service_healthy }
       tts: { condition: service_started }
       tts-pocket: { condition: service_started, required: false }
+
+  # The tool-calling unit (services/tools, TOOL-SVC-*). Least privilege (DEPLOY-COMPOSE-026): no env_file, and no database
+  # or engine address; it gets the bus address, the config directory it reads and the isolation pass-through, plus its
+  # ./config mount and the host gateway (host-side MCP servers). It has no profile, so a plain `docker compose up -d` runs it.
+  tools:  # @spec DEPLOY-COMPOSE-026, DEPLOY-COMPOSE-027
+    <<: *ts-base
+    build: { context: ., args: { SERVICE: tools } }
+    environment:
+      REDIS_URL: redis://redis:6379
+      CONFIG_DIR: /app/config
+      COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
+    volumes:
+      - ./config:/app/config:ro   # read-only: tools never writes config (DEPLOY-COMPOSE-026)
 
   # @spec DEPLOY-COMPOSE-028
   avatar:

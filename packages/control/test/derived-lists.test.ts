@@ -90,9 +90,12 @@ test("the entry check fails for an entry that builds its own bus, heartbeat or s
   assert.ok(!OWN_BOOTSTRAP.test("await runService({ service: 'chat', main });"));
 });
 
-/** Every `service: "<name>"` literal in the unit's `index.ts` and `health.ts` (comments removed). */
+/**
+ * Every `service: "<name>"` literal in the unit's `index.ts`, `health.ts` and `main.ts` (comments removed). `main.ts` holds the
+ * boot function that `index.ts` calls for the units that name their runService call there (tools; MOD-MAN-009 allows that).
+ */
 const heartbeatNames = (id: string): string[] =>
-  ["index.ts", "health.ts"].flatMap((f) => {
+  ["index.ts", "health.ts", "main.ts"].flatMap((f) => {
     const file = rootPath(`services/${id}/src/${f}`);
     if (!existsSync(file)) return [];
     const code = readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

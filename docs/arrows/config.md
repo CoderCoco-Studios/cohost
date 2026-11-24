@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 231 specs: 229 implemented, 0 deferred, 2 gaps. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 231 specs: 230 implemented, 0 deferred, 1 gap. The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 218 `[x]`, 13 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 230 `[x]`, 1 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -74,7 +74,7 @@ Orientation:
 | Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-008 | 8 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-018 | 17 | 0 | 1 |
-| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 13 | 0 | 1 |
+| Presentation table | CFG-PRES-001 to CFG-PRES-014 | 14 | 0 | 0 |
 | Renderer presentation | CFG-PRES-018 to CFG-PRES-020 | 3 | 0 | 0 |
 | Tools presentation | CFG-PRES-016 to CFG-PRES-017 | 2 | 0 | 0 |
 | Clause settings presentation | CFG-PRES-015 | 1 | 0 | 0 |
@@ -91,7 +91,7 @@ Orientation:
 | User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
 
-**Summary:** 231 specs: 229 implemented, 2 gaps, 0 deferred. The gaps are CFG-SEC-018 and CFG-PRES-014; the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
+**Summary:** 231 specs: 230 implemented, 1 gap, 0 deferred. The gap is CFG-SEC-018; the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 
 ## Coverage notes
 
@@ -99,7 +99,4 @@ Annotated tests that cover only part of their spec line: CFG-SCH-001 (only `coho
 
 ## Work Required
 
-- Speech and vision engines (design 2026-11-16), open after #185: the presentation entries of CFG-PRES-014 (the `tools` unit's `network` declaration waits on #208).
 - Chat sources (YouTube chat design 2026-11-16): built for `chat.sources`, the `chat.youtube` section and its ranges, the `CHAT_SOURCES` override, the `chat.youtube.api_key` secret path and the example file (CFG-SCH-010, CFG-SCH-048 to CFG-SCH-054, CFG-ISO-003, CFG-ISO-007, CFG-PRES-006, CFG-USR-018). The `tools.servers.*.token` secret path (CFG-SEC-003) and the fourteen-name override map (CFG-ISO-006) are built; CFG-SEC-018's dashboard clause waits on DASH-SECRET-014.
-### Must Fix
-The control plane manifest declares the three sections `viewer_text`, `brain.input_limits` and `brain.working_memory_own_lines` for the units that read them (module-contract MOD-MAN-002, whose `tools`, `network` and chat `cohost` entries are still open).

@@ -28,7 +28,7 @@ const names = Object.keys(compose.services).sort();
 test("compose defines infra, one-shots and one app service per services/ directory except dashboard, and no dashboard", () => {
   assert.deepEqual(
     names,
-    ["affect", "avatar", "chat", "connector-discord", "consolidate", "cortex", "ears", "eyes", "memory", "models", "mouth", "ollama", "postgres", "redis", "reembed", "salience", "stt", "stt-kyutai", "stt-nemotron", "tts", "tts-pocket", "voice"],
+    ["affect", "avatar", "chat", "connector-discord", "consolidate", "cortex", "ears", "eyes", "memory", "models", "mouth", "ollama", "postgres", "redis", "reembed", "salience", "stt", "stt-kyutai", "stt-nemotron", "tools", "tts", "tts-pocket", "voice"],
   );
   assert.equal(compose.services.dashboard, undefined);
 });
@@ -42,17 +42,12 @@ test("app services get no DASHBOARD_URL (uploads reach eyes and ears over Redis)
   }
 });
 
-/**
- * Service directories that have no Compose service yet. `tools` (services/tools, #205) is added to docker-compose.yml and the
- * manifest by #208, which removes it from this list; until then these compose checks would find a directory with no service.
- */
-const UNCOMPOSED_UNTIL_208 = ["tools"];
-
-/** The application services: one per `services/` directory except the host-run dashboard and the uncomposed ones above. */
+/** The application services: one per `services/` directory except the host-run dashboard. */
 const appServices = readdirSync(root("services"), { withFileTypes: true })
-  .filter((d) => d.isDirectory() && d.name !== "dashboard" && !UNCOMPOSED_UNTIL_208.includes(d.name))
+  .filter((d) => d.isDirectory() && d.name !== "dashboard")
   .map((d) => d.name)
   .sort();
+/** The in-network literals of every application service except `tools`, which gets only the bus and config ones (DEPLOY-COMPOSE-026). */
 const IN_NETWORK = {
   REDIS_URL: "redis://redis:6379",
   DATABASE_URL: "postgres://cohost:cohost@postgres:5432/cohost",
@@ -62,10 +57,11 @@ const IN_NETWORK = {
   VOICE_URL: "http://voice:8700",
   CONFIG_DIR: "/app/config",
 };
+const TOOLS_ENVIRONMENT = ["COHOST_ISOLATION", "CONFIG_DIR", "REDIS_URL"];
 
 // @spec DEPLOY-COMPOSE-002
 test("every application service builds the root Dockerfile with SERVICE set to its directory name and inherits the shared x-ts-service settings", () => {
-  assert.ok(appServices.length >= 10, `found the services/ directories: ${appServices.join(",")}`);
+  assert.ok(appServices.includes("tools") && appServices.length >= 12, `found the services/ directories: ${appServices.join(",")}`);
   for (const name of appServices) {
     const svc = compose.services[name];
     assert.ok(svc, `${name} is a compose service`);
@@ -73,9 +69,11 @@ test("every application service builds the root Dockerfile with SERVICE set to i
     assert.equal(svc.build?.dockerfile, undefined, `${name}: the single root Dockerfile`);
     assert.equal(svc.build?.args.SERVICE, name, `${name}: SERVICE is its directory name`);
     assert.equal(svc.restart, "unless-stopped", `${name}: restart`);
-    assert.equal(svc.env_file, ".env", `${name}: env_file`);
-    for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
-    assert.ok(svc.volumes?.includes("./config:/app/config"), `${name}: the config bind mount`);
+    if (name !== "tools") {
+      assert.equal(svc.env_file, ".env", `${name}: env_file`);
+      for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
+    }
+    assert.ok(svc.volumes?.includes(name === "tools" ? "./config:/app/config:ro" : "./config:/app/config"), `${name}: the config bind mount`);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
     assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
     assert.ok(svc.healthcheck?.test?.join(" ").includes("healthcheck.js $$SERVICE"), `${name}: the container healthcheck`);
@@ -87,7 +85,7 @@ test("every application service builds the root Dockerfile with SERVICE set to i
 
 // @spec DEPLOY-COMPOSE-003
 test("the in-network addresses are literals in each application service's environment block, so .env (env_file) cannot change them", () => {
-  for (const name of appServices) {
+  for (const name of appServices.filter((n) => n !== "tools")) {
     const env = compose.services[name]!.environment ?? {};
     assert.equal(compose.services[name]!.env_file, ".env", `${name}: .env is still loaded`);
     for (const [k, v] of Object.entries(IN_NETWORK)) {
@@ -148,4 +146,52 @@ test("compose-smoke.sh starts the services from .env.example alone: it sets no o
   assert.doesNotMatch(code, /COHOST_ISOLATION|secrets\.yaml|LLM_PROVIDER|CHAT_SOURCE|AVATAR_DRIVER|DISCORD_TOKEN/);
   // the services it starts need no model, credential or optional profile
   for (const s of ["salience", "affect", "avatar"]) assert.equal(compose.services[s]!.profiles, undefined, s);
+});
+
+// @spec DEPLOY-COMPOSE-026
+test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile, publishes no port, mounts only ./config and depends on redis healthy alone", () => {
+  const tools = compose.services.tools!;
+  assert.ok(tools, "tools is a compose service");
+  assert.equal(tools.build?.context, ".");
+  assert.equal(tools.build?.dockerfile, undefined, "the single root Dockerfile");
+  assert.equal(tools.build?.args.SERVICE, "tools");
+  assert.equal(tools.env_file, undefined, "least privilege: no env_file");
+  assert.deepEqual(Object.keys(tools.environment ?? {}).sort(), TOOLS_ENVIRONMENT, "least privilege: the bus URL, the config directory and the isolation pass-through only");
+  assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
+  assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
+  assert.equal(tools.ports, undefined);
+  assert.deepEqual(tools.volumes, ["./config:/app/config:ro"], "the config mount is read-only");
+  assert.equal(tools.environment?.REDIS_URL, "redis://redis:6379");
+  assert.equal(tools.environment?.CONFIG_DIR, "/app/config");
+  assert.equal(tools.environment?.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
+  assert.deepEqual(Object.keys(tools.depends_on ?? {}), ["redis"]);
+  assert.equal(tools.depends_on?.redis?.condition, "service_healthy");
+});
+
+// @spec DEPLOY-COMPOSE-026
+test("tools gets no more host access than the other application services: no privileged mode, added capability, host network or pid namespace, device or docker socket, and no data volume", () => {
+  const tools = compose.services.tools as Svc & Record<string, unknown>;
+  assert.ok(tools, "tools is a compose service");
+  for (const k of ["privileged", "cap_add", "network_mode", "pid", "ipc", "devices", "security_opt"]) assert.equal(tools[k], undefined, `tools sets no ${k}`);
+  assert.ok(!(tools.volumes ?? []).some((v) => /docker\.sock|\.\/data|^\//.test(v)), "no docker socket, no ./data and no absolute host path");
+});
+
+// @spec DEPLOY-COMPOSE-027
+test("the Compose file names no profile `tools`, so the service named tools and a profile of that name never both exist", () => {
+  assert.ok(compose.services.tools, "the tools service exists");
+  const profiles = new Set(Object.values(compose.services).flatMap((s) => s.profiles ?? []));
+  assert.ok(!profiles.has("tools"), `profiles in use: ${[...profiles].sort().join(", ")}`);
+});
+
+// @spec DEPLOY-REPO-001
+test("the root tsconfig.json is a solution file referencing the 8 packages, the 13 services, the two test projects and nothing else", () => {
+  const ts = JSON.parse(readFileSync(root("tsconfig.json"), "utf8")) as { files: string[]; references: { path: string }[] };
+  assert.deepEqual(ts.files, []);
+  const paths = ts.references.map((r) => r.path);
+  const dir = (d: string) => readdirSync(root(d), { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== "node_modules").map((e) => `${d}/${e.name}`);
+  const packages = dir("packages"), services = dir("services");
+  assert.equal(packages.length, 8, packages.join(","));
+  assert.equal(services.length, 13, services.join(","));
+  assert.ok(services.includes("services/tools"));
+  assert.deepEqual([...paths].sort(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].sort());
 });

@@ -10,7 +10,7 @@ import { StackService } from "../src/stack.js";
 // Test injection at the bus level (POST /inject/event) and the not-running refusal every injection route shares
 // (module-contract MOD-TEST-002 to MOD-TEST-006).
 
-const ids = ["chat", "eyes", "ears", "salience", "affect", "memory", "cortex", "voice", "mouth", "avatar"];
+const ids = ["chat", "eyes", "ears", "salience", "affect", "memory", "cortex", "tools", "voice", "mouth", "avatar"];
 const health = (state: HealthState): ServiceHealth[] => ids.map((service) => ({ service, state, restarts: 0 }));
 
 async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthState> = {}) {
@@ -125,6 +125,23 @@ test("the same refusal covers service-level text, image and audio, and bus-level
   assert.equal(t.bus.published.length, 0);
   const bus = await fetch(`${t.base}/inject/text`, { method: "POST", body: JSON.stringify({ level: "bus", text: "hi" }) });
   assert.equal(bus.status, 202);
+});
+
+// @spec MOD-TEST-005, DASH-INJ-011
+test("service-level text with as: tool is for the tools unit: refused 409 while tools is down or unknown, accepted 202 while it is up, and chat's state does not matter", { todo: "waits on #211 (as: tool route, DASH-INJ-011)" }, async () => {
+  const env = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
+  const send = (t: Awaited<ReturnType<typeof boot>>) =>
+    fetch(`${t.base}/inject/text`, { method: "POST", headers: { authorization: "Bearer s3cret" }, body: JSON.stringify({ level: "service", as: "tool", text: "stream_info" }) });
+  for (const state of ["down", "unknown"] as const) {
+    const t = await boot(env, { tools: state });
+    const r = await send(t);
+    assert.equal(r.status, 409, state);
+    assert.deepEqual(await r.json(), { ok: false, detail: "service not running: tools" });
+    assert.equal(t.bus.published.length, 0, "a refused tool injection publishes nothing");
+  }
+  const up = await boot(env, { chat: "down" });
+  assert.equal((await send(up)).status, 202, "tools up, chat down");
+  assert.deepEqual(up.bus.of("inject.request").map((e) => e.target), ["tools"]);
 });
 
 // @spec MOD-TEST-006

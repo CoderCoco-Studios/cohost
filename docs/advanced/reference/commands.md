@@ -62,12 +62,12 @@ Exit codes: 0 for success, 1 for a failure or a refusal, 2 for a usage error. Ev
 
 | Profile | Services | Why it is optional |
 | --- | --- | --- |
-| none (always started) | `redis`, `postgres`, `ollama`, `models`, `tts`, `stt`, `chat`, `salience`, `affect`, `memory`, `cortex`, `voice`, `avatar` | The core talking path and its infrastructure. `models` pulls the [Ollama](../../start/glossary.md#ollama) models once and exits |
+| none (always started) | `redis`, `postgres`, `ollama`, `models`, `tts`, `stt`, `chat`, `salience`, `affect`, `memory`, `cortex`, `tools`, `voice`, `avatar` | The core talking path and its infrastructure. `models` pulls the [Ollama](../../start/glossary.md#ollama) models once and exits |
 | `eyes` | `eyes` | [OBS](../../start/glossary.md#obs) vision; needs `vision.enabled: true` |
 | `ears` | `ears` | The listener; reads what [connectors](../../start/glossary.md#connector) publish |
 | `mouth` | `mouth` | The speaker; writes the co-host's voice to its outputs |
 | `discord` | `connector-discord` | The Discord connector: the one bot login, with source and [sink](../../start/glossary.md#sink) `discord` |
-| `tools` | `consolidate`, `reembed` | One-shot jobs that never start with `up` |
+| `maintenance` | `consolidate`, `reembed` | One-shot jobs that never start with `up` |
 
 ```bash
 docker compose --profile eyes up -d                       # add OBS vision

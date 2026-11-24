@@ -61,7 +61,7 @@ async function waitSpeakingGateOpen(deadline: number): Promise<void> {
 }
 const chat = (text: string) => ({ platform: "twitch", user: "live_verify", text, mentionsCohost: true });
 
-// @spec MOD-TEST-007
+// @spec MOD-TEST-007, MOD-TEST-008
 test("every unit of the isolated stack answers its declared input", { skip, timeout: 900_000 }, async () => {
   const dash: ChildProcess = spawn(process.execPath, [join(root, "services/dashboard/dist/index.js")], { env, cwd: root, stdio: "ignore" });
   let launchedHere = false;
@@ -102,8 +102,10 @@ test("every unit of the isolated stack answers its declared input", { skip, time
       await sleep(3000);
     }
 
-    const cases: { unit: string; send: () => Promise<{ status: number; json: any }>; types: string[]; pred?: (d: string) => boolean }[] = [
+    const cases: { unit: string; send: () => Promise<{ status: number; json: any }>; types: string[]; pred?: (d: string) => boolean; also?: string }[] = [
       { unit: "chat", send: () => api("POST", "/inject/text", { level: "service", text: "live verify chat", user: "live_verify" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
+      // MOD-TEST-008: the isolated tools unit (TOOLS_MODE=mock) answers a text injection naming a tool with an inject.result and a tool.result, whatever the status.
+      { unit: "tools", send: () => api("POST", "/inject/text", { level: "service", as: "tool", text: JSON.stringify({ tool: "live_verify__noop", arguments: {} }) }), types: ["inject.result"], pred: (d) => d.includes('"ok":true'), also: "tool.result" },
       { unit: "eyes", send: () => api("POST", "/inject/image?level=service", PNG, { "content-type": "image/png" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
       { unit: "ears", send: () => api("POST", "/inject/audio?level=service", wav(), { "content-type": "audio/wav" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') },
       { unit: "connector-discord", send: () => api("POST", "/inject/audio?level=service&target=connector-discord", wav(), { "content-type": "audio/wav" }), types: ["inject.result"], pred: (d) => d.includes('"ok":true') && d.includes("Discord is off") },
@@ -128,6 +130,7 @@ test("every unit of the isolated stack answers its declared input", { skip, time
         const r = await c.send();
         assert.equal(r.status, 202, `${c.unit}: injection answered ${r.status} ${JSON.stringify(r.json)}`);
         hit = await observe(since, c.types, c.pred, ATTEMPT_MS);
+        if (hit.length > 0 && c.also) assert.ok((await observe(since, [c.also], () => true, ATTEMPT_MS)).length > 0, `${c.unit}: no ${c.also} followed its injection`);
       }
       assert.ok(hit.length > 0, `${c.unit}: no ${c.types.join("/")} answered its injection within ${CASE_DEADLINE_MS / 1000} s`);
     }

@@ -28,6 +28,21 @@ test("mock provider: attention.focus produces a brain.say with text and a valid 
   assert.ok((EMOTIONS as readonly string[]).includes(say!.emotion));
 });
 
+// @spec CTX-START-002, CTX-PROV-019
+test("mock provider: a provisional focus is answered on its confirm, not before", async () => {
+  // Nothing answers the viewer-notes request here, so the think's wait for it is cut short to keep the test quick.
+  const { bus, cortex } = setup({ brain: { memory: { recall_k: 0 }, cortex: { recall_timeout_ms: 50 } } });
+  const early = { utteranceId: "u1", seq: 0, focus: { kind: "speech" as const, who: "bob", text: "hey Coco, how are", mention: true } };
+  await cortex.onEvent(event("attention.focus", { reason: "mentioned", score: 1, provisional: true, ...early }, "salience"));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(bus.of("brain.say").length, 0, "nothing is said while held");
+  await cortex.onEvent(event("attention.resolve", { utteranceId: "u1", seq: 0, outcome: "confirm", reason: "mentioned", score: 1, focus: { ...early.focus, text: "hey Coco, how are you?" } }, "salience"));
+  await waitFor(() => bus.of("brain.say").length === 1, "brain.say on the confirm");
+  const [say] = bus.of("brain.say");
+  assert.ok(say!.text.length > 0);
+  assert.ok((EMOTIONS as readonly string[]).includes(say!.emotion));
+});
+
 // @spec CTX-RECALL-003
 test("no memory region: recall times out after recall_timeout_ms and the cortex still speaks", async () => {
   const { bus, cortex } = setup({ brain: { memory: { recall_k: 3 }, cortex: { recall_timeout_ms: 50 } } });

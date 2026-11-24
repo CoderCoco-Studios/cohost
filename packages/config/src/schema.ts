@@ -478,7 +478,7 @@ export const ConfigSchema = z.object({
       speaking_timeout_ms: z.number().int().positive().default(20000),
       /** Base chance, stated to the model as a nudge, that she riffs on a spoken line that failed to play. Never enforced. */
       fallback_ack_chance: z.number().min(0).max(1).default(0.25), // @spec CFG-SCH-019
-      /** How long a provisional think may hold its first clause back before it is released or parked (CTX-PROV-010). */
+      /** How long a provisional think may hold its reply back before a confirm; past it the think is dropped unspoken (CTX-PROV-010, CTX-PROV-014). */
       hold_limit_ms: z.number().int().positive().default(5000), // @spec CFG-SCH-110
       /** The cortex stays silent rather than say a line this similar (0..1) to a recent one of its own; 0 turns the check off. */
       repeat_similarity: z.number().min(0).max(1).default(0.8), // @spec CFG-SCH-046

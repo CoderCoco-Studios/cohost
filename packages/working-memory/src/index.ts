@@ -300,9 +300,9 @@ export class Context {
    * Render the window as transcript lines for the prompt. Every line is one line starting with its tag. Chat is
    * a labelled, quoted line; a `self` line renders the same whether or not it has `heard` text.
    */
-  transcript(cohostName: string): string { // @spec WM-TRANS-001, WM-TRANS-007, WM-TRANS-013, WM-TRANS-014
+  transcript(cohostName: string, early?: { speaker: string; text: string }): string { // @spec WM-TRANS-001, WM-TRANS-007, WM-TRANS-013, WM-TRANS-014
     const limits = this.limits;
-    return this.events
+    const lines = this.events
       .map((e) => {
         switch (e.kind) {
           case "chat": { // @spec WM-TRANS-002, WM-TRANS-008
@@ -329,8 +329,10 @@ export class Context {
             }
             return `${cohostName}: [${e.emotion}] ${oneLine(e.fallback)} [your line "${oneLine(e.text)}" failed to play; this came out instead]`;
         }
-      })
-      .join("\n");
+      });
+    // The early text of a provisional think is a transient last `[voice]` line: rendered as a speech entry, never kept (CTX-PROV-005).
+    if (early !== undefined) lines.push(`${LINE_TAG.speech} ${speakerLabel(early.speaker, limits?.nameChars ?? Infinity)}: ${oneLine(bounded(early.text, limits?.speechChars))}`);
+    return lines.join("\n");
   }
 
   /**

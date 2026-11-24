@@ -161,9 +161,10 @@ test("a released reply is the reply an ordinary think of the same model text pub
     await prov.cortex.onEvent(confirm());
     await waitFor(() => prov.says().length === 1, "released say");
     await sleep(30);
-    // The reply's shape: its text, clause order, closing clause and cut; the stamps and the ids differ by design (CTX-PROV-025).
-    const shapeOf = (events: { text: string; seq?: number; last?: true; through?: number; cut?: string; more?: true }[]) =>
-      events.map((e) => ({ text: e.text, seq: e.seq ?? null, last: e.last ?? null, through: e.through ?? null, cut: e.cut ?? null, more: e.more ?? null }));
+    // The reply's shape: text, clause order, closing clause, cut, emotion, gesture and reason; only the stamps and ids differ by design (CTX-PROV-025).
+    type Shaped = { text: string; seq?: number; last?: true; through?: number; cut?: string; more?: true; emotion?: string; gesture?: string; reason?: string };
+    const shapeOf = (events: Shaped[]) =>
+      events.map((e) => ({ text: e.text, seq: e.seq ?? null, last: e.last ?? null, through: e.through ?? null, cut: e.cut ?? null, more: e.more ?? null, emotion: e.emotion ?? null, gesture: e.gesture ?? null, reason: e.reason ?? null }));
     assert.deepEqual(shapeOf(prov.line() as never), shapeOf(ord.line() as never), shape.text);
   }
 });
@@ -315,7 +316,8 @@ test("a released think publishes brain.status thinking, then brain.say, then the
 
 // @spec CTX-PROV-010, CTX-PROV-014, CTX-PROV-016, CTX-PROV-029, CTX-PROV-031, CTX-PROV-032
 test("the hold limit counts from the start of the think: it aborts the stream even before a clause is ready, publishes idle and frees the cortex", async () => {
-  const s = setup({ cortex: { hold_limit_ms: 60 } });
+  // Long enough that the stream is still open when the test looks, even under load; the limit then ends it.
+  const s = setup({ cortex: { hold_limit_ms: 150 } });
   const g = gate();
   s.llm.rounds.push({ text: MULTI, gate: g.promise });
   await s.cortex.onEvent(provisional());
@@ -599,6 +601,7 @@ test("a confirm with no held think is an ordinary focus built from its fields, f
   await s.cortex.onEvent(resolve);
   await waitFor(() => s.says().length === 1, "an ordinary reply");
   assert.match(userMsg(s), /hey Coco what time is it\?/);
+  assert.match(userMsg(s), /Chris just said that out loud/, "the focus is in the nudge");
   const say = s.says()[0]!;
   assert.equal(say.reason, "engaged");
   assert.equal(say.injected, true);
@@ -607,4 +610,180 @@ test("a confirm with no held think is an ordinary focus built from its fields, f
   assert.deepEqual([say.timing!.audioEndedAt, say.timing!.closedAt, say.timing!.heardAt], [150, 140, 160]);
   assert.equal(say.timing!.confirmedAt, undefined);
   assert.equal(say.timing!.heldAt, undefined);
+});
+
+// ---- review round 1: release failure, snapshot, mutation coverage, redelivery, chat-kind early line ----
+
+// @spec CTX-REL-010, CTX-PROV-037, CTX-PROV-038
+test("a publish that fails on release ends the think: the cortex is not wedged in thinking, and the next focus is thought on", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  const real = s.bus.publish.bind(s.bus);
+  let failed = false;
+  s.bus.publish = (async (type: string, data: unknown) => {
+    if (type === "brain.say" && !failed) { failed = true; throw new Error("bus down"); }
+    return real(type as never, data as never);
+  }) as typeof s.bus.publish;
+  await s.cortex.onEvent(confirm()); // the release's first brain.say fails; the event itself does not throw
+  await waitFor(() => s.statuses().at(-1) === "idle", "idle after the failed release");
+  await sleep(20); // the think's finally clears its flag just after that publish
+  s.llm.rounds.push({ text: "[happy] Hello again." });
+  await s.cortex.onEvent(ordinary({ utteranceId: "u9", focus: { kind: "speech", who: "Chris", text: "another sentence", mention: false } }));
+  await waitFor(() => s.says().length === 1, "the next focus is answered");
+  assert.equal(s.says()[0]!.text, "Hello again.");
+  assert.equal(s.llm.calls.length, 2);
+});
+
+// @spec CTX-PROV-005
+test("an event that reaches the window during the recall wait stays out of the held prompt: the final is not duplicated", async () => {
+  const s = setup({ recallK: 3, cortex: { recall_timeout_ms: 80 } });
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await sleep(10); // the think is waiting for recall now
+  await s.cortex.onEvent(event("speech.heard", { speaker: "Chris", text: FINAL, durationMs: 900, source: "mic", utteranceId: "u1" }, "ears"));
+  await waitFor(() => s.llm.calls.length === 1, "model call");
+  assert.ok(userMsg(s).includes(EARLY), "the early text is the transient line");
+  assert.ok(!userMsg(s).includes("what time is it?"), "the final that arrived during the wait is not in the prompt");
+});
+
+// @spec CTX-PROV-003, CTX-PROV-015, CTX-GATE-001
+test("a replaced held think does not clear the replacement's thinking flag: a third focus is declined while the replacement is in flight", async () => {
+  // A's critic is still checking its clause when B replaces it, so A's think finishes after B has started.
+  const s = setup({ critic: async () => { await sleep(100); return { ok: true }; } });
+  const g = gate();
+  s.llm.rounds.push({ text: MULTI }); // the held think A
+  s.llm.rounds.push({ text: "[happy] B reply.", gate: g.promise }); // the replacement B, still reading
+  await s.cortex.onEvent(provisional());
+  await sleep(60); // A has read its reply and is in the critic
+  await s.cortex.onEvent(ordinary({ utteranceId: "u2", focus: { kind: "speech", who: "Chris", text: "a different sentence", mention: false } }));
+  await opened(s, 1);
+  await sleep(150); // A's critic has returned and A's think has finished
+  await s.cortex.onEvent(ordinary({ utteranceId: "u3", focus: { kind: "speech", who: "Chris", text: "a third sentence", mention: false } }));
+  await sleep(120); // long enough for a think that wrongly started to reach its model call after its notes wait
+  assert.equal(s.llm.calls.length, 2, "the third focus is declined, not thought on concurrently");
+  assert.equal(s.statuses().at(-1), "thinking");
+  g.open();
+  await waitFor(() => s.says().length === 1, "B finishes");
+});
+
+// @spec CTX-PROV-016, CTX-PROV-031, CTX-PROV-033
+test("stop() ends a held think silently, and a late confirm after it speaks nothing", async () => {
+  const s = setup();
+  await holdOpen(s);
+  const n = s.statuses().length;
+  await s.cortex.stop();
+  await sleep(20);
+  assert.deepEqual(s.statuses().slice(n), [], "the held think publishes no status at shutdown");
+  await s.cortex.onEvent(confirm());
+  await sleep(40);
+  assert.deepEqual(s.statuses().slice(n), [], "no later think starts a status after stop");
+  assert.equal(s.says().length + s.clauses().length, 0, "nothing is spoken after stop");
+  assert.equal(s.llm.calls.length, 1, "no think starts after stop");
+});
+
+// @spec CTX-PROV-014, CTX-PROV-016
+test("a think ended during its recall wait makes no model call", async () => {
+  const s = setup({ recallK: 3, cortex: { recall_timeout_ms: 80 } });
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await sleep(10);
+  await s.cortex.onEvent(withdraw());
+  await sleep(120);
+  assert.equal(s.llm.calls.length, 0, "the ended think asked the model nothing");
+  assert.equal(s.says().length + s.clauses().length, 0);
+});
+
+// @spec CTX-STREAM-037, CTX-STREAM-013
+test("a reply whose critic returns after stop() publishes no line", async () => {
+  const s = setup({ critic: async () => { await sleep(150); return { ok: true }; } });
+  s.llm.rounds.push({ text: "[happy] A reply that the critic is still checking." });
+  const thinking = s.cortex.think({ reason: "mentioned", score: 1, focus: { kind: "speech", who: "Chris", text: FINAL, mention: false } });
+  await sleep(80); // the reply is read and the critic is checking it
+  await s.cortex.stop();
+  await thinking;
+  await sleep(20);
+  assert.equal(s.says().length, 0, "the stopped line is not published after the critic returns");
+});
+
+// @spec CTX-PROV-019, CTX-PROV-025, CTX-SAY-006
+test("a release takes the confirm's injected and remember flags, not the provisional focus's", async () => {
+  const s = setup();
+  await hold(s);
+  await s.cortex.onEvent(confirm({ injected: true, remember: false }));
+  await waitFor(() => s.says().length === 1, "released say");
+  assert.equal(s.says()[0]!.injected, true);
+  assert.equal(s.says()[0]!.remember, false);
+});
+
+// @spec CTX-PROV-030, CTX-PROV-009
+test("a think that parks at its first tool call with no text before it stamps heldAt at the park", async () => {
+  const s = setup({ withTool: true });
+  s.llm.rounds.push({ calls: [call("c1")] }, { text: "[happy] It is noon." });
+  s.bus.answerAfterMs = 5;
+  const t0 = Date.now();
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  await sleep(30);
+  assert.equal(s.bus.requests.length, 0, "parked: no request yet");
+  const before = Date.now();
+  await s.cortex.onEvent(confirm());
+  await waitFor(() => s.line().some((e) => e.text === "It is noon."), "the reply after the call");
+  const heldAt = s.says()[0]!.timing!.heldAt;
+  assert.ok(heldAt !== undefined && heldAt >= t0 && heldAt <= before, `heldAt ${heldAt} stamped at the park`);
+});
+
+// @spec CTX-PROV-036, CTX-PROV-005
+test("a reflex line that starts and ends while the held clauses are read does not stop their release", async () => {
+  const s = setup();
+  const g = gate();
+  s.llm.rounds.push({ text: MULTI, gate: g.promise });
+  await s.cortex.onEvent(provisional());
+  await opened(s);
+  await other(s, "r1"); // a reflex is playing while the clauses are cut
+  g.open();
+  await streamed(s);
+  await endOther(s, "r1");
+  await s.cortex.onEvent(confirm());
+  await waitFor(() => s.says().length === 1, "released say");
+  assert.equal(s.says()[0]!.text, "First clause is here,");
+});
+
+// @spec CTX-PROV-023
+test("a redelivered confirm of the held think just released is ignored: no second reply", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: "[happy] Just one short line here." });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  await s.cortex.onEvent(confirm());
+  await waitFor(() => s.says().length === 1, "released say");
+  await endOther(s, s.says()[0]!.id!); // the line has played: nothing is speaking when the duplicate arrives
+  await sleep(20);
+  await s.cortex.onEvent(confirm());
+  await sleep(40);
+  assert.equal(s.llm.calls.length, 1, "no second model call");
+  assert.equal(s.says().length, 1, "no second reply");
+});
+
+// @spec CTX-PROV-005
+test("a chat-kind provisional focus renders no [voice] line in its prompt", async () => {
+  const s = setup();
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(event("attention.focus", { reason: "engaged", score: 1, provisional: true, utteranceId: "u1", seq: 0, focus: { kind: "chat", who: "bob", platform: "twitch", text: "hello there Coco", mention: false } }, "salience"));
+  await streamed(s);
+  assert.ok(!userMsg(s).includes("[voice]"), "no unquoted chat text as a voice line");
+});
+
+// @spec CTX-STREAM-037, CTX-PROV-016
+test("stop() during the recall wait: the think makes no model call", async () => {
+  const s = setup({ recallK: 3, cortex: { recall_timeout_ms: 80 } });
+  s.llm.rounds.push({ text: MULTI });
+  const thinking = s.cortex.think({ reason: "mentioned", score: 1, focus: { kind: "speech", who: "Chris", text: FINAL, mention: false } });
+  await sleep(10);
+  await s.cortex.stop();
+  await thinking;
+  await sleep(100);
+  assert.equal(s.llm.calls.length, 0);
+  assert.equal(s.says().length, 0);
 });

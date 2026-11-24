@@ -203,6 +203,8 @@ interface Held {
   resolve: () => void;
   /** Publishes the queued output and marks the think released; set by readReply. */
   drain: () => Promise<void>;
+  /** A publish that failed during the release; think() rethrows it. */
+  error?: unknown;
 }
 
 /** An `attention.resolve`, and its confirm variant (CTX-PROV-019). */
@@ -324,6 +326,10 @@ export class Cortex {
   private held?: Held;
   /** Identifies the think whose `thinking` flag is set, so a think that was ended never clears a later one's flag. */
   private turn?: object;
+  /** The utterance and seq of the held think last released: a redelivered confirm for it is ignored (CTX-PROV-023). */
+  private lastReleased?: { utteranceId?: string; seq?: number };
+  /** Set by `stop()`: no think starts after it (CTX-PROV-016). */
+  private stopped = false;
 
   constructor(private d: CortexDeps) {
     this.ctx = Context.forBrain(d.cfg.brain, d.cfg.viewer_text);
@@ -540,6 +546,7 @@ export class Cortex {
   /** `focusedAt` is the `attention.focus` envelope `ts`; a direct call without one leaves that stamp off. */
   async think(focus: Focus, focusedAt?: number): Promise<void> {
     const { cfg, log } = this.d;
+    if (this.stopped) return; // a stopped cortex starts no think (CTX-PROV-016)
     // An ordinary focus replaces a held think as an ordinary one would (CTX-PROV-015, CTX-PROV-018): nothing is published for the ended think.
     if (focus.provisional !== true && this.held !== undefined) await this.endHeld(this.held, { status: false });
     // Salience assumes we're busy once it fires, so every path out of here reports a status.
@@ -557,6 +564,10 @@ export class Cortex {
     try {
       // A provisional focus holds its think from here, so the hold limit covers the recall too (CTX-PROV-010).
       if (focus.provisional === true) hold = this.openHold(focus);
+      // The prompt of a provisional think is built from the window as it stood now, with the early text as a transient `[voice]` line
+      // only for speech (CTX-PROV-005): events that reach the window during the recall wait or the hold stay out of it.
+      const early = hold !== undefined && focus.focus?.kind === "speech" && focus.focus.text ? { speaker: focus.focus.who ?? "", text: focus.focus.text } : undefined;
+      const startTranscript = hold !== undefined ? this.ctx.transcript(cfg.cohost.name, early) : undefined;
       await this.status("thinking", focus.reason);
       // @spec CTX-RECALL-001
       const query = focus.focus?.text || this.ctx.lastVision;
@@ -579,8 +590,7 @@ export class Cortex {
       // The offer is fixed for the think (CTX-TOOL-004): the catalog is read once, here.
       const offer = this.offerFor(focus);
       // @spec CTX-PROV-005: the early text is the prompt's transient last line; the window is not changed.
-      const early = focus.provisional === true && focus.focus?.text ? { speaker: focus.focus.who ?? "", text: focus.focus.text } : undefined;
-      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch, tools: offer.tools.length > 0, early });
+      const messages = buildMessages({ cfg, personality: this.personality, ctx: this.ctx, memories, focus, mood: this.mood, viewerNote, people, glitch, tools: offer.tools.length > 0, transcript: startTranscript });
       const t0 = Date.now();
       await this.readReply(messages, {
         ...offer,
@@ -598,6 +608,8 @@ export class Cortex {
       });
       // A held think is in flight until it is released or ended (CTX-PROV-028).
       if (hold !== undefined) await hold.settled;
+      // A publish that failed during the release reaches here as the think's failure (CTX-REL-010).
+      if (hold?.error !== undefined) throw hold.error;
     } catch (err) {
       log.error({ err }, "think failed");
       if (hold !== undefined) await this.endHeld(hold, { status: false });
@@ -708,7 +720,7 @@ export class Cortex {
    */
   private async readReply(messages: ChatMessage[], r: ReplyRequest): Promise<void> {
     const { cfg, llm, critic, log, bus } = this.d;
-    if (r.hold?.ended) return; // ended before its reading began (CTX-PROV-016)
+    if (r.hold?.ended || this.stopped) return; // ended, or stopped, before its reading began (CTX-PROV-016)
     // @spec CTX-STREAM-033
     const { clause_min_chars: min, clause_max_chars: max, max_clauses: maxClauses } = cfg.brain.cortex;
     const tcfg = cfg.tools.reply;
@@ -834,7 +846,7 @@ export class Cortex {
           ...(firstReqAt === undefined ? {} : { toolStartedAt: firstReqAt }),
           ...(lastWaitEnd === undefined ? {} : { toolEndedAt: lastWaitEnd }),
           ...(hold?.heldAt === undefined ? {} : { heldAt: hold.heldAt }),
-          ...(hold ? hold.tail : r.focus.timing),
+          ...(hold ? { ...r.focus.timing, ...hold.tail } : r.focus.timing),
         };
         // @spec CTX-SAY-001, CTX-STREAM-017, CTX-STREAM-019, CTX-INJ-001
         await bus.publish("brain.say", {
@@ -1326,6 +1338,7 @@ export class Cortex {
   /** Service shutdown: release the valves, end a think that has published no clause, and close an open streamed line as `stopped`, once (CTX-STREAM-037). */
   // @spec CTX-STREAM-037
   async stop(): Promise<void> {
+    this.stopped = true;
     this.abandonWait();
     if (this.held !== undefined) await this.endHeld(this.held, { status: false });
     for (const id of [...this.pending.keys()]) this.endSpeaking(id);
@@ -1570,28 +1583,38 @@ export class Cortex {
     h.tail = rel.tail;
     h.flags = rel.flags;
     if (rel.interjected) h.interjected = true;
-    if (h.none && h.queue.length === 0) {
-      h.released = true;
-      this.statusOwed = false;
-      await this.statusLogged(this.noLineState());
-      h.resolve();
-      return;
-    }
-    if (this.control.muted || this.control.paused || this.voiceBusy()) {
-      if (!(this.control.muted || this.control.paused)) this.d.log.info({ reason: h.reason }, "dropped: something else spoke while thinking");
-      // The reply is dropped and its reading stopped; a clause it had held is not published (CTX-PROV-036).
+    this.lastReleased = { utteranceId: h.utteranceId, seq: h.seq };
+    try {
+      if (h.none && h.queue.length === 0) {
+        h.released = true;
+        this.statusOwed = false;
+        await this.statusLogged(this.noLineState());
+        return;
+      }
+      if (this.control.muted || this.control.paused || this.voiceBusy()) {
+        if (!(this.control.muted || this.control.paused)) this.d.log.info({ reason: h.reason }, "dropped: something else spoke while thinking");
+        // The reply is dropped and its reading stopped; a clause it had held is not published (CTX-PROV-036).
+        h.ended = true;
+        h.released = true;
+        h.queue.length = 0;
+        if (h.line !== undefined) { h.line.stopped = true; h.line.exited = true; h.line.ctrl.abort(); }
+        this.statusOwed = false;
+        await this.statusLogged(this.noLineState());
+        return;
+      }
+      await this.status("thinking", h.reason); // CTX-PROV-037
+      await h.drain();
+    } catch (err) {
+      // A publish that fails during the release ends the think: nothing more is published for it, and think() reports the failure.
+      h.error = err;
       h.ended = true;
       h.released = true;
       h.queue.length = 0;
       if (h.line !== undefined) { h.line.stopped = true; h.line.exited = true; h.line.ctrl.abort(); }
       this.statusOwed = false;
-      await this.statusLogged(this.noLineState());
+    } finally {
       h.resolve();
-      return;
     }
-    await this.status("thinking", h.reason); // CTX-PROV-037
-    await h.drain();
-    h.resolve();
   }
 
   /** Whether a held think is ready for an interjected confirm: a clause held that passed its checks, and not parked (CTX-INTJ-001). */
@@ -1619,15 +1642,19 @@ export class Cortex {
         await this.releaseHeld(held, { tail: finalTiming(d.timing), flags: propagatedFlags(d), interjected: true });
         return;
       }
-      // CTX-INTJ-003: nothing is spoken and the think ends; CTX-INTJ-006: the status is not `thinking`.
+      // CTX-INTJ-003: nothing is spoken and the think ends; CTX-INTJ-006: while an ordinary think is in flight its state is reported.
+      const inFlight = h === undefined && this.thinking;
       if (h !== undefined) await this.endHeld(h, { status: false });
-      await this.statusLogged(this.noLineState());
+      if (inFlight) await this.statusLogged("thinking", d.reason);
+      else await this.statusLogged(this.noLineState());
       return;
     }
     if (held !== undefined) {
       await this.releaseHeld(held, { tail: { ...finalTiming(d.timing), confirmedAt: Date.now() }, flags: propagatedFlags(d) }); // CTX-PROV-019
       return;
     }
+    // A redelivered confirm of the held think just released is ignored: it must not start a second reply (CTX-PROV-023).
+    if (this.lastReleased !== undefined && d.utteranceId === this.lastReleased.utteranceId && d.seq === this.lastReleased.seq) return;
     // CTX-PROV-023: an ordinary focus built from the resolve; think() ends any other held think.
     this.think(focusOf(d), ts).catch((err) => this.d.log.error({ err }, "think rejected"));
   }

@@ -147,10 +147,10 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 7. **Tag/stop contract is pinned** — `transcript-stops.test.ts` captures the stop list the Ollama and OpenAI-compatible providers send (`TRANSCRIPT_STOPS` is not exported) and checks it against `TRANSCRIPT_TAGS` and the rendered transcript.
 8. **`forget_context` relies on `Context.clear`** — the cortex calls `ctx.clear()`, which also resets `lastVision` (working-memory).
 9. **Own-vs-other `brain.say` depends on the bus source string** — `ev.source !== "cortex"` in `cortex.ts` ties behaviour to `new Bus("cortex")` built by the bootstrap.
-11. **One held think at a time** — `held` in `cortex.ts` is the provisional think of a `provisional` `attention.focus` (`openHold`); its clauses are queued on the reply's `Line` (`heldOf`, `lineOut`) and published by `drain` on release, `releaseHeld` runs the mute and busy re-check, `endHeld` aborts the stream through its signal and publishes the no-line exit unless it is a replacement. `onResolve` matches `attention.resolve` by `utteranceId` and `seq`.
 10. **Critic misconfiguration fails through the bootstrap** — the `Module` constructor throws for an unusable critic config (`packages/modules/src/index.ts`) while `cortexMain` builds the critic, so it takes the `fatal` path and exits 1 (`CTX-START-005`).
+11. **One held think at a time** — `held` in `cortex.ts` is the provisional think of a `provisional` `attention.focus` (`openHold`); its clauses are queued on the reply's `Line` (`heldOf`, `lineOut`) and published by `drain` on release, `releaseHeld` runs the mute and busy re-check, `endHeld` aborts the stream through its signal and publishes the no-line exit unless it is a replacement. `onResolve` matches `attention.resolve` by `utteranceId` and `seq`.
 
 ## Work Required
 
 - None open in the spec file (Spec Coverage above). The LLD's open question: a repeat on a mention.
-- Owner readings adopted in #225 (the no-line result publishes only its status, the mute's `muted` is the only status for a held end, `confirmedAt` is the resolve's arrival, interjected release takes the final's timing) are open for owner review; see that PR.
+- Owner-approved readings of #225 (the no-line result publishes only its status, the mute's `muted` is the only status for a held end, `confirmedAt` is the resolve's arrival, interjected release takes the final's timing) were approved by the owner in review round 1 of #225 and are written into the specs.

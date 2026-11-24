@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { waitFor } from "@cohost/testing";
-import { EARLY, call, confirm, gate, opened, other, provisional, setup, sleep, streamed, type S } from "./provisional.fixture.js";
+import { EARLY, call, confirm, gate, opened, ordinary, other, provisional, setup, sleep, streamed, type S } from "./provisional.fixture.js";
 
 // An interjected confirm (cortex-design.md, Provisional think, An interjected confirm; CTX-INTJ-001 to 006): salience asks the cortex
 // to speak while the person is still talking. The held think is released only if it is ready at that moment.
@@ -167,4 +167,19 @@ test("an interjected confirm that fails the mute and busy re-check drops the rep
   assert.deepEqual(seen.atSay, [], "no brain.say was published");
   const unfinished = s.cortex.ctx.all().flatMap((e) => (e.kind === "speech" && e.unfinished ? [[e.utteranceId, e.text]] : []));
   assert.deepEqual(unfinished, [["u1", EARLY]], "the unfinished line is in the window");
+});
+
+// @spec CTX-INTJ-006
+test("an interjected confirm with no held think while an ordinary think is in flight publishes thinking, the state the cortex is in", async () => {
+  const s = setup();
+  const g = gate();
+  s.llm.rounds.push({ text: "[happy] Ordinary reply, held open.", gate: g.promise });
+  await s.cortex.onEvent(ordinary({ utteranceId: undefined }));
+  await opened(s);
+  await s.cortex.onEvent(interjected({ utteranceId: "u7" }));
+  await sleep(40);
+  assert.equal(s.statuses().at(-1), "thinking");
+  assert.equal(s.says().length, 0);
+  assert.equal(s.llm.calls.length, 1);
+  g.open();
 });

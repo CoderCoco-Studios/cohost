@@ -64,10 +64,10 @@ test("consolidate disables the heartbeat healthcheck it can never satisfy", () =
 });
 
 // @spec DEPLOY-COMPOSE-004, DEPLOY-COMPOSE-019
-test("the consolidate and reembed one-shots share one profile that is not named tools (the tools service is a service of that name), eyes, ears and mouth each keep a profile of their own name, connector-discord the profile `discord` and the engine servers their own engine profiles; no other service has a profile", () => {
+test("the consolidate and reembed one-shots share the profile maintenance (not tools, the name of the tools service), eyes, ears and mouth each keep a profile of their own name, connector-discord the profile `discord` and the engine servers their own engine profiles; no other service has a profile", () => {
   assert.equal(svc.profiles?.length, 1);
   const [oneShots] = svc.profiles!;
-  assert.notEqual(oneShots, "tools", "the one-shot profile must not share the name of the tools service");
+  assert.equal(oneShots, "maintenance", "the one-shot profile is maintenance (it must not share the name of the tools service)");
   assert.equal(compose.services.tools!.profiles, undefined, "the tools service has no profile");
   const profiled = Object.entries(compose.services).filter(([, s]) => s.profiles).map(([n, s]) => [n, s.profiles]);
   assert.deepEqual(profiled.sort(), [["connector-discord", ["discord"]], ["consolidate", [oneShots]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]], ["reembed", [oneShots]], ["stt-kyutai", ["kyutai"]], ["stt-nemotron", ["nemotron"]], ["tts-pocket", ["pocket"]]]); // DEPLOY-COMPOSE-004: the engine servers (DEPLOY-ENG-001..003)

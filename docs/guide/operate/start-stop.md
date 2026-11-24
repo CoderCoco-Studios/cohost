@@ -79,7 +79,7 @@ The core of the co-host starts with Launch. Some parts are optional and live beh
 | `ears` | The listener that turns voice into text. | A source to listen to; see [Discord](../connect/discord.md) |
 | `mouth` | The speaker that sends the co-host's voice to its outputs. | [Discord](../connect/discord.md) or the [OBS sink](../connect/obs.md) |
 | `eyes` | The screenshot sense that looks at your game. | [OBS](../connect/obs.md) |
-| `tools` | The one-shot jobs `consolidate` and `reembed`. Never started by Launch. | nothing |
+| `maintenance` | The one-shot jobs `consolidate` and `reembed`. Never started by Launch. | nothing |
 
 To keep profiles on across restarts and Launch, list them in `.env`:
 

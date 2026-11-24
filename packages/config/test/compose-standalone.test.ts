@@ -47,6 +47,7 @@ const appServices = readdirSync(root("services"), { withFileTypes: true })
   .filter((d) => d.isDirectory() && d.name !== "dashboard")
   .map((d) => d.name)
   .sort();
+/** The in-network literals of every application service except `tools`, which gets only the bus and config ones (DEPLOY-COMPOSE-026). */
 const IN_NETWORK = {
   REDIS_URL: "redis://redis:6379",
   DATABASE_URL: "postgres://cohost:cohost@postgres:5432/cohost",
@@ -56,6 +57,7 @@ const IN_NETWORK = {
   VOICE_URL: "http://voice:8700",
   CONFIG_DIR: "/app/config",
 };
+const TOOLS_ENVIRONMENT = ["COHOST_ISOLATION", "CONFIG_DIR", "REDIS_URL"];
 
 // @spec DEPLOY-COMPOSE-002
 test("every application service builds the root Dockerfile with SERVICE set to its directory name and inherits the shared x-ts-service settings", () => {
@@ -67,8 +69,10 @@ test("every application service builds the root Dockerfile with SERVICE set to i
     assert.equal(svc.build?.dockerfile, undefined, `${name}: the single root Dockerfile`);
     assert.equal(svc.build?.args.SERVICE, name, `${name}: SERVICE is its directory name`);
     assert.equal(svc.restart, "unless-stopped", `${name}: restart`);
-    assert.equal(svc.env_file, ".env", `${name}: env_file`);
-    for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
+    if (name !== "tools") {
+      assert.equal(svc.env_file, ".env", `${name}: env_file`);
+      for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
+    }
     assert.ok(svc.volumes?.includes("./config:/app/config"), `${name}: the config bind mount`);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
     assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
@@ -81,7 +85,7 @@ test("every application service builds the root Dockerfile with SERVICE set to i
 
 // @spec DEPLOY-COMPOSE-003
 test("the in-network addresses are literals in each application service's environment block, so .env (env_file) cannot change them", () => {
-  for (const name of appServices) {
+  for (const name of appServices.filter((n) => n !== "tools")) {
     const env = compose.services[name]!.environment ?? {};
     assert.equal(compose.services[name]!.env_file, ".env", `${name}: .env is still loaded`);
     for (const [k, v] of Object.entries(IN_NETWORK)) {
@@ -151,6 +155,9 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
   assert.equal(tools.build?.context, ".");
   assert.equal(tools.build?.dockerfile, undefined, "the single root Dockerfile");
   assert.equal(tools.build?.args.SERVICE, "tools");
+  assert.equal(tools.env_file, undefined, "least privilege: no env_file");
+  assert.deepEqual(Object.keys(tools.environment ?? {}).sort(), TOOLS_ENVIRONMENT, "least privilege: the bus URL, the config directory and the isolation pass-through only");
+  assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
   assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
   assert.equal(tools.ports, undefined);
   assert.deepEqual(tools.volumes, ["./config:/app/config"]);

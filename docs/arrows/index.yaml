@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "61 specs: 54 [x], 7 [ ] (MOD-MAN-002, -003, -005, -010; MOD-TEST-005, -007, -008)."
+    next: "61 specs: 57 [x], 4 [ ] (MOD-MAN-010; MOD-TEST-005, -007, -008; #211 owns the tools `as: tool` cases, and -007 also needs a live Docker run)."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 229 [x], 2 [ ] (CFG-SEC-018 waits on DASH-SECRET-014, CFG-PRES-014 on #208). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "231 specs: 230 [x], 1 [ ] (CFG-SEC-018 waits on DASH-SECRET-014). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 103 [x], 6 [ ], 2 [D]. Open gaps: CTRL-HEALTH-005, CTRL-LAT-017, CTRL-MANIFEST-001, -002, -003 (the VISION_PROVIDER preset), -005."
+    next: "111 specs: 109 [x], 0 [ ], 2 [D] (CTRL-LAT-009, -010)."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 98 [x], 11 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-COMPOSE-001, -019, -021, -026, -027; DEPLOY-LIC-005 to -007; DEPLOY-REPO-001)."
+    next: "109 specs: 104 [x], 5 [ ] (DEPLOY-ENG-018 and -020, manual; DEPLOY-LIC-005 to -007)."
     drift: null
 
   docs-site:

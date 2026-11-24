@@ -56,7 +56,7 @@ Prefix `CFG`. Verified against the code at git `49ba935` (audit pass 2026-11-01)
 - [x] **CFG-SEC-015**: When the `secrets.yaml` that `updateSecrets` is asked to write is a symbolic link, it shall write the file the link resolves to (a temporary file in that file's directory with mode 0600, then a rename) and leave the link in place, and when the link resolves to no file it shall fail naming the path and write nothing. <!-- test: packages/config/test/config-secrets.test.ts -->
 - [x] **CFG-SEC-016**: Where a path of `SECRET_PATHS` holds one `*` segment, the loader shall let it match exactly one key of the map that `config.yaml` holds at that place, so that `tools.servers.*.token` matches the `token` of each entry of `tools.servers`.
 - [x] **CFG-SEC-017**: When `secrets.yaml` holds a token for a `tools.servers` entry that `config.yaml` does not hold, the loader shall not merge it and shall list its path, never its value, in the one warning of CFG-SEC-005 and in no other.
-- [ ] **CFG-SEC-018**: When `updateSecrets` is asked to clear a path that matches a wildcard path of `SECRET_PATHS`, it shall clear it whatever entries `config.yaml` holds, and the dashboard route, which knows the entries, shall refuse a set for one it does not hold (DASH-SECRET-014). _Held: owned by #211 beside DASH-SECRET-014._
+- [x] **CFG-SEC-018**: When `updateSecrets` is asked to clear a path that matches a wildcard path of `SECRET_PATHS`, it shall clear it whatever entries `config.yaml` holds, and the dashboard route, which knows the entries, shall refuse a set for one it does not hold (DASH-SECRET-014).
 
 ## Presentation table
 

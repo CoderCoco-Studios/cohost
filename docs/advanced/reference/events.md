@@ -69,10 +69,10 @@ Every event has the same envelope: `id` (the stream id, such as `1718000000000-0
 | Type | Published by | Read by | Payload |
 | --- | --- | --- | --- |
 | `tool.request` | `cortex` | `tools` | `id`, `tool` (`[A-Za-z0-9_-]{1,64}`), `arguments` (an object), `origin` (`speech`, `guest`, `chat`, `vision`, `reminder`, `dashboard` or `idle`), `round` (an integer of at least 1), `listed`, `injected` (optional) |
-| `tool.result` | `tools` | `cortex`, the dashboard | `id`, `tool`, `status` (`ok`, `error`, `timeout` or `refused`), `reason` (optional: a refusal reason with `refused`, or `tool_error`, `unavailable` or `limit` with `error`), `content` (possibly empty), `durationMs`, `truncated` and `mock` (optional, the literal `true` only) |
-| `tool.catalog` | `tools` | `cortex`, the dashboard | `intervalMs`, `mode` (`live` or `mock`), `servers[]` (`name`, `state` of `ok`, `down`, `auth` or `mock`, `external`, `detail` (optional)), `tools[]` (`name`, `description`, `parameters`, `label`, `effect`, the booleans `enabled`, `acts`, `chat`, `confirm` and `offered`, and optional `server`, `title`, `hash` and `reason`) |
+| `tool.result` | `tools` | `cortex`, the dashboard | `id`, `tool` (`[A-Za-z0-9_-]{1,64}`), `status` (`ok`, `error`, `timeout` or `refused`), `reason` (optional: a refusal reason with `refused`, or `tool_error`, `unavailable` or `limit` with `error`), `content` (possibly empty), `durationMs`, `truncated` and `mock` (optional, the literal `true` only) |
+| `tool.catalog` | `tools` | `cortex`, the dashboard | `intervalMs`, `mode` (`live` or `mock`), `servers[]` (`name`, `state` of `ok`, `down`, `auth` or `mock`, `external`, `left_out` (a count of the tools the catalog left out), `detail` (optional)), `tools[]` (`name`, `description`, `parameters`, `label`, `effect`, the booleans `enabled`, `acts`, `chat`, `confirm` and `offered`, and optional `server`, `title`, `hash` and `reason`) |
 | `tool.timer` | `tools` (and `salience`, which relays it to the dashboard with `missed`) | `salience`, the dashboard | `id`, `note`, `setAt` and `dueAt` (epoch milliseconds), `missed` (optional, the literal `true` only) |
-| `tool.confirm` | `tools` | the dashboard | `id`, `tool`, `arguments`, `origin`, `expiresAt` (epoch milliseconds) |
+| `tool.confirm` | `tools` | the dashboard | `id`, `tool` (`[A-Za-z0-9_-]{1,64}`), `arguments`, `origin`, `expiresAt` (epoch milliseconds) |
 | `tool.answer` | The dashboard | `tools` | `id`, `allow` |
 
 ## Timing stamps

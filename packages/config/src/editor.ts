@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseYaml, parseDocument, isMap, isScalar, stringify, type Document, type YAMLMap } from "yaml";
 import { z } from "zod";
-import { ConfigSchema, SECRET_PATHS, secretPathMatches, secretPathOf } from "./schema.js";
+import { ConfigSchema, SECRET_PATHS, isSecretPrefix, secretPathMatches, secretPathOf } from "./schema.js";
 import { PRESENTATION, type KeyPresentation, type SectionPresentation } from "./presentation.js";
 import { parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, type ConfigIssue } from "./pipeline.js";
 
@@ -207,6 +207,21 @@ function unknownBySchema(raw: unknown, schema: z.ZodType, path: string): string[
 
 // ---------- reading
 
+/** The keys of the map at `path` in a parsed document: own keys only, none when the section is missing or not a map. */
+function mapEntryNames(doc: Document, path: readonly string[]): string[] {
+  const node = doc.getIn(path, true);
+  if (!isMap(node)) return [];
+  return node.items.map((i) => (isScalar(i.key) ? String(i.key.value) : String(i.key)));
+}
+
+/** The server names under `tools.servers` in the saved `config.yaml` text; none for a missing section or unparseable text. */
+// @spec DASH-SECRET-013
+export function toolServerNames(text: string): string[] {
+  const doc = parseDocument(text);
+  if (doc.errors.length) return [];
+  return mapEntryNames(doc, ["tools", "servers"]);
+}
+
 /** `literal` when the file holds the key, `default` when it does not (every key is a literal or absent, so there is no other form). */
 export type KeySource = "literal" | "default";
 
@@ -260,7 +275,19 @@ export function readSection(text: string, section: string, secretsSet: readonly 
   for (const leaf of leaves) {
     const dotted = leaf.path.join(".");
     if (leaf.secret) {
-      keys[leaf.key] = { editable: false, secret: true, set: secretsSet.some((p) => secretPathMatches(p, dotted)) };
+      const star = leaf.path.indexOf("*");
+      if (star < 0) {
+        keys[leaf.key] = { editable: false, secret: true, set: secretsSet.some((p) => secretPathMatches(p, dotted)) };
+        continue;
+      }
+      // A wildcard credential is one key per entry of the map the file holds (never an aggregate); only `secret` and `set` are returned.
+      const head = leaf.path.slice(0, star);
+      const tail = leaf.path.slice(star + 1);
+      const rel = leaf.key.slice(0, leaf.key.indexOf("*"));
+      for (const name of mapEntryNames(doc, head)) {
+        const full = [...head, name, ...tail].join(".");
+        keys[`${rel}${[name, ...tail].join(".")}`] = { editable: false, secret: true, set: secretsSet.includes(full) };
+      }
       continue;
     }
     const node = doc.getIn(leaf.path, true);
@@ -271,7 +298,8 @@ export function readSection(text: string, section: string, secretsSet: readonly 
       source: present ? "literal" : "default",
       editable: true,
       ...(value !== undefined ? { value } : {}),
-      ...(present ? { raw: sliceOf(text, node as { range?: [number, number, number] | null }) } : {}),
+      // A map that holds a credential (a secret prefix, `tools.servers`) never returns its text: a token pasted into the file is in it.
+      ...(present && !isSecretPrefix(dotted) ? { raw: sliceOf(text, node as { range?: [number, number, number] | null }) } : {}),
       ...(name ? { isolation: { name, overriddenBy: [...(running[name] ?? [])] } } : {}),
     };
   }

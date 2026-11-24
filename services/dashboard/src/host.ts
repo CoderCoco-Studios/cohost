@@ -159,6 +159,9 @@ export interface ListenerOptions {
   exit?: (code: number) => void;
 }
 
+/** The third argument of the feed server's `connection` event: whether the socket's tool events are redacted (DASH-FEED-011). */
+export interface FeedConnection { redact: boolean }
+
 export interface Listeners {
   full: http.Server;
   lan: http.Server;
@@ -173,7 +176,7 @@ export interface Listeners {
  * (Origin and Host) runs first, so a refused upgrade is a 403 whatever the relay's capacity (DASH-AVR-002).
  */
 // @spec DASH-AVR-001, DASH-AVR-002, DASH-HOST-002
-function attachUpgrade(server: http.Server, wss: WebSocketServer, listener: Listener, avatar: Pick<AvatarRelay, "upgrade"> | undefined, guard?: (req: http.IncomingMessage) => boolean): void {
+function attachUpgrade(server: http.Server, wss: WebSocketServer, listener: Listener, redact: boolean, avatar: Pick<AvatarRelay, "upgrade"> | undefined, guard?: (req: http.IncomingMessage) => boolean): void {
   server.on("upgrade", (req: http.IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on("error", () => socket.destroy()); // a reset on a raw upgrade socket must not be an uncaught exception
     let pathname = "";
@@ -181,7 +184,7 @@ function attachUpgrade(server: http.Server, wss: WebSocketServer, listener: List
     if (guard && !guard(req)) { refuseUpgrade(socket, "HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
     if (pathname === "/avatar/ws" && avatar) { avatar.upgrade(req, socket, head, listener); return; }
     if (pathname !== "/ws") { refuseUpgrade(socket, "HTTP/1.1 400 Bad Request\r\nconnection: close\r\ncontent-length: 0\r\n\r\n"); return; }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req, { redact } satisfies FeedConnection)); // @spec DASH-FEED-011
   });
 }
 
@@ -212,8 +215,8 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);
   // The loopback listener applies the loopback Host rule of DASH-HOST-004; every listener other machines can reach, the rule of DASH-HOST-009.
   const reachable = (req: http.IncomingMessage): boolean => hostPermitted(req.headers.host, allowedHosts) && wsOrigin(req);
-  attachUpgrade(full, o.wss, "full", o.avatar, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : reachable);
-  attachUpgrade(lan, o.wss, "lan", o.avatar, reachable);
+  attachUpgrade(full, o.wss, "full", !loopback, o.avatar, loopback ? (req) => hostAllowed(req.headers.host) && wsOrigin(req) : reachable);
+  attachUpgrade(lan, o.wss, "lan", true, o.avatar, reachable);
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const fullOk = await listen(full, o.bind, o.port, "full surface", o.log);
   const lanOk = fullOk && (await listen(lan, o.lanHost, o.lanPort, "LAN", o.log));

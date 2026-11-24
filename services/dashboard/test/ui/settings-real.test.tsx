@@ -37,7 +37,7 @@ test("every section of the real schema renders every key as a labelled control w
     await settle(3);
     for (const m of members) {
       for (const key of sectionKeyPaths(m.path)) {
-        // a map entry's secret (tools.servers.*.token) is rendered per entry by the tools map UI, which #211 builds
+        // a map entry's secret (tools.servers.*.token) is shown per server by the tools servers widget (DASH-TOOL-006)
         if (key.includes(".*.")) continue;
         const rel = key === m.path ? m.path.split(".").pop()! : key.slice(m.path.length + 1);
         const row = document.querySelector<HTMLElement>(`[data-key="${rel}"][data-section="${m.path}"]`);
@@ -46,7 +46,9 @@ test("every section of the real schema renders every key as a labelled control w
         assert.ok(pres?.help, `${key} has no presentation help in the config package`);
         assert.ok((row.textContent ?? "").includes(pres.help), `${key}: its help text is not shown`);
         const controls = [...row.querySelectorAll<HTMLElement>("input:not([type=hidden]):not([type=range]), select, textarea")];
-        assert.ok(controls.length > 0 || (row.querySelector("button")?.textContent ?? "").startsWith("Add"), `${key} has no control`); // an empty list of cards is its Add button
+        // an empty list of cards is its Add button; the tool list of a config with no allow entry and no catalog has no tool to hold a switch yet (DASH-TOOL-023)
+        const widget = (pres as { widget?: { type?: string } }).widget?.type;
+        assert.ok(controls.length > 0 || (row.querySelector("button")?.textContent ?? "").startsWith("Add") || widget === "tool-list", `${key} has no control`);
         for (const c of controls) assert.ok(hasName(c), `${key}: a ${c.tagName.toLowerCase()} has no accessible name`);
       }
     }

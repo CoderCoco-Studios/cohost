@@ -12,6 +12,7 @@ import { handleEgress } from "./egress.js";
 import { handleMouthRouting } from "./routing.js";
 import { handleModels, type ModelRoutes } from "./model-routes.js";
 import { ModelStore, modelsDir } from "./models.js";
+import { handleToolAnswer } from "./tools-routes.js";
 import { handleSecrets } from "./secrets.js";
 import { defaultWrite, handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
@@ -73,6 +74,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const inject = {
     bus: d.bus,
     uploads,
+    toolToken: d.control?.token ?? d.controlToken,
     stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
       if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
@@ -94,7 +96,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     body: readText,
     models: { store, applied },
   };
-  const secrets = { token: settings.controlToken, file: d.secretsFile, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
+  const secrets = { token: settings.controlToken, file: d.secretsFile, config: settings.file, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
   const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
@@ -126,6 +128,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (await handleViewers(viewers, req, res, url)) return;
       // @spec DASH-MDL-004, DASH-MDL-008, DASH-MDL-009, DASH-MDL-010, DASH-MDL-015, DASH-MDL-033
       if (await handleModels(modelRoutes, req, res, url)) return;
+      // @spec DASH-TOOL-001, DASH-TOOL-002
+      if (await handleToolAnswer({ bus: d.bus, token: d.control?.token ?? d.controlToken }, req, res, url)) return;
       // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003

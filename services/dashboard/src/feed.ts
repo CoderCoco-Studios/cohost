@@ -46,33 +46,41 @@ export interface FeedLog {
 const WITHHELD: ReadonlySet<string> = new Set(["memory.notes.request", "memory.notes.reply", "memory.viewers.request", "memory.viewers.reply"]);
 const forwardable = (ev: BusEvent): boolean => ev.type !== "service.heartbeat" && !WITHHELD.has(ev.type);
 
-// @spec DASH-FEED-011, DASH-FEED-012
 /**
- * The form of an event a redacted socket is sent: `tool.request` and `tool.confirm` with `arguments: {}`, `tool.result`
- * with empty `content` and no `truncated`, an `inject.request` for the tools unit with empty `text`, a `tool.timer` with
- * empty `note`; every other member and event type unchanged. An event that held something to empty gets `redacted: true`
- * (the /ws `redacted` member, DASH-FEED-011), so the owner's page can say why a call shows no arguments. Returns a copy; the shared event is never
- * mutated, so a loopback socket on the same feed still gets it whole.
+ * The form of an event a redacted socket is sent (DASH-FEED-011): `tool.request` and `tool.confirm` with `arguments: {}`,
+ * `tool.result` with empty `content` and no `truncated`, an `inject.request` for the tools unit with empty `text`, a
+ * `tool.timer` with empty `note`, a `memory.recall.request` with empty `query`, and a `memory.recall.reply` with the empty
+ * `text` of each memory. Every other member and event type is unchanged. An event that emptied something held gets
+ * `redacted: true` in its `data`, so the owner's page can say why a call shows no arguments. Returns a copy; the shared
+ * event is never mutated, so a loopback socket on the same feed still gets it whole.
  */
 // @spec DASH-FEED-011
 export function redactEvent<E extends BusEvent>(ev: E): E {
   const data = ev.data as unknown as Record<string, unknown>;
+  const marked = (held: boolean) => (held ? { redacted: true } : {});
   if (ev.type === "tool.request" || ev.type === "tool.confirm") {
-    const held = isFilled(data.arguments);
-    return { ...ev, data: { ...data, arguments: {}, ...(held ? { redacted: true } : {}) } };
+    // Fails closed: anything but an empty plain object as `arguments` counts as held.
+    return { ...ev, data: { ...data, arguments: {}, ...marked(!isEmptyPlainObject(data.arguments)) } };
   }
   if (ev.type === "tool.result") {
     const { truncated: _truncated, ...rest } = data;
-    const held = typeof data.content === "string" && data.content !== "";
-    return { ...ev, data: { ...rest, content: "", ...(held ? { redacted: true } : {}) } };
+    return { ...ev, data: { ...rest, content: "", ...marked(data.content !== "") } };
   }
   if (ev.type === "inject.request" && data.target === "tools") return { ...ev, data: { ...data, text: "" } };
   if (ev.type === "tool.timer") return { ...ev, data: { ...data, note: "" } };
+  if (ev.type === "memory.recall.request") return { ...ev, data: { ...data, query: "", ...marked(data.query !== "") } };
+  if (ev.type === "memory.recall.reply") {
+    const list = Array.isArray(data.memories) ? data.memories : undefined;
+    const held = list === undefined ? data.memories !== undefined : list.some((m) => !(isPlainObject(m) && m.text === ""));
+    const emptied = (list ?? []).map((m) => (isPlainObject(m) ? { ...m, text: "" } : { text: "" }));
+    return { ...ev, data: { ...data, memories: emptied, ...marked(held) } };
+  }
   return ev;
 }
 
-/** Whether an arguments object holds any key (a call with none has nothing to hide). */
-const isFilled = (args: unknown): boolean => typeof args === "object" && args !== null && Object.keys(args).length > 0;
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** A plain `{}`: the only `arguments` value with nothing in it to hide. */
+const isEmptyPlainObject = (v: unknown): boolean => isPlainObject(v) && Object.getPrototypeOf(v) === Object.prototype && Object.keys(v).length === 0;
 
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 export const stackMessage = (snapshot: object): string => JSON.stringify({ type: "stack", ...snapshot });

@@ -213,3 +213,58 @@ test("the text of an inject.request for the tools unit and the note of a tool.ti
   assert.equal(lan.raw.some((x) => x.includes(SECRET) && x.includes('"target":"tools"')), false, "the text is on no frame");
   assert.equal("redacted" in data(lan.events().find((f) => data(f).id === "c9")!), false, "nothing was held, so nothing is marked");
 });
+
+// @spec DASH-FEED-011
+test("memory recall events are redacted for a LAN socket, live and in its replay: the query and each memory's text are emptied and marked; the loopback socket gets them whole", async (t) => {
+  const request = ev("memory.recall.request", { id: "m1", query: `who is ${SECRET}`, k: 3 });
+  const reply = ev("memory.recall.reply", { id: "m1", memories: [{ ts: 1, kind: "note", who: "bob", text: `note ${SECRET}` }] });
+  const r = await rig(CTRL_OFF, [request, reply]);
+  t.after(r.stop);
+  const lan = await r.connect(r.lan);
+  const full = await r.connect(r.full);
+  await waitFor(() => lan.frames.some((f) => f.type === "memory.recall.reply") && full.frames.some((f) => f.type === "memory.recall.reply"), "the replay");
+  const lanReq = lan.frames.find((f) => f.type === "memory.recall.request")!;
+  const lanRep = lan.frames.find((f) => f.type === "memory.recall.reply")!;
+  assert.equal(data(lanReq).query, "", "replay: the query is emptied");
+  assert.equal(data(lanReq).redacted, true, "replay: the query is marked");
+  assert.equal((data(lanRep).memories as { text: string }[])[0]!.text, "", "replay: each memory's text is emptied");
+  assert.equal(data(lanRep).redacted, true, "replay: the reply is marked");
+  assert.equal(lan.raw.some((x) => x.includes(SECRET) && x.includes('"type":"memory.recall')), false, "replay: the text is on no frame");
+  const fullReq = full.frames.find((f) => f.type === "memory.recall.request")!;
+  assert.equal(data(fullReq).query, `who is ${SECRET}`, "loopback replay: the query is whole");
+  assert.equal("redacted" in data(fullReq), false, "loopback replay: nothing marked");
+  // live: a reply that lands after the connect
+  r.bus.emit(ev("memory.recall.reply", { id: "m2", memories: [{ ts: 2, kind: "chat", who: "a", text: `live ${SECRET}` }] }));
+  await waitFor(() => lan.frames.filter((f) => f.type === "memory.recall.reply").length >= 2, "the live reply");
+  const liveRep = lan.frames.filter((f) => f.type === "memory.recall.reply")[1]!;
+  assert.equal((data(liveRep).memories as { text: string }[])[0]!.text, "", "live: the text is emptied");
+  assert.equal(data(liveRep).redacted, true, "live: marked");
+  assert.equal(lan.raw.some((x) => x.includes(SECRET) && x.includes('"type":"memory.recall')), false, "live: the text is on no frame");
+});
+
+// @spec DASH-FEED-011
+test("a tool.request whose arguments are not an empty plain object is marked redacted, whatever its type: the redaction fails closed", async (t) => {
+  const r = await rig(CTRL_OFF);
+  t.after(r.stop);
+  const lan = await r.connect(r.lan);
+  r.bus.emit(ev("tool.request", { id: "c7", tool: "stream_info", arguments: "not-an-object", origin: "speech", round: 1, listed: true }));
+  r.bus.emit(ev("tool.request", { id: "c8", tool: "stream_info", arguments: null, origin: "speech", round: 1, listed: true }));
+  await waitFor(() => lan.events().length >= 2, "the two requests");
+  for (const id of ["c7", "c8"]) {
+    const f = lan.events().find((x) => data(x).id === id)!;
+    assert.deepEqual(data(f).arguments, {}, `${id}: arguments emptied`);
+    assert.equal(data(f).redacted, true, `${id}: marked`);
+  }
+});
+
+// @spec DASH-FEED-011
+test("an inject.request for the tools unit carries no redacted member: its text is emptied and nothing more is marked", async (t) => {
+  const r = await rig(CTRL_OFF);
+  t.after(r.stop);
+  const lan = await r.connect(r.lan);
+  r.bus.emit(ev("inject.request", { id: "i2", target: "tools", kind: "text", text: `{"tool":"x"}`, remember: false }));
+  await waitFor(() => lan.frames.some((f) => f.type === "inject.request"), "the inject");
+  const f = lan.frames.find((x) => x.type === "inject.request")!;
+  assert.equal(data(f).text, "");
+  assert.equal("redacted" in data(f), false);
+});

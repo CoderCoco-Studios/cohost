@@ -212,3 +212,19 @@ test("a set is refused 404 while config.yaml is missing, invalid or unreadable: 
   assert.equal((await unreadable.put(`/secrets/${WEATHER}`, { value: "x-3" })).status, 404, "unreadable");
   assert.equal(missing.secretsText() + invalid.secretsText() + unreadable.secretsText(), "");
 });
+
+// @spec DASH-SECRET-015
+test("a multi-path PUT /secrets with a token set is refused 404 with its paths while config.yaml is missing, invalid or unreadable, and applies none of it", async () => {
+  const missing = await boot();
+  rmSync(missing.configFile);
+  const invalid = await boot("tools: [unclosed\n");
+  const unreadable = await boot(WITH_WEATHER);
+  rmSync(unreadable.configFile);
+  mkdirSync(unreadable.configFile);
+  for (const t of [missing, invalid, unreadable]) {
+    const r = await t.put("/secrets", { values: { [WEATHER]: "x-4", "llm.openai.api_key": "sk-4" } });
+    assert.equal(r.status, 404);
+    assert.deepEqual(((await r.json()) as { paths?: string[] }).paths, [WEATHER]);
+    assert.equal(t.secretsText(), "", "nothing written");
+  }
+});

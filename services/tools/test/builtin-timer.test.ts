@@ -286,3 +286,56 @@ test("a stored field whose id is not the field is skipped and does not fire", as
   await s.stop();
 });
 
+test("a timer call the pipeline ends while the stored timers are still being read sets nothing, even after the read completes", async () => { // @spec TOOL-TIMER-004, TOOL-CALL-010
+  const bus = new OrderedBus();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const listed = bus.listTimers.bind(bus);
+  bus.listTimers = async () => { await gate; return listed(); };
+  const s = await startBuiltin(allow, { bus, tools: { timeout_ms: 20 } });
+  const id = await s.request({ tool: "timer", arguments: { minutes: 5, note: "ghost" } });
+  await waitFor(() => s.results().some((r) => r.id === id), "timeout result");
+  assert.equal(s.results().find((r) => r.id === id)!.status, "timeout");
+  release();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(bus.calls.includes("putTimer"), false, "nothing was stored");
+  assert.equal(bus.timers.size, 0);
+  assert.equal(s.clock.longer(9000).length, 0, "nothing was armed");
+  await s.stop();
+});
+
+test("a timer call waiting for the stored timers sets nothing when the service stops first", async () => { // @spec TOOL-SVC-008, TOOL-TIMER-004
+  const bus = new OrderedBus();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const listed = bus.listTimers.bind(bus);
+  bus.listTimers = async () => { await gate; return listed(); };
+  const s = await startBuiltin(allow, { bus });
+  await s.request({ tool: "timer", arguments: { minutes: 5, note: "stopped" } });
+  await new Promise((r) => setTimeout(r, 10));
+  await s.stop();
+  release();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(bus.timers.size, 0, "nothing was stored");
+  assert.equal(s.clock.longer(9000).length, 0, "nothing was armed");
+});
+
+test("a due time the clock pushes past the largest Date while the call waits is refused, and nothing is stored", async () => { // @spec TOOL-TIMER-010
+  const bus = new OrderedBus();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  const listed = bus.listTimers.bind(bus);
+  bus.listTimers = async () => { await gate; return listed(); };
+  const clock = new Clock();
+  clock.t = 8.64e15 - 5 * MIN;
+  const s = await startBuiltin(allow, { bus, clock, tools: { timer: { max_minutes: 200_000_000_000 } } });
+  const pending = callTool(s, "timer", { minutes: 5, note: "edge" });
+  await new Promise((r) => setTimeout(r, 10));
+  clock.t += MIN;
+  release();
+  const r = await pending;
+  assert.equal(r.status, "error", r.content);
+  assert.equal(bus.timers.size, 0);
+  assert.equal(clock.longer(9000).length, 0);
+  await s.stop();
+});

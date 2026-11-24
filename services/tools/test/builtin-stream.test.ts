@@ -392,3 +392,15 @@ test("a stream title and category are untrusted quotes: a quote mark cannot clos
   await s.stop();
 });
 
+test("a Twitch category that is blank after cleaning is not shown at all", async () => { // @spec TOOL-STRM-009
+  for (const game_name of ["\u202e", "   ", "\n"]) {
+    const clock = new Clock();
+    const f = scriptedFetch(both(twitchOk({ game_name }, clock), youtubeOk({}, clock)));
+    const s = await startBuiltin(allow, { clock, fetch: f.fn, extra: chat({ youtube: { video: "" } }), tools: { stream_info: { cache_ms: 0 } } });
+    const r = await callTool(s, "stream_info", { platform: "twitch" });
+    assert.equal(r.status, "ok", r.content);
+    assert.doesNotMatch(r.content, /in «»/, JSON.stringify(game_name));
+    assert.doesNotMatch(r.content, / in /, JSON.stringify(game_name));
+    await s.stop();
+  }
+});

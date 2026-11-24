@@ -9,9 +9,10 @@ import type { Config, Logger } from "@cohost/config";
 import { boundText } from "@cohost/shared/untrusted";
 import { SourceFailed, type SourceCallResult } from "../source.js";
 import { MINUTE_MS, zoned } from "./format.js";
+import type { BuiltinSeams, BuiltinTool } from "./types.js";
+
 /** The latest instant a `Date` holds, in epoch milliseconds: a due time past it cannot be shown (TOOL-TIMER-010). */
 export const MAX_DATE_MS = 8.64e15;
-import type { BuiltinSeams, BuiltinTool } from "./types.js";
 
 /** The longest delay `setTimeout` takes; a longer one would fire at once (TOOL-TIMER-001). */
 export const MAX_DELAY_MS = 2 ** 31 - 1;
@@ -84,7 +85,7 @@ export class TimerTool {
         // A due time that no Date can show is refused before anything is stored (TOOL-TIMER-010).
         return this.seams.now() + m * MINUTE_MS <= MAX_DATE_MS;
       },
-      call: (args) => this.setTimer(args),
+      call: (args, signal) => this.setTimer(args, signal),
     };
   }
 
@@ -128,18 +129,37 @@ export class TimerTool {
     this.pending.clear();
   }
 
+  /**
+   * Resolves true once the stored timers are read, false when the call's signal ends first (its limit passed, or the service
+   * stopped): a call the pipeline has already ended must set nothing.
+   */
+  private loadedBefore(signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const onAbort = (): void => resolve(false);
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.loaded.then(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(true);
+      });
+    });
+  }
+
   /** Sets one timer: the limit is checked and the slot reserved before the store is written (TOOL-TIMER-004). */
   // @spec TOOL-TIMER-001, TOOL-TIMER-003, TOOL-TIMER-004, TOOL-TIMER-005, TOOL-MOCK-006
-  private async setTimer(args: Record<string, unknown>): Promise<SourceCallResult> {
-    await this.loaded;
+  private async setTimer(args: Record<string, unknown>, signal: AbortSignal): Promise<SourceCallResult> {
+    // The stored timers are read first, so the limit counts them (TOOL-TIMER-004). A call ended while it waits sets nothing.
+    if (!(await this.loadedBefore(signal)) || signal.aborted || this.stopped) throw new SourceFailed("The timer was not set.");
     const zone = this.cfg.cohost.timezone;
     if (this.pending.size >= this.cfg.tools.timer.max_active) {
       throw new SourceFailed("The timers are all running; one must run out before another can be set.", "limit");
     }
     const minutes = args.minutes as number;
     const note = boundText(args.note as string, NOTE_MAX);
+    // Read again after the wait: the clock may have moved, so the due time is checked against the current instant.
     const setAt = this.seams.now();
     const dueAt = setAt + minutes * MINUTE_MS;
+    if (dueAt > MAX_DATE_MS) throw new SourceFailed("The timer was not set: its due time is out of range.");
     const id = randomUUID();
     const entry: Pending = { id, note, setAt, dueAt, cancel: () => {} };
     this.pending.set(id, entry);
@@ -149,7 +169,13 @@ export class TimerTool {
       this.pending.delete(id);
       throw new SourceFailed("The timer could not be stored, so none was set.");
     }
-    if (!this.stopped) this.arm(entry);
+    if (signal.aborted || this.stopped) {
+      // The call ended while the store was written: the stored field is removed again, so no timer is announced.
+      this.pending.delete(id);
+      await this.store.delete(id).catch(() => {});
+      throw new SourceFailed("The timer was not set.");
+    }
+    this.arm(entry);
     const at = zoned(dueAt, zone);
     return { content: [{ type: "text", text: `Timer set. It fires at ${at.clock} on ${at.weekday}, ${at.date} (${zone}).` }] };
   }

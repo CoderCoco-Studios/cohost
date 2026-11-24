@@ -93,7 +93,10 @@ export class MemoryLookup {
     // The text is quoted as the cortex quotes a recalled memory: chat and note memories are untrusted quotes, the
     // co-host's own speech and self lines are bounded text (TOOL-MEM-004).
     const lines = memories.slice(0, k).map((m) => {
-      const text = m.kind === "speech" || m.kind === "self" ? boundText(m.text, viewer.max_chars) : quoteUntrusted(m.text, viewer.max_chars);
+      // Speech and self lines take the speech limit, as cortex renders them (brain.input_limits.speech_max_chars).
+      const text = m.kind === "speech" || m.kind === "self"
+        ? boundText(m.text, this.cfg.brain.input_limits.speech_max_chars)
+        : quoteUntrusted(m.text, viewer.max_chars);
       return `- (${zoned(m.ts, cohost.timezone).date}) ${speakerLabel(m.who, viewer.max_name_chars)}: ${text}`;
     });
     return { content: [{ type: "text", text: lines.length > 0 ? lines.join("\n") : "Nothing was recalled for that query." }] };

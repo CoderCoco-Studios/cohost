@@ -33,7 +33,7 @@ Each answer is one short result, cut to `tools.max_result_chars`. The clock answ
 - **Twitch.** It asks Twitch for an app access token with your Twitch client ID and client secret, then asks whether the channel in `chat.twitch.channel` is live. It sends the channel name, the app token, and the client ID in its `Client-Id` header. It never uses a user token, and it sends no chat text.
 - **YouTube.** It asks the YouTube Data API about the video in `chat.youtube.video`, with your YouTube API key in a request header. It sends the video ID and the key. It sends no chat text.
 
-Both calls go over `https` only, to `id.twitch.tv`, `api.twitch.tv` and `www.googleapis.com`. Nothing else is contacted, and no redirect is followed. A platform that does not answer within the call's time limit counts as one failed platform, and the other platform's answer is still given. An answer is kept for `tools.stream_info.cache_ms` (30 seconds by default), so the co-host does not ask on every reply; a failed call is never kept.
+Both calls go over `https` only, to `id.twitch.tv`, `api.twitch.tv` and `www.googleapis.com`. Nothing else is contacted, and no redirect is followed. A platform that does not answer within its own wait, a share (90%) of the call's time limit, counts as one failed platform, and the other platform's answer is still given. An answer is kept for `tools.stream_info.cache_ms` (30 seconds by default), so the co-host does not ask on every reply; a failed call is never kept.
 
 If a platform's channel, video or credentials are missing, the tool says so for that platform and does not call it. If you ask for a platform by name that is not `twitch` or `youtube`, the call is refused.
 
@@ -45,7 +45,7 @@ A timer is kept in [Redis](../../start/glossary.md#redis), in the hash `<prefix>
 - A timer still to run is kept until its time comes.
 - A timer that could not be announced stays stored and is announced at the next start.
 
-The co-host cannot cancel or list its timers. At most `tools.timer.max_active` (5 by default) run at once; a call over that limit ends as an `error` result with the reason `limit`, and no timer is set, until one runs out. A timer set for longer than one timer can wait at a time (about 24 days) is handled in steps, so any `tools.timer.max_minutes` works.
+The co-host cannot cancel or list its timers. At most `tools.timer.max_active` (5 by default) run at once; a call over that limit ends as an `error` result with the reason `limit`, and no timer is set, until one runs out. A timer set for longer than one timer can wait at a time (about 24 days) is handled in steps. Any `tools.timer.max_minutes` up to the largest due time a timer can hold (about 1.4 × 10^11 minutes from now) works; a request past that is refused as `invalid_arguments`.
 
 In [mock mode](../../start/glossary.md#mock-mode) (the isolated start), timers live in the service's memory only, and a restart loses them.
 

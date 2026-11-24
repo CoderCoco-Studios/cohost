@@ -67,6 +67,25 @@ async function spoken(e: Env, over: { id?: string; utteranceId?: string; seq?: n
   await e.s.onEvent(say(over.id ?? "L1"));
   await flush();
 }
+type Publish = (type: string, data: unknown) => Promise<string>;
+/**
+ * Makes the bus reject the publishes `match` selects (only the first with `once`), after `gate` opens when given. Returns the types
+ * it rejected. A rejected publish leaves the bus as a failed one does: nothing is recorded.
+ */
+function refuse(e: Env, match: (type: string, data: unknown) => boolean, opts: { once?: boolean; gate?: Promise<void> } = {}): string[] {
+  const bus = e.bus as unknown as { publish: Publish };
+  const real = bus.publish.bind(e.bus) as Publish;
+  const refused: string[] = [];
+  bus.publish = async (type, data) => {
+    if (match(type, data) && !(opts.once && refused.length > 0)) {
+      refused.push(type);
+      if (opts.gate) await opts.gate;
+      throw new Error(`publish ${type} refused`);
+    }
+    return real(type, data);
+  };
+  return refused;
+}
 const lastSpeech = (e: Env) => [...e.s.ctx.all()].reverse().find((x) => x.kind === "speech" && !x.unfinished);
 
 // ---- Asking at the retraction -------------------------------------------------------------------------------------------
@@ -91,6 +110,7 @@ test("interject: with interject false the retraction withdraws as resumed and no
   const e = setup({ interject: false }, { draw: 0 });
   await asked(e);
   assert.deepEqual(resolves(e), [{ utteranceId: "u1", seq: 0, outcome: "withdraw", reason: "resumed" }]);
+  assert.equal(e.draws(), 0, "no draw when interject is off");
 });
 
 test("interject: a retraction of another seq or utterance is ignored: no request, no withdraw, no draw", async () => { // @spec SAL-INTJ-001
@@ -123,6 +143,7 @@ test("interject: an early text under interject_min_words, counted as barge-in co
     const e = setup({}, { draw: 0 });
     await asked(e, text);
     assert.equal(confirms(e).length, 0, text);
+    assert.equal(e.draws(), 0, `${text}: no draw below the minimum`);
     assert.deepEqual(withdraws(e).map((w) => w.reason), ["resumed"], text);
   }
   const ok = setup({ interject_min_words: 3 }, { draw: 0 });
@@ -138,11 +159,13 @@ test("interject: the first interjection is allowed at once, on any clock reading
   e.advance(119_999);
   await asked(e, EARLY, "u2");
   assert.equal(confirms(e).length, 1, "119999 ms after the spoken one: withdrawn");
+  assert.equal(e.draws(), 1, "refused by the gap before the draw");
   assert.deepEqual(withdraws(e).map((w) => w.reason), ["resumed"]);
   e.advance(1);
   await asked(e, EARLY, "u3");
   assert.equal(confirms(e).length, 2, "exactly 120000 ms after the spoken one: asked");
   assert.equal(confirms(e)[1]!.utteranceId, "u3");
+  assert.equal(e.draws(), 2, "one draw for each retraction that met the gate");
 });
 
 test("interject: the draw must be strictly below interject_chance", async () => { // @spec SAL-INTJ-004, SAL-INTJ-005
@@ -294,7 +317,7 @@ test("interject: a final adding fewer than interject_followup_min_words is marke
   assert.equal(e.bus.published.length, published);
 });
 
-test("interject: the added words follow the early text word by word under normalizeKey, else the difference of the word counts, never below zero", async () => { // @spec SAL-INTJ-011
+test("interject: the added words are the difference of the word counts, never below zero", async () => { // @spec SAL-INTJ-011
   const cases: [string, boolean][] = [
     ["Look AT this one right now yes", true],         // case-insensitive prefix: three added
     ["look at this one right now", false],            // two added
@@ -449,4 +472,99 @@ test("interject: a final held for a request that reaches unresolved_limit_ms tak
     assert.equal(focuses(e).length, 2, "the limit released it to the ordinary path");
     assert.equal(focuses(e)[1]!.focus?.text, fin);
   } finally { mock.timers.reset(); }
+});
+
+// ---- Ruled identity, cortex lines and the reviewed edges ----------------------------------------------------------------------
+
+test("interject: a reflex or operator line during a pending request neither answers it nor charges a gap", async () => { // @spec SAL-INTJ-007, SAL-INTJ-003
+  for (const [id, reason] of [["R1", "reflex: you died"], ["OP", "operator"]] as const) {
+    const e = setup({}, { draw: 0 });
+    await asked(e);
+    await e.s.onEvent(say(id, { reason }));
+    await flush();
+    assert.equal(e.s.ctx.all().some((x) => x.kind === "speech" && x.unfinished), false, `${reason}: no unfinished line`);
+    await e.s.onEvent(say("L1")); // still pending: the cortex line answers it
+    await flush();
+    assert.equal(e.s.ctx.all().some((x) => x.kind === "speech" && x.unfinished), true, `${reason}: the cortex line is recorded`);
+  }
+  for (const [id, reason] of [["R1", "reflex: you died"], ["OP", "operator"]] as const) {
+    const e = setup({}, { draw: 0 });
+    await asked(e);
+    await e.s.onEvent(say(id, { reason }));
+    await e.s.onEvent(status("idle")); // cortex spoke nothing for the request: it is dropped
+    await flush();
+    await asked(e, EARLY, "u2");
+    assert.equal(confirms(e).length, 2, `${reason}: no gap was charged, so the next request is asked at once`);
+  }
+});
+
+test("interject: a final of another utterance during a pending request is an ordinary line at once", async () => { // @spec SAL-INTJ-023
+  const e = setup({}, { draw: 0 });
+  await asked(e);
+  await e.s.onEvent(heard("someone else talks now", { speaker: "Dana", utteranceId: "u9" }));
+  await flush();
+  const entry = lastSpeech(e);
+  assert.ok(entry && entry.kind === "speech" && entry.text === "someone else talks now" && entry.speaker === "Dana", "appended before the answer");
+});
+
+test("interject: a final during a pending request does not yield when another line set speaking later", async () => { // @spec SAL-INTJ-009
+  for (const [id, reason] of [["R1", "reflex: you died"], ["OP", "operator"], ["L8", "engaged"]] as const) {
+    const e = setup({ barge_in: false }, { draw: 0 });
+    await spoken(e, { id: "L7" });
+    await e.s.onEvent(say(id, { reason }));
+    await e.s.onEvent(heard(`${EARLY} and then some more`));
+    await flush();
+    assert.equal(stops(e).length, 0, `${reason}: no yield stop for the interjected line L7`);
+  }
+});
+
+test("interject: forget_context drops a pending request and its held finals: nothing re-enters, no unfinished line is pushed", async () => { // @spec SAL-INTJ-024
+  const e = setup({}, { draw: 0 });
+  await asked(e);
+  void e.s.onEvent(heard(`${EARLY} and then some more`));
+  await flush();
+  await e.s.onEvent(event("control", { cmd: "forget_context" }));
+  await flush();
+  assert.equal(e.s.ctx.all().length, 0, "the window is cleared");
+  await e.s.onEvent(say("L1")); // a line for the dropped request is an ordinary line, not an answer
+  await flush();
+  assert.equal(e.s.ctx.all().some((x) => x.kind === "speech"), false, "no unfinished line, and the held final never re-enters");
+  assert.equal(focuses(e).length, 1, "no decision for the held final");
+});
+
+test("interject: a refused yield stop leaves the state and cooldown as they were and takes no barge-in check", async () => { // @spec SAL-INTJ-009, SAL-BARGE-009
+  const e = setup({ cooldown_ms: 60_000, barge_in: true }, { draw: 0 });
+  await spoken(e, { id: "L7" });
+  const refusedTypes = refuse(e, (t) => t === "voice.stop");
+  await e.s.onEvent(heard(`${EARLY} and then some more`));
+  await flush();
+  assert.deepEqual(refusedTypes, ["voice.stop"], "one attempt: the yield, and no barge-in stop after it");
+  assert.equal(stops(e).length, 0, "nothing was published");
+  assert.equal(e.s.scheduler.cooling(), true, "the cooldown is not cleared");
+  assert.equal(focuses(e).length, 1, "still speaking: the final takes no new focus");
+});
+
+test("interject: a refused confirm makes no request, withdraws the focus, and releases the held finals to the ordinary path", async () => { // @spec SAL-INTJ-006, SAL-INTJ-023
+  const e = setup({}, { draw: 0 });
+  await e.s.onEvent(early(EARLY));
+  await flush();
+  let open!: () => void;
+  const gate = new Promise<void>((r) => (open = r));
+  const refusedTypes = refuse(e, (t, d) => t === "attention.resolve" && (d as { interjected?: boolean }).interjected === true, { once: true, gate });
+  const retraction = e.s.onEvent(retracted(0));
+  await flush();
+  const fin = `${EARLY} and then some more`;
+  void e.s.onEvent(heard(fin)); // the request is pending while its confirm is in flight: the final is held
+  await flush();
+  assert.equal(focuses(e).length, 1, "held while the confirm is in flight");
+  open();
+  await retraction;
+  await flush();
+  assert.deepEqual(refusedTypes, ["attention.resolve"]);
+  assert.equal(confirms(e).length, 0, "no interjected confirm reached the bus");
+  assert.deepEqual(withdraws(e).map((w) => w.reason), ["resumed"], "cortex is left with no provisional focus");
+  assert.equal(stops(e).length, 0);
+  assert.equal(focuses(e).length, 2, "the held final is decided as an ordinary line");
+  assert.equal(focuses(e)[1]!.focus?.text, fin);
+  assert.equal(e.s.ctx.all().some((x) => x.kind === "speech" && x.unfinished), false, "no unfinished line");
 });

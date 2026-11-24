@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 167 `[x]`, 0 `[ ]`, 1 `[D]` (SAL-TRIG-010). No gap is open; the interjection half of early reply (SAL-INTJ, #226) is built. The LLD lists open questions.
+**PARTIAL** (date and commit in `index.yaml`). The spec file holds 169 specs: 168 `[x]`, 0 `[ ]`, 1 `[D]` (SAL-TRIG-010). No spec is open; the interjection half of early reply (SAL-INTJ, #226) is built, but the segment has no refreshed audit yet. The LLD lists open questions.
 
 ## Decisions applied
 
@@ -40,7 +40,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 167 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (169 specs, prefix `SAL`: 168 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -100,9 +100,9 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 | Reminders | SAL-REM-001 to SAL-REM-008 | 8 | 0 | 0 |
 | Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 34 | 0 | 0 |
-| Interjection | SAL-INTJ-001 to SAL-INTJ-023 | 23 | 0 | 0 |
+| Interjection | SAL-INTJ-001 to SAL-INTJ-024 | 24 | 0 | 0 |
 
-**Summary:** 168 specs: 167 implemented, 0 gaps, 1 deferred (SAL-TRIG-010). The interjection specs SAL-INTJ-001 to SAL-INTJ-023 (#226) and the interjection clauses of SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 are built. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 169 specs: 168 implemented, 0 gaps, 1 deferred (SAL-TRIG-010). The interjection specs SAL-INTJ-001 to SAL-INTJ-024 (#226) and the interjection clauses of SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 are built. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

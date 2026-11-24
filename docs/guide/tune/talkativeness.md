@@ -65,7 +65,7 @@ A source that can hear the co-host's own voice, such as a capture of your deskto
 
 ## Interjecting
 
-With `interject: true` (off by default, because it has not been tried live yet), the co-host may answer a sentence while the speaker is still talking, instead of waiting for them to finish. This happens only when the early reply is already being prepared (`ears.early.enabled` on) and the speaker pauses and then carries on. The co-host then starts its prepared answer, and the sentence goes into the window as an unfinished line before it.
+With `interject: true` (off by default, because it has not been tried live yet), the co-host may answer a sentence while the speaker is still talking, instead of waiting for them to finish. This happens only when the early reply is already being prepared (`ears.early.enabled` and `trigger_on_speech` both on) and the speaker pauses and then carries on. The co-host then starts its prepared answer, and the sentence goes into the window as an unfinished line before it.
 
 It is a chance, not a rule. Each time it is eligible, the co-host draws once and asks only when the draw is below `interject_chance` (0.15). It asks only when the early sentence has at least `interject_min_words` (4) words, and at least `interject_min_gap_ms` (120000, two minutes) has passed since the last interjection it actually spoke. If the co-host does not speak the answer, no gap is charged.
 

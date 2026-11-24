@@ -3,7 +3,6 @@ import type { BusEvent, Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import type { Module } from "@cohost/modules";
 import { controlFor, type Heartbeat } from "@cohost/shared";
-import { normalizeKey } from "@cohost/shared/untrusted";
 import { Context, propagatedFlags, type ContextEvent } from "@cohost/working-memory";
 import { Scheduler, type Decision } from "./scheduler.js";
 import type { ScoreInput, ScoreOutput } from "./scoring.js";
@@ -81,15 +80,9 @@ function wordsOf(text: string): string[] {
   return text.split(/\s+/).filter((t) => /[\p{L}\p{N}]/u.test(t));
 }
 
-/**
- * The words a final adds beyond the early text (SAL-INTJ-011). Words are compared under `normalizeKey`; when the final begins with
- * the early text the words after it number the same as the difference of the two counts, so the count is that difference, never
- * below zero.
- */
+/** The words a final adds beyond the early text: the difference of the two word counts, never below zero (SAL-INTJ-011). */
 function wordsAdded(early: string, final: string): number {
-  const a = wordsOf(early).map(normalizeKey);
-  const b = wordsOf(final).map(normalizeKey);
-  return Math.max(0, b.length - a.length);
+  return Math.max(0, wordsOf(final).length - wordsOf(early).length);
 }
 
 /** The salience region's state and event handling; index.ts wires it to the bus and the tick timer. */
@@ -148,7 +141,7 @@ export class Salience {
       pause: () => { this.ctx.holdArrivals(); void this.withdraw("paused"); }, // @spec SAL-PROV-018
       resume: () => this.ctx.releaseArrivals(), // @spec SAL-CTRL-007
       mute: () => void this.withdraw("muted"), // @spec SAL-PROV-018
-      forget_context: () => { this.ctx.clear(); void this.withdraw("forgotten"); }, // @spec SAL-CTRL-005, SAL-PROV-019
+      forget_context: () => { this.ctx.clear(); this.forgetInterjection(); void this.withdraw("forgotten"); }, // @spec SAL-CTRL-005, SAL-PROV-019, SAL-INTJ-024
     }, { log: d.log, heartbeat: d.heartbeat });
     this.scheduler = new Scheduler(d.cfg.brain.salience, d.scorer, this.now);
     this.reflexes = new Reflexes(d.cfg.brain.salience.reflexes);
@@ -176,7 +169,8 @@ export class Salience {
         const d = ev.data as BusEvent<"speech.heard">["data"];
         this.noteFinal(d.utteranceId);
         // A final that arrives while an interjection request is pending waits for its answer, without holding the handler (SAL-INTJ-023).
-        if (this.interjection) { this.heldFinals.push(ev); break; }
+        // A final of the utterance whose request is pending waits for its answer; another utterance's final is an ordinary line (SAL-INTJ-023).
+        if (this.interjection !== undefined && this.interjection.utteranceId === d.utteranceId) { this.heldFinals.push(ev); break; }
         await this.final(ev);
         break;
       }
@@ -525,7 +519,10 @@ export class Salience {
 
   /** The record of an interjection cortex spoke for this utterance, if one is kept (SAL-INTJ-021). */
   private spokenFor(utteranceId: string | undefined): Spoken | undefined {
-    return utteranceId === undefined ? undefined : this.interjected.find((r) => r.utteranceId === utteranceId);
+    if (utteranceId === undefined) return undefined;
+    // The most recent record wins: an utterance can be interjected again after a follow-up (SAL-INTJ-015).
+    for (let i = this.interjected.length - 1; i >= 0; i--) if (this.interjected[i]!.utteranceId === utteranceId) return this.interjected[i];
+    return undefined;
   }
 
   /**
@@ -576,13 +573,19 @@ export class Salience {
         ...(h.timing ? { timing: h.timing } : {}),
       });
     } catch (err) {
+      // The request was never made: cortex is left with no provisional focus (a withdraw), no pending request, and the held finals go on.
       this.d.log.error({ err }, "attention.resolve interjection publish failed");
       if (this.interjection === p) {
         this.interjection = undefined;
         clearTimeout(p.timer);
         if (this.cortexState === "thinking" && this.cortexSince === since) this.cortexState = "idle";
-        void this.drainHeldFinals();
       }
+      try {
+        await this.d.bus.publish("attention.resolve", { utteranceId: h.utteranceId, seq: h.seq, outcome: "withdraw", reason: "resumed" });
+      } catch (err2) {
+        this.d.log.error({ err: err2 }, "attention.resolve withdraw publish failed");
+      }
+      void this.drainHeldFinals();
     }
   }
 
@@ -603,6 +606,20 @@ export class Salience {
     this.interjected.push({ utteranceId: p.utteranceId, text: p.text, lineId, at }); // @spec SAL-INTJ-021
     if (this.interjected.length > 8) this.interjected.shift();
     void this.drainHeldFinals();
+  }
+
+  /**
+   * forget_context drops a pending request with no gap and no publish, and discards the finals held for it: cortex is left idle
+   * (SAL-INTJ-024). A `brain.say` that cortex sends for the dropped request later is an ordinary line.
+   * @spec SAL-INTJ-024
+   */
+  private forgetInterjection(): void {
+    this.heldFinals.length = 0;
+    const p = this.interjection;
+    if (!p) return;
+    this.interjection = undefined;
+    clearTimeout(p.timer);
+    if (this.cortexState === "thinking") { this.cortexState = "idle"; this.cortexSince = this.now(); }
   }
 
   /**
@@ -646,9 +663,10 @@ export class Salience {
    * @spec SAL-INTJ-009, SAL-INTJ-017, SAL-BARGE-002, SAL-BARGE-009
    */
   private async yieldTo(rec: Spoken): Promise<"none" | "stopped" | "failed"> {
-    // The remembered cortex line is the interjected one, and it is the line that last set `speaking`: a reflex or operator line that
-    // set it later does not count.
-    if (!(this.cortexState === "speaking" && this.busy() && this.cortexLine?.id === rec.lineId && this.speakingLineId === rec.lineId)) return "none";
+    // The line that last set `speaking` must be the interjected line: a reflex or operator line, or another cortex line, that set
+    // it later does not count. Every cortex line sets both the remembered cortex line (SAL-BUSY-005) and this id, so the id is the
+    // remembered line whenever it is a cortex line.
+    if (!(this.cortexState === "speaking" && this.busy() && this.speakingLineId === rec.lineId)) return "none";
     try {
       await this.d.bus.publish("voice.stop", { reason: "yield", ids: [rec.lineId] });
     } catch (err) {

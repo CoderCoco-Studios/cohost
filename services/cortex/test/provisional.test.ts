@@ -253,8 +253,7 @@ test("the call budget counts from the first tool.request after the confirmation,
 // @spec CTX-PROV-009
 test("the filler clock counts from the first tool.request after the confirmation, not from the park", async () => {
   // The hold outlasts the 100 ms filler clock. A clock counted from the park would have fired at the confirm, before the request
-  // went out; so the filler must be observed no earlier than 100 ms after the request. The 20 ms slack covers the gap between
-  // arming the timer and publishing the request; a park-based clock is about 100 ms early, far outside it.
+  // went out; so the filler must be observed no earlier than 100 ms after the confirm that released the request.
   const s = setup({ withTool: true, tools: { reply: { filler_after_ms: 100, budget_ms: 60_000, filler_lines: ["Hold on a sec."] } } });
   s.llm.rounds.push({ calls: [call("c1")] }, { text: "[happy] It is noon." });
   s.bus.answerAfterMs = 300;
@@ -262,6 +261,7 @@ test("the filler clock counts from the first tool.request after the confirmation
   await streamed(s);
   await sleep(150); // longer than the filler clock
   assert.equal(s.bus.requests.length, 0, "no tool.request during the hold");
+  const confirmAt = Date.now();
   await s.cortex.onEvent(confirm());
   let fillerAt: number | undefined;
   await waitFor(() => {
@@ -269,7 +269,8 @@ test("the filler clock counts from the first tool.request after the confirmation
     return fillerAt !== undefined;
   }, "the filler is spoken", 2000);
   assert.equal(s.bus.requests.length, 1, "the request went out after the confirm");
-  assert.ok(fillerAt! >= s.bus.reqAt[0]! + 80, `filler observed ${fillerAt! - s.bus.reqAt[0]!} ms after the request, want at least 100 (20 ms slack)`);
+  // Measured from the confirm, which precedes the request, so no slack is needed for the request's publish; 1 ms covers timer rounding.
+  assert.ok(fillerAt! >= confirmAt + 99, `filler observed ${fillerAt! - confirmAt} ms after the confirm, want at least 100`);
   await waitFor(() => s.line().some((e) => e.text === "It is noon."), "the second round is spoken", 2000);
 });
 

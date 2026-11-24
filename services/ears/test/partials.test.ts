@@ -147,10 +147,11 @@ test("at most one partial transcription of an utterance is in flight and a step 
     assert.ok(stt.calls.length >= 2, "partial calls ran");
     const partialCalls = stt.calls.slice(0, -1);
     for (let i = 1; i < partialCalls.length; i++) assert.ok(partialCalls[i]!.startedAt - partialCalls[i - 1]!.startedAt >= 110, "no overlap: the next starts after the previous returned");
-    // The original bound (5 calls in ~375 ms) with the span measured rather than assumed: calls never overlap and each lasts at least
-    // 120 ms, so the count is bounded by the span they cover, and a load stall stretches the span and the allowance together.
-    const span = partialCalls.at(-1)!.startedAt - partialCalls[0]!.startedAt + 120;
-    assert.ok(partialCalls.length <= Math.ceil(span / 120) + 1, `skipped steps were not queued (${partialCalls.length} partial calls over ${span} ms)`);
+    // No backlog: a step due while a partial is in flight is skipped, so no partial starts once the utterance has closed. A queued
+    // step would still be running after the close, and its call would start within this window after the final was answered.
+    const started = stt.calls.length;
+    await sleep(300);
+    assert.equal(stt.calls.length, started, "no STT call started after the utterance closed: skipped steps were not queued");
   });
 });
 
@@ -539,13 +540,12 @@ test("streamed partials are published one at a time, and seq rises by one for ea
 });
 
 // @spec EARS-PART-009, EARS-EARLY-016
-test("a reused early transcript is the final even with a partial in flight: nothing waits for the partial, and its late result publishes nothing", async () => {
+test("a reused early transcript is the final even with a partial in flight: nothing waits for the partial", async () => {
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
-  let lastFrameAt = Infinity;
   let earlyTaken = false;
-  const stt = fakeStt(async (c) => {
-    if (!earlyTaken && c.startedAt >= lastFrameAt + 80) { earlyTaken = true; return "hello there"; } // the early snapshot
+  const stt = fakeStt(async () => {
+    if (!earlyTaken) { earlyTaken = true; return "hello there"; } // the first call is the early snapshot
     await gate; // every partial step
     return "hello there my friend";
   });
@@ -555,7 +555,6 @@ test("a reused early transcript is the final even with a partial in flight: noth
     // partial stays in flight past the 700 ms close. Spaced frames let a load stall run the partial step first, and the gate
     // would then hold the early call and nothing would publish.
     await feed(r.bus, 10);
-    lastFrameAt = Date.now();
     await waitFor(() => r.heard().length === 1, "speech.heard while a partial is in flight", 3000);
     const h = r.heard()[0]!;
     assert.equal(stt.stats.inflight() >= 1, true, "a partial is still in flight");

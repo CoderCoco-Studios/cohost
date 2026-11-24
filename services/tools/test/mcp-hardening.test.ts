@@ -66,7 +66,7 @@ test("a GET stream that ends at once is reopened on a backoff and the session is
   await s.stop();
 });
 
-test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the session is kept", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004 // @spec TOOL-MCP-012, TOOL-MCP-004
+test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the session is kept", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod.GET = () => ({
     stream: (res) => {
@@ -441,7 +441,8 @@ test("server requests on the stream are answered one at a time and five a second
   await sleep(900);
   const elapsed = Date.now() - t0;
   const answers = answered();
-  assert.ok(answers * 1000 <= 5 * elapsed, `at most five answers a second over ${elapsed} ms, got ${answers}`);
+  // TOOL-MCP-021 is a sliding one-second window, so the first second may hold five and each later second may add five more.
+  assert.ok(answers <= 5 * (Math.floor(elapsed / 1000) + 1), `at most five answers a second over ${elapsed} ms, got ${answers}`);
   assert.equal(maxInFlight, 1, "one answer in flight at a time");
   await s.stop();
 });

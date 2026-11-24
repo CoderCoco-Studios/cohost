@@ -17,6 +17,8 @@ export type DepStatus = "ok" | "down" | "n/a";
 export const DESCRIPTION_MAX = 400;
 export const TITLE_MAX = 100;
 export const SCHEMA_MAX = 4000;
+/** The deepest an argument schema may nest, counting the schema itself as one object or array (TOOL-CAT-002). */
+export const SCHEMA_DEPTH_MAX = 64;
 export const QUALIFIED_NAME_MAX = 64;
 
 const PART = /^[A-Za-z0-9_-]+$/;
@@ -94,11 +96,43 @@ export interface Snapshot {
   tools: KnownTool[];
   servers: CatalogServer[];
   byName: Map<string, KnownTool>;
+  /** The qualified names of every enabled `tools.allow` entry, listed or not (TOOL-MCP-010): a server with one is a dependency. */
+  enabledNames: string[];
+}
+
+/**
+ * Whether an argument schema can be listed: it serializes to at most 4000 characters and nests at most 64 levels deep. The
+ * serialization is guarded, and the depth is walked without recursion, so a hostile schema is refused and never throws
+ * (TOOL-CAT-002).
+ */
+// @spec TOOL-CAT-002
+export function schemaListable(schema: unknown): boolean {
+  let text: string | undefined;
+  try { text = JSON.stringify(schema); } catch { return false; }
+  if (text === undefined || text.length > SCHEMA_MAX) return false;
+  const stack: [unknown, number][] = [[schema, 1]];
+  while (stack.length > 0) {
+    const [v, depth] = stack.pop()!;
+    if (depth > SCHEMA_DEPTH_MAX) return false;
+    const kids = Array.isArray(v) ? v : v !== null && typeof v === "object" ? Object.values(v) : [];
+    for (const kid of kids) if (kid !== null && typeof kid === "object") stack.push([kid, depth + 1]);
+  }
+  return true;
 }
 
 const hostOf = (url: string): string | undefined => {
   try { return new URL(url).hostname; } catch { return undefined; }
 };
+
+/**
+ * Whether a configured server is external: its host is off the LAN by the LAN rule, or `external` is set, or its URL has no
+ * readable host (TOOL-MCP-009). The egress entry of the server uses the same rule (CFG-EGR-014).
+ */
+// @spec TOOL-MCP-009
+export function serverExternal(entry: { url: string; external: boolean }, lan: readonly string[]): boolean {
+  const host = hostOf(entry.url);
+  return entry.external || (host === undefined ? true : offLanHost(host, lan));
+}
 
 const STATE_WORDS: Record<SourceState, string> = { ok: "connected", down: "not connected", auth: "refused its credential", mock: "mock server" };
 
@@ -121,17 +155,16 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
   for (const [server, entry] of Object.entries(cfg.tools.servers)) {
     const source = bySource.get(server);
     const state: SourceState = mode === "mock" ? "mock" : source ? source.state : "down";
-    const host = hostOf(entry.url);
-    // Mock mode reaches no server and ignores `tools.servers.<name>.external`: no server is external there. The external rule
-    // itself (TOOL-MCP-009) is open for #206.
-    const external = mode === "mock" ? false : entry.external || (host === undefined ? true : offLanHost(host, lan));
+    // Mock mode reaches no server and ignores `tools.servers.<name>.external`: no server is external there.
+    const external = mode === "mock" ? false : serverExternal(entry, lan);
     let listed = 0;
     let left = 0;
     for (const def of source?.list() ?? []) {
       if (source === undefined) break; // unreachable: an absent source lists nothing
       const name = `${server}__${def.name}`;
-      const schemaLength = (JSON.stringify(def.parameters) ?? "").length;
-      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX || schemaLength > SCHEMA_MAX) {
+      // The cheap checks come first: the limits are counted before any schema is serialized, so a server with thousands of
+      // tools costs one check per tool it may list (TOOL-CAT-013, TOOL-CAT-014).
+      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX) {
         left++;
         continue;
       }
@@ -139,9 +172,20 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
         left++;
         continue;
       }
+      if (!schemaListable(def.parameters)) {
+        left++;
+        continue;
+      }
+      // One tool whose definition cannot be read leaves the snapshot whole: it is left out and counted (TOOL-CAT-002).
+      let known: KnownTool;
+      try {
+        known = listTool(cfg, source, server, name, def, state, mode);
+      } catch {
+        left++;
+        continue;
+      }
       listed++;
       total++;
-      const known = listTool(cfg, source, server, name, def, state, mode);
       tools.push(known);
       byName.set(name, known);
     }
@@ -150,7 +194,8 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     if (source?.detail) parts.push(source.detail);
     servers.push({ name: server, state, external, detail: parts.join("; ") });
   }
-  return { mode, tools, servers, byName };
+  const enabledNames = Object.entries(cfg.tools.allow).filter(([, a]) => a.enabled).map(([name]) => name);
+  return { mode, tools, servers, byName, enabledNames };
 }
 
 function listTool(cfg: Config, source: ToolSource, server: string, name: string, def: SourceTool, state: SourceState, mode: Mode): KnownTool {

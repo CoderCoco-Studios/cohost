@@ -5,7 +5,7 @@
 import type { BusEvent, EventInput } from "@cohost/bus";
 import type { Logger } from "@cohost/config";
 import { type KnownTool, type Mode, type Snapshot } from "./catalog.js";
-import type { SourceCallResult } from "./source.js";
+import { SourceFailed, type SourceCallResult } from "./source.js";
 
 export type ToolRequest = BusEvent<"tool.request">["data"];
 export type Origin = ToolRequest["origin"];
@@ -228,14 +228,14 @@ export class CallPipeline {
       });
       const sent = (async () => known.source.call(known.own, req.arguments, ctl.signal))();
       const outcome = await Promise.race([
-        sent.then((r) => ({ kind: "answer" as const, r }), () => ({ kind: "failed" as const })),
+        sent.then((r) => ({ kind: "answer" as const, r }), (err: unknown) => ({ kind: "failed" as const, text: err instanceof SourceFailed ? err.text : undefined })),
         timedOut,
       ]);
       if (outcome.kind === "timeout") {
         ctl.abort();
         return finish({ status: "timeout", content: TIMEOUT_TEXT });
       }
-      if (outcome.kind === "failed") return finish({ status: "error", reason: "unavailable", content: UNAVAILABLE_TEXT }); // TOOL-CALL-012
+      if (outcome.kind === "failed") return finish({ status: "error", reason: "unavailable", content: outcome.text ?? UNAVAILABLE_TEXT }); // TOOL-CALL-012
 
       // 5. Shape (a malformed result throws here and ends as unavailable) and 6. publish (TOOL-CALL-019).
       return finish(shape(outcome.r, this.deps.limits.maxResultChars));

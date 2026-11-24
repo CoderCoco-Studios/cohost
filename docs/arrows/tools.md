@@ -4,7 +4,7 @@ The tool service: MCP servers over Streamable HTTP added from the dashboard, fou
 
 ## Status
 
-**PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 112 specs: 65 `[x]`, 47 `[ ]`. The MCP client (#206) and the built-in tools (#207) are not built yet; no live MCP server has been run against the service.
+**PARTIAL**: the `tools` service is built (`services/tools`): catalog, call pipeline, confirmation, mock mode and test injection. `tools-specs.md` holds 127 specs: 97 `[x]`, 30 `[ ]`. The MCP client (`services/tools/src/mcp.ts`, #206) is built and tested against in-process fake servers; no real MCP server has been run against the service. The built-in tools (#207) are not built yet.
 
 The `tools` unit is in the control-plane manifest (twelve application services), in `docker-compose.yml` (no profile, least privilege: DEPLOY-COMPOSE-026) and in the root `tsconfig.json` (#208). The `as: "tool"` injection route is #211, so the tools text input is not yet accepted by `POST /inject/text`.
 
@@ -17,10 +17,10 @@ The `tools` unit is in the control-plane manifest (twelve application services),
 - docs/intent/tools/tools-design.md
 
 ### EARS
-- docs/intent/tools/tools-specs.md (112 specs, prefix `TOOL`: 65 `[x]`, 47 `[ ]`, 0 `[D]`)
+- docs/intent/tools/tools-specs.md (127 specs, prefix `TOOL`: 97 `[x]`, 30 `[ ]`, 0 `[D]`)
 
 ### Code and tests
-- services/tools/src/ (catalog.ts, calls.ts, mock.ts, health.ts, main.ts, source.ts); tests under services/tools/test/
+- services/tools/src/ (catalog.ts, calls.ts, mcp.ts, mock.ts, health.ts, main.ts, source.ts); tests under services/tools/test/ (mcp-session, mcp-auth, mcp-calls, with mcp-server.ts as the fake server)
 
 ## Work Required
 

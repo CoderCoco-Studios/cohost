@@ -187,6 +187,10 @@ A technique for animating a flat 2D drawing (a "2D avatar") by bending and movin
 
 Large language model: the kind of AI that writes text. The co-host's replies come from one. It can run on your own machine through [Ollama](#ollama) or be rented from a provider; see [choose a model](../guide/tune/model.md).
 
+### MCP {#mcp}
+
+Model Context Protocol: an open standard by which a server offers tools to an AI model over the network. The co-host calls the tools of the MCP servers you add over HTTP; see [MCP tool servers](../guide/connect/mcp.md).
+
 ### memory region {#memory-region}
 
 The `memory` [brain region](#brain-region). It is the only part that touches [Postgres](#postgres): it stores what was said, finds related memories when the [cortex](#cortex) asks, and keeps a small note per viewer.

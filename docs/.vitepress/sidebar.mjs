@@ -40,6 +40,7 @@ export const sidebar = [
           { text: 'Discord', link: '/guide/connect/discord' },
           { text: 'OBS and the voice on stream', link: '/guide/connect/obs' },
           { text: 'Avatar', link: '/guide/connect/avatar' },
+          { text: 'MCP tool servers', link: '/guide/connect/mcp' },
         ],
       },
       {

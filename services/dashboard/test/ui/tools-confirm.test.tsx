@@ -201,7 +201,7 @@ test("the route needs the token whether or not control mode is on: without one h
   }
 });
 
-// @spec DASH-TOOL-005
+// @spec DASH-TOOL-005, DASH-TOOL-026
 test("a refused or failed answer (403 no token configured, 401, a network error) leaves the bar and shows the failure; the bar is never removed by a failed press", async () => {
   for (const reply of [{ status: 403, json: { ok: false, detail: "no control token is configured: set CONTROL_TOKEN" } }, { status: 401, text: "unauthorized" }] as const) {
     const app = boot();
@@ -226,7 +226,7 @@ test("a refused or failed answer (403 no token configured, 401, a network error)
   assert.ok(within(bar("c1")!).queryByRole("alert") ?? screen.queryByRole("alert"), "the failure is told");
 });
 
-// @spec DASH-TOOL-005
+// @spec DASH-TOOL-005, DASH-TOOL-026
 test("a tool.result that arrives before its bar's countdown ends removes it, and its timer is cancelled: nothing is left to fire later", () => {
   const app = boot();
   skewed(app, 0);
@@ -260,4 +260,32 @@ test("the same event delivered twice (a replay of a live one) makes one bar", ()
   const ev = { id: "dup-1", type: "tool.confirm", ts: HOST_NOW, source: "tools", data: { id: "c1", tool: "t", arguments: {}, origin: "dashboard", expiresAt: HOST_NOW + 20000 } };
   act(() => { app.socket().message(ev); app.socket().message({ ...ev, replay: true }); });
   assert.equal(bars().length, 1);
+});
+
+// @spec DASH-TOOL-003
+test("a replayed tool.confirm never makes a bar, even one whose countdown is still open and whose result was not replayed", () => {
+  const app = boot();
+  skewed(app, 0);
+  send(app, "tool.confirm", { id: "old", tool: "t", arguments: {}, origin: "dashboard", expiresAt: HOST_NOW + 20000 }, { replay: true });
+  assert.equal(bars().length, 0);
+  act(() => app.clock.tick(1000));
+  assert.equal(bars().length, 0);
+});
+
+// @spec DASH-TOOL-026
+test("Allow and Deny are disabled while the answer request is in flight, and the bar stays when it ends", async () => {
+  const app = boot();
+  skewed(app, 0);
+  app.rt.access.setToken("control", "tok", "tab");
+  let release!: () => void;
+  app.fetch.on("POST /tools/answer", () => new Promise((resolve) => { release = () => resolve({ status: 403, json: { ok: false, detail: "no control token is configured: set CONTROL_TOKEN" } }); }));
+  confirm(app);
+  const b = bar("c1")!;
+  await userEvent.setup().click(within(b).getByRole("button", { name: "Allow" }));
+  await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1));
+  assert.equal((within(b).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, true);
+  assert.equal((within(b).getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled, true);
+  await act(async () => { release(); await new Promise((r) => setTimeout(r, 0)); });
+  await waitFor(() => assert.match(within(bar("c1")!).getByRole("alert").textContent ?? "", /403/));
+  assert.equal((within(bar("c1")!).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, false, "a refused answer can be tried again");
 });

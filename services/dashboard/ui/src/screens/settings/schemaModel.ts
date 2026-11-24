@@ -38,6 +38,9 @@ export type Control =
   | { kind: "voice" }
   | { kind: "secret" }
   | { kind: "objects"; props: ItemProp[] }
+  /** The `tools.servers` map and the `tools.allow` map, each with a widget of its own (screens/settings/ToolSettings.tsx). */
+  | { kind: "mcp-servers" }
+  | { kind: "tool-list" }
   | { kind: "json" };
 
 export interface ItemProp { name: string; label: string; help?: string; unit?: string; schema: JsonSchema; control: Control; required: boolean }
@@ -109,6 +112,8 @@ export function controlFor(schema: JsonSchema, pres: { widget?: unknown; items?:
   const widget = isObj(pres?.widget) ? pres!.widget : undefined;
   const wtype = widget && typeof widget.type === "string" ? widget.type : undefined;
   const t = schema.type;
+  if (wtype === "mcp-servers") return { kind: "mcp-servers" };
+  if (wtype === "tool-list") return { kind: "tool-list" };
   if (t === "string" && !schema.enum) {
     if (wtype === "timezone") return { kind: "timezone" };
     if (wtype === "voice") return { kind: "voice" };

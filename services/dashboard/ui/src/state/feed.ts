@@ -1,4 +1,5 @@
 import { createStore, type Store } from "./store";
+import { parseCatalog, type CatalogState, type PendingConfirm } from "./tools";
 import type { FeedEvent, ServiceHealth, StackSnapshot } from "./types";
 
 /** The event types that get a row in the Activity feed (DASH-UI-002); every other type is dropped from the log. */
@@ -6,6 +7,7 @@ import type { FeedEvent, ServiceHealth, StackSnapshot } from "./types";
 export const FEED_TYPES: ReadonlySet<string> = new Set([
   "chat.message", "brain.say", "vision.summary", "speech.heard", "brain.status", "control", "service.lifecycle",
   "inject.request", "inject.result", "voice.utterance", "voice.playing", "voice.done",
+  "tool.request", "tool.result", "tool.timer",
 ]);
 
 /** Rows the log keeps (DASH-UI-002). */
@@ -34,11 +36,19 @@ export interface FeedState {
   muted: boolean;
   /** Each co-host line's row: the latest accepted clause `seq` and the row's text (`brain.say` text plus its clauses), by line id, at most `LOG_LIMIT` lines. */
   lines: Record<string, LineRow>;
+  /** Tool calls waiting for the owner's answer, in arrival order (DASH-TOOL-003). */
+  confirms: PendingConfirm[];
+  /** The page clock as of the last countdown tick, so a countdown re-renders each second (DASH-TOOL-004). */
+  tick: number;
+  /** The latest `tool.catalog`, or null before the first (DASH-TOOL-023). */
+  catalog: CatalogState | null;
 }
 
 export interface LineRow {
   seq: number;
   text: string;
+  /** The `cut` of the line's closing clause, when it carried one (DASH-UI-041). */
+  cut?: string;
 }
 
 /** A listener receives every event once, with `replay` true for the connect replay (never play or act on those). */
@@ -66,10 +76,10 @@ export function feedUrl(loc: Pick<Location, "protocol" | "host"> = location): st
   return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/ws`;
 }
 
-const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, events: [], latest: {}, muted: false, lines: {} });
+const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, events: [], latest: {}, muted: false, lines: {}, confirms: [], tick: 0, catalog: null });
 
 /** The line rows after one `brain.say` or `brain.clause` (DASH-UI-038..040); undefined when the event changes no row. */
-// @spec DASH-UI-038, DASH-UI-039, DASH-UI-040
+// @spec DASH-UI-038, DASH-UI-039, DASH-UI-040, DASH-UI-041
 function nextLines(lines: Record<string, LineRow>, ev: FeedEvent): Record<string, LineRow> | undefined {
   const d = (ev.data ?? {}) as { id?: unknown; seq?: unknown; text?: unknown };
   if (typeof d.id !== "string") return undefined;
@@ -81,7 +91,8 @@ function nextLines(lines: Record<string, LineRow>, ev: FeedEvent): Record<string
     console.warn(`dropped brain.clause for line ${d.id}: seq ${String(d.seq)} after ${row.seq}`);
     return undefined;
   }
-  return withLine(lines, d.id, { seq: d.seq as number, text: [row.text, text].filter((t) => t !== "").join(" ") });
+  const closing = (ev.data as { last?: unknown; cut?: unknown }).last === true ? (ev.data as { cut?: unknown }).cut : undefined;
+  return withLine(lines, d.id, { seq: d.seq as number, text: [row.text, text].filter((t) => t !== "").join(" "), ...(typeof closing === "string" && closing !== "" ? { cut: closing } : {}) });
 }
 
 /** Sets one line's row, keeping at most `LOG_LIMIT` lines (the oldest go first). */
@@ -97,7 +108,7 @@ function withLine(lines: Record<string, LineRow>, id: string, row: LineRow): Rec
  * snapshots into state, de-duplicates bus events by id, keeps the rendered rows, and reconnects every 2 s while the
  * socket is closed, recording when it stopped and when it will try again for the connection banner.
  */
-// @spec DASH-UI-001, DASH-UI-002, DASH-UI-005, DASH-UI-013
+// @spec DASH-UI-001, DASH-UI-002, DASH-UI-005, DASH-UI-013, DASH-TOOL-003, DASH-TOOL-004, DASH-TOOL-005, DASH-TOOL-023, DASH-TOOL-024
 export function createFeed(deps: FeedDeps): Feed {
   const state = createStore<FeedState>(initial());
   const now = deps.now ?? Date.now;
@@ -109,6 +120,42 @@ export function createFeed(deps: FeedDeps): Feed {
   let socket: WebSocket | undefined;
   let timer: number | undefined;
   let stopped = false;
+  // Tool confirmation countdowns run on the injected timers and clock, never on the host's clock (DASH-TOOL-004).
+  const expiry = new Map<string, number>();
+  let ticker: number | undefined;
+  let catalogTimer: number | undefined;
+
+  const stopTick = (): void => { if (ticker !== undefined) { clearT(ticker); ticker = undefined; } };
+  const startTick = (): void => {
+    if (ticker !== undefined || expiry.size === 0) return;
+    ticker = setT(() => { ticker = undefined; state.set((s) => ({ ...s, tick: now() })); startTick(); }, 1000);
+  };
+  /** Removes a call's bar and cancels its timer; the countdown ticker stops with the last one. */
+  const dropConfirm = (id: string): void => {
+    const t = expiry.get(id);
+    if (t !== undefined) { clearT(t); expiry.delete(id); }
+    state.set((s) => (s.confirms.some((c) => c.id === id) ? { ...s, confirms: s.confirms.filter((c) => c.id !== id) } : s));
+    if (expiry.size === 0) stopTick();
+  };
+  /** A live `tool.confirm` becomes a bar that counts down the time between the event and its `expiresAt` by the page's clock; a replayed one never does (DASH-TOOL-003). */
+  const addConfirm = (ev: FeedEvent): void => {
+    const d = (ev.data ?? {}) as Record<string, unknown>;
+    if (typeof d.id !== "string" || typeof d.expiresAt !== "number" || typeof ev.ts !== "number") return;
+    const remaining = d.expiresAt - ev.ts;
+    if (!(remaining > 0) || expiry.has(d.id)) return;
+    const id = d.id;
+    const confirm: PendingConfirm = { id, tool: typeof d.tool === "string" ? d.tool : "", args: d.arguments, origin: typeof d.origin === "string" ? d.origin : "", deadline: now() + remaining };
+    state.set((s) => ({ ...s, confirms: [...s.confirms, confirm], tick: now() }));
+    expiry.set(id, setT(() => dropConfirm(id), remaining));
+    startTick();
+  };
+  const setCatalog = (ev: FeedEvent): void => {
+    const data = parseCatalog(ev.data);
+    if (!data) return;
+    if (catalogTimer !== undefined) clearT(catalogTimer);
+    state.set((s) => ({ ...s, catalog: { data, stale: false } }));
+    catalogTimer = setT(() => { catalogTimer = undefined; state.set((s) => (s.catalog ? { ...s, catalog: { ...s.catalog, stale: true } } : s)); }, 3 * data.intervalMs);
+  };
 
   const remember = (id: string): boolean => {
     if (seen.has(id)) return false;
@@ -126,6 +173,9 @@ export function createFeed(deps: FeedDeps): Feed {
       const cmd = ev.type === "control" ? (ev.data as { cmd?: string }).cmd : undefined;
       return { ...s, events, latest: { ...s.latest, [ev.type]: ev }, muted: cmd === "mute" ? true : cmd === "unmute" ? false : s.muted, ...(lines ? { lines } : {}) };
     });
+    if (ev.type === "tool.confirm") { if (!replay) addConfirm(ev); }
+    else if (ev.type === "tool.result") { const id = (ev.data as { id?: unknown } | null)?.id; if (typeof id === "string") dropConfirm(id); }
+    else if (ev.type === "tool.catalog") setCatalog(ev);
     for (const l of [...listeners]) l(ev, replay);
   }
 
@@ -165,7 +215,13 @@ export function createFeed(deps: FeedDeps): Feed {
   return {
     state,
     start() { stopped = false; if (!socket) connect(); },
-    stop() { stopped = true; if (timer !== undefined) clearT(timer); const s = socket; socket = undefined; s?.close(); },
+    stop() {
+      stopped = true;
+      for (const t of expiry.values()) clearT(t);
+      expiry.clear(); stopTick();
+      if (catalogTimer !== undefined) { clearT(catalogTimer); catalogTimer = undefined; }
+      if (timer !== undefined) clearT(timer); const s = socket; socket = undefined; s?.close();
+    },
     onEvent(l) { listeners.add(l); return () => { listeners.delete(l); }; },
   };
 }

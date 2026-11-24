@@ -43,9 +43,9 @@ const BASE_YAML = `tools:
 
 interface CatTool { name: string; description?: string; label?: "read" | "acts" | "unlabelled"; effect?: "read" | "acts"; enabled?: boolean; acts?: boolean; chat?: boolean; confirm?: boolean; offered?: boolean; server?: string; hash?: string; reason?: string }
 const catTool = (o: CatTool) => ({ description: `${o.name} does a thing`, parameters: {}, label: "read", effect: "read", enabled: false, acts: false, chat: false, confirm: true, offered: false, ...o });
-const catalog = (tools: CatTool[], servers: { name: string; state?: string; external?: boolean; detail?: string }[] = [{ name: "weather" }, { name: "lan" }], intervalMs = 30000) => ({
+const catalog = (tools: CatTool[], servers: { name: string; state?: string; external?: boolean; left_out?: number; detail?: string }[] = [{ name: "weather" }, { name: "lan" }], intervalMs = 30000) => ({
   intervalMs, mode: "live",
-  servers: servers.map((s) => ({ state: "ok", external: false, ...s })),
+  servers: servers.map((s) => ({ state: "ok", external: false, left_out: 0, ...s })),
   tools: tools.map(catTool),
 });
 
@@ -142,6 +142,7 @@ test("with no catalog yet every saved server is still listed, from the file, wit
 // @spec DASH-TOOL-007, DASH-SECRET-013
 test("Add server takes a name, URL, header name, token and External, writes the map and then the secret, with the control token, and offers the restart of tools, cortex and salience", async () => {
   const b = await open();
+  b.app.fetch.on("PUT /secrets/tools.servers.search.token", { json: { ok: true, set: true, restart: ["tools", "cortex", "salience"] } });
   const user = userEvent.setup();
   await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
   await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");
@@ -248,26 +249,66 @@ test("the form says the server's tools appear only after tools has restarted and
 });
 
 // @spec DASH-TOOL-009, DASH-SECRET-014
-test("Remove removes the server's entry from the map and then clears its secret with a null, in the same save, with the control token", async () => {
+test("Remove clears the server's secret first, with a null and the control token, and then removes its entry from the map, in the same save", async () => {
   const b = await open({ secretsSet: ["tools.servers.weather.token"] });
+  b.app.fetch.on("PUT /secrets/tools.servers.weather.token", { json: { ok: true, set: false, restart: ["tools", "cortex", "salience"] } });
   await userEvent.setup().click(within(server("weather")).getByRole("button", { name: "Remove weather" }));
   await save();
-  await waitFor(() => assert.ok(secretCalls(b.app).length >= 1));
-  assert.deepEqual(Object.keys(lastValues(b.app).servers as object), ["lan"]);
+  await waitFor(() => assert.ok(secretCalls(b.app).length >= 1 && puts(b.app).length >= 1));
   const clear = secretCalls(b.app).find((c) => c.path === "/secrets/tools.servers.weather.token" || (c.path === "/secrets" && (c.body ?? "").includes("tools.servers.weather.token")))!;
   assert.ok(clear);
   const sent = JSON.parse(clear.body!) as { value?: null; values?: Record<string, null> };
   assert.ok(sent.value === null || sent.values?.["tools.servers.weather.token"] === null, "a null clears");
   assert.equal(clear.headers.authorization, "Bearer tok");
-  assert.ok(b.app.fetch.calls.indexOf(puts(b.app).at(-1)!) < b.app.fetch.calls.indexOf(clear), "the entry goes first, then the secret of a server the file no longer holds (DASH-SECRET-014)");
+  assert.deepEqual(Object.keys(lastValues(b.app).servers as object), ["lan"]);
+  assert.ok(b.app.fetch.calls.indexOf(clear) < b.app.fetch.calls.indexOf(puts(b.app).at(-1)!), "the secret goes first, then the entry (DASH-TOOL-009)");
 });
 
 // @spec DASH-TOOL-009
-test("a server that is removed while its save fails stays listed, and its secret is not cleared", async () => {
-  const b = await open({ putStatus: 409 });
+test("a server whose secret cannot be cleared stays listed, nothing is written to the map, and the failure is shown as an alert", async () => {
+  const b = await open({ secretsSet: ["tools.servers.weather.token"] });
+  b.app.fetch.on("PUT /secrets/tools.servers.weather.token", { status: 500, json: { ok: false, detail: "disk full" } });
   await userEvent.setup().click(within(server("weather")).getByRole("button", { name: "Remove weather" }));
   await save();
-  assert.equal(secretCalls(b.app).length, 0);
+  await waitFor(() => assert.ok(screen.queryAllByRole("alert").some((a) => /disk full/.test(text(a)))));
+  assert.equal(puts(b.app).length, 0);
+  assert.ok(server("weather"), "still listed");
+});
+
+// @spec DASH-TOOL-009
+test("a server whose map write fails after its secret was cleared leaves the server listed and shows the failure as an alert", async () => {
+  const b = await open({ secretsSet: ["tools.servers.weather.token"], putStatus: 409 });
+  b.app.fetch.on("PUT /secrets/tools.servers.weather.token", { json: { ok: true, set: false, restart: ["tools"] } });
+  await userEvent.setup().click(within(server("weather")).getByRole("button", { name: "Remove weather" }));
+  await save();
+  await waitFor(() => assert.ok(screen.queryAllByRole("alert").length > 0));
+  assert.equal(secretCalls(b.app).length, 1, "the secret was cleared first");
+  assert.ok(server("weather"), "the entry was not removed");
+});
+
+// @spec DASH-TOOL-006
+test("each server's real token state is read from its own secret key: a server with a token shows token set and one without shows no token", async () => {
+  await open({ secretsSet: ["tools.servers.weather.token"] });
+  assert.match(text(server("weather")), /token set/);
+  assert.doesNotMatch(text(server("weather")), /no token/);
+  assert.match(text(server("lan")), /no token/);
+  assert.doesNotMatch(text(server("lan")), /token set/);
+  assert.equal(document.querySelectorAll("[data-key^='servers.']").length, 0, "no row of its own for a server's token key");
+});
+
+// @spec DASH-TOOL-007
+test("a map write that succeeds followed by a secret write that fails shows the alert `server added without a token`, and the server stays listed", async () => {
+  const b = await open();
+  b.app.fetch.on("PUT /secrets/tools.servers.search.token", { status: 500, json: { ok: false, detail: "nope" } });
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
+  await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");
+  await user.type(screen.getByLabelText("Token"), "mcp-SECRET-81");
+  await user.click(screen.getByRole("button", { name: "Add server" }));
+  await save();
+  await waitFor(() => assert.ok(screen.queryAllByRole("alert").some((a) => /server added without a token/.test(text(a)))));
+  assert.ok(server("search"), "the server was added");
+  assert.equal(document.body.innerHTML.includes("mcp-SECRET-81"), false);
 });
 
 // @spec DASH-TOOL-010
@@ -307,8 +348,8 @@ test("a URL query parameter named like a credential gets an advisory that a secr
 });
 
 // @spec DASH-TOOL-013
-test("the count of tools a server's limits left out is shown on its row, and a server that left none out shows none", async () => {
-  await open({ cat: catalog(WEATHER_TOOLS, [{ name: "weather", detail: "connected; 32 tools listed; 5 left out" }, { name: "lan", detail: "connected; 2 tools listed" }]) });
+test("the count of tools a server's limits left out is read from the catalog's left_out member and shown on its row, and a server that left none out shows none", async () => {
+  await open({ cat: catalog(WEATHER_TOOLS, [{ name: "weather", left_out: 5, detail: "connected; 32 tools listed" }, { name: "lan", left_out: 0, detail: "connected; 2 tools listed" }]) });
   assert.match(text(server("weather")), /5 left out/);
   assert.doesNotMatch(text(server("lan")), /left out/);
 });
@@ -581,6 +622,7 @@ test("the three intervals are those of the last catalog received, so a catalog w
 // @spec DASH-TOOL-006, DASH-SECRET-013
 test("the secret field of the add form is write-only: it is a password field, cleared after the add, and the value is in no row, attribute or live region", async () => {
   const b = await open();
+  b.app.fetch.on("PUT /secrets/tools.servers.search.token", { json: { ok: true, set: true, restart: ["tools"] } });
   const user = userEvent.setup();
   await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
   await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");

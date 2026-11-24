@@ -6,6 +6,7 @@ import { usePickLists } from "./picklists";
 import { RowShell } from "./RowShell";
 import { SaveBar } from "./SaveBar";
 import { SecretPair, SecretRow, pairOf } from "./secrets";
+import { McpServers, ToolList } from "./ToolSettings";
 import { keyGroups, matchIssue, noteFor, sourceLabel, type JsonSchema, type KeyModel, type KeyRead, type SectionModel } from "./schemaModel";
 import { useSettings, useSettingsState, type SectionState } from "./store";
 import { egressNote, useEgress, type EgressEntry } from "../../state/egress";
@@ -28,7 +29,8 @@ function undescribed(key: string, info: KeyRead): KeyModel {
 
 /** Everything one section shows: its described keys, then any key of the answer the schema lacks. */
 function keysOf(section: SectionModel, st: SectionState | undefined): SectionModel {
-  const extra = Object.entries(st?.keys ?? {}).filter(([k]) => !section.keys.some((m) => m.key === k)).map(([k, i]) => undescribed(k, i));
+  // A secret under a key the section describes (`servers.<name>.token` under `servers`) belongs to that key's widget, not a row of its own.
+  const extra = Object.entries(st?.keys ?? {}).filter(([k, i]) => !section.keys.some((m) => m.key === k || (i.secret && k.startsWith(`${m.key}.`)))).map(([k, i]) => undescribed(k, i));
   return extra.length ? { ...section, keys: [...section.keys, ...extra] } : section;
 }
 
@@ -57,9 +59,9 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
   const wiring: Wiring = { id, describedBy, invalid: !!errors[""] || !!edit?.error };
   return (
     <RowShell section={section.path} name={km.key} path={path} label={km.label} labelFor={isLabelable(km.control) ? id : undefined} hideLabel={embedded} source={sourceLabel(info)}>
-      <FieldControl control={km.control} label={km.label} value={value} settled={info?.value} schema={km.schema} unit={km.unit} wiring={wiring} help={km.help}
+      {km.control.kind === "mcp-servers" ? <McpServers section={section} km={km} st={st} /> : km.control.kind === "tool-list" ? <ToolList section={section} km={km} st={st} /> : <FieldControl control={km.control} label={km.label} value={value} settled={info?.value} schema={km.schema} unit={km.unit} wiring={wiring} help={km.help}
         placeholder={undefined} models={picks.models} voices={picks.voices} errors={errors}
-        onChange={(v, error) => settings.edit(section.path, km.key, v, error)} />
+        onChange={(v, error) => settings.edit(section.path, km.key, v, error)} />}
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
       {note ? <p className="help" id={ids.note}>{note}</p> : null}
       {egressNotes.map((n, i) => <p className="help egress-note" key={i}>{n}</p>)}

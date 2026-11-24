@@ -8,6 +8,7 @@ import "./styles/live.css";
 import "./styles/access.css";
 import "./styles/viewers.css";
 import "./styles/settings.css";
+import "./styles/tools.css";
 import "./styles/narrow.css";
 import { App } from "./app/App";
 import { isSinkLocation } from "./app/SinkView";

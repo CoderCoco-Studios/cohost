@@ -9,6 +9,7 @@ import { SideSheet } from "../../components/SideSheet";
 import { useAction, useApi } from "../../state/hooks";
 import type { ApiResult } from "../../state/api";
 import type { FeedEvent, UnitDescriptor } from "../../state/types";
+import { TOOLS_UNIT } from "../../state/tools";
 import { sampleFor } from "./samples";
 import { unitTest } from "./model";
 
@@ -48,6 +49,8 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
   const answers = useRef(new Set<string>());   // data.id of injected bus events: a reply carrying it answers the injection
   const results = useRef(new Map<string, FeedEvent>()); // inject.result by data.id, whether or not it is ours yet
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const toolRef = useRef<HTMLInputElement>(null);
+  const argsRef = useRef<HTMLTextAreaElement>(null);
   const fileRefs = useRef(new Map<string, HTMLInputElement>());
 
   const add = useCallback((ev: FeedEvent) => setEvents((list) => [...list, ev].slice(-KEEP)), []);
@@ -73,6 +76,21 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       if (r.ok) track(r.data.id);
       return r;
     }, (d) => `Sent text (id ${d.id}), waiting for its result…`);
+  };
+  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. The route is token-gated whether or not control mode is on, so the token is asked for before anything is sent.
+  // @spec MOD-MAN-010, MOD-TEST-005, DASH-INJ-011
+  const sendTool = () => {
+    const tool = toolRef.current?.value.trim() ?? "";
+    const raw = argsRef.current?.value.trim() ?? "";
+    if (!tool) { void act.run(async () => fail("Name a tool first."), ""); return; }
+    let args: unknown;
+    try { args = raw === "" ? {} : JSON.parse(raw); } catch (e) { void act.run(async () => fail(`Arguments are not valid JSON: ${e instanceof Error ? e.message : String(e)}`), ""); return; }
+    if (typeof args !== "object" || args === null || Array.isArray(args)) { void act.run(async () => fail("Arguments must be a JSON object."), ""); return; }
+    void act.run(async () => {
+      const r = await api.post<{ id: string }>("/inject/text", { level: "service", as: "tool", text: JSON.stringify({ tool, arguments: args }) }, { ...gate, requireToken: true, action: "Send a test tool call" });
+      if (r.ok) track(r.data.id);
+      return r;
+    }, (d) => `Sent tool call (id ${d.id}), waiting for its result…`);
   };
   const sendFile = (kind: "image" | "audio") => {
     const file = fileRefs.current.get(kind)?.files?.[0];
@@ -112,6 +130,13 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
           </div>
         ) : null}
         {inputs.map((type) => {
+          if (type === "text" && unit.id === TOOLS_UNIT) return (
+            <div className="td-form" key={type}>
+              <Field label="Tool" help="The tool's name, as in the Tools settings (for example stream_info or weather__forecast).">{(p) => <input {...p} ref={toolRef} className="field mono" type="text" autoComplete="off" spellCheck={false} />}</Field>
+              <Field label="Arguments, as a JSON object" help="Run as the dashboard asking: an acting tool still waits for your confirmation.">{(p) => <textarea {...p} ref={argsRef} className="field mono" rows={4} spellCheck={false} placeholder="{}" />}</Field>
+              <Button size="sm" onClick={sendTool}>Send text</Button>
+            </div>
+          );
           if (type === "text") return (
             <div className="td-form" key={type}>
               <Field label="Message, sent as a chat message through the real pipeline">{(p) => <textarea {...p} ref={textRef} className="field" rows={3} placeholder="Type a fake viewer message…" />}</Field>

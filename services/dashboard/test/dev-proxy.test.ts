@@ -44,9 +44,38 @@ const upgrade = (path: string, headers: Record<string, string> = {}): Promise<st
 
 // @spec DASH-BUILD-007
 test("the proxied prefixes are exactly the dashboard's routes and the dev server's own paths are not proxied", () => {
-  assert.deepEqual([...PROXIED_PREFIXES], ["/ws", "/audio", "/services", "/stack", "/personality", "/control", "/mouth", "/inject", "/viewers", "/config", "/secrets", "/options", "/sink", "/health"]);
-  for (const p of ["/ws", "/audio/a.wav", "/services/control", "/stack", "/config/schema", "/secrets/llm.openai.api_key", "/options/models", "/health"]) assert.equal(isProxied(p), true, p);
-  for (const p of ["/", "/src/main.tsx", "/@vite/client", "/assets/x.js", "/servicesx", "/wsx", "/node_modules/.vite/deps/react.js"]) assert.equal(isProxied(p), false, p);
+  assert.deepEqual([...PROXIED_PREFIXES].sort(), ["/audio", "/avatar", "/config", "/control", "/health", "/inject", "/mouth", "/options", "/personality", "/secrets", "/services", "/sink", "/stack", "/tools", "/viewers", "/ws"]);
+  for (const p of ["/ws", "/audio/a.wav", "/services/control", "/stack", "/config/schema", "/secrets/llm.openai.api_key", "/options/models", "/health", "/tools", "/tools/x", "/avatar", "/avatar/model", "/avatar/models/a.vrm", "/avatar/ws", "/avatar/renderer"]) assert.equal(isProxied(p), true, p);
+  for (const p of ["/", "/src/main.tsx", "/@vite/client", "/assets/x.js", "/servicesx", "/wsx", "/node_modules/.vite/deps/react.js", "/avatar.html", "/avatar.html/x", "/avatarx", "/toolsx"]) assert.equal(isProxied(p), false, p);
+});
+
+// @spec DASH-BUILD-007
+test("/avatar and the paths under it reach the dashboard, while /avatar.html (the dev server's own entry file) is left to the dev server", async () => {
+  seen.length = 0;
+  assert.equal((await call("GET", "/avatar")).body, "from dashboard");
+  assert.equal((await call("GET", "/avatar/model")).body, "from dashboard");
+  assert.equal((await call("GET", "/avatar/renderer")).body, "from dashboard");
+  assert.deepEqual(seen.map((s) => s.url), ["/avatar", "/avatar/model", "/avatar/renderer"]);
+  assert.equal((await call("GET", "/avatar.html")).body, "dev server page");
+  assert.equal(seen.length, 3, "/avatar.html never reached the dashboard");
+});
+
+// @spec DASH-BUILD-007
+test("a /avatar/ws upgrade (a preview's query included) is forwarded under the /ws rules: own Origin rewritten, none added, any other Origin or a foreign Host refused 403", async () => {
+  seen.length = 0;
+  assert.match(await upgrade("/avatar/ws", { origin: `http://127.0.0.1:${devPort}` }), /^HTTP\/1.1 101/);
+  assert.equal(seen[0]!.url, "/avatar/ws");
+  assert.equal(seen[0]!.origin, `http://127.0.0.1:${targetPort}`);
+  assert.equal(seen[0]!.host, `127.0.0.1:${targetPort}`);
+  assert.match(await upgrade("/avatar/ws?preview=1"), /^HTTP\/1.1 101/);
+  assert.equal(seen[1]!.url, "/avatar/ws?preview=1");
+  assert.equal(seen[1]!.origin, undefined);
+  const before = seen.length;
+  assert.match(await upgrade("/avatar/ws", { origin: "http://evil.example" }), /^HTTP\/1.1 403/);
+  assert.match(await upgrade("/avatar/ws", { origin: "null" }), /^HTTP\/1.1 403/);
+  assert.match(await upgrade("/avatar/ws", { host: `evil.example:${devPort}`, origin: `http://evil.example:${devPort}` }), /^HTTP\/1.1 403/);
+  assert.match(await upgrade("/avatar/ws", { host: `evil.example` }), /^HTTP\/1.1 403/);
+  assert.equal(seen.length, before, "none of the refused upgrades reached the dashboard");
 });
 
 // @spec DASH-BUILD-007

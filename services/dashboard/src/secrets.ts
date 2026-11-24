@@ -36,13 +36,17 @@ const json = (res: http.ServerResponse, status: number, value: unknown, headers:
   res.end(JSON.stringify(value));
 };
 
-/** A value that is `null`, or a string non-empty after trimming with no line break or NUL inside; otherwise why not. */
+/**
+ * A value that is `null`, or a string non-empty after trimming with no control character inside (C0 and DEL, so no line
+ * break, NUL or tab); otherwise why not. The page refuses the same characters before it sends.
+ */
+// @spec DASH-SECRET-006
 function checkValue(v: unknown): { ok: true; value: string | null } | { ok: false; why: string } {
   if (v === null) return { ok: true, value: null };
   if (typeof v !== "string") return { ok: false, why: "value must be a string, or null to clear the secret" };
   const trimmed = v.trim();
   if (trimmed === "") return { ok: false, why: "value is empty after trimming; to remove a secret, send null" };
-  if (/[\r\n\0]/.test(trimmed)) return { ok: false, why: "value must be a single line with no NUL" };
+  if (/[\x00-\x1f\x7f]/.test(trimmed)) return { ok: false, why: "value must be a single line of printable characters" };
   return { ok: true, value: trimmed };
 }
 

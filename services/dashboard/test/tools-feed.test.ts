@@ -95,19 +95,20 @@ const byId = (frames: Record<string, unknown>[], type: string, id: string) => fr
 function assertRedacted(c: { events(): Record<string, unknown>[]; raw: string[] }, label: string): void {
   const req = byId(c.events(), "tool.request", "c1");
   assert.deepEqual(data(req).arguments, {}, `${label}: request arguments`);
-  assert.deepEqual({ ...data(req), arguments: undefined }, { id: "c1", tool: "recall", origin: "speech", round: 1, listed: true, injected: true, arguments: undefined }, `${label}: every other request member is unchanged`);
+  assert.deepEqual({ ...data(req), arguments: undefined }, { id: "c1", tool: "recall", origin: "speech", round: 1, listed: true, injected: true, redacted: true, arguments: undefined }, `${label}: every other request member is unchanged, and the emptied one says so`);
   const conf = byId(c.events(), "tool.confirm", "c2");
   assert.deepEqual(data(conf).arguments, {}, `${label}: confirm arguments`);
-  assert.deepEqual({ ...data(conf), arguments: undefined }, { id: "c2", tool: "weather__post", origin: "dashboard", expiresAt: 1_700_000_020_000, arguments: undefined }, `${label}: every other confirm member is unchanged`);
+  assert.deepEqual({ ...data(conf), arguments: undefined }, { id: "c2", tool: "weather__post", origin: "dashboard", expiresAt: 1_700_000_020_000, redacted: true, arguments: undefined }, `${label}: every other confirm member is unchanged, and the emptied one says so`);
   const res = byId(c.events(), "tool.result", "c1");
   assert.equal(data(res).content, "", `${label}: result content`);
   assert.equal("truncated" in data(res), false, `${label}: no truncated`);
-  assert.deepEqual(data(res), { id: "c1", tool: "recall", status: "ok", content: "", durationMs: 42, mock: true }, `${label}: status, duration and mock stay`);
+  assert.deepEqual(data(res), { id: "c1", tool: "recall", status: "ok", content: "", durationMs: 42, mock: true, redacted: true }, `${label}: status, duration and mock stay, and the emptied content says so`);
   const ref = byId(c.events(), "tool.result", "c3");
   assert.deepEqual(data(ref), { id: "c3", tool: "weather__post", status: "refused", reason: "denied", content: "", durationMs: 0 }, `${label}: a refusal keeps its reason`);
   assert.equal(c.raw.some((r) => r.includes(SECRET) && /"type":"tool\.(request|confirm|result)"/.test(r)), false, `${label}: the text of the three is on no frame`);
-  // only those three are touched
-  assert.equal(data(byId(c.events(), "tool.timer", "t1")).note, `remind ${SECRET}`, `${label}: tool.timer is unchanged`);
+  // the timer's note is emptied too (DASH-FEED-011); the catalog is not touched
+  assert.equal(data(byId(c.events(), "tool.timer", "t1")).note, "", `${label}: tool.timer note is emptied`);
+  assert.equal("redacted" in data(byId(c.events(), "tool.timer", "t1")), false, `${label}: a timer carries no redacted member`);
   assert.ok(JSON.stringify(c.events().find((f) => f.type === "tool.catalog")).includes(`describes ${SECRET}`), `${label}: tool.catalog is unchanged`);
 }
 
@@ -196,4 +197,19 @@ test("a LAN client and a loopback client on one feed each get their own form of 
   assert.deepEqual(data(a.events()[0]!).arguments, {});
   assert.deepEqual(data(c.events()[0]!).arguments, {});
   assert.deepEqual(data(b.events()[0]!).arguments, e.data.arguments);
+});
+
+// @spec DASH-FEED-011
+test("the text of an inject.request for the tools unit and the note of a tool.timer are emptied for a LAN socket in its replay; a call with no arguments is not marked redacted", async (t) => {
+  const inj = ev("inject.request", { id: "i1", target: "tools", kind: "text", text: `{"tool":"x","arguments":{"q":"${SECRET}"}}`, remember: false });
+  const timer = ev("tool.timer", { id: "t9", note: `remind ${SECRET}`, setAt: 1, dueAt: 2 });
+  const none = ev("tool.request", { id: "c9", tool: "stream_info", arguments: {}, origin: "speech", round: 1, listed: true });
+  const r = await rig(CTRL_OFF, [inj, timer, none]);
+  t.after(r.stop);
+  const lan = await r.connect(r.lan);
+  await waitFor(() => lan.frames.some((f) => f.type === "inject.request") && lan.frames.some((f) => f.type === "tool.timer") && lan.events().length >= 1, "the replay");
+  assert.equal(data(lan.frames.find((f) => f.type === "inject.request")!).text, "", "the tools text is emptied");
+  assert.equal(data(lan.frames.find((f) => f.type === "tool.timer")!).note, "", "the timer note is emptied");
+  assert.equal(lan.raw.some((x) => x.includes(SECRET) && x.includes('"target":"tools"')), false, "the text is on no frame");
+  assert.equal("redacted" in data(lan.events().find((f) => data(f).id === "c9")!), false, "nothing was held, so nothing is marked");
 });

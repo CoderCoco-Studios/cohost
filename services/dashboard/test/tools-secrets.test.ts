@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
@@ -179,4 +179,36 @@ test("GET /config/tools reports the token only as set or not set, never its valu
   assert.equal(keys["servers.weather.token"]!.set, true);
   assert.equal("value" in keys["servers.weather.token"]!, false);
   assert.equal("servers.*.token" in keys, false);
+});
+
+// @spec DASH-SECRET-013, MOD-CFG-005
+test("a token pasted into config.yaml under tools.servers is in no response of GET /config/tools", async () => {
+  const t = await boot("tools:\n  servers:\n    home:\n      url: https://h.example/mcp\n      token: sk-LEAK-123\n");
+  const r = await t.get("/config/tools");
+  assert.equal(r.status, 200);
+  assert.equal((await r.text()).includes("sk-LEAK-123"), false);
+});
+
+// @spec DASH-SECRET-006
+test("a value holding a control character (tab, CR, bell, DEL) is 400 and nothing is written", async () => {
+  const t = await boot();
+  for (const v of ["mcp\tx", "mcp\rx", "mcp\x07x", "mcp\x7fx"]) {
+    assert.equal((await t.put(`/secrets/${WEATHER}`, { value: v })).status, 400, JSON.stringify(v));
+  }
+  assert.equal(t.secretsText(), "");
+});
+
+// @spec DASH-SECRET-013
+test("a set is refused 404 while config.yaml is missing, invalid or unreadable: no server is known, so no token is stored", async () => {
+  // boot(undefined) would write the default file (its default parameter), so the file is removed after the boot
+  const missing = await boot();
+  rmSync(missing.configFile);
+  assert.equal((await missing.put(`/secrets/${WEATHER}`, { value: "x-1" })).status, 404, "missing");
+  const invalid = await boot("tools: [unclosed\n");
+  assert.equal((await invalid.put(`/secrets/${WEATHER}`, { value: "x-2" })).status, 404, "invalid");
+  const unreadable = await boot(WITH_WEATHER);
+  rmSync(unreadable.configFile);
+  mkdirSync(unreadable.configFile);
+  assert.equal((await unreadable.put(`/secrets/${WEATHER}`, { value: "x-3" })).status, 404, "unreadable");
+  assert.equal(missing.secretsText() + invalid.secretsText() + unreadable.secretsText(), "");
 });

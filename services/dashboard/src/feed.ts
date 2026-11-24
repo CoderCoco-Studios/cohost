@@ -49,18 +49,30 @@ const forwardable = (ev: BusEvent): boolean => ev.type !== "service.heartbeat" &
 // @spec DASH-FEED-011, DASH-FEED-012
 /**
  * The form of an event a redacted socket is sent: `tool.request` and `tool.confirm` with `arguments: {}`, `tool.result`
- * with empty `content` and no `truncated`, every other member and event type unchanged. Returns a copy; the shared event
- * is never mutated, so a loopback socket on the same feed still gets it whole.
+ * with empty `content` and no `truncated`, an `inject.request` for the tools unit with empty `text`, a `tool.timer` with
+ * empty `note`; every other member and event type unchanged. An event that held something to empty gets `redacted: true`
+ * (the /ws `redacted` member, DASH-FEED-011), so the owner's page can say why a call shows no arguments. Returns a copy; the shared event is never
+ * mutated, so a loopback socket on the same feed still gets it whole.
  */
+// @spec DASH-FEED-011
 export function redactEvent<E extends BusEvent>(ev: E): E {
   const data = ev.data as unknown as Record<string, unknown>;
-  if (ev.type === "tool.request" || ev.type === "tool.confirm") return { ...ev, data: { ...data, arguments: {} } };
+  if (ev.type === "tool.request" || ev.type === "tool.confirm") {
+    const held = isFilled(data.arguments);
+    return { ...ev, data: { ...data, arguments: {}, ...(held ? { redacted: true } : {}) } };
+  }
   if (ev.type === "tool.result") {
     const { truncated: _truncated, ...rest } = data;
-    return { ...ev, data: { ...rest, content: "" } };
+    const held = typeof data.content === "string" && data.content !== "";
+    return { ...ev, data: { ...rest, content: "", ...(held ? { redacted: true } : {}) } };
   }
+  if (ev.type === "inject.request" && data.target === "tools") return { ...ev, data: { ...data, text: "" } };
+  if (ev.type === "tool.timer") return { ...ev, data: { ...data, note: "" } };
   return ev;
 }
+
+/** Whether an arguments object holds any key (a call with none has nothing to hide). */
+const isFilled = (args: unknown): boolean => typeof args === "object" && args !== null && Object.keys(args).length > 0;
 
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 export const stackMessage = (snapshot: object): string => JSON.stringify({ type: "stack", ...snapshot });

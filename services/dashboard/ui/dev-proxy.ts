@@ -1,8 +1,8 @@
 import http from "node:http";
 import type { Duplex } from "node:stream";
 
-/** The dashboard routes the dev server forwards (DASH-BUILD-007); every other path is the dev server's own. */
-export const PROXIED_PREFIXES = ["/ws", "/audio", "/services", "/stack", "/personality", "/control", "/mouth", "/inject", "/viewers", "/config", "/secrets", "/options", "/sink", "/health"] as const;
+/** The dashboard routes the dev server forwards (DASH-BUILD-007), the renderer page's `/avatar` among them; every other path, `/avatar.html` included, is the dev server's own. */
+export const PROXIED_PREFIXES = ["/ws", "/audio", "/services", "/stack", "/personality", "/control", "/mouth", "/inject", "/tools", "/viewers", "/config", "/secrets", "/options", "/sink", "/health", "/avatar"] as const;
 
 /** True for a path that is a proxied prefix or below one (`/services/control`, not `/servicesx`). */
 export function isProxied(pathname: string): boolean {
@@ -43,7 +43,7 @@ const FORBIDDEN = "HTTP/1.1 403 Forbidden\r\nconnection: close\r\ncontent-length
 export interface DevProxy {
   /** Handles a request for a proxied path; false when the path is the dev server's own. */
   middleware(req: http.IncomingMessage, res: http.ServerResponse): boolean;
-  /** Handles a `/ws` upgrade; false when it is not one (the dev server's own HMR socket). */
+  /** Handles a `/ws` or `/avatar/ws` upgrade; false when it is not one (the dev server's own HMR socket). */
   upgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): boolean;
 }
 
@@ -84,7 +84,7 @@ export function createDevProxy(targetUrl: string): DevProxy {
     },
     upgrade(req, socket, head) {
       const pathname = new URL(req.url ?? "/", "http://x").pathname;
-      if (pathname !== "/ws") return false;
+      if (pathname !== "/ws" && pathname !== "/avatar/ws") return false;
       if (refused(req)) { socket.end(FORBIDDEN); return true; }
       const out = http.request({ host: target.hostname, port: target.port, path: req.url, method: "GET", headers: forwardHeaders(req) });
       out.on("upgrade", (up, upSocket, upHead) => {

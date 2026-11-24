@@ -19,5 +19,5 @@
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": false
   },
-  "include": ["src", "index.d.ts", "vite.config.ts", "dev-proxy.ts", "../test/ui"]
+  "include": ["src", "index.d.ts", "vite.config.ts", "dev-proxy.ts", "notices.ts", "../test/ui"]
 }

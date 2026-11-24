@@ -113,6 +113,8 @@ Choose the model in `renderer.model` (blank draws the built-in placeholder). A s
 
 The model is served to anyone who can reach the LAN listener, without a token, so keep that listener off networks you do not trust if the model is under a licence that forbids redistribution. The terms a model carries are its author's; cohost enforces none of them.
 
+The renderer page itself is at `/avatar` (for OBS, see [OBS and the avatar renderer](../connect/obs.md#steps-the-avatar-renderer-in-obs)). It is a separate page of the build, with its own script, and it loads the 3D libraries it draws with only there; the sink page and the dashboard do not carry them. The libraries' licence notices are written beside the build as `assets/third-party-notices-<hash>.txt`, and the build fails if a bundled library has a licence the owner has not allowed.
+
 ## Keyboard shortcuts
 
 Press `?` anywhere to see this list.

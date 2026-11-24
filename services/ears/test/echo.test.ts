@@ -73,7 +73,7 @@ test("a virtual voice.playing opens no gate", async () => {
 });
 
 // @spec EARS-ECHO-002, EARS-ECHO-004
-test("a voice.done removes the line (interrupted or not, from any sink); the gate then stays open for echo_tail_ms and closes after", async () => {
+test("a non-virtual voice.done removes the line (interrupted or not, from any non-virtual sink); the gate then stays open for echo_tail_ms and closes after", async () => {
   for (const extra of [{}, { interrupted: true }]) {
     await run(cfg(), async (t) => {
       await t.deliver(playing("u1"));
@@ -230,5 +230,95 @@ test("each clause expires 60000 ms after its own voice.playing, not after the li
     t.jump(31_000); // clause 1 is 61 s old
     await t.say();
     await waitFor(() => t.r.heard().length === 1, "heard once clause 1 expired too");
+  });
+});
+
+// A voice.done from a virtual sink says nothing about Discord playout (EARS-ECHO-002): it neither removes a clause nor closes the gate.
+const virtualDone = (id: string, seq = 0, extra: Record<string, unknown> = {}) => event("voice.done", { id, seq, sink: "virtual", ...extra } as never);
+
+// @spec EARS-ECHO-002
+test("a virtual voice.done for a recorded clause neither removes it nor closes the gate (interrupted or not, final or not)", async () => {
+  for (const extra of [{}, { interrupted: true }, { final: true }]) {
+    await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+      await t.deliver(playing("u1")); // discord sink: recorded
+      await t.deliver(virtualDone("u1", 0, extra)); // the dashboard finished first
+      await t.say();
+      await settle();
+      assert.equal(t.r.heard().length, 0, `still gated: ${JSON.stringify(extra)}`);
+      assert.equal(t.stt.calls.length, 0);
+    });
+  }
+});
+
+// @spec EARS-ECHO-002
+test("a virtual sink finishing first and then Discord: only the Discord done closes the gate (after the tail)", async () => {
+  await run(cfg(), async (t) => {
+    await t.deliver(playing("u1"));
+    await t.deliver(virtualDone("u1"));
+    t.jump(5_000); // far past any tail: the virtual done must not have started one
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "Discord still plays");
+    await t.deliver(done("u1")); // sink discord
+    await t.say(); // inside the tail
+    await settle(300);
+    assert.equal(t.r.heard().length, 0, "tail after the Discord done");
+    t.jump(1_000);
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard after the Discord tail");
+  });
+});
+
+// @spec EARS-ECHO-002
+test("two sinks report the same clause: the virtual done removes nothing, the non-virtual done removes the clause", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(clause("L", 0)); // discord
+    await t.deliver(clause("L", 0, "virtual")); // virtual playing is not recorded
+    await t.deliver(virtualDone("L", 0));
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "the virtual sink's done removed nothing");
+    await t.deliver(clauseDone("L", 0));
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard once the Discord done removed it");
+  });
+});
+
+// @spec EARS-ECHO-002
+test("a virtual voice.done of one clause leaves a line's other clauses and the matching Discord clause recorded", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(clause("L", 0));
+    await t.deliver(clause("L", 1));
+    await t.deliver(virtualDone("L", 0));
+    await t.deliver(virtualDone("L", 1, { final: true }));
+    await t.deliver(clauseDone("L", 0)); // discord removes clause 0 only
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "clause 1 is still recorded");
+  });
+});
+
+// @spec EARS-ECHO-002
+test("a virtual voice.done for an id never recorded is a no-op: it opens no window and does not throw", async () => {
+  await run(cfg({ echo_tail_ms: 5_000 }), async (t) => {
+    await t.deliver(virtualDone("ghost", 7));
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard: the unknown virtual done opened no tail");
+  });
+});
+
+// @spec EARS-ECHO-002
+test("a virtual voice.done between two lines does not shorten or end the later line's window (the gate re-closes only on its Discord done)", async () => {
+  await run(cfg({ echo_tail_ms: 0 }), async (t) => {
+    await t.deliver(playing("a"));
+    await t.deliver(done("a")); // gate closes
+    await t.deliver(playing("b")); // gate re-opens
+    await t.deliver(virtualDone("b"));
+    await t.say();
+    await settle();
+    assert.equal(t.r.heard().length, 0, "b still plays on Discord");
+    await t.deliver(done("b"));
+    await t.say();
+    await waitFor(() => t.r.heard().length === 1, "heard after b's Discord done");
   });
 });

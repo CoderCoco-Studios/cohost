@@ -69,10 +69,10 @@ test("a frame that is not an object is dropped without throwing", () => {
 });
 
 // @spec DASH-AVP-012
-test("the smile weight is clamp((mouthSmile - 0.15) / 0.85, 0, 1): rest shows nothing, the Engine's 0.7 shows 0.65", () => {
+test("the smile weight is clamp((mouthSmile - 0.15) / 0.85, 0, 1): rest shows nothing, the Engine's 0.7 shows (0.7 - 0.15) / 0.85", () => {
   close(smileWeight(0.15), 0);
   close(smileWeight(0), 0);
-  close(smileWeight(0.7), 0.65);
+  close(smileWeight(0.7), (0.7 - 0.15) / 0.85); // 0.647..., the formula's exact value
   close(smileWeight(1), 1);
   close(smileWeight(0.575), 0.5);
   close(smileWeight(1.5), 1);
@@ -123,7 +123,7 @@ test("a name that is already a 1.0 preset, or that is an Object.prototype proper
 test("expression writes: an empty frame expression writes happy to the smile weight, then aa and blink", () => {
   const w = expressionWrites("", { ...REST_FRAME, mouthOpen: 0.4, blink: 0.1, mouthSmile: 0.7 });
   assert.deepEqual(w.map((x) => x.name), ["happy", "aa", "blink"]);
-  close(w[0]!.weight, 0.65); assert.equal(w[1]!.weight, 0.4); assert.equal(w[2]!.weight, 0.1);
+  close(w[0]!.weight, (0.7 - 0.15) / 0.85); assert.equal(w[1]!.weight, 0.4); assert.equal(w[2]!.weight, 0.1);
 });
 
 // @spec DASH-AVP-010
@@ -147,7 +147,7 @@ test("when the frame's expression is happy, happy takes the larger of the smile 
   const big = expressionWrites("", { ...REST_FRAME, expression: "happy", intensity: 0.9, mouthSmile: 0.7 });
   assert.equal(big.filter((x) => x.name === "happy").at(-1)!.weight, 0.9);
   const small = expressionWrites("", { ...REST_FRAME, expression: "happy", intensity: 0.2, mouthSmile: 0.7 });
-  close(small.filter((x) => x.name === "happy").at(-1)!.weight, 0.65);
+  close(small.filter((x) => x.name === "happy").at(-1)!.weight, (0.7 - 0.15) / 0.85);
   const after = expressionWrites("happy", { ...REST_FRAME, expression: "sad", intensity: 1, mouthSmile: 0.15 });
   assert.equal(after.filter((x) => x.name === "happy").at(-1)!.weight, 0);
 });

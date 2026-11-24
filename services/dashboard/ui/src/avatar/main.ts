@@ -2,6 +2,7 @@
 // draw per animation frame (DASH-AVP-031) reads the snapshot, applies the pose and framing, steps the model and renders.
 import { canvasSize, clampStepSeconds, framingPlan } from "./framing";
 import { createReconnect } from "./reconnect";
+import { createModelRelay } from "./relay";
 import { contextLossWait } from "./context-loss";
 import { createModelLoader, type ModelReport } from "./model-loader";
 import { acceptDraft, statusLine } from "./preview";
@@ -34,14 +35,16 @@ function refreshStatus(): void {
   }));
 }
 
+// A preview sends no model report (DASH-AVP-039).
+const relay = createModelRelay({ preview, send });
+
 const loader = createModelLoader<LoadedModel>({
   fetchModel: (url, { signal, bypassCache }) => fetch(url, { signal, cache: bypassCache ? "reload" : "default", credentials: "omit" }),
   build: (bytes, signal) => loadVrm(stage, bytes, signal),
   dispose: (m) => disposeVrm(stage, m),
   report: (r: ModelReport) => {
     loadState = { state: r.state, detail: r.detail };
-    // A preview never reports: a loopback page must not overwrite the owner's health line for the real OBS page (owner ruling 5).
-    if (!preview) send({ type: "model", version: r.version, state: r.state, detail: r.detail });
+    relay(r);
     refreshStatus();
   },
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),

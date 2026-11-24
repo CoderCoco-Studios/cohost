@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**PARTIAL.** The spec file holds 285 specs: 235 `[x]`, 49 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The tool loop (CTX-TOOL, CTX-PROMPT-016 to 020, CTX-STREAM-003, 004, 011 to 013, 019, 030 and 031, CTX-SAY-003, 008 to 010, CTX-INJ-001, CTX-HEALTH-008 and 009) is `[x]`. Open: the early-reply specs (CTX-PROV, CTX-INTJ), CTX-GATE-001, CTX-EVT-001 and 009, CTX-SAY-006, CTX-START-002. The LLD has open questions (a repeat on a mention).
+**PARTIAL.** The spec file holds 285 specs: 284 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The early reply (CTX-PROV, CTX-INTJ, and CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) closed with #225. The LLD has open questions (a repeat on a mention) and #225's readings are open owner questions in its PR body.
 
 ## Spoken fallback line
 
@@ -115,26 +115,26 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Event handling | CTX-EVT-001 to CTX-EVT-013 | 11 | 0 | 2 |
-| Think gating | CTX-GATE-001 to CTX-GATE-013 | 12 | 0 | 1 |
+| Event handling | CTX-EVT-001 to CTX-EVT-013 | 13 | 0 | 0 |
+| Think gating | CTX-GATE-001 to CTX-GATE-013 | 13 | 0 | 0 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-004 | 4 | 0 | 0 |
 | Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-011 | 11 | 0 | 0 |
-| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-020 | 13 | 0 | 7 |
+| Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-020 | 20 | 0 | 0 |
 | Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-012 | 12 | 0 | 0 |
 | Critic | CTX-CRITIC-001 to CTX-CRITIC-013 | 13 | 0 | 0 |
-| Saying | CTX-SAY-001 to CTX-SAY-010 | 5 | 0 | 5 |
+| Saying | CTX-SAY-001 to CTX-SAY-010 | 10 | 0 | 0 |
 | Control | CTX-CTRL-001 to CTX-CTRL-011 | 11 | 0 | 0 |
 | Interruptible speech | CTX-REPLAN-001 | 0 | 1 | 0 |
-| Test injection | CTX-INJ-001 to CTX-INJ-002 | 1 | 0 | 1 |
-| Startup and shutdown | CTX-START-001 to CTX-START-005 | 4 | 0 | 1 |
-| Health | CTX-HEALTH-001 to CTX-HEALTH-009 | 7 | 0 | 2 |
+| Test injection | CTX-INJ-001 to CTX-INJ-002 | 2 | 0 | 0 |
+| Startup and shutdown | CTX-START-001 to CTX-START-005 | 5 | 0 | 0 |
+| Health | CTX-HEALTH-001 to CTX-HEALTH-009 | 9 | 0 | 0 |
 | Repetition check | CTX-REPEAT-001 to CTX-REPEAT-015 | 15 | 0 | 0 |
-| Streamed reply | CTX-STREAM-001 to CTX-STREAM-037 | 30 | 0 | 7 |
+| Streamed reply | CTX-STREAM-001 to CTX-STREAM-037 | 37 | 0 | 0 |
 | Forgetting | CTX-FORGET-001 to CTX-FORGET-003 | 3 | 0 | 0 |
-| Early reply, tools, release | CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL | 16 | 0 | 85 |
+| Early reply, tools, release | CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL | 101 | 0 | 0 |
 
-**Summary:** 285 specs: 173 implemented, 111 gaps, 1 deferred. The early-reply and tool specs (CTX-PROV, CTX-INTJ, CTX-TOOL) are gaps; the release specs (CTX-REL) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 285 specs: 284 implemented, 0 gaps, 1 deferred. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -147,11 +147,10 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 7. **Tag/stop contract is pinned** — `transcript-stops.test.ts` captures the stop list the Ollama and OpenAI-compatible providers send (`TRANSCRIPT_STOPS` is not exported) and checks it against `TRANSCRIPT_TAGS` and the rendered transcript.
 8. **`forget_context` relies on `Context.clear`** — the cortex calls `ctx.clear()`, which also resets `lastVision` (working-memory).
 9. **Own-vs-other `brain.say` depends on the bus source string** — `ev.source !== "cortex"` in `cortex.ts` ties behaviour to `new Bus("cortex")` built by the bootstrap.
+11. **One held think at a time** — `held` in `cortex.ts` is the provisional think of a `provisional` `attention.focus` (`openHold`); its clauses are queued on the reply's `Line` (`heldOf`, `lineOut`) and published by `drain` on release, `releaseHeld` runs the mute and busy re-check, `endHeld` aborts the stream through its signal and publishes the no-line exit unless it is a replacement. `onResolve` matches `attention.resolve` by `utteranceId` and `seq`.
 10. **Critic misconfiguration fails through the bootstrap** — the `Module` constructor throws for an unusable critic config (`packages/modules/src/index.ts`) while `cortexMain` builds the critic, so it takes the `fatal` path and exits 1 (`CTX-START-005`).
 
 ## Work Required
 
-- Streamed reply: CTX-STREAM-003, 004 (implemented; not yet flipped), 011 to 013, 019, 030 are open.
-- Early reply and tools (CTX-PROV, CTX-INTJ, CTX-TOOL) are open.
-- Event handling: CTX-EVT-001 and CTX-EVT-009 are open. `CORTEX_EVENTS` in `startup.ts` includes `voice.utterance` and `voice.playing` for the release logic (CTX-REL-001, CTX-REL-002); the rest of CTX-EVT-001's list is owned by #225.
-- The LLD's open questions: a repeat on a mention.
+- None open in the spec file (Spec Coverage above). The LLD's open question: a repeat on a mention.
+- Owner readings adopted in #225 (the no-line result publishes only its status, the mute's `muted` is the only status for a held end, `confirmedAt` is the resolve's arrival, interjected release takes the final's timing) are open for owner review; see that PR.

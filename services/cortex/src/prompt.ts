@@ -24,8 +24,10 @@ export function buildMessages(opts: {
   glitch?: Glitch;
   /** Whether tools are offered for this reply (CTX-PROMPT-016). */
   tools?: boolean;
+  /** The early text of a provisional focus, a transient last transcript line (CTX-PROV-005). */
+  early?: { speaker: string; text: string };
 }): ChatMessage[] {
-  const { cfg, personality, ctx, memories, focus, mood, viewerNote, people = [], glitch, tools = false } = opts;
+  const { cfg, personality, ctx, memories, focus, mood, viewerNote, people = [], glitch, tools = false, early } = opts;
   const now = new Date().toLocaleString("en-US", { timeZone: cfg.cohost.timezone });
 
   const memBlock = memories.length
@@ -52,7 +54,7 @@ export function buildMessages(opts: {
     .filter(Boolean)
     .join("\n");
 
-  const transcript = ctx.transcript(cfg.cohost.name);
+  const transcript = ctx.transcript(cfg.cohost.name, early);
   const nudge = describeFocus(focus, cfg.cohost.name, cfg.viewer_text);
 
   return [

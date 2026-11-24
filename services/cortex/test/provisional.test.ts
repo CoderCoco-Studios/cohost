@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { event, waitFor } from "@cohost/testing";
 import {
-  EARLY, J, call, chatFocus, confirm, control, endOther, gate, opened, ordinary, other, provisional, setup, sleep, streamed, systemMsg,
+  EARLY, FINAL, J, call, chatFocus, confirm, control, endOther, gate, opened, ordinary, other, provisional, setup, sleep, streamed, systemMsg,
   userMsg, withdraw, type S,
 } from "./provisional.fixture.js";
 
@@ -161,7 +161,10 @@ test("a released reply is the reply an ordinary think of the same model text pub
     await prov.cortex.onEvent(confirm());
     await waitFor(() => prov.says().length === 1, "released say");
     await sleep(30);
-    assert.deepEqual(withoutIds(prov.line()), withoutIds(ord.line()), shape.text);
+    // The reply's shape: its text, clause order, closing clause and cut; the stamps and the ids differ by design (CTX-PROV-025).
+    const shapeOf = (events: { text: string; seq?: number; last?: true; through?: number; cut?: string; more?: true }[]) =>
+      events.map((e) => ({ text: e.text, seq: e.seq ?? null, last: e.last ?? null, through: e.through ?? null, cut: e.cut ?? null, more: e.more ?? null }));
+    assert.deepEqual(shapeOf(prov.line() as never), shapeOf(ord.line() as never), shape.text);
   }
 });
 const FINAL_TEXT = "hey Coco what time is it?";
@@ -215,7 +218,7 @@ test("a tool call parks the think: the text before it is held, no tool.request u
   assert.equal(s.says().length, 0);
   const before = Date.now();
   await s.cortex.onEvent(confirm());
-  await waitFor(() => s.says().some((d) => d.text === "It is noon."), "the second round is spoken");
+  await waitFor(() => s.line().some((e) => e.text === "It is noon."), "the second round is spoken");
   assert.equal(s.bus.requests.length, 1, "the request goes out after the confirm");
   assert.ok(s.bus.reqAt[0]! >= before, "tool.request is published after the confirmation");
   const say = s.says()[0]!;
@@ -304,7 +307,8 @@ test("a released think publishes brain.status thinking, then brain.say, then the
   const after = s.bus.published.slice(n).filter((p) => p.type === "brain.status" || p.type === "brain.say" || p.type === "brain.clause").map((p) => p.type);
   assert.equal(after[0], "brain.status");
   assert.equal((s.bus.published[n]!.data as { state: string }).state, "thinking");
-  assert.deepEqual(after.slice(1, 4), ["brain.say", "brain.clause", "brain.clause"]);
+  // CTX-STREAM-018: the released reply is an ordinary one, so the first clause's `speaking` status follows its brain.say.
+  assert.deepEqual(after.slice(1), ["brain.say", "brain.status", "brain.clause", "brain.clause"]);
 });
 
 // ---- the hold limit (CTX-PROV-010, 014, 029, 035) ----
@@ -395,23 +399,44 @@ test("a withdraw for the held utterance and seq ends the think: stream aborted, 
   await waitFor(() => s.says().length === 1, "free for an ordinary think");
 });
 
-// @spec CTX-PROV-011, CTX-PROV-024
-test("a withdraw for another utterance or seq, or with no think held, changes nothing", async () => {
+// @spec CTX-PROV-024
+test("a withdraw with no think held changes nothing", async () => {
   const none = setup();
   await none.cortex.onEvent(withdraw());
   await sleep(30);
   assert.deepEqual(none.bus.published, []);
   assert.equal(none.llm.calls.length, 0);
+});
 
+// @spec CTX-PROV-011, CTX-PROV-023, CTX-PROV-024
+test("a withdraw for another utterance or seq ends the held think as a replacement: no idle, and a later confirm is an ordinary focus", async () => {
+  for (const mismatch of [{ utteranceId: "u2" }, { seq: 1 }]) {
+    const s = setup();
+    await hold(s);
+    await s.cortex.onEvent(withdraw("resumed", mismatch));
+    await sleep(30);
+    assert.deepEqual(s.statuses(), ["thinking"], JSON.stringify(mismatch));
+    assert.equal(s.says().length + s.clauses().length, 0, JSON.stringify(mismatch));
+    // Nothing is held now, so the confirm of the held utterance is an ordinary focus with a model call of its own.
+    s.llm.rounds.push({ text: "[happy] Half past noon, I think." });
+    await s.cortex.onEvent(confirm());
+    await waitFor(() => s.says().length === 1, "an ordinary reply");
+    assert.equal(s.llm.calls.length, 2, JSON.stringify(mismatch));
+    assert.equal(s.says()[0]!.timing!.confirmedAt, undefined);
+  }
+});
+
+// @spec CTX-PROV-015, CTX-PROV-023, CTX-PROV-034
+test("a confirm for another utterance ends the held think as a replacement, then is taken as an ordinary focus", async () => {
   const s = setup();
-  await hold(s);
-  await s.cortex.onEvent(withdraw("resumed", { utteranceId: "u2" }));
-  await s.cortex.onEvent(withdraw("resumed", { seq: 1 }));
-  await sleep(30);
-  assert.equal(s.llm.endedAborted[0], false);
-  assert.deepEqual(s.statuses(), ["thinking"]);
-  await s.cortex.onEvent(confirm());
-  await waitFor(() => s.says().length === 1, "still held, so released");
+  await holdOpen(s);
+  s.llm.rounds.push({ text: "[happy] Half past noon, I think." });
+  await s.cortex.onEvent(confirm({ utteranceId: "u2", seq: 0 }));
+  await waitFor(() => s.says().length === 1, "an ordinary reply");
+  assert.equal(s.llm.endedAborted[0], true, "the held stream was aborted");
+  assert.equal(s.llm.calls.length, 2);
+  assert.ok(!s.statuses().includes("idle"), "the ended think publishes no idle");
+  assert.equal(s.says()[0]!.timing!.focusedAt !== undefined, true);
 });
 
 // @spec CTX-PROV-012, CTX-PROV-016, CTX-PROV-033
@@ -555,7 +580,7 @@ test("an ordinary focus for the same utterance with the same text is the confirm
   await sleep(20);
   const before = Date.now();
   await s.cortex.onEvent(ordinary());
-  await waitFor(() => s.clauses().some((c) => c.last), "released");
+  await waitFor(() => s.says().length === 1, "released");
   assert.equal(s.llm.calls.length, 1, "the held reply is used");
   assert.equal(s.llm.endedAborted[0], false);
   const t = s.says()[0]!.timing!;
@@ -567,6 +592,8 @@ test("an ordinary focus for the same utterance with the same text is the confirm
 // @spec CTX-PROV-023, CTX-SAY-006
 test("a confirm with no held think is an ordinary focus built from its fields, focusedAt the resolve ts and no confirmedAt", async () => {
   const s = setup();
+  // The final's speech reaches the window before its confirm, as it does in the running service.
+  await s.cortex.onEvent(event("speech.heard", { speaker: "Chris", text: FINAL, durationMs: 900, source: "mic", utteranceId: "u1" }, "ears"));
   s.llm.rounds.push({ text: "[happy] Half past noon, I think." });
   const resolve = confirm({ injected: true, remember: false, reason: "engaged" });
   await s.cortex.onEvent(resolve);

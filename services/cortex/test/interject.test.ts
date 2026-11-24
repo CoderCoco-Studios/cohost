@@ -150,3 +150,21 @@ test("the status of an unreleased interjected confirm is the no-line status: spe
   await waitFor(() => s.statuses().at(-1) === "speaking", "speaking");
   assert.equal(s.says().length, 0);
 });
+
+// @spec CTX-INTJ-001, CTX-INTJ-002, CTX-PROV-036
+test("an interjected confirm that fails the mute and busy re-check drops the reply, but the unfinished line is still pushed", async () => {
+  const s = setup();
+  const seen = watchWindow(s);
+  s.llm.rounds.push({ text: MULTI });
+  await s.cortex.onEvent(provisional());
+  await streamed(s);
+  await other(s); // a reflex line is playing when the interjection lands
+  const thinkingBefore = s.statuses().filter((x) => x === "thinking").length;
+  await s.cortex.onEvent(interjected());
+  await waitFor(() => s.statuses().at(-1) === "speaking", "speaking");
+  assert.equal(s.says().length + s.clauses().length, 0, "the held reply is dropped");
+  assert.equal(s.statuses().filter((x) => x === "thinking").length, thinkingBefore, "no thinking after the failed re-check");
+  assert.deepEqual(seen.atSay, [], "no brain.say was published");
+  const unfinished = s.cortex.ctx.all().flatMap((e) => (e.kind === "speech" && e.unfinished ? [[e.utteranceId, e.text]] : []));
+  assert.deepEqual(unfinished, [["u1", EARLY]], "the unfinished line is in the window");
+});

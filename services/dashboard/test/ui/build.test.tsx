@@ -163,7 +163,7 @@ function parses(js: string): { ok: boolean; stderr: string } {
 }
 
 // @spec DASH-BUILD-009, DASH-AVS-011
-test("every entry script parses, and the dashboard entry holds the notices name as a string and no bare build constant", () => {
+test("every entry script parses, and the dashboard entry holds the notices name as a string and no sentinel literal", () => {
   assert.equal(r.status, 0, r.stderr + r.stdout);
   for (const page of ["index.html", "avatar.html"] as const) {
     const js = read(entryFiles(page).scripts[0]!);
@@ -173,5 +173,5 @@ test("every entry script parses, and the dashboard entry holds the notices name 
   const name = notices()[0]!;
   const idx = indexJs();
   assert.ok(idx.includes(JSON.stringify(name)), "the index entry names the notices file as a string literal");
-  assert.doesNotMatch(idx, /(?<![\w$.'"`])__COHOST_NOTICES__(?![\w$])/, "no bare build constant is left in the index entry");
+  assert.ok(!idx.includes('"__COHOST_NOTICES_NAME__"') && !idx.includes("'__COHOST_NOTICES_NAME__'"), "no sentinel literal is left in the index entry");
 });

@@ -42,6 +42,12 @@ function useRendererPages(on: boolean): RendererPages | null | undefined {
   return pages;
 }
 
+/**
+ * The avatar preview: the SVG face drawn from the latest `avatar.state`, the driver name (with "(disconnected)" when it
+ * is not connected) and the current emotion, which mirrors what the avatar driver receives. `avatar.state` adds no feed
+ * row (DASH-UI-004). The card is dimmed and `aria-busy` while the socket is closed (DASH-UI-001).
+ */
+// @spec DASH-UI-004, DASH-UI-001
 export function AvatarCard() {
   const latest = useFeed((f) => f.latest["avatar.state"]);
   const waiting = useFeed((f) => f.status === "connecting" && f.stoppedAt === undefined);

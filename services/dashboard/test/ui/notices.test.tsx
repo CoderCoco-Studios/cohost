@@ -129,9 +129,9 @@ test("a manifest's licence is its license string or object type; the legacy lice
 });
 
 // @spec DASH-AVS-011
-test("the build's constant becomes the notices name as a string, and the globalThis fallback in the same script is left alone", () => {
-  const src = 'var n = typeof __COHOST_NOTICES__ !== "undefined" ? __COHOST_NOTICES__ : globalThis.__COHOST_NOTICES__; x.__COHOST_NOTICES__ = "";';
+test("the sentinel literal is replaced as a whole string, and nothing that only resembles it (a member access, a key, a longer string) is touched", () => {
+  const src = 'const B = "__COHOST_NOTICES_NAME__"; const g = globalThis.__COHOST_NOTICES__; const o = { __COHOST_NOTICES__: 1, ...x, __COHOST_NOTICES_NAME__: 2 }; const s = "a__COHOST_NOTICES_NAME__"; const q = \'__COHOST_NOTICES_NAME__\'; const t = `__COHOST_NOTICES_NAME__`;';
   const out = substituteNoticesName(src, "third-party-notices-abcd1234.txt");
-  assert.equal(out, 'var n = typeof "third-party-notices-abcd1234.txt" !== "undefined" ? "third-party-notices-abcd1234.txt" : globalThis.__COHOST_NOTICES__; x.__COHOST_NOTICES__ = "";');
+  assert.equal(out, 'const B = "third-party-notices-abcd1234.txt"; const g = globalThis.__COHOST_NOTICES__; const o = { __COHOST_NOTICES__: 1, ...x, __COHOST_NOTICES_NAME__: 2 }; const s = "a__COHOST_NOTICES_NAME__"; const q = "third-party-notices-abcd1234.txt"; const t = "third-party-notices-abcd1234.txt";');
   assert.doesNotThrow(() => new Script(out), "the substituted script still parses");
 });

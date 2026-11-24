@@ -30,8 +30,12 @@ const NOT_HERE = "The models are not available here: the model store is served o
 function useModels(): [ListState, () => Promise<void>] {
   const api = useApi();
   const [list, setList] = useState<ListState>({ status: "loading" });
+  // Reads are numbered: an answer is taken only while no later read has been started, so an older answer cannot replace a newer one.
+  const latest = useRef(0);
   const read = async (): Promise<void> => {
+    const mine = ++latest.current;
     const r = await api.get<{ models?: unknown; maxBytes?: unknown }>("/avatar/models");
+    if (mine !== latest.current) return;
     if (r.ok && Array.isArray(r.data?.models) && typeof r.data.maxBytes === "number") {
       setList({ status: "ready", models: r.data.models as StoredModel[], maxBytes: r.data.maxBytes });
     } else if (!r.ok && r.status === 404) {

@@ -55,7 +55,7 @@ function readPackage(dir: string, name: string): BundledPackage {
 
 /**
  * Writes `assets/third-party-notices-<hash>.txt` for the packages every entry bundles, and names it on the first line of
- * each entry script. The file name also replaces `__COHOST_NOTICES__` in each entry, so the Avatar settings can link to it.
+ * each entry script. The file name also replaces the notices sentinel literal in each entry, so the Avatar settings can link to it.
  * A licence the allow-list refuses, or a package with no licence text, fails the build (DEPLOY-LIC-005 to -007).
  */
 function thirdPartyNotices(): Plugin {

@@ -128,18 +128,21 @@ export function buildNotices(packages: readonly BundledPackage[]): Notices {
   return { text, fileName: `third-party-notices-${hash}.txt` };
 }
 
-/** The build-time constant the dashboard reads for the notices file name (ui/src/app/notices.ts, DASH-AVS-011). */
-export const NOTICES_CONSTANT = "__COHOST_NOTICES__";
-
-/** A bare reference to the constant: not a member access (`globalThis.__COHOST_NOTICES__`), not part of a longer name, not a string. */
-const BARE_NOTICES_CONSTANT = /(?<![\w$.'"`])__COHOST_NOTICES__(?![\w$])/g;
+/**
+ * The string literal the UI source holds for the notices file name (ui/src/app/notices.ts, DASH-AVS-011). The notices plugin
+ * replaces the whole literal, quotes included, with the file name as a string in each entry script.
+ */
+export const NOTICES_SENTINEL = "__COHOST_NOTICES_NAME__";
 
 /**
- * Replaces each bare reference to the constant in an entry script with the notices file name as a string literal. A member
- * access of the same name (the fallback `globalThis.__COHOST_NOTICES__`) and a longer identifier stay as they are.
+ * Replaces the sentinel literal in an entry script with the notices file name. Only the literal is replaced: a member access of
+ * a name that merely resembles it (the fallback global `globalThis.__COHOST_NOTICES__`), a property key and a longer string stay.
  */
 // @spec DASH-AVS-011
 export function substituteNoticesName(code: string, fileName: string): string {
   const literal = JSON.stringify(fileName);
-  return code.replace(BARE_NOTICES_CONSTANT, () => literal);
+  // The minifier may write the literal with any of the three quotes (rolldown emits a template literal).
+  let out = code;
+  for (const q of ['"', "'", "`"]) out = out.split(`${q}${NOTICES_SENTINEL}${q}`).join(literal);
+  return out;
 }

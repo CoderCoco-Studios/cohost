@@ -91,22 +91,30 @@ export function AvatarPreview({ st }: { st: SectionState }) {
   };
   useEffect(() => cancelTrailing, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The framing draft: a valid edited framing is posted as it moves; when the edits return to the saved values, the saved framing
-  // is posted so the frame does not keep the draft (the model draft may still be on the frame, so the others stay).
+  // The framing draft. A valid edited framing is posted as it moves. When the edits return to the saved values the saved framing is
+  // posted, so the frame does not keep the draft. An invalid number posts nothing and reverts nothing (the edit stays on the page).
   const framingWas = useRef(false);
   const framingKey = drafts.framing ? `${drafts.framing.zoom}|${drafts.framing.offsetY}|${drafts.framing.turn}` : drafts.framingEdited ? "invalid" : "saved";
   useEffect(() => {
     if (drafts.framing) sendFraming(drafts.framing);
-    else if (framingWas.current && hasDrafts) { cancelTrailing(); post({ type: "framing", framing: savedFrame }); }
+    else if (!drafts.framingEdited && framingWas.current && hasDrafts) { cancelTrailing(); post({ type: "framing", framing: savedFrame }); }
     framingWas.current = drafts.framingEdited;
   }, [framingKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // The model draft: when the model choice changes, or a draft goes while others remain, the frame is given the current model
-  // (the chosen one, or the saved one when the choice is back to it). Nothing is posted with no draft left: Save or Discard clears.
+  // The model draft. The frame gets a model message only when the model choice itself changes, never for a framing move: a model
+  // posted from the saved value would make the page reload the applied model. When a model draft goes while framing drafts remain,
+  // the frame is cleared (the applied model) and the framing draft is posted again. With no draft left, Save or Discard clears.
+  const modelWas = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!hasDrafts) return;
-    post({ type: "model", name: drafts.model ?? saved.model });
-  }, [drafts.model, hasDrafts]); // eslint-disable-line react-hooks/exhaustive-deps
+    const was = modelWas.current;
+    modelWas.current = drafts.model;
+    if (drafts.model !== undefined) { post({ type: "model", name: drafts.model }); return; }
+    if (was !== undefined && hasDrafts) {
+      cancelTrailing();
+      post({ type: "clear" });
+      if (drafts.framing) post({ type: "framing", framing: drafts.framing });
+    }
+  }, [drafts.model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save or Discard takes the drafts away: the frame is told to drop them, and nothing queued is sent after it.
   const had = useRef(false);

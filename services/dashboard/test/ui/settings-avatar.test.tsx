@@ -661,13 +661,15 @@ test("the group links to the third-party notices file beside the status line, as
 // ---------------------------------------------------------------- review follow-ups (drafts, refresh, polls, names, answers)
 
 // @spec DASH-AVS-006
-test("picking the saved model again after another pick puts the saved model back on the frame", async () => {
+test("picking the saved model again while a framing move stands clears the frame (the applied model shows) and re-posts the framing draft", async () => {
   await open({ active: "Kiki.vrm", renderer: { model: "Kiki.vrm" } });
   const user = userEvent.setup();
   fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.2" } });
   await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  const n = posted.length;
   await user.click(screen.getByRole("radio", { name: /Kiki\.vrm/ }));
-  assert.deepEqual(posted.at(-1), { message: { type: "model", name: "Kiki.vrm" }, origin: location.origin });
+  assert.deepEqual(posted.slice(n).map((p) => p.message), [{ type: "clear" }, { type: "framing", framing: { zoom: 1.2, offsetY: 0, turn: 0 } }]);
+  assert.equal(sent("model").filter((m) => m.name === "Mimi.vrm").length, 1, "Mimi was posted once, and no model names Kiki while the choice is saved");
 });
 
 // @spec DASH-AVS-006
@@ -735,3 +737,61 @@ test("a malformed renderer answer is a failed read: the line says so, no NaN is 
   assert.doesNotMatch(text(group()), /NaN/);
   assert.ok(key("zoom"), "the framing rows still render");
 });
+
+// ---------------------------------------------------------------- round 2: the frame's model follows only the model choice
+
+// @spec DASH-AVS-006, DASH-AVS-009
+test("a framing-only edit posts no model message, even when the file holds another model than the one applied", async () => {
+  await open({ active: "Kiki.vrm", renderer: { model: "Mimi.vrm", zoom: 1 }, status: status({ applied: { model: "Kiki.vrm", configuredModel: "Kiki.vrm", zoom: 1, offsetY: 0, turn: 0 } }) });
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.5" } });
+  assert.equal(sent("model").length, 0, "a framing move never names a model");
+  assert.equal(sent("framing").length, 1);
+});
+
+// @spec DASH-AVS-006
+test("Discard after a framing-only edit posts only the clear", async () => {
+  await open({ renderer: { zoom: 1 } });
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.5" } });
+  const n = posted.length;
+  fireEvent.click(bar("Discard"));
+  assert.deepEqual(posted.slice(n).map((p) => p.message), [{ type: "clear" }]);
+});
+
+// @spec DASH-AVS-006
+test("when the model choice returns to saved while a framing move stands, the frame is cleared and the framing draft is posted again", async () => {
+  await open({ renderer: { zoom: 1 } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.5" } });
+  const n = posted.length;
+  await user.click(screen.getByRole("radio", { name: /None/ }));
+  assert.deepEqual(posted.slice(n).map((p) => p.message), [{ type: "clear" }, { type: "framing", framing: { zoom: 1.5, offsetY: 0, turn: 0 } }]);
+});
+
+// @spec DASH-AVS-006
+test("a framing value the page cannot post (zoom typed as 0) posts nothing and reverts nothing: the edit stays and the frame keeps its draft", async () => {
+  await open({ renderer: { zoom: 1 } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.5" } });
+  const n = posted.length;
+  fireEvent.change(within(key("zoom")).getByRole("spinbutton", { name: "Zoom value" }), { target: { value: "0" } });
+  assert.equal(posted.length, n, "nothing is posted for the invalid value");
+  assert.ok(screen.getByText(/2 edits in this section/), "the zoom edit stays");
+});
+
+// @spec DASH-AVS-002
+test("an older model list answer that arrives after a newer one does not replace it", async () => {
+  let calls = 0;
+  let release!: (r: { status: number; json: unknown }) => void;
+  const b = await open({ routes: { "GET /avatar/models": () => (++calls === 1 ? new Promise<{ status: number; json: unknown }>((res) => { release = res; }) : { json: listAnswer([model("Kiki.vrm"), model("Mimi.vrm")], "Mimi.vrm") }) } });
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.2" } });
+  await userEvent.setup().click(bar("Save"));
+  await settle(8);
+  assert.match(text(rowOf(/Mimi\.vrm/)), /applied/, "the newer answer is shown");
+  await act(async () => { release({ status: 200, json: listAnswer([model("Kiki.vrm")], null) }); });
+  await settle(4);
+  assert.match(text(rowOf(/Mimi\.vrm/)), /applied/, "the older answer did not win");
+  assert.ok(b.app.fetch.callsTo("GET /avatar/models").length >= 2);
+});
+

@@ -550,7 +550,7 @@ export const EventPayloads = {
   // @spec BUS-EVT-044, BUS-EVT-045
   "tool.result": z.object({
     id: z.string(),
-    tool: z.string(),
+    tool: ToolName,
     status: z.enum(["ok", "error", "timeout", "refused"]),
     reason: z.enum([...REFUSAL_REASONS, ...ERROR_REASONS]).optional(),
     content: z.string(),
@@ -572,6 +572,8 @@ export const EventPayloads = {
       name: z.string(),
       state: z.enum(["ok", "down", "auth", "mock"]),
       external: z.boolean(),
+      /** The tools the server listed that the catalog left out (its limits or an unlistable definition). */
+      left_out: z.number().int().nonnegative(),
       detail: z.string().optional(),
     })),
     tools: z.array(z.object({
@@ -606,7 +608,7 @@ export const EventPayloads = {
   // @spec BUS-EVT-049
   "tool.confirm": z.object({
     id: z.string(),
-    tool: z.string(),
+    tool: ToolName,
     arguments: z.record(z.string(), z.unknown()),
     origin: z.enum(TOOL_ORIGINS),
     expiresAt: z.number().int(),

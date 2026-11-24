@@ -131,7 +131,7 @@ const tool = (name: string, over: Partial<ToolDef> = {}): ToolDef => ({
 });
 const actingTool = (name: string, over: Partial<ToolDef> = {}) => tool(name, { label: "acts", effect: "acts", acts: true, ...over });
 const catalogEvent = (tools: ToolDef[], intervalMs = 30000) =>
-  event("tool.catalog", { intervalMs, mode: "live", servers: [{ name: "builtin", state: "ok", external: false }], tools }, "tools");
+  event("tool.catalog", { intervalMs, mode: "live", servers: [{ name: "builtin", state: "ok", external: false, left_out: 0 }], tools }, "tools");
 
 const call = (id: string, name = "clock", args: Record<string, unknown> = {}, invalid?: string): ToolCall => ({ id, name, arguments: args, ...(invalid === undefined ? {} : { invalid }) });
 

@@ -44,7 +44,7 @@ const loader = createModelLoader<LoadedModel>({
   dispose: (m) => disposeVrm(stage, m),
   report: (r: ModelReport) => {
     loadState = { state: r.state, detail: r.detail };
-    relay(r);
+    relay.report(r);
     refreshStatus();
   },
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),
@@ -61,10 +61,18 @@ const state = createAvatarState({
 const reconnect = createReconnect();
 function connect(): void {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const sock = new WebSocket(`${proto}//${location.host}${SOCKET_PATH(preview)}`);
+  let sock: WebSocket;
+  try {
+    sock = new WebSocket(`${proto}//${location.host}${SOCKET_PATH(preview)}`);
+  } catch {
+    // A constructor that throws is a failed attempt, retried on the same schedule.
+    socket = null;
+    window.setTimeout(connect, reconnect.onClose(null));
+    return;
+  }
   socket = sock;
   let openedAt: number | null = null;
-  sock.onopen = () => { openedAt = performance.now(); state.socketOpen(true); refreshStatus(); };
+  sock.onopen = () => { openedAt = performance.now(); state.socketOpen(true); relay.resend(); refreshStatus(); };
   sock.onmessage = (e: MessageEvent) => { if (typeof e.data === "string") { state.message(e.data); refreshStatus(); } };
   sock.onclose = () => {
     socket = null;

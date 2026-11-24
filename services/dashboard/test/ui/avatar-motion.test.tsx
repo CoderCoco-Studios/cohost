@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { REST_FRAME } from "../../ui/src/avatar/frame";
 import { poseAt, HOLD_MS, EASE_MS } from "../../ui/src/avatar/ease";
-import { canvasSize, clampStepSeconds, framingPlan, MAX_STEP_MS } from "../../ui/src/avatar/framing";
+import { canvasSize, clampStepSeconds, DEFAULT_BOX, framingPlan, MAX_STEP_MS } from "../../ui/src/avatar/framing";
 import { createReconnect } from "../../ui/src/avatar/reconnect";
 import { contextLossWait } from "../../ui/src/avatar/context-loss";
 import { FakeStorage } from "./helpers/fakes";
@@ -179,4 +179,20 @@ test("context loss: where sessionStorage throws or holds garbage, the wait is 10
   for (const v of ["{not json", "null", "[]", "42", '{"at":"x","wait":-5}', '{"at":1,"wait":1e999}', '{"at":null,"wait":null}']) {
     assert.equal(contextLossWait(holding(v), 2), 10_000, v);
   }
+});
+
+// @spec DASH-AVP-034
+test("a stored wait below 10 s never gives a reload sooner than 10 s", () => {
+  const holding = (text: string): Pick<Storage, "getItem" | "setItem"> => ({ getItem: () => text, setItem: () => undefined });
+  assert.equal(contextLossWait(holding('{"at":2,"wait":1e-9}'), 2), 10_000);
+  assert.equal(contextLossWait(holding('{"at":2,"wait":0.5}'), 2), 10_000);
+});
+
+// @spec DASH-AVP-021
+test("a box with no geometry (infinite extent, or a zero-height box) frames the default box, so the plan is finite", () => {
+  const none = { min: [Infinity, Infinity, Infinity] as [number, number, number], max: [-Infinity, -Infinity, -Infinity] as [number, number, number] };
+  const flat = { min: [0, 0, 0] as [number, number, number], max: [1, 0, 1] as [number, number, number] };
+  const dflt = framingPlan(DEFAULT_BOX, { zoom: 1, offsetY: 0, turn: 0 });
+  assert.deepEqual(framingPlan(none, { zoom: 1, offsetY: 0, turn: 0 }), dflt);
+  assert.deepEqual(framingPlan(flat, { zoom: 1, offsetY: 0, turn: 0 }), dflt);
 });

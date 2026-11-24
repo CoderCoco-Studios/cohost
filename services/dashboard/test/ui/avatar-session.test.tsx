@@ -293,3 +293,24 @@ test("showStatusLine renders plain text: markup in a name or reason becomes text
   assert.equal(el.hidden, true);
   assert.equal(el.textContent, "");
 });
+
+// @spec DASH-AVP-038
+test("a view whose turn is 1e999 (Infinity once parsed) is ignored as a whole", () => {
+  const { state, calls } = rig();
+  state.message(view({ version: "v1" }));
+  const before = state.snapshot().framing;
+  calls.length = 0;
+  state.message('{"type":"view","model":{"version":"v9"},"framing":{"zoom":1,"offsetY":0,"turn":1e999}}');
+  assert.deepEqual(calls, [], "no load for the ignored view");
+  assert.deepEqual(state.snapshot().framing, before);
+});
+
+// @spec DASH-AVP-040
+test("a reconnect asks the loader for nothing: a model already loaded, or failed, is not fetched again by the page", () => {
+  const { state, calls } = rig();
+  state.message(view({ version: "v1" }));
+  calls.length = 0;
+  state.socketOpen(false);
+  state.socketOpen(true);
+  assert.deepEqual(calls, []);
+});

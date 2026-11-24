@@ -141,6 +141,8 @@ export function createModelLoader<M>(deps: ModelLoaderDeps<M>): ModelLoader<M> {
       if (current(job)) failJob(job, errorText(e));
       return;
     }
+    // The bytes are in: the idle clock covers the transfer only, so a slow build is not reported as a stalled fetch.
+    disarm(job);
     if (!current(job)) return;
     let model: M;
     try {

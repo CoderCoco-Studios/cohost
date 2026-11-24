@@ -56,6 +56,19 @@ export function expressionWrites(previous: string, f: Frame): ExpressionWrite[] 
   return out;
 }
 
+/**
+ * Writes the weights to the model's expressions by name (DASH-AVP-013): a name the model does not define has no target and
+ * is skipped. Targets are looked up as own entries of a Map, so a frame's expression name (`__proto__`, `constructor`) can
+ * never reach a prototype.
+ */
+// @spec DASH-AVP-013
+export function applyExpressionWrites(targets: ReadonlyMap<string, { weight: number }>, writes: readonly ExpressionWrite[]): void {
+  for (const w of writes) {
+    const target = targets.get(w.name);
+    if (target !== undefined) target.weight = w.weight;
+  }
+}
+
 /** The look-at range maps' `inputMaxValue`s in degrees, from the model (DASH-AVP-016). */
 export interface LookAtRanges { horizontalOuter: number; verticalUp: number; verticalDown: number }
 

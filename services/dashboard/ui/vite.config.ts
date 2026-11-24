@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { createDevProxy } from "./dev-proxy";
-import { buildNotices, isLicenceFile, type BundledPackage } from "./notices";
+import { buildNotices, isLicenceFile, manifestLicence, type BundledPackage } from "./notices";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -45,11 +45,8 @@ function packageDir(id: string): { dir: string; name: string } | null {
 
 /** A bundled package's manifest fields and its root's licence files (DEPLOY-LIC-005). */
 function readPackage(dir: string, name: string): BundledPackage {
-  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string; license?: unknown; licenses?: { type?: string }[] };
-  let license: string | undefined;
-  if (typeof manifest.license === "string") license = manifest.license;
-  else if (typeof manifest.license === "object" && manifest.license !== null && typeof (manifest.license as { type?: unknown }).type === "string") license = (manifest.license as { type: string }).type;
-  else if (Array.isArray(manifest.licenses) && manifest.licenses.length > 0) license = manifest.licenses.map((l) => l.type).filter(Boolean).join(" OR ");
+  const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string; license?: unknown; licenses?: unknown };
+  const license = manifestLicence(manifest);
   const files = existsSync(dir)
     ? readdirSync(dir).filter((f) => isLicenceFile(f) && statSync(join(dir, f)).isFile()).sort().map((f) => ({ name: f, text: readFileSync(join(dir, f), "utf8") }))
     : [];

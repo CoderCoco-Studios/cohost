@@ -20,7 +20,7 @@ export function contextLossWait(storage: Pick<Storage, "getItem" | "setItem">, n
     if (typeof prev === "object" && prev !== null && !Array.isArray(prev)) {
       const { at, wait: lastWait } = prev as { at?: unknown; wait?: unknown };
       const valid = typeof at === "number" && Number.isFinite(at) && typeof lastWait === "number" && Number.isFinite(lastWait) && lastWait > 0;
-      if (valid && now - at <= WINDOW_MS) wait = Math.min(CEILING_MS, lastWait * 2);
+      if (valid && now - at <= WINDOW_MS) wait = Math.max(FIRST_WAIT_MS, Math.min(CEILING_MS, lastWait * 2));
     }
   } catch {
     wait = FIRST_WAIT_MS;

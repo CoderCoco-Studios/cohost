@@ -16,6 +16,22 @@ export function isLicenceFile(name: string): boolean {
   return LICENCE_FILE.test(name);
 }
 
+/**
+ * The licence expression a manifest declares: its `license` string, or the `type` of a `license` object. The legacy
+ * `licenses` array is read as an AND of its entries, so it is allowed only when every entry is (fails closed). A manifest
+ * with no usable entry has none.
+ */
+// @spec DEPLOY-LIC-006
+export function manifestLicence(m: { license?: unknown; licenses?: unknown }): string | undefined {
+  if (typeof m.license === "string") return m.license;
+  if (typeof m.license === "object" && m.license !== null && typeof (m.license as { type?: unknown }).type === "string") return (m.license as { type: string }).type;
+  if (Array.isArray(m.licenses) && m.licenses.length > 0) {
+    const types = m.licenses.map((l) => (typeof l === "object" && l !== null && typeof (l as { type?: unknown }).type === "string" ? (l as { type: string }).type : null));
+    if (types.every((t): t is string => t !== null)) return types.join(" AND ");
+  }
+  return undefined;
+}
+
 /** A bundled package as the plugin reads it: its manifest fields, whether it sits in the workspace, and its root's licence files. */
 export interface BundledPackage {
   name: string;

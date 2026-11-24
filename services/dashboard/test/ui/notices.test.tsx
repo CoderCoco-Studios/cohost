@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, type BundledPackage } from "../../ui/notices";
+import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, manifestLicence, type BundledPackage } from "../../ui/notices";
 
 const MIT = "Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software ...";
 const pkg = (over: Partial<BundledPackage> = {}): BundledPackage => ({ name: "left-pad", version: "1.3.0", license: "MIT", workspace: false, files: [{ name: "LICENSE", text: MIT }], ...over });
@@ -113,4 +113,16 @@ test("where a package has several licence files the entry holds all of them", ()
   const { text } = buildNotices([pkg({ files: [{ name: "LICENSE", text: "FIRST-TEXT" }, { name: "COPYING.txt", text: "SECOND-TEXT" }, { name: "NOTICE.md", text: "THIRD-TEXT" }, { name: "README.md", text: "NOT-A-LICENCE" }] })]);
   for (const t of ["FIRST-TEXT", "SECOND-TEXT", "THIRD-TEXT"]) assert.ok(text.includes(t), t);
   assert.ok(!text.includes("NOT-A-LICENCE"));
+});
+
+// @spec DEPLOY-LIC-006
+test("a manifest's licence is its license string or object type; the legacy licenses array is an AND of its entries, failing closed", () => {
+  assert.equal(manifestLicence({ license: "MIT" }), "MIT");
+  assert.equal(manifestLicence({ license: { type: "ISC" } }), "ISC");
+  assert.equal(manifestLicence({ licenses: [{ type: "MIT" }, { type: "GPL-3.0-only" }] }), "MIT AND GPL-3.0-only");
+  assert.equal(licenceAllowed(manifestLicence({ licenses: [{ type: "MIT" }, { type: "GPL-3.0-only" }] }) ?? ""), false);
+  assert.equal(licenceAllowed(manifestLicence({ licenses: [{ type: "MIT" }, { type: "ISC" }] }) ?? ""), true);
+  assert.equal(manifestLicence({}), undefined);
+  assert.equal(manifestLicence({ licenses: [] }), undefined);
+  assert.equal(manifestLicence({ licenses: [{}] }), undefined);
 });

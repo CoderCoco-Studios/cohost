@@ -88,7 +88,7 @@ function rig() {
     }),
     build: async (bytes, signal) => {
       if (holdBuild) await new Promise<void>((r) => buildGate.push({ resolve: r }));
-      if (signal.aborted) throw new DOMException("aborted", "AbortError");
+      // No abort check here: a build that finishes after its request was superseded must be disposed by the loader.
       if (failBuild !== null) throw new Error(failBuild);
       const m: Fake = { id: built.length + 1, bytes, disposed: 0 };
       built.push(m);
@@ -380,4 +380,36 @@ test("reports carry only the version, a state and a detail of at most 200 charac
     assert.ok(rep.detail.length <= 200);
     assert.ok(JSON.stringify({ type: "model", ...rep }).length < 4096, "within the relay's 4096-byte message cap");
   }
+});
+
+// @spec DASH-AVP-024, DASH-AVP-025
+test("a half-built model that finishes after a newer request is disposed and never swapped in", async () => {
+  const r = rig();
+  r.hold(true);
+  r.loader.request(target("v1")); r.fetches[0]!.respond(r.ok("v1")); await flush();
+  r.loader.request(target("v2"));
+  r.hold(false);
+  r.releaseBuilds(); await flush();
+  assert.equal(r.built.length, 1, "the superseded v1 build finished");
+  assert.equal(r.built[0]!.disposed, 1, "and was disposed");
+  assert.equal(r.loader.current(), null, "nothing is swapped in for v1");
+  r.fetches[1]!.respond(r.ok("v2")); await flush();
+  assert.equal(r.loader.heldVersion(), "v2");
+  assert.equal(r.built[1]!.disposed, 0);
+});
+
+// @spec DASH-AVP-027
+test("the idle timer covers the transfer only: a build slower than 30 s after the last byte does not fail the load", async () => {
+  const r = rig();
+  r.hold(true);
+  r.loader.request(target("v1"));
+  const s = streaming("v1");
+  r.fetches[0]!.respond(s.response); await flush();
+  s.push("glb"); s.finish(); await flush();
+  r.clock.tick(40_000); await flush();
+  assert.equal(r.reports.at(-1)!.state, "loading", "still building, not failed");
+  r.hold(false);
+  r.releaseBuilds(); await flush();
+  assert.equal(r.loader.heldVersion(), "v1");
+  assert.equal(r.reports.at(-1)!.state, "ready");
 });

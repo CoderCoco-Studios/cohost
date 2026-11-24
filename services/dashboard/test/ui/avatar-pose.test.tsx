@@ -7,6 +7,7 @@ import { Emotion } from "@cohost/config";
 import { eulerToQuat } from "@cohost/shared/head-rotation";
 import { EMOTIONS, REST_FRAME, parseFrame } from "../../ui/src/avatar/frame";
 import {
+  applyExpressionWrites,
   armRestQuaternion,
   expressionWrites,
   gazeAngles,
@@ -192,4 +193,20 @@ test("arm rest pose: -65/+65 degrees about Z for the left/right upper arm of a 1
   eq(armRestQuaternion("right", "1.0"), z(65));
   eq(armRestQuaternion("left", "0.x"), z(65));
   eq(armRestQuaternion("right", "0.x"), z(-65));
+});
+
+// @spec DASH-AVP-013
+test("a name the model does not define is skipped, and a prototype name from a frame writes nothing anywhere", () => {
+  const happy = { weight: 0 };
+  const targets = new Map<string, { weight: number }>([["happy", happy]]);
+  applyExpressionWrites(targets, [
+    { name: "happy", weight: 0.5 },
+    { name: "wink-custom", weight: 1 },
+    { name: "__proto__", weight: 1 },
+    { name: "constructor", weight: 1 },
+    { name: "toString", weight: 1 },
+  ]);
+  assert.equal(happy.weight, 0.5);
+  assert.equal(targets.size, 1, "no entry was added for an undefined name");
+  assert.equal(({} as { weight?: number }).weight, undefined, "Object.prototype was not written");
 });

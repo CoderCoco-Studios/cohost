@@ -2,8 +2,8 @@
 // the part no UI test reaches (no GPU in the test runner): everything it decides comes from the pure modules beside it.
 import { AmbientLight, Box3, DirectionalLight, Group, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
-import { armRestQuaternion, expressionWrites, gazeAngles, headQuaternion, type LookAtRanges, type VrmVersion } from "./pose";
+import { VRMLoaderPlugin, VRMUtils, type VRM, type VRMExpression } from "@pixiv/three-vrm";
+import { applyExpressionWrites, armRestQuaternion, expressionWrites, gazeAngles, headQuaternion, type LookAtRanges, type VrmVersion } from "./pose";
 import type { Box, FramePlan } from "./framing";
 import { isLoaderUrlAllowed } from "./loader-url";
 import type { Frame } from "./frame";
@@ -26,6 +26,8 @@ export interface LoadedModel {
   lookAt: LookAtRanges | null;
   /** The expression the last frame wrote, so the next frame can return it to 0 (DASH-AVP-010). */
   lastExpression: string;
+  /** The model's expressions by name: the only targets a frame's expression names can reach (DASH-AVP-013). */
+  expressions: Map<string, VRMExpression>;
 }
 
 /** The canvas and the scene: a transparent, alpha-cleared WebGL context (DASH-AVP-006) and lights. */
@@ -68,9 +70,16 @@ export async function loadVrm(stage: Stage, bytes: ArrayBuffer, signal: AbortSig
     return url;
   });
   const gltf: GLTF = await loader.parseAsync(bytes, "");
-  if (signal.aborted) throw new DOMException("aborted", "AbortError");
+  // A parse that finished for a request already superseded, or that holds no VRM, releases what it built first.
+  if (signal.aborted) {
+    VRMUtils.deepDispose(gltf.scene);
+    throw new DOMException("aborted", "AbortError");
+  }
   const vrm = gltf.userData.vrm as VRM | undefined;
-  if (vrm === undefined) throw new Error("the file holds no VRM model");
+  if (vrm === undefined) {
+    VRMUtils.deepDispose(gltf.scene);
+    throw new Error("the file holds no VRM model");
+  }
   const version: VrmVersion = vrm.meta.metaVersion === "0" ? "0.x" : "1.0";
   if (version === "0.x") VRMUtils.rotateVRM0(vrm);
   // The model's own overrides go: mouth, blink and look-at follow the frame, whatever the model's author set (DASH-AVP-017).
@@ -89,7 +98,8 @@ export async function loadVrm(stage: Stage, bytes: ArrayBuffer, signal: AbortSig
   const b = new Box3().setFromObject(vrm.scene);
   const box: Box = { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] };
   stage.pivot.add(vrm.scene);
-  return { vrm, version, box, lookAt: lookAtRanges(vrm), lastExpression: "" };
+  const expressions = new Map<string, VRMExpression>(vrm.expressionManager?.expressions.map((e): [string, VRMExpression] => [e.expressionName, e]) ?? []);
+  return { vrm, version, box, lookAt: lookAtRanges(vrm), lastExpression: "", expressions };
 }
 
 /** The look-at range maps' input limits, when the model has a look-at (DASH-AVP-016). */
@@ -119,10 +129,7 @@ export function applyFraming(stage: Stage, plan: FramePlan): void {
 
 /** Writes a frame to the model's expressions, head and gaze (DASH-AVP-010 to DASH-AVP-016); arms and framing are set elsewhere. */
 export function applyPose(model: LoadedModel, pose: Frame): void {
-  for (const w of expressionWrites(model.lastExpression, pose)) {
-    const expression = model.vrm.expressionManager?.getExpression(w.name);
-    if (expression) expression.weight = w.weight;
-  }
+  applyExpressionWrites(model.expressions, expressionWrites(model.lastExpression, pose));
   model.lastExpression = pose.expression;
   const head = model.vrm.humanoid?.getNormalizedBoneNode("head");
   if (head) head.quaternion.set(...headQuaternion(pose, model.version));

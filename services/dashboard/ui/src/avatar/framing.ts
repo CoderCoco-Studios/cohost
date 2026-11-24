@@ -13,6 +13,11 @@ export interface Box { min: [number, number, number]; max: [number, number, numb
 
 export type Vec3 = [number, number, number];
 
+/** The box a model with no usable geometry is framed as: a typical avatar, 1.6 m tall. */
+export const DEFAULT_BOX: Box = { min: [-0.5, 0, -0.2], max: [0.5, 1.6, 0.2] };
+
+const usable = (b: Box): boolean => [...b.min, ...b.max].every((n) => Number.isFinite(n)) && b.max[1] - b.min[1] > 0;
+
 /** Where the camera stands, what it looks at and how the model sits in the frame. */
 export interface FramePlan {
   fov: number;
@@ -29,11 +34,13 @@ const finiteOr = (v: number, fallback: number): number => (Number.isFinite(v) ? 
 /**
  * The plan for a framing: a camera with a 30 degree field of view at the middle of the box's front, the frame height
  * 1.05 times the box height at the target's distance divided by `zoom`, the model moved up by `offsetY` frame heights and
- * turned by `turn` degrees about the vertical axis through the box's centre. A non-finite or non-positive zoom or a
+ * turned by `turn` degrees about the vertical axis through the box's centre. A box whose extent is not finite or whose
+ * height is not above 0 (a model with no geometry) is framed as DEFAULT_BOX, and a non-finite or non-positive zoom or a
  * non-finite offset or turn falls back to the neutral value, so the plan is always finite.
  */
 // @spec DASH-AVP-021
-export function framingPlan(box: Box, f: Framing): FramePlan {
+export function framingPlan(input: Box, f: Framing): FramePlan {
+  const box = usable(input) ? input : DEFAULT_BOX;
   const zoom = Number.isFinite(f.zoom) && f.zoom > 0 ? f.zoom : 1;
   const offsetY = finiteOr(f.offsetY, 0);
   const turn = finiteOr(f.turn, 0);

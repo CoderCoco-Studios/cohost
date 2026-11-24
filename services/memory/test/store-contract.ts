@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 import type { MemoryBackend } from "../src/store.js";
 import { cosine } from "../src/notes.js";
 import { viewerKey } from "@cohost/shared/untrusted";
+import { testConfig } from "@cohost/testing";
+import { buildNotesReply } from "../src/surface.js";
 
 export const DAY = 86_400_000;
 export const T0 = new Date("2026-03-01T12:00:00Z").getTime();
@@ -486,18 +488,53 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   });
 
   // @spec MEM-VOICE-007
-  t("a name matching no display resolves through a linked id's Discord display name; a display match wins", async ({ store }) => {
+  t("a name matching no display never resolves through a linked id's Discord display name; a display match still resolves", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
     const chat = vkey("chat");
     await store.touchViewer(chat, `Dee${id}`);
     await store.linkDiscord(id, chat);
     await store.touchSpeaker(id, `DeeVoice${id}`);
-    assert.equal((await store.findViewerByDisplay(`DEEVOICE${id}`))!.key, chat);
+    assert.equal(await store.findViewerByDisplay(`DEEVOICE${id}`), undefined, "no alias through discord_display");
     assert.equal((await store.findViewerByDisplay(`dee${id}`))!.key, chat);
     assert.equal(await store.findViewerByDisplay(`nobody${id}`), undefined);
     const other = vkey("o");
     await store.touchViewer(other, `DeeVoice${id}`);
-    assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches wins over a link alias");
+    assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches is found");
+  });
+
+  // @spec MEM-SURF-006, MEM-VOICE-007
+  t("a notes entry with no platform reaches only name-keyed rows: never an id-keyed row, a voice row or a link alias", async ({ store, now }) => {
+    const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } }).brain.memory;
+    const w = uid("").replace(/-/g, "");
+    const ask = (entry: { user: string; platform?: "twitch" | "youtube" | "discord"; userId?: string }) =>
+      buildNotesReply(store, cfg, [entry] as never, now());
+    const texts = async (e: Parameters<typeof ask>[0]) => (await ask(e)).flatMap((v) => v.notes.map((n) => n.text));
+    // An id-keyed row seen later than a name-keyed row with the same display never masks it.
+    const shared = `Shared${w}`;
+    const named = viewerKey({ platform: "twitch", user: shared });
+    const byId = viewerKey({ platform: "youtube", userId: `UC${w}`, user: shared });
+    await store.touchViewer(named, shared);
+    await store.touchViewer(byId, shared);
+    await store.insertNote({ userKey: named, category: "general", text: `named ${w}` });
+    await store.insertNote({ userKey: byId, category: "general", text: `by id ${w}` });
+    assert.deepEqual(await texts({ user: shared.toLowerCase() }), [`named ${w}`]);
+    // Only an id-keyed row has the display: nothing.
+    const solo = viewerKey({ platform: "twitch", userId: `1${w}`, user: `Solo${w}` });
+    await store.touchViewer(solo, `Solo${w}`);
+    await store.insertNote({ userKey: solo, category: "general", text: `solo ${w}` });
+    assert.deepEqual(await ask({ user: `Solo${w}` }), []);
+    // A voice row and a linked id's Discord display name are not reached.
+    await store.touchSpeaker(`v${w}`, `Voice${w}`);
+    assert.deepEqual(await ask({ user: `Voice${w}` }), []);
+    await store.linkDiscord(`l${w}`, solo);
+    await store.touchSpeaker(`l${w}`, `Linked${w}`);
+    assert.deepEqual(await ask({ user: `Linked${w}` }), []);
+    // Hostile names and ids address no other viewer's row.
+    for (const user of [`id:1${w}`, `twitch:id:1${w}`, `name:solo${w}`.toLowerCase()]) {
+      assert.deepEqual(await texts({ user }), [], user);
+      assert.deepEqual(await texts({ user, platform: "twitch" }), [], user);
+    }
+    assert.deepEqual(await texts({ user: "x", platform: "twitch", userId: `name:${shared}` }), []);
   });
 
   // ---- Issue #180: viewers keyed by viewerKey, chat rows with platform / user id / message id, forgetting removals ----

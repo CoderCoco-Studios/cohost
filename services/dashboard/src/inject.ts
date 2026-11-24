@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { EventPayloads, type Bus, type EventType, type Publisher } from "@cohost/bus";
 import { SERVICE_MANIFEST, type HealthState, type ServiceDef } from "@cohost/control";
 import { readBody } from "./body.js";
+import { requireToolToken } from "./tools-routes.js";
 import { uploadMaxBytes, type UploadKind, type UploadLimits } from "./uploads.js";
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -17,6 +18,8 @@ export interface InjectDeps {
   uploads: UploadLimits;
   /** Returns false (after sending 401) when the bearer gate rejects the request. */
   authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
+  /** The control token whenever one is configured (either control mode); `as: "tool"` requires it always. */
+  toolToken?: string | undefined;
   /** The derived health state of a unit (the tracker's snapshot with the Compose overlay); undefined for a unit not in it. */
   stateOf: (unit: string) => HealthState | undefined;
   /** The control plane's units: what `POST /inject/event` accepts for `unit`, and which `type`s for it. */
@@ -93,7 +96,7 @@ async function injectEvent(d: InjectDeps, req: http.IncomingMessage, res: http.S
   send(res, 202, { id });
 }
 
-// @spec DASH-INJ-001, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004, DASH-INJ-009
+// @spec DASH-INJ-001, DASH-INJ-011, DASH-INJ-012, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004, DASH-INJ-009
 async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   if (!d.authorize(req, res)) return;
   const { data, tooLarge } = await readBody(req, TEXT_LIMIT);
@@ -102,24 +105,34 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   try { j = JSON.parse(data.toString("utf8")); } catch { return send(res, 400, "body must be JSON"); }
   if (typeof j !== "object" || j === null || Array.isArray(j)) return send(res, 400, "body must be a JSON object");
   const b = j as Record<string, unknown>;
+  // @spec DASH-INJ-011
+  if (b.as === "tool" && !requireToolToken(d.toolToken, req, res)) return;
 
   const level = b.level;
   if (level !== "service" && level !== "bus") return send(res, 400, "level must be 'service' or 'bus'");
   const as = b.as ?? "chat";
-  if (as !== "chat" && as !== "speech" && as !== "vision") return send(res, 400, "as must be chat, speech or vision");
+  if (as !== "chat" && as !== "speech" && as !== "vision" && as !== "tool") return send(res, 400, "as must be chat, speech, vision or tool");
+  if (as === "tool" && level !== "service") return send(res, 400, "as: tool is for level: service only");
   if (typeof b.text !== "string" || b.text.trim() === "") return send(res, 400, "text must be a non-blank string");
   if (b.remember !== undefined && typeof b.remember !== "boolean") return send(res, 400, "remember must be a boolean");
   if (b.user !== undefined && typeof b.user !== "string") return send(res, 400, "user must be a string");
   if (b.platform !== undefined && !PLATFORMS.includes(b.platform as Platform)) return send(res, 400, "platform must be twitch, youtube or discord");
   if (b.isMod !== undefined && typeof b.isMod !== "boolean") return send(res, 400, "isMod must be a boolean");
   if (b.isSub !== undefined && typeof b.isSub !== "boolean") return send(res, 400, "isSub must be a boolean");
-  if (level === "service" && as !== "chat") return send(res, 400, "service-level text injection supports only as: chat; use level: bus for speech/vision");
+  if (level === "service" && as !== "chat" && as !== "tool") return send(res, 400, "service-level text injection supports only as: chat or tool; use level: bus for speech/vision");
   // @spec DASH-INJ-009
   if (b.source !== undefined) {
     if (level !== "bus" || as !== "speech") return send(res, 400, "source is only for level: bus, as: speech");
     if (typeof b.source !== "string" || !SOURCE_TAG.test(b.source)) return send(res, 400, "source must match [a-z][a-z0-9-]{0,31}");
   }
 
+  // @spec DASH-INJ-011, DASH-INJ-012
+  if (as === "tool") {
+    if (refuseNotRunning(d, res, "tools")) return;
+    const toolId = randomUUID();
+    await d.bus.publish("inject.request", { id: toolId, target: "tools", kind: "text", text: b.text, remember: false });
+    return send(res, 202, { id: toolId });
+  }
   if (level === "service" && refuseNotRunning(d, res, "chat")) return;
   const remember = b.remember === true;
   const user = b.user as string | undefined;

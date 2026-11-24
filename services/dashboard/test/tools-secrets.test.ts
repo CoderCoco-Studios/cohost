@@ -175,5 +175,8 @@ test("GET /config/tools reports the token only as set or not set, never its valu
   assert.equal(r.status, 200);
   const text = await r.text();
   assert.equal(text.includes("mcp-hidden-9"), false);
-  assert.equal((JSON.parse(text) as { keys: Record<string, { set?: boolean }> }).keys["servers.*.token"]!.set, true);
+  const keys = (JSON.parse(text) as { keys: Record<string, { set?: boolean; value?: unknown }> }).keys;
+  assert.equal(keys["servers.weather.token"]!.set, true);
+  assert.equal("value" in keys["servers.weather.token"]!, false);
+  assert.equal("servers.*.token" in keys, false);
 });

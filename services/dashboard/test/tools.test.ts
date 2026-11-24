@@ -262,3 +262,24 @@ test("with control off the token-required list includes POST /tools/answer and a
   assert.equal((await t.text({ level: "bus", text: "hi" }, {})).status, 202);
   assert.equal((await t.text({ level: "service", text: "hi" }, {})).status, 202);
 });
+
+// @spec DASH-TOOL-001
+test("the answer id is 1 to 256 characters: empty is 400, 256 is 202, 257 is 400", async () => {
+  const t = await boot({ control: true });
+  assert.equal((await t.answer({ id: "", allow: true })).status, 400);
+  assert.equal((await t.answer({ id: "a".repeat(256), allow: true })).status, 202);
+  assert.equal((await t.answer({ id: "a".repeat(257), allow: true })).status, 400);
+  assert.deepEqual(t.bus.of("tool.answer"), [{ id: "a".repeat(256), allow: true }]);
+});
+
+// @spec DASH-INJ-012
+test("as: tool ignores each chat field on its own: remember, user, platform, isMod and isSub change nothing about the published event", async () => {
+  const t = await boot({ control: true });
+  for (const extra of [{ remember: true }, { user: "bob" }, { platform: "youtube" }, { isMod: true }, { isSub: true }]) {
+    assert.equal((await t.text({ ...tool, ...extra })).status, 202, JSON.stringify(extra));
+  }
+  for (const ev of t.bus.of("inject.request")) {
+    assert.deepEqual({ ...ev, id: "x" }, { id: "x", target: "tools", kind: "text", text: tool.text, remember: false });
+  }
+  assert.equal(t.bus.of("inject.request").length, 5);
+});

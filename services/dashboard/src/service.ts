@@ -13,7 +13,7 @@ import { setupControl } from "./control.js";
 import { ViewersClient, viewersTokenFromEnv } from "./viewers.js";
 import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
-import { resolvePorts, startListeners } from "./host.js";
+import { resolvePorts, startListeners, type FeedConnection } from "./host.js";
 import { createAvatarRelay, systemClock, type Clock } from "./avatar-relay.js";
 
 /** What the dashboard's `main` takes from outside, so a test can run it without a process env, signals or an exit. */
@@ -80,8 +80,9 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
-      const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev), onAvatarState: (driver) => relay.observeState(driver) });
-      wss.on("connection", (ws) => void serveClient(feed, ws, log)); // @spec DASH-HTTP-012
+      const redacted = new WeakSet<object>(); // sockets that arrived beyond loopback (DASH-FEED-011)
+      const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, redacts: (ws) => redacted.has(ws), stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev), onAvatarState: (driver) => relay.observeState(driver) });
+      wss.on("connection", (ws, _req, conn?: FeedConnection) => { if (conn?.redact) redacted.add(ws); void serveClient(feed, ws, log); }); // @spec DASH-HTTP-012
       void startFeed(feed, log); // @spec DASH-HTTP-012
 
       // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-009, DASH-HTTP-009

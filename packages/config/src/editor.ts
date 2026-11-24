@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseYaml, parseDocument, isMap, isScalar, stringify, type Document, type YAMLMap } from "yaml";
 import { z } from "zod";
-import { ConfigSchema, SECRET_PATHS, secretPathMatches, secretPathOf } from "./schema.js";
+import { ConfigSchema, SECRET_PATHS, isSecretPrefix, secretPathMatches, secretPathOf } from "./schema.js";
 import { PRESENTATION, type KeyPresentation, type SectionPresentation } from "./presentation.js";
 import { parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, type ConfigIssue } from "./pipeline.js";
 
@@ -298,7 +298,8 @@ export function readSection(text: string, section: string, secretsSet: readonly 
       source: present ? "literal" : "default",
       editable: true,
       ...(value !== undefined ? { value } : {}),
-      ...(present ? { raw: sliceOf(text, node as { range?: [number, number, number] | null }) } : {}),
+      // A map that holds a credential (a secret prefix, `tools.servers`) never returns its text: a token pasted into the file is in it.
+      ...(present && !isSecretPrefix(dotted) ? { raw: sliceOf(text, node as { range?: [number, number, number] | null }) } : {}),
       ...(name ? { isolation: { name, overriddenBy: [...(running[name] ?? [])] } } : {}),
     };
   }

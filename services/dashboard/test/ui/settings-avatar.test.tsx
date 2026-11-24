@@ -795,3 +795,14 @@ test("an older model list answer that arrives after a newer one does not replace
   assert.ok(b.app.fetch.callsTo("GET /avatar/models").length >= 2);
 });
 
+// @spec DASH-AVS-006
+test("a model draft removed while the framing value is invalid posts clear and no framing draft: the frame falls back to the saved framing", async () => {
+  await open({ renderer: { zoom: 1 } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  fireEvent.change(within(key("zoom")).getByRole("spinbutton", { name: "Zoom value" }), { target: { value: "0" } });
+  const n = posted.length;
+  await user.click(screen.getByRole("radio", { name: /None/ }));
+  assert.deepEqual(posted.slice(n).map((p) => p.message), [{ type: "clear" }], "the invalid framing is never posted, so only the clear is");
+});
+

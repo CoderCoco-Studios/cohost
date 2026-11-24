@@ -4,6 +4,7 @@
 
 const BUILT_NOTICES: string = "__COHOST_NOTICES_NAME__";
 
+// @spec DASH-AVS-011
 /** The hashed notices file name (`third-party-notices-<hash>.txt`), or undefined when the build did not set it. */
 export function noticesFile(): string | undefined {
   if (BUILT_NOTICES.startsWith("third-party-notices-")) return BUILT_NOTICES;

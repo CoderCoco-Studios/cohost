@@ -172,6 +172,7 @@ test("every entry script parses, and the dashboard entry holds the notices name 
   }
   const name = notices()[0]!;
   const idx = indexJs();
-  assert.ok(idx.includes(JSON.stringify(name)), "the index entry names the notices file as a string literal");
-  assert.ok(!idx.includes('"__COHOST_NOTICES_NAME__"') && !idx.includes("'__COHOST_NOTICES_NAME__'"), "no sentinel literal is left in the index entry");
+  // The literal keeps the quote the minifier wrote (rolldown emits a template literal), so any of the three quotes is accepted.
+  assert.match(idx, new RegExp(`["'\`]${name.replace(/\./g, "\\.")}["'\`]`), "the index entry names the notices file as a string literal");
+  assert.ok(!idx.includes("__COHOST_NOTICES_NAME__"), "no sentinel literal of any quote form is left in the index entry");
 });

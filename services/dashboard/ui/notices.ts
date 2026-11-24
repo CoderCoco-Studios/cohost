@@ -140,9 +140,9 @@ export const NOTICES_SENTINEL = "__COHOST_NOTICES_NAME__";
  */
 // @spec DASH-AVS-011
 export function substituteNoticesName(code: string, fileName: string): string {
-  const literal = JSON.stringify(fileName);
-  // The minifier may write the literal with any of the three quotes (rolldown emits a template literal).
+  // The minifier may write the literal with any of the three quotes (rolldown emits a template literal). The replacement keeps the
+  // quote it matched, so a sentinel inside another string or a tagged template stays a literal of the same kind and still parses.
   let out = code;
-  for (const q of ['"', "'", "`"]) out = out.split(`${q}${NOTICES_SENTINEL}${q}`).join(literal);
+  for (const q of ['"', "'", "`"]) out = out.split(`${q}${NOTICES_SENTINEL}${q}`).join(`${q}${fileName}${q}`);
   return out;
 }

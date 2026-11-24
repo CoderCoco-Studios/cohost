@@ -148,7 +148,7 @@ test("a sensitive note cut by a cap is not included and not recorded as surfaced
 // @spec MEM-SURF-005
 test("a failing store makes buildNotesReply throw so the region handler can answer an empty list", async () => {
   const { cfg } = setup();
-  const broken = { findViewerByDisplay: async () => { throw new Error("db down"); }, listNotes: async () => [], markSurfaced: async () => {} };
+  const broken = { findNameKeyedViewerByDisplay: async () => { throw new Error("db down"); }, listNotes: async () => [], markSurfaced: async () => {} };
   await assert.rejects(buildNotesReply(broken as never, cfg, ["Alice"], T0), /db down/);
 });
 

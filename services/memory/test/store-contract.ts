@@ -535,6 +535,12 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
       assert.deepEqual(await texts({ user, platform: "twitch" }), [], user);
     }
     assert.deepEqual(await texts({ user: "x", platform: "twitch", userId: `name:${shared}` }), []);
+    // An owner placeholder is name-keyed: a name-only entry reaches it until chat claims it (MEM-REG-003, MEM-REG-004).
+    const pat = `Pat${w}`;
+    const placeholder = await store.setRegular(pat, true);
+    assert.equal(placeholder!.key, pat.toLowerCase());
+    await store.insertNote({ userKey: placeholder!.key, category: "general", text: `pat note ${w}` });
+    assert.deepEqual(await texts({ user: pat.toLowerCase() }), [`pat note ${w}`]);
   });
 
   // ---- Issue #180: viewers keyed by viewerKey, chat rows with platform / user id / message id, forgetting removals ----
@@ -657,7 +663,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.equal((await recallAll(h, `no id kept ${w}`)).length, 1);
   });
 
-  // @spec MEM-VOICE-001
+  // @spec MEM-VOICE-001, MEM-VOICE-011
   t("a Discord id shaped like a viewerKey prefix is refused: it never names a voice key or a link", async ({ store }) => {
     await assert.rejects(store.touchSpeaker("id:12345", "Mallory"), /viewerKey prefix/);
     await assert.rejects(store.touchSpeaker("NAME:kit", "Mallory"), /viewerKey prefix/);
@@ -665,6 +671,10 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.touchViewer(chat, "Victim");
     await assert.rejects(store.linkDiscord("name:kit", chat), /viewerKey prefix/);
     assert.equal(await store.getViewer(chat).then((v) => v?.key), chat);
+    assert.equal((await store.getViewer(chat))!.msgCount, 1, "the chat viewer is unchanged");
+    assert.equal(await store.getViewer("discord:id:12345"), undefined, "no voice row was created");
+    assert.equal(await store.getViewer("discord:name:kit"), undefined, "no voice row was created");
+    assert.deepEqual(await store.listLinks(chat), [], "no link was recorded");
   });
 
   // @spec MEM-REG-003

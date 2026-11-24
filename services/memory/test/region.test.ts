@@ -173,7 +173,7 @@ test("without an admin store a viewers request is ignored", async () => {
 test("memory.notes.request is answered with the same id; a store error answers an empty list and logs a warning", async () => {
   const store = {
     touchViewer: async () => ({ msgCount: 1, isNew: true, regular: false }), remember: async () => {}, recall: async () => [],
-    findViewerByDisplay: async (name: string) => {
+    findNameKeyedViewerByDisplay: async (name: string) => {
       if (name === "Boom") throw new Error("db down");
       return { key: "u1", display: "Alice", msgCount: 40, regular: true, regularManual: false, isSub: true, placeholder: false, firstSeen: new Date(), lastSeen: new Date() };
     },

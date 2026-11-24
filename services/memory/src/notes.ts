@@ -58,8 +58,9 @@ export interface ViewerRow {
 export const VOICE_PREFIX = "discord:";
 /**
  * A Discord id as a voice key takes it: lower-cased, and never shaped like a `viewerKey` prefix, so a speaker can never name a chat viewer's
- * key (`discord:id:<n>` is a Discord chat viewer's key). Throws on such an id; the callers log or answer `failed` (MEM-VOICE-001).
+ * key (`discord:id:<n>` is a Discord chat viewer's key). Throws on such an id; the callers log or answer `failed` (MEM-VOICE-001, MEM-VOICE-011).
  */
+// @spec MEM-VOICE-011
 export const checkedDiscordId = (discordId: string): string => {
   if (/^(id|name):/i.test(discordId)) throw new Error("a Discord id may not carry a viewerKey prefix (id: or name:)");
   return discordId.toLowerCase();
@@ -75,6 +76,11 @@ export const isViewerKey = (key: string): boolean => /^[^:]+:(id|name):/.test(ke
  * a separate namespace the voice rules read), or an owner placeholder (MEM-REG-003, keyed by its lower-cased name until chat claims it).
  */
 export const isReadableViewer = (v: { key: string; placeholder: boolean }): boolean => v.placeholder || isViewerKey(v.key) || isVoiceKey(v.key);
+/**
+ * Whether a row is name-keyed (MEM-SURF-006): a chat viewer keyed `<platform>:name:<name>`, or an owner placeholder keyed by its lowercased
+ * name (MEM-REG-003) until chat claims it. Id-keyed chat rows and voice rows are not.
+ */
+export const isNameKeyed = (v: { key: string; placeholder: boolean }): boolean => v.placeholder || /^[^:]+:name:/.test(v.key);
 
 /** A Discord id the owner linked to a chat viewer, with the Discord display name last heard under it (MEM-VOICE-004). */
 export interface LinkRow {

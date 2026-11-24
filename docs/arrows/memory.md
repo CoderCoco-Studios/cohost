@@ -4,7 +4,7 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
-**PARTIAL**: 173 specs: 171 implemented, 0 deferred, 2 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Streamed lines are held by id and written as one `self` row on their closing clause, an idle or muted status, the 300 s idle bound or stop (MEM-WRITE-010 to MEM-WRITE-019). Open gaps: MEM-SURF-006 and MEM-VOICE-007, reopened because the name-only surfacing rules changed in the spec (a name-only entry never resolves to an id-keyed viewer, and a link's `discord_display` is not a name key); `services/memory/src/surface.ts` and its tests still implement the display-name fallback, so the code follows in the memory surfacing issue. Retention of YouTube viewers is an owner decision recorded in the LLD.
+**MAPPED**: 174 specs: 174 implemented, 0 deferred, 0 gaps. Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Streamed lines are held by id and written as one `self` row on their closing clause, an idle or muted status, the 300 s idle bound or stop (MEM-WRITE-010 to MEM-WRITE-019). Name-only surfacing reaches name-keyed rows only (MEM-SURF-006), and a link's `discord_display` is never a name key (MEM-VOICE-007); the Discord id guard is MEM-VOICE-011. Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References
 

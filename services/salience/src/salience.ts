@@ -504,6 +504,9 @@ export class Salience {
     if (spoken) {
       if (wordsAdded(spoken.text, d.text) < this.d.cfg.brain.salience.interject_followup_min_words) { // @spec SAL-INTJ-010
         if (entry) this.ctx.markSeenEvents([entry]);
+        // A provisional focus held for the utterance is withdrawn, so cortex is not left thinking until its limit (SAL-INTJ-010).
+        const h = this.held;
+        if (h && h.utteranceId === d.utteranceId) await this.withdraw("resumed", h);
         return;
       }
       // A failed yield is handled as a stop that did not happen: the line keeps its state and takes no barge-in either (SAL-BARGE-009).

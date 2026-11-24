@@ -319,13 +319,14 @@ test("interject: a final adding fewer than interject_followup_min_words is marke
 
 test("interject: the added words are the difference of the word counts, never below zero", async () => { // @spec SAL-INTJ-011
   const cases: [string, boolean][] = [
-    ["Look AT this one right now yes", true],         // case-insensitive prefix: three added
-    ["look at this one right now", false],            // two added
-    ["look at this one. right now yes", true],        // punctuation is kept, so not a prefix: 7 - 4 = 3
+    ["Look AT this one right now yes", true],         // 7 - 4 = 3
+    ["look at this one right now", false],            // 6 - 4 = 2
+    ["look at this one. right now yes", true],        // 7 - 4 = 3: "one." is one word
     ["look at this one. right now", false],           // 6 - 4 = 2
-    ["look at", false],                               // never below zero
-    ["totally different words here right now ok", true], // not a prefix: 7 - 4 = 3, meets the minimum of 3
-    ["totally different words here now ok", false],   // not a prefix: 6 - 4 = 2, below the minimum of 3
+    ["look at", false],                               // 2 - 4 < 0: never below zero
+    ["look", false],                                  // 1 - 4 < 0: never below zero (an absolute difference would give 3)
+    ["totally different words here right now ok", true], // 7 - 4 = 3, meets the minimum of 3
+    ["totally different words here now ok", false],   // 6 - 4 = 2, below the minimum of 3
   ];
   for (const [fin, yields] of cases) {
     const e = setup({}, { draw: 0 });
@@ -518,18 +519,55 @@ test("interject: a final during a pending request does not yield when another li
   }
 });
 
-test("interject: forget_context drops a pending request and its held finals: nothing re-enters, no unfinished line is pushed", async () => { // @spec SAL-INTJ-024
+test("interject: forget_context drops a pending request and its held finals, leaves cortex not busy, and charges no gap", async () => { // @spec SAL-INTJ-024
   const e = setup({}, { draw: 0 });
   await asked(e);
-  void e.s.onEvent(heard(`${EARLY} and then some more`));
+  const fin = `${EARLY} and then some more`;
+  void e.s.onEvent(heard(fin)); // held for the pending request
   await flush();
   await e.s.onEvent(event("control", { cmd: "forget_context" }));
   await flush();
   assert.equal(e.s.ctx.all().length, 0, "the window is cleared");
-  await e.s.onEvent(say("L1")); // a line for the dropped request is an ordinary line, not an answer
-  await flush();
-  assert.equal(e.s.ctx.all().some((x) => x.kind === "speech"), false, "no unfinished line, and the held final never re-enters");
   assert.equal(focuses(e).length, 1, "no decision for the held final");
+  // Not busy after forget: a new early pass is taken at once (it is refused while cortex is thinking), and the gap is not charged.
+  await asked(e, EARLY, "u2");
+  assert.equal(confirms(e).length, 2, "the next request is asked at once: no gap was charged by the forgotten one");
+  await e.s.onEvent(say("L2")); // cortex answers the new request
+  await flush();
+  assert.equal(e.s.ctx.all().some((x) => x.kind === "speech" && x.text === fin), false, "the forgotten final never re-enters");
+  const unfinished = e.s.ctx.all().filter((x) => x.kind === "speech" && x.unfinished);
+  assert.deepEqual(unfinished.map((x) => x.kind === "speech" && x.text), [EARLY], "only the new request's early text is pushed");
+});
+
+test("interject: a final that is short against a provisional follow-up withdraws that focus as resumed, so cortex is not left thinking", async () => { // @spec SAL-INTJ-010
+  const e = setup({}, { draw: 0 });
+  await spoken(e);
+  await e.s.onEvent(status("idle"));
+  await e.s.onEvent(early(`${EARLY} and then some`, { seq: 1 })); // a provisional focus held for seq 1
+  await flush();
+  assert.equal(focuses(e)[1]!.provisional, true, "precondition: a provisional follow-up is held");
+  await e.s.onEvent(heard(`${EARLY} please`)); // adds one word beyond the interjected text
+  await flush();
+  assert.deepEqual(withdraws(e).map((w) => [w.seq, w.reason]), [[1, "resumed"]], "the held follow-up is withdrawn");
+  await e.s.onEvent(chat("hey Coco?", { mentionsCohost: true, user: "carol" }));
+  await e.s.tick();
+  assert.equal(focuses(e).length, 3, "not thinking: the chat mention is decided");
+});
+
+test("interject: with two records for one utterance the most recent one decides the final", async () => { // @spec SAL-INTJ-021
+  const e = setup({ barge_in: true }, { draw: 0 });
+  await spoken(e, { id: "L1" }); // record 1: the early text
+  await e.s.onEvent(status("idle"));
+  e.advance(120_000);
+  const second = `${EARLY} and then some`;
+  await asked(e, second, "u1", 1); // record 2 for the same utterance: a longer text
+  assert.equal(confirms(e).length, 2, "precondition: a second interjection of u1");
+  await e.s.onEvent(say("L2"));
+  await flush();
+  // Against record 2 this final adds one word (short: no stop). Against record 1 it adds four, a barge-in on the line playing.
+  await e.s.onEvent(heard(`${EARLY} and then some more`, { utteranceId: "u1" }));
+  await flush();
+  assert.deepEqual(stops(e), [], "the most recent record decides: the short continuation publishes nothing");
 });
 
 test("interject: a refused yield stop leaves the state and cooldown as they were and takes no barge-in check", async () => { // @spec SAL-INTJ-009, SAL-BARGE-009

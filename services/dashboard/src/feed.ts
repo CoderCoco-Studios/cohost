@@ -17,6 +17,8 @@ export interface FeedDeps {
   /** Applied to every services snapshot before it is sent (the Compose restart counts overlay, DASH-FEED-010). */
   decorate?: (snapshot: ServiceHealth[]) => ServiceHealth[];
   clients: () => Iterable<FeedSocket>;
+  /** True for a socket that arrived beyond loopback (LAN listener, or a non-loopback full surface): its tool events are sent redacted (DASH-FEED-011). Default: none. */
+  redacts?: (ws: FeedSocket) => boolean;
   /** The stack state the feed carries to clients: the `GET /stack` body, and a hook for each change of it. */
   stack: { snapshot(): object; onChange(cb: (snapshot: object) => void): () => void };
   /** Where the seed retry's warnings go. */
@@ -44,6 +46,42 @@ export interface FeedLog {
 const WITHHELD: ReadonlySet<string> = new Set(["memory.notes.request", "memory.notes.reply", "memory.viewers.request", "memory.viewers.reply"]);
 const forwardable = (ev: BusEvent): boolean => ev.type !== "service.heartbeat" && !WITHHELD.has(ev.type);
 
+/**
+ * The form of an event a redacted socket is sent (DASH-FEED-011): `tool.request` and `tool.confirm` with `arguments: {}`,
+ * `tool.result` with empty `content` and no `truncated`, an `inject.request` for the tools unit with empty `text`, a
+ * `tool.timer` with empty `note`, a `memory.recall.request` with empty `query`, and a `memory.recall.reply` with the empty
+ * `text` of each memory. Every other member and event type is unchanged. An event that emptied something held gets
+ * `redacted: true` in its `data`, so the owner's page can say why a call shows no arguments. Returns a copy; the shared
+ * event is never mutated, so a loopback socket on the same feed still gets it whole.
+ */
+// @spec DASH-FEED-011
+export function redactEvent<E extends BusEvent>(ev: E): E {
+  const data = ev.data as unknown as Record<string, unknown>;
+  const marked = (held: boolean) => (held ? { redacted: true } : {});
+  if (ev.type === "tool.request" || ev.type === "tool.confirm") {
+    // Fails closed: anything but an empty plain object as `arguments` counts as held.
+    return { ...ev, data: { ...data, arguments: {}, ...marked(!isEmptyPlainObject(data.arguments)) } };
+  }
+  if (ev.type === "tool.result") {
+    const { truncated: _truncated, ...rest } = data;
+    return { ...ev, data: { ...rest, content: "", ...marked(data.content !== "") } };
+  }
+  if (ev.type === "inject.request" && data.target === "tools") return { ...ev, data: { ...data, text: "" } };
+  if (ev.type === "tool.timer") return { ...ev, data: { ...data, note: "" } };
+  if (ev.type === "memory.recall.request") return { ...ev, data: { ...data, query: "", ...marked(data.query !== "") } };
+  if (ev.type === "memory.recall.reply") {
+    const list = Array.isArray(data.memories) ? data.memories : undefined;
+    const held = list === undefined ? data.memories !== undefined : list.some((m) => !(isPlainObject(m) && m.text === ""));
+    const emptied = (list ?? []).map((m) => (isPlainObject(m) ? { ...m, text: "" } : { text: "" }));
+    return { ...ev, data: { ...data, memories: emptied, ...marked(held) } };
+  }
+  return ev;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+/** A plain `{}`: the only `arguments` value with nothing in it to hide. */
+const isEmptyPlainObject = (v: unknown): boolean => isPlainObject(v) && Object.getPrototypeOf(v) === Object.prototype && Object.keys(v).length === 0;
+
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 export const stackMessage = (snapshot: object): string => JSON.stringify({ type: "stack", ...snapshot });
 
@@ -61,9 +99,10 @@ export function createFeed(d: FeedDeps) {
   };
   // Sockets whose connect replay is being read: live events for them wait here until the replay is out.
   const replaying = new Map<FeedSocket, BusEvent[]>();
+  const form = (c: FeedSocket, ev: BusEvent): BusEvent => (d.redacts?.(c) ? redactEvent(ev) : ev);
   const deliver = (c: FeedSocket, ev: BusEvent) => {
     const held = replaying.get(c);
-    if (held) held.push(ev); else if (c.readyState === OPEN) c.send(JSON.stringify(ev));
+    if (held) held.push(ev); else if (c.readyState === OPEN) c.send(JSON.stringify(form(c, ev)));
   };
   let timer: NodeJS.Timeout | undefined;
   let offChange: (() => void) | undefined;
@@ -87,7 +126,7 @@ export function createFeed(d: FeedDeps) {
   const offStack = d.stack.onChange((snap) => { broadcast(stackMessage(snap)); if (d.decorate) broadcast(servicesMessage(snapshot())); });
 
   return {
-    // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008
+    // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008, DASH-FEED-011, DASH-FEED-012
     /** Wire up a new client: current services, then the stack state, then the recent event replay. */
     // Replayed events carry `replay: true`; a live event that lands meanwhile is held and sent after the replay (once).
     async onConnection(ws: FeedSocket): Promise<void> {
@@ -102,11 +141,11 @@ export function createFeed(d: FeedDeps) {
           for (const ev of await d.bus.recent(d.replay ?? 60)) {
             if (!forwardable(ev)) continue;
             sent.add(ev.id);
-            ws.send(JSON.stringify({ ...ev, replay: true }));
+            ws.send(JSON.stringify({ ...form(ws, ev), replay: true }));
           }
         } catch (err) { failure = { err }; }
         replaying.delete(ws);
-        for (const ev of held) if (!sent.has(ev.id) && ws.readyState === OPEN) ws.send(JSON.stringify(ev)); // live events that landed meanwhile still reach this client
+        for (const ev of held) if (!sent.has(ev.id) && ws.readyState === OPEN) ws.send(JSON.stringify(form(ws, ev))); // live events that landed meanwhile still reach this client
         if (failure) throw failure.err;
       } finally {
         replaying.delete(ws);

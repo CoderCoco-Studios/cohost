@@ -11,7 +11,7 @@ const ORIGINS = ["speech", "guest", "chat", "vision", "reminder", "dashboard", "
 const request = { id: "r1", tool: "get_time", arguments: {}, origin: "speech", round: 1, listed: true };
 const result = { id: "r1", tool: "get_time", status: "ok", content: "noon", durationMs: 0 };
 const catalogTool = { name: "get_time", description: "the time", parameters: { type: "object" }, label: "read", effect: "read", enabled: true, acts: false, chat: false, confirm: false, offered: true };
-const catalog = { intervalMs: 5000, mode: "live", servers: [{ name: "builtin", state: "ok", external: false }], tools: [catalogTool] };
+const catalog = { intervalMs: 5000, mode: "live", servers: [{ name: "builtin", state: "ok", external: false, left_out: 0 }], tools: [catalogTool] };
 
 // @spec BUS-EVT-006
 test("inject.request accepts the target tools", () => {
@@ -76,6 +76,7 @@ test("tool.result requires its members, allows empty content, and takes truncate
     assert.equal(ok("tool.result", { ...result, [k]: false }), false, `${k} false`);
   }
   for (const k of ["id", "tool", "status", "content", "durationMs"]) assert.equal(ok("tool.result", without(result, k)), false, `missing ${k}`);
+  for (const tool of ["bad name", "a.b", "x".repeat(65), ""]) assert.equal(ok("tool.result", { ...result, tool }), false, JSON.stringify(tool));
 });
 
 // @spec BUS-EVT-045
@@ -99,17 +100,21 @@ test("tool.result reason: refusal reasons only with refused, tool_error/unavaila
 });
 
 // @spec BUS-EVT-046
-test("tool.catalog requires intervalMs, mode, servers (name, state, external, optional detail) and tools", () => {
+test("tool.catalog requires intervalMs, mode, servers (name, state, external, left_out, optional detail) and tools", () => {
   assert.equal(ok("tool.catalog", catalog), true);
   assert.equal(ok("tool.catalog", { ...catalog, tools: [], servers: [] }), true);
   assert.equal(ok("tool.catalog", { ...catalog, intervalMs: 0 }), false);
   assert.equal(ok("tool.catalog", { ...catalog, intervalMs: 1.5 }), false);
   for (const mode of ["live", "mock"]) assert.equal(ok("tool.catalog", { ...catalog, mode }), true, mode);
   assert.equal(ok("tool.catalog", { ...catalog, mode: "dry" }), false);
-  for (const state of ["ok", "down", "auth", "mock"]) assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state, external: true, detail: "d" }] }), true, state);
+  for (const state of ["ok", "down", "auth", "mock"]) assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state, external: true, left_out: 0, detail: "d" }] }), true, state);
   assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "up", external: true }] }), false);
   assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok" }] }), false, "external is required");
-  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true, detail: 1 }] }), false);
+  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true, left_out: 0, detail: 1 }] }), false);
+  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true }] }), false, "left_out is required");
+  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true, left_out: -1 }] }), false, "left_out is not negative");
+  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true, left_out: 1.5 }] }), false, "left_out is an integer");
+  assert.equal(ok("tool.catalog", { ...catalog, servers: [{ name: "s", state: "ok", external: true, left_out: 5 }] }), true, "a count of left-out tools");
   for (const k of ["intervalMs", "mode", "servers", "tools"]) assert.equal(ok("tool.catalog", without(catalog, k)), false, `missing ${k}`);
 });
 
@@ -145,6 +150,7 @@ test("tool.confirm requires id, tool, arguments object, an origin as for tool.re
   const confirm = { id: "r1", tool: "lights", arguments: { on: true }, origin: "chat", expiresAt: 5 };
   assert.equal(ok("tool.confirm", confirm), true);
   for (const origin of ORIGINS) assert.equal(ok("tool.confirm", { ...confirm, origin }), true, origin);
+  for (const tool of ["bad name", "a.b", "x".repeat(65), ""]) assert.equal(ok("tool.confirm", { ...confirm, tool }), false, JSON.stringify(tool));
   assert.equal(ok("tool.confirm", { ...confirm, origin: "owner" }), false);
   assert.equal(ok("tool.confirm", { ...confirm, expiresAt: 1.5 }), false);
   assert.equal(ok("tool.confirm", { ...confirm, arguments: "x" }), false);

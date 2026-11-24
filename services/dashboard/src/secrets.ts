@@ -1,5 +1,6 @@
 import type http from "node:http";
-import { secretPathOf, sectionSecrets, secretsPath, setSecretPaths, updateSecrets } from "@cohost/config";
+import { readFileSync } from "node:fs";
+import { secretPathMatches, secretPathOf, sectionSecrets, secretsPath, setSecretPaths, toolServerNames, updateSecrets } from "@cohost/config";
 import type { Logger } from "@cohost/config";
 import { bearerOk, type ServiceDef } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
@@ -11,6 +12,8 @@ export interface SecretsDeps {
   token: string | undefined;
   /** The secrets file (`config/secrets.yaml`). Defaults to the loader's. */
   file?: () => string;
+  /** Path of the saved `config.yaml`, read per request: a token is set only for a server it holds under `tools.servers`. */
+  config: () => string;
   manifest: readonly ServiceDef[];
   /** The latest stack status, for the `restart` list. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
@@ -33,14 +36,33 @@ const json = (res: http.ServerResponse, status: number, value: unknown, headers:
   res.end(JSON.stringify(value));
 };
 
-/** A value that is `null`, or a string non-empty after trimming with no line break or NUL inside; otherwise why not. */
+/**
+ * A value that is `null`, or a string non-empty after trimming with no control character inside (C0 and DEL, so no line
+ * break, NUL or tab); otherwise why not. The page refuses the same characters before it sends.
+ */
+// @spec DASH-SECRET-006
 function checkValue(v: unknown): { ok: true; value: string | null } | { ok: false; why: string } {
   if (v === null) return { ok: true, value: null };
   if (typeof v !== "string") return { ok: false, why: "value must be a string, or null to clear the secret" };
   const trimmed = v.trim();
   if (trimmed === "") return { ok: false, why: "value is empty after trimming; to remove a secret, send null" };
-  if (/[\r\n\0]/.test(trimmed)) return { ok: false, why: "value must be a single line with no NUL" };
+  if (/[\x00-\x1f\x7f]/.test(trimmed)) return { ok: false, why: "value must be a single line of printable characters" };
   return { ok: true, value: trimmed };
+}
+
+/** The `tools.servers` names of the saved config.yaml, read fresh; none when the file is missing or unreadable. */
+function savedServerNames(d: SecretsDeps): ReadonlySet<string> {
+  try { return new Set(toolServerNames(readFileSync(d.config(), "utf8"))); } catch { return new Set(); }
+}
+
+const SERVER_TOKEN = /^tools\.servers\.(.+)\.token$/;
+
+/** True for a set (non-null) of `tools.servers.<name>.token` whose name the saved config does not hold. */
+function unknownServerSet(d: SecretsDeps, path: string, value: unknown): boolean {
+  if (value === null) return false;
+  const m = SERVER_TOKEN.exec(path);
+  // config.yaml is read only for a server token: every other secret path never locates it (DASH-SECRET-010)
+  return m !== null && !savedServerNames(d).has(m[1]!);
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -55,6 +77,7 @@ const scrub = (text: string, values: readonly (string | null)[]): string =>
  * answer 401 and the right token 404), write-only, and never touches `config.yaml` or `.env` or a unit.
  */
 // @spec DASH-SECRET-001, DASH-SECRET-002, DASH-SECRET-003, DASH-SECRET-004, DASH-SECRET-005, DASH-SECRET-006, DASH-SECRET-007, DASH-SECRET-008, DASH-SECRET-009, DASH-SECRET-010, DASH-SECRET-011, DASH-SECRET-012
+// @spec DASH-SECRET-013, DASH-SECRET-014, DASH-SECRET-015
 export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   const multi = url.pathname === "/secrets";
   if (req.method !== "PUT" || !(multi || url.pathname.startsWith("/secrets/"))) return false;
@@ -86,6 +109,8 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
     const entries = Object.entries(values);
     const unknown = entries.map(([p]) => p).filter((p) => secretPathOf(p) === undefined);
     if (unknown.length) { json(res, 404, { ...UNKNOWN, paths: unknown }); return true; }
+    const ghosts = entries.filter(([p, v]) => unknownServerSet(d, p, v)).map(([p]) => p);
+    if (ghosts.length) { json(res, 404, { ...UNKNOWN, paths: ghosts }); return true; }
     changes = [];
     for (const [p, v] of entries) {
       const c = checkValue(v);
@@ -98,6 +123,7 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
     if (secretPathOf(path) === undefined) { json(res, 404, UNKNOWN); return true; }
     const parsed = parseObject(raw);
     if (!parsed || !("value" in parsed)) { json(res, 400, { ok: false, detail: "the body must be { value: <string | null> }" }); return true; }
+    if (unknownServerSet(d, path, parsed["value"])) { json(res, 404, UNKNOWN); return true; }
     const c = checkValue(parsed["value"]);
     if (!c.ok) { json(res, 400, { ok: false, detail: c.why }); return true; }
     changes = [[path, c.value]];
@@ -140,7 +166,7 @@ function parseObject(raw: string): Record<string, unknown> | undefined {
 function restartFor(d: SecretsDeps, paths: readonly string[]): string[] {
   const sections = new Set<string>();
   for (const section of declaredSections(d.manifest)) {
-    for (const name of sectionSecrets(section)) if (paths.includes(`${section}.${name}`)) sections.add(section);
+    for (const name of sectionSecrets(section)) if (paths.some((p) => secretPathMatches(p, `${section}.${name}`))) sections.add(section);
   }
   const stack = d.stack();
   if (!stack.docker.ok) return [];

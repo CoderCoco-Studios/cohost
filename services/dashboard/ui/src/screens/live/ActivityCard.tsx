@@ -12,8 +12,8 @@ import { FILTERS, inFilter, kindLabel, rowBadges, rowClass, rowExtras, rowText, 
 export const FOLLOW_SLACK_PX = 24;
 
 /** Memoised: a new event re-renders only the new row, not the 300 already shown. `today` is the start of the page's day. */
-// @spec DASH-UI-038, DASH-UI-042
-const Row = memo(function Row({ ev, today, text }: { ev: FeedEvent; today: number; text?: string }) {
+// @spec DASH-UI-038, DASH-UI-041, DASH-UI-042
+const Row = memo(function Row({ ev, today, text, cut }: { ev: FeedEvent; today: number; text?: string; cut?: string }) {
   const label = kindLabel(ev.type);
   const t = rowTime(ev.ts, today);
   const badges = rowBadges(ev);
@@ -22,7 +22,7 @@ const Row = memo(function Row({ ev, today, text }: { ev: FeedEvent; today: numbe
     <article className={`ev ${rowClass(ev.type)}`} aria-label={`${label}, ${ev.type}`}>
       <time dateTime={t.iso}>{t.date ? <><span className="ev-date">{t.date}</span>{" "}</> : null}{t.clock}</time>
       <span className="k" title={ev.type}>{label}</span>
-      <p>{text ?? rowText(ev)}{extra.tag ? <>{" "}<span className="tag">{extra.tag}</span></> : null}{extra.because ? <>{" "}<span className="small muted">{`because: ${extra.because}`}</span></> : null}{badges.map((b) => <span key={b} className={`badge ${b === "injected" ? "badge-inj" : "badge-mem"}`}>{b}</span>)}</p>
+      <p>{text ?? rowText(ev)}{extra.tag ? <>{" "}<span className="tag">{extra.tag}</span></> : null}{extra.because ? <>{" "}<span className="small muted">{`because: ${extra.because}`}</span></> : null}{cut ? <>{" "}<span className="small muted">{`cut: ${cut}`}</span></> : null}{badges.map((b) => <span key={b} className={`badge ${b === "injected" ? "badge-inj" : "badge-mem"}`}>{b}</span>)}</p>
     </article>
   );
 });
@@ -33,7 +33,7 @@ const Row = memo(function Row({ ev, today, text }: { ev: FeedEvent; today: numbe
  * stops when the operator scrolls further up and says "Jump to latest" while rows keep arriving (DASH-UI-026), and is
  * `aria-busy` and dimmed while the socket is closed (DASH-UI-001).
  */
-// @spec DASH-UI-001, DASH-UI-002, DASH-UI-026, DASH-UI-027, DASH-UI-030, DASH-A11Y-004
+// @spec DASH-UI-001, DASH-UI-002, DASH-UI-041, DASH-UI-026, DASH-UI-027, DASH-UI-030, DASH-A11Y-004
 export function ActivityCard() {
   const { now } = useRuntime();
   const events = useFeed((f) => f.events);
@@ -87,7 +87,7 @@ export function ActivityCard() {
         <div ref={logRef} role="log" aria-label="Bus activity" aria-relevant="additions" tabIndex={0} onScroll={onScroll}
           className={`feed feed-scroll${stale.className ? ` ${stale.className}` : ""}`} aria-busy={stale["aria-busy"]}>
           {visible.length === 0 ? <EmptyState title={filter === "all" ? "No activity yet" : `No ${filterLabel.toLowerCase()} activity yet`}>Rows appear here as the co-host chats, sees, hears and speaks.</EmptyState> : null}
-          {visible.map((ev) => <Row key={ev.id} ev={ev} today={today} text={ev.type === "brain.say" ? lines[String((ev.data as { id?: unknown }).id)]?.text : undefined} />)}
+          {visible.map((ev) => <Row key={ev.id} ev={ev} today={today} text={ev.type === "brain.say" ? lines[String((ev.data as { id?: unknown }).id)]?.text : undefined} cut={ev.type === "brain.say" ? lines[String((ev.data as { id?: unknown }).id)]?.cut : undefined} />)}
         </div>
       )}
     </section>

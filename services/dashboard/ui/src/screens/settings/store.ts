@@ -80,7 +80,8 @@ export interface Settings {
   /** Reload after a 409: reads the section again and drops its edits. */
   reload(path: string): Promise<void>;
   run(paths: string[], dryRun: boolean): Promise<void>;
-  setSecrets(section: string, values: Record<string, string | null>, action: string): Promise<{ ok: true } | { ok: false; detail: string; paths?: string[] }>;
+  /** `offerRestart: false` keeps the units the write names out of the restart offer (a write that is part of a save that later fails). */
+  setSecrets(section: string, values: Record<string, string | null>, action: string, options?: { offerRestart?: boolean }): Promise<{ ok: true } | { ok: false; detail: string; paths?: string[] }>;
   restartUnits(): Promise<void>;
   dismissRestart(): void;
   loadPersonality(force?: boolean): Promise<void>;
@@ -305,7 +306,7 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
         ? { kind: "ok", message: warnings.length ? "Check passed with warnings." : "Check passed: these edits are valid.", warnings }
         : { kind: "ok", message: "Saved.", warnings: restart.length > 0 ? [] : warnings });
     },
-    async setSecrets(section, values, action) {
+    async setSecrets(section, values, action, options) {
       const paths = Object.keys(values).map((k) => `${section}.${k}`);
       const body = Object.fromEntries(Object.entries(values).map(([k, v]) => [`${section}.${k}`, v]));
       const r = paths.length === 1
@@ -322,7 +323,7 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
         for (const p of paths) { const k = p.slice(section.length + 1); keys[k] = { ...keys[k], secret: true, set: !!setMap[p] }; }
         return { ...cur, keys };
       });
-      addRestart(r.data.restart ?? [], []);
+      if (options?.offerRestart !== false) addRestart(r.data.restart ?? [], []);
       return { ok: true };
     },
     async restartUnits() {

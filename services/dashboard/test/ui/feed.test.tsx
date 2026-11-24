@@ -82,7 +82,7 @@ test("the log keeps rows only for the rendered event types and at most 300 of th
   const ids = feed.state.get().events.map((e) => e.id);
   assert.equal(ids.length, 300);
   assert.equal(ids.at(-1), "359-0");
-  assert.deepEqual([...FEED_TYPES].sort(), ["brain.say", "brain.status", "chat.message", "control", "inject.request", "inject.result", "service.lifecycle", "speech.heard", "vision.summary", "voice.done", "voice.playing", "voice.utterance"]);
+  assert.deepEqual([...FEED_TYPES].sort(), ["brain.say", "brain.status", "chat.message", "control", "inject.request", "inject.result", "service.lifecycle", "speech.heard", "tool.request", "tool.result", "tool.timer", "vision.summary", "voice.done", "voice.playing", "voice.utterance"]);
 });
 
 // @spec DASH-UI-003

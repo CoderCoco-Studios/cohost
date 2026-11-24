@@ -203,6 +203,7 @@ test("at most max_tools_per_server tools of one server are listed, and the cut t
   assert.deepEqual(mcpNames(s), ["search__a", "search__b"], "the first tools in the server's own order are kept");
   assert.deepEqual(names(s).slice(0, 4), BUILTIN, "the built-in tools come first, outside the per-server limit");
   assert.match(s.catalogs().at(-1)!.servers[0]!.detail ?? "", /\b2\b/, "two tools were left out");
+  assert.equal(s.catalogs().at(-1)!.servers[0]!.left_out, 2, "the count a page reads, not the detail text");
   await s.stop();
 });
 

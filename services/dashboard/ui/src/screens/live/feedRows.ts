@@ -1,3 +1,4 @@
+import { RESULT_CUT, cut, reasonWords } from "../../state/tools";
 import type { FeedEvent } from "../../state/types";
 
 /** The Activity filter choices (DASH-UI-026). */
@@ -25,6 +26,7 @@ const KIND: Record<string, string> = {
   "chat.message": "Chat", "brain.say": "Co-host", "vision.summary": "Vision", "speech.heard": "Speech", "brain.status": "Status",
   control: "Control", "service.lifecycle": "Service", "inject.request": "Test", "inject.result": "Test",
   "voice.utterance": "Voice", "voice.playing": "Voice", "voice.done": "Voice",
+  "tool.request": "Tool", "tool.result": "Tool", "tool.timer": "Tool",
 };
 export const kindLabel = (type: string): string => KIND[type] ?? type;
 
@@ -57,8 +59,22 @@ export function rowText(ev: FeedEvent): string {
     case "inject.result": return `${d.ok ? "ok" : "FAILED"}${s(d.detail) ? ` · ${s(d.detail)}` : ""}`;
     case "voice.utterance": return `audio ready ${Math.round(Number(d.durationMs) || 0)}ms`;
     case "voice.playing": case "voice.done": return s(d.sink);
+    case "tool.request": return `asked for ${s(d.tool)}`;
+    case "tool.result": return toolResultText(d);
+    case "tool.timer": return d.missed === true ? `timer missed: ${s(d.note)}` : `timer went off: ${s(d.note)}`;
     default: return "";
   }
+}
+
+/** A tool result in one line: the tool, the status in words (a refusal or error with its reason), how long it took and the start of its content (DASH-UI-002). */
+// @spec DASH-UI-002, DASH-TOOL-024
+function toolResultText(d: Record<string, unknown>): string {
+  const status = s(d.status);
+  const reason = s(d.reason) ? reasonWords(s(d.reason)) : "";
+  const words = status === "timeout" ? "timed out" : status === "refused" ? (reason ? `refused: ${reason}` : "refused") : status === "error" ? (reason ? `error: ${reason}` : "error") : status;
+  const ms = Math.round(Number(d.durationMs) || 0);
+  const content = typeof d.content === "string" ? d.content.trim() : "";
+  return [s(d.tool), words, `${ms} ms`].filter((x) => x !== "").join(" · ") + (content ? ` · ${cut(content, RESULT_CUT)}` : "");
 }
 
 /** The small extras a row shows after its text (as the design draws them): a chat line's platform, a co-host line's emotion and the reason it spoke. */

@@ -135,6 +135,30 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
   assert.doesNotMatch(JSON.stringify(body), /pnpm|composeName|isolatedEnv/);
 });
 
+// @spec DASH-HTTP-014
+test("GET /services/manifest lists the twenty units in manifest order, the tools service and the discord connector among them, each with the eight members and no compose name, pnpm filter or environment preset", async () => {
+  const rec = recordingLog();
+  const server = http.createServer(createDashboardHandler({
+    bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }),
+  }));
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  after(() => server.close());
+  const r = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/services/manifest`);
+  assert.equal(r.status, 200, "ungated: no token and no control mode");
+  const { units } = (await r.json()) as { units: Record<string, unknown>[] };
+  assert.equal(units.length, 20);
+  assert.deepEqual(units.map((u) => u.id), SERVICE_MANIFEST.map((s) => s.id));
+  for (const id of ["tools", "connector-discord", "stt-nemotron", "stt-kyutai", "tts-pocket"]) assert.ok(units.some((u) => u.id === id), id);
+  for (const u of units) {
+    assert.deepEqual(Object.keys(u).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"], String(u.id));
+    assert.deepEqual(Object.keys(u.test as object).sort(), ["inputs", "observe"], String(u.id));
+  }
+  const tools = units.find((u) => u.id === "tools")!;
+  assert.deepEqual((tools.test as { inputs: string[] }).inputs, ["text"]);
+  assert.doesNotMatch(JSON.stringify(units), /pnpm|composeName|isolatedEnv|TOOLS_MODE/);
+});
+
 class Sock implements FeedSocket {
   readyState = 1;
   sent: Record<string, unknown>[] = [];

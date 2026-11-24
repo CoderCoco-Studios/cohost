@@ -93,6 +93,8 @@ export interface CatalogServer {
   name: string;
   state: SourceState;
   external: boolean;
+  /** The tools of the server the catalog left out (TOOL-CAT-014). */
+  leftOut: number;
   detail: string;
 }
 
@@ -203,7 +205,7 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     const parts = [STATE_WORDS[state], `${listed} tools listed`];
     if (left > 0) parts.push(`${left} left out`);
     if (source?.detail) parts.push(source.detail);
-    servers.push({ name: server, state, external, detail: parts.join("; ") });
+    servers.push({ name: server, state, external, leftOut: left, detail: parts.join("; ") });
   }
   const enabledNames = Object.entries(cfg.tools.allow).filter(([, a]) => a.enabled).map(([name]) => name);
   return { mode, tools, servers, byName, enabledNames };
@@ -280,5 +282,5 @@ export function publishedTool(t: KnownTool): EventInput<"tool.catalog">["tools"]
 
 /** The published server entries (TOOL-CAT-010). */
 export function publishedServers(s: Snapshot): EventInput<"tool.catalog">["servers"] {
-  return s.servers.map((x) => ({ name: x.name, state: x.state, external: x.external, detail: x.detail }));
+  return s.servers.map((x) => ({ name: x.name, state: x.state, external: x.external, left_out: x.leftOut, detail: x.detail }));
 }

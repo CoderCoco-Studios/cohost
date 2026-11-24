@@ -262,6 +262,38 @@ test("the same event delivered twice (a replay of a live one) makes one bar", ()
   assert.equal(bars().length, 1);
 });
 
+// @spec DASH-TOOL-005, DASH-FEED-011
+test("a call whose arguments are hidden on this connection says so and cannot be allowed; Deny still answers", () => {
+  const app = boot();
+  skewed(app, 0);
+  confirm(app, { redacted: true, arguments: {} }, "h1");
+  const b = bar("h1")!;
+  assert.match(b.textContent!, /Arguments are hidden on this connection/);
+  assert.equal((within(b).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, true);
+  assert.equal((within(b).getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled, false);
+});
+
+// @spec DASH-TOOL-005
+test("a call with no arguments on a connection that was sent them says No arguments, and Allow is on", () => {
+  const app = boot();
+  skewed(app, 0);
+  confirm(app, { arguments: {} }, "n1");
+  assert.match(bar("n1")!.textContent!, /No arguments/);
+  assert.equal((within(bar("n1")!).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, false);
+});
+
+// @spec DASH-TOOL-003
+test("an origin the page does not know is shown as an unknown source, never as its own text or a prototype member", () => {
+  const app = boot();
+  skewed(app, 0);
+  confirm(app, { origin: "constructor" }, "o1");
+  confirm(app, { origin: "<b>x</b>" }, "o2");
+  for (const id of ["o1", "o2"]) {
+    assert.match(bar(id)!.textContent!, /an unknown source/, id);
+    assert.doesNotMatch(bar(id)!.textContent!, /function|Object|<b>/, id);
+  }
+});
+
 // @spec DASH-TOOL-003
 test("a replayed tool.confirm never makes a bar, even one whose countdown is still open and whose result was not replayed", () => {
   const app = boot();

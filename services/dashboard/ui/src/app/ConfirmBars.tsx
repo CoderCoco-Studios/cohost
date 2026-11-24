@@ -50,7 +50,9 @@ function ConfirmBar({ call, seconds }: { call: PendingConfirm; seconds: number }
     <div className="confirm-bar note" role="group" aria-labelledby={heading} data-confirm={call.id}>
       <div className="confirm-main">
         <p id={heading}><span className="confirm-tool mono">{call.tool}</span>{` wants to run, asked for by ${originWords(call.origin)}.`}</p>
-        {lines.length > 0 ? (
+        {call.redacted ? (
+          <p className="small note note-warn">Arguments are hidden on this connection. Allow is off, because you cannot see what it would run.</p>
+        ) : lines.length > 0 ? (
           <dl className="confirm-args mono small">
             {lines.map((l, i) => <div key={i}><dt>{l.key}</dt>{" "}<dd>{l.text}</dd>{" "}</div>)}
           </dl>
@@ -60,7 +62,7 @@ function ConfirmBar({ call, seconds }: { call: PendingConfirm; seconds: number }
       </div>
       <span className="confirm-left small" title="Time left to answer">{` ${seconds}s `}</span>
       <div className="row">
-        <Button variant="primary" disabled={phase !== "idle"} onClick={() => void answer(true)}>Allow</Button>
+        <Button variant="primary" disabled={phase !== "idle" || call.redacted} onClick={() => void answer(true)}>Allow</Button>
         <Button variant="danger" disabled={phase !== "idle"} onClick={() => void answer(false)}>Deny</Button>
       </div>
     </div>

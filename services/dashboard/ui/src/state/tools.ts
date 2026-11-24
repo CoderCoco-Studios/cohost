@@ -10,13 +10,18 @@ export const ARG_CUT = 200;
 /** Longest start of a tool result a feed row shows. */
 export const RESULT_CUT = 200;
 
-/** A call waiting for the owner's answer. `args` is the raw `arguments` member; `deadline` is by the page's own clock (DASH-TOOL-004). */
+/**
+ * A call waiting for the owner's answer. `args` is the raw `arguments` member; `deadline` is by the page's own clock (DASH-TOOL-004).
+ * `redacted` is set when this connection was sent the call without its arguments (DASH-FEED-011): the owner cannot see what
+ * they would allow, so Allow is off (DASH-TOOL-005).
+ */
 export interface PendingConfirm {
   id: string;
   tool: string;
   args: unknown;
   origin: string;
   deadline: number;
+  redacted: boolean;
 }
 
 export interface CatalogServer { name: string; state: string; external: boolean; leftOut: number; detail: string }
@@ -67,7 +72,9 @@ const ORIGINS: Record<string, string> = {
   dashboard: "the dashboard", speech: "your voice", guest: "a guest", chat: "stream chat", vision: "what the co-host sees", reminder: "a reminder", idle: "an idle moment",
 };
 /** Who asked, in words; an origin the page does not know is not echoed as a bare code. */
-export const originWords = (origin: unknown): string => (typeof origin === "string" ? ORIGINS[origin] : undefined) ?? "an unknown source";
+// @spec DASH-TOOL-003
+export const originWords = (origin: unknown): string =>
+  typeof origin === "string" && Object.prototype.hasOwnProperty.call(ORIGINS, origin) ? ORIGINS[origin]! : "an unknown source";
 
 /** `text` cut to `max` characters, with an ellipsis when it was cut. */
 export const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}…` : text);

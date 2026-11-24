@@ -144,7 +144,7 @@ export function createFeed(deps: FeedDeps): Feed {
     const remaining = d.expiresAt - ev.ts;
     if (!(remaining > 0) || expiry.has(d.id)) return;
     const id = d.id;
-    const confirm: PendingConfirm = { id, tool: typeof d.tool === "string" ? d.tool : "", args: d.arguments, origin: typeof d.origin === "string" ? d.origin : "", deadline: now() + remaining };
+    const confirm: PendingConfirm = { id, tool: typeof d.tool === "string" ? d.tool : "", args: d.arguments, origin: typeof d.origin === "string" ? d.origin : "", deadline: now() + remaining, redacted: d.redacted === true };
     state.set((s) => ({ ...s, confirms: [...s.confirms, confirm], tick: now() }));
     expiry.set(id, setT(() => dropConfirm(id), remaining));
     startTick();

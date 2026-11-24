@@ -64,6 +64,8 @@ async function open(opts: { yaml?: string; cat?: ReturnType<typeof catalog> | nu
       ? { status: opts.putStatus, json: { ok: false, etag: "e9" } }
       : { json: { ok: true, etag: "e2", restart: ["tools", "cortex", "salience"], warnings: [] } },
     "PUT /secrets": { json: { ok: true, set: {}, restart: ["tools", "cortex", "salience"] } },
+    // a single-path secret write: set answers the stored state, a clear (null) always answers ok
+    ...Object.fromEntries(["search", "plain", "weather", "lan"].map((n) => [`PUT /secrets/tools.servers.${n}.token`, (call: { body?: string }) => ({ json: { ok: true, set: JSON.parse(call.body ?? "{}").value !== null, restart: [] } })])),
   };
   const b = boot({ section: "tools", schema: real, routes });
   b.app.rt.access.setToken("control", "tok", "tab");
@@ -159,7 +161,7 @@ test("Add server takes a name, URL, header name, token and External, writes the 
   assert.equal(servers.search!.external, true);
   assert.equal("token" in servers.search!, false, "the secret is not in the map");
   assert.equal(puts(b.app).at(-1)!.headers.authorization, "Bearer tok");
-  const secret = secretCalls(b.app).find((c) => c.path === "/secrets/tools.servers.search.token" || (c.path === "/secrets" && (c.body ?? "").includes("tools.servers.search.token")))!;
+  const secret = secretCalls(b.app).find((c) => (c.path === "/secrets/tools.servers.search.token" || (c.path === "/secrets" && (c.body ?? "").includes("tools.servers.search.token"))) && (c.body ?? "").includes("mcp-SECRET-77"))!;
   assert.ok(secret, "the token goes to the secret route");
   assert.equal(secret.headers.authorization, "Bearer tok");
   assert.ok((secret.body ?? "").includes("mcp-SECRET-77"));
@@ -171,7 +173,7 @@ test("Add server takes a name, URL, header name, token and External, writes the 
 });
 
 // @spec DASH-TOOL-007
-test("a server added with no token sends no secret, and a blank header and External off are not made up", async () => {
+test("a server added with no token sends no token, only a clear of any token already stored under its name, before the map write; a blank header and External off are not made up", async () => {
   const b = await open();
   const user = userEvent.setup();
   await user.type(screen.getByRole("textbox", { name: "Name" }), "plain");
@@ -182,7 +184,37 @@ test("a server added with no token sends no secret, and a blank header and Exter
   const entry = (lastValues(b.app).servers as unknown as Record<string, Record<string, unknown>>).plain!;
   assert.equal(entry.url, "http://192.168.1.9:7000/mcp");
   assert.notEqual(entry.external, true);
+  const clears = secretCalls(b.app);
+  assert.equal(clears.length, 1, "one secret call: the clear");
+  assert.equal(clears[0]!.body!.includes("null"), true, "it is a clear");
+  assert.ok(b.app.fetch.calls.indexOf(clears[0]!) < b.app.fetch.calls.indexOf(puts(b.app).at(-1)!), "the clear comes before the map write");
+});
+
+// @spec DASH-TOOL-007
+test("a stored token that cannot be cleared stops the add: no map write, and the refusal names the server", async () => {
+  const b = await open();
+  b.app.fetch.on("PUT /secrets/tools.servers.search.token", { status: 500, json: { ok: false, detail: "disk full" } });
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
+  await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");
+  await user.click(screen.getByRole("button", { name: "Add server" }));
+  await settle(3);
+  assert.equal(puts(b.app).length, 0, "no map write");
+  assert.match(text(document.body), /Could not clear the token stored under search/);
+});
+
+// @spec DASH-TOOL-007
+test("a token holding a control character is refused on the page with no write", async () => {
+  const b = await open();
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
+  await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");
+  (screen.getByLabelText("Token") as HTMLInputElement).value = "mcp\u0007x";
+  await user.click(screen.getByRole("button", { name: "Add server" }));
+  await settle(2);
   assert.equal(secretCalls(b.app).length, 0);
+  assert.equal(puts(b.app).length, 0);
+  assert.match(text(document.body), /single line of printable characters/);
 });
 
 // @spec DASH-TOOL-007
@@ -195,7 +227,7 @@ test("a map write that fails (409 changed file, 400 invalid) sends no secret: a 
     await user.type(screen.getByLabelText("Token"), "mcp-SECRET-78");
     await user.click(screen.getByRole("button", { name: "Add server" }));
     await save();
-    assert.equal(secretCalls(b.app).length, 0, String(putStatus));
+    assert.equal(secretCalls(b.app).filter((c) => !(c.body ?? "").includes("null")).length, 0, `no token is set: ${putStatus}`);
     assert.equal(document.body.innerHTML.includes("mcp-SECRET-78"), false, "and the typed token is not echoed into the page");
     b.unmount();
     document.body.innerHTML = "";
@@ -299,7 +331,8 @@ test("each server's real token state is read from its own secret key: a server w
 // @spec DASH-TOOL-007
 test("a map write that succeeds followed by a secret write that fails shows the alert `server added without a token`, and the server stays listed", async () => {
   const b = await open();
-  b.app.fetch.on("PUT /secrets/tools.servers.search.token", { status: 500, json: { ok: false, detail: "nope" } });
+  // the clear (null) answers ok; the typed token's write fails
+  b.app.fetch.on("PUT /secrets/tools.servers.search.token", (call) => (JSON.parse(call.body ?? "{}").value === null ? { json: { ok: true, set: false, restart: [] } } : { status: 500, json: { ok: false, detail: "nope" } }));
   const user = userEvent.setup();
   await user.type(screen.getByRole("textbox", { name: "Name" }), "search");
   await user.type(screen.getByRole("textbox", { name: "URL" }), "https://mcp.example.org/v1");
@@ -460,10 +493,21 @@ test("a definition that changes between the owner reading it and saving is never
   pushCatalog(b.app, catalog([{ name: "weather__post", label: "acts", effect: "acts", server: "weather", hash: "changed-2", description: "Posts a message and deletes your files." }]));
   await settle(2);
   await save();
-  for (const c of puts(b.app)) {
-    const entry = (body(c).values.allow as unknown as Record<string, Record<string, unknown>> | undefined)?.weather__post;
-    if (entry?.enabled === true) assert.notEqual(entry.hash, "changed-2", "the new definition was not approved");
-  }
+  // not vacuous: the owner's save must have been sent, and it approves the definition the owner read
+  assert.equal(puts(b.app).length, 1, "the save was sent");
+  const entry = (body(puts(b.app)[0]!).values.allow as unknown as Record<string, Record<string, unknown>>).weather__post!;
+  assert.equal(entry.enabled, true);
+  assert.equal(entry.hash, "seen-1", "the definition the owner read is the one approved, never the changed one");
+});
+
+// @spec DASH-TOOL-016
+test("a tool approved in the unsaved edit shows as approved: no `Not approved yet` note, and its Allowed switch is on", async () => {
+  await open({ yaml: "tools:\n  allow: {}\n", cat: catalog([{ name: "weather__post", label: "acts", effect: "acts", server: "weather", hash: "hash-Q", reason: "not_approved", description: "Posts." }]) });
+  assert.match(text(toolRow("weather__post")), /Not approved yet/);
+  await userEvent.setup().click(sw(toolRow("weather__post"), "Allowed"));
+  await settle(1);
+  assert.doesNotMatch(text(toolRow("weather__post")), /Not approved yet/);
+  assert.equal(sw(toolRow("weather__post"), "Allowed").checked, true);
 });
 
 // @spec DASH-TOOL-017
@@ -471,7 +515,7 @@ test("a tool whose reason is changed shows `Changed since you approved it`, stay
   const b = await open({
     cat: catalog([
       { name: "weather__forecast", server: "weather", enabled: true, offered: false, reason: "changed", hash: "h2", description: "New description." },
-      { name: "weather__post", server: "weather", label: "acts", effect: "acts", enabled: true, acts: true, offered: false, reason: "not_approved", hash: "p1" },
+      { name: "weather__post", server: "weather", label: "acts", effect: "acts", enabled: true, acts: true, offered: false, reason: "not_approved", hash: "p2" },
       { name: "lan__x", server: "lan", enabled: true, offered: false, reason: "server_down", hash: "x1" },
     ], [{ name: "weather" }, { name: "lan", state: "down" }]),
   });
@@ -634,4 +678,15 @@ test("the secret field of the add form is write-only: it is a password field, cl
   await waitFor(() => assert.ok(b.app.fetch.calls.some((c) => c.path.startsWith("/secrets"))));
   assert.equal(document.body.innerHTML.includes("mcp-SECRET-80"), false);
   assert.equal(((screen.queryByLabelText("Token") as HTMLInputElement | null)?.value ?? ""), "");
+});
+
+// @spec DASH-TOOL-009
+test("Remove clears the server's token even when the page shows none set: a token left in secrets.yaml must not reach a later server of that name", async () => {
+  const b = await open({ secretsSet: [] });
+  await userEvent.setup().click(within(server("lan")).getByRole("button", { name: "Remove lan" }));
+  await save();
+  await waitFor(() => assert.ok(secretCalls(b.app).length >= 1));
+  const clear = secretCalls(b.app).find((c) => c.path === "/secrets/tools.servers.lan.token")!;
+  assert.ok(clear, "the clear is sent");
+  assert.equal((JSON.parse(clear.body!) as { value?: unknown }).value, null, "a clear");
 });

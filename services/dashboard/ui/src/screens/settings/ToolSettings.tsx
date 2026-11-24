@@ -12,6 +12,8 @@ import { useSettings, type SectionState } from "./store";
 type Entry = Record<string, unknown>;
 type EntryMap = Record<string, Entry>;
 const isObj = (v: unknown): v is Entry => typeof v === "object" && v !== null && !Array.isArray(v);
+/** C0 controls and DEL: a secret is one line of printable characters (DASH-SECRET-006). */
+const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
 const asMap = (v: unknown): EntryMap => (isObj(v) ? Object.fromEntries(Object.entries(v).map(([k, e]) => [k, isObj(e) ? e : {}])) : {});
 
 /** The map a widget shows: the staged edit when there is one, else what the file holds. */
@@ -102,7 +104,11 @@ export function McpServers({ section, km, st }: { section: SectionModel; km: Key
     const taken = Object.keys(mapOf(current(), km.key));
     const why = refuseAdd(name, url, header, taken);
     if (why) { setRefusal(why); return; }
+    if (CONTROL_CHARS.test(token.trim())) { setRefusal("The token must be a single line of printable characters."); return; }
     setRefusal(undefined); setBusy(true);
+    // A token already stored under this name would be merged into the new server: it is cleared first, a clear always works (DASH-TOOL-007).
+    const cleared = await settings.setSecrets(section.path, { [`servers.${name}.token`]: null }, `Clear a stored token of ${name}`);
+    if (!cleared.ok) { setRefusal(`Could not clear the token stored under ${name}, so the server was not added: ${cleared.detail}`); setBusy(false); return; }
     settings.edit(section.path, km.key, { ...mapOf(current(), km.key), [name]: { url, ...(header ? { header } : {}), ...(external ? { external: true } : {}) } });
     await settings.run([section.path], false);
     if (!saved()) { settings.revert(section.path, km.key); setBusy(false); return; } // the bar names the failure; no secret is stored for a server the file does not hold
@@ -118,10 +124,9 @@ export function McpServers({ section, km, st }: { section: SectionModel; km: Key
   const remove = async (name: string): Promise<void> => {
     setBusy(true); setRefusal(undefined); setSecretFailure(undefined);
     const tokenKey = `servers.${name}.token`;
-    if (current().keys[tokenKey]?.set) {
-      const r = await settings.setSecrets(section.path, { [tokenKey]: null }, `Clear ${section.path}.${tokenKey}`);
-      if (!r.ok) { setRefusal(`Could not clear the token of ${name}, so the server stays: ${r.detail}`); setBusy(false); return; }
-    }
+    // Always: a token the page does not show as set may still be in secrets.yaml, and a later server of this name would take it (DASH-TOOL-009).
+    const r = await settings.setSecrets(section.path, { [tokenKey]: null }, `Clear ${section.path}.${tokenKey}`);
+    if (!r.ok) { setRefusal(`Could not clear the token of ${name}, so the server stays: ${r.detail}`); setBusy(false); return; }
     const { [name]: _gone, ...rest } = mapOf(current(), km.key);
     settings.edit(section.path, km.key, rest);
     await settings.run([section.path], false);
@@ -257,7 +262,9 @@ export function ToolList({ section, km, st }: { section: SectionModel; km: KeyMo
 
 function ToolRow({ row, write }: { row: Row; write: (name: string, patch: Entry) => void }) {
   const { name, tool: t, entry: e } = row;
-  const approvalNeeded = t?.reason === "changed" || t?.reason === "not_approved";
+  // An approval made in this unsaved edit counts: the entry pins the definition the owner saw (DASH-TOOL-016) before the catalog reflects the save.
+  const approved = t?.hash !== undefined && e.hash === t.hash;
+  const approvalNeeded = !approved && (t?.reason === "changed" || t?.reason === "not_approved");
   const enabled = e.enabled === true && !approvalNeeded;
   const acts = enabled && e.acts === true;
   const chat = enabled && e.chat === true;
@@ -272,8 +279,8 @@ function ToolRow({ row, write }: { row: Row; write: (name: string, patch: Entry)
         {t ? <span className={`tag${t.label === "read" ? "" : " tag-warn"}`} title="As the server describes it">{LABELS[t.label]}</span> : null}
       </div>
       {t && t.description ? <p className="small tool-desc">{t.description}</p> : null}
-      {t?.reason === "changed" ? <p className="small note note-warn">Changed since you approved it. It stays off until you allow it again.</p> : null}
-      {t?.reason === "not_approved" ? <p className="small note note-warn">Not approved yet.</p> : null}
+      {approvalNeeded && t?.reason === "changed" ? <p className="small note note-warn">Changed since you approved it. It stays off until you allow it again.</p> : null}
+      {approvalNeeded && t?.reason === "not_approved" ? <p className="small note note-warn">Not approved yet.</p> : null}
       {t?.reason === "server_down" ? <p className="small muted">Its server is down, so the tool cannot run.</p> : null}
       {t && e.enabled === true && t.label !== "read" && e.acts !== true ? <p className="small note note-warn">Not offered to the co-host until you allow it to act.</p> : null}
       {t && marksDiffer(e, t) ? <p className="small muted">Applies when tools restarts.</p> : null}

@@ -17,6 +17,8 @@ export type DepStatus = "ok" | "down" | "n/a";
 export const DESCRIPTION_MAX = 400;
 export const TITLE_MAX = 100;
 export const SCHEMA_MAX = 4000;
+/** The deepest an argument schema may nest, counting the schema itself as one object or array (TOOL-CAT-002). */
+export const SCHEMA_DEPTH_MAX = 64;
 export const QUALIFIED_NAME_MAX = 64;
 
 const PART = /^[A-Za-z0-9_-]+$/;
@@ -98,6 +100,26 @@ export interface Snapshot {
   enabledNames: string[];
 }
 
+/**
+ * Whether an argument schema can be listed: it serializes to at most 4000 characters and nests at most 64 levels deep. The
+ * serialization is guarded, and the depth is walked without recursion, so a hostile schema is refused and never throws
+ * (TOOL-CAT-002).
+ */
+// @spec TOOL-CAT-002
+export function schemaListable(schema: unknown): boolean {
+  let text: string | undefined;
+  try { text = JSON.stringify(schema); } catch { return false; }
+  if (text === undefined || text.length > SCHEMA_MAX) return false;
+  const stack: [unknown, number][] = [[schema, 1]];
+  while (stack.length > 0) {
+    const [v, depth] = stack.pop()!;
+    if (depth > SCHEMA_DEPTH_MAX) return false;
+    const kids = Array.isArray(v) ? v : v !== null && typeof v === "object" ? Object.values(v) : [];
+    for (const kid of kids) if (kid !== null && typeof kid === "object") stack.push([kid, depth + 1]);
+  }
+  return true;
+}
+
 const hostOf = (url: string): string | undefined => {
   try { return new URL(url).hostname; } catch { return undefined; }
 };
@@ -140,8 +162,7 @@ export function buildSnapshot(cfg: Config, sources: readonly ToolSource[], mode:
     for (const def of source?.list() ?? []) {
       if (source === undefined) break; // unreachable: an absent source lists nothing
       const name = `${server}__${def.name}`;
-      const schemaLength = (JSON.stringify(def.parameters) ?? "").length;
-      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX || schemaLength > SCHEMA_MAX) {
+      if (!PART.test(server) || !PART.test(def.name) || name.length > QUALIFIED_NAME_MAX || !schemaListable(def.parameters)) {
         left++;
         continue;
       }

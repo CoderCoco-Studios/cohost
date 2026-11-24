@@ -54,7 +54,7 @@ export function startMcp(
   tools: Record<string, unknown>,
   opts: { catalogMs?: number; mcp?: Record<string, unknown>; extra?: Record<string, unknown> } = {},
 ): Promise<Started> {
-  return startTools({ timeout_ms: 5000, ...tools }, [], opts.extra ?? {}, undefined, { mcp: opts.mcp ?? { retry: fastRetry }, catalogMs: opts.catalogMs });
+  return startTools({ timeout_ms: 5000, ...tools }, [], opts.extra ?? {}, undefined, { mcp: { relistGapMs: 20, retry: fastRetry, ...(opts.mcp ?? {}) }, catalogMs: opts.catalogMs });
 }
 
 export const catalogServer = (s: Started, name: string) => s.catalogs().at(-1)?.servers.find((x) => x.name === name);

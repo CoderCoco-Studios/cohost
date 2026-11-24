@@ -8,7 +8,6 @@
  */
 import { offLanHost, type Config } from "@cohost/config";
 import type { RetryOptions } from "@cohost/shared";
-import { SCHEMA_MAX } from "./catalog.js";
 import { SourceFailed, type SourceCallResult, type SourceContentPart, type SourceState, type SourceTool, type ToolSource } from "./source.js";
 
 /** The protocol version the client asks for at initialize. */
@@ -20,6 +19,8 @@ export interface McpEnv {
   retry?: Partial<RetryOptions>;
   /** How long one initialize or list request of a connection attempt may take before the attempt fails. */
   setupTimeoutMs?: number;
+  /** The least time between two re-lists of one connection (TOOL-MCP-004). */
+  relistGapMs?: number;
 }
 
 /** The fixed limits of the transport: not settings. */
@@ -33,8 +34,10 @@ const BODY_CAP = 1024 * 1024;
 /** The most pages of one tools/list (TOOL-MCP-015) and the most raw tool entries across them. */
 const MAX_PAGES = 50;
 const MAX_RAW_TOOLS = 10_000;
-/** The deepest a tool's argument schema may nest (TOOL-MCP-018). */
-const SCHEMA_DEPTH_MAX = 64;
+/** A re-list runs at most this often (TOOL-MCP-004); a server's own requests are answered this many at a time, and this many a second (TOOL-MCP-021). */
+const MIN_RELIST_GAP_MS = 1000;
+const ANSWERS_IN_FLIGHT = 1;
+const ANSWERS_PER_SECOND = 5;
 const SESSION_HEADER = "mcp-session-id";
 const DEFAULT_RETRY: RetryOptions = { baseMs: 1000, maxMs: 60_000 };
 
@@ -63,6 +66,9 @@ interface Conn {
   /** A list is running; a notification that arrives meanwhile sets `dirty` and one more list runs after it (TOOL-MCP-004). */
   relisting: boolean;
   dirty: boolean;
+  /** When the last list started; the next waits until the gap has passed. */
+  lastListAt: number;
+  waiting?: ReturnType<typeof setTimeout>;
   lost: Promise<void>;
   end: () => void;
 }
@@ -112,6 +118,8 @@ export async function* eventData(res: Response, streaming: boolean): AsyncGenera
       held = "";
       if (text.endsWith("\r")) { held = "\r"; text = text.slice(0, -1); }
       text = text.replace(/\r\n/g, "\n");
+      // An empty chunk or a lone carriage return carries no line end: the state of the last line is kept as it was.
+      if (text === "") continue;
       let pos = 0;
       // a blank line can straddle two chunks: the newline at the end of the last one and the one at the start of this one
       if (lastNL && text.startsWith("\n")) {
@@ -163,25 +171,11 @@ async function readBody(res: Response): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** Whether a schema is small enough to list and nests no deeper than the limit (TOOL-MCP-018). The depth is walked without recursion. */
-function schemaFits(schema: Record<string, unknown>): boolean {
-  let text: string;
-  try { text = JSON.stringify(schema) ?? ""; } catch { return false; }
-  if (text.length > SCHEMA_MAX) return false;
-  const stack: [unknown, number][] = [[schema, 1]];
-  while (stack.length > 0) {
-    const [v, depth] = stack.pop()!;
-    if (depth > SCHEMA_DEPTH_MAX) return false;
-    const kids = Array.isArray(v) ? v : v !== null && typeof v === "object" ? Object.values(v) : [];
-    for (const kid of kids) if (kid !== null && typeof kid === "object") stack.push([kid, depth + 1]);
-  }
-  return true;
-}
-
 /**
  * The tools of a list as the client keeps them. A name is taken once (the first definition wins), a schema that is not an
- * object or is too deep or too large leaves the tool out, a non-string title is dropped, a non-boolean `readOnlyHint` is no
- * annotation, and a non-string description is empty (TOOL-MCP-017 to TOOL-MCP-020). The catalog applies the rest of the rules.
+ * object leaves the tool out, a non-string title is dropped, a non-boolean `readOnlyHint` is no annotation, and a non-string
+ * description is empty (TOOL-MCP-017 to TOOL-MCP-020). A schema too deep or too large is passed on, and the catalog leaves it
+ * out and counts it (TOOL-CAT-002, TOOL-MCP-018).
  */
 // @spec TOOL-MCP-017, TOOL-MCP-018, TOOL-MCP-019, TOOL-MCP-020
 export function toSourceTools(raw: readonly unknown[]): SourceTool[] {
@@ -191,7 +185,7 @@ export function toSourceTools(raw: readonly unknown[]): SourceTool[] {
     if (!isObj(item) || typeof item.name !== "string") continue;
     if (seen.has(item.name)) continue;
     seen.add(item.name);
-    if (!isObj(item.inputSchema) || !schemaFits(item.inputSchema)) continue;
+    if (!isObj(item.inputSchema)) continue;
     const hint = isObj(item.annotations) ? item.annotations.readOnlyHint : undefined;
     out.push({
       name: item.name,
@@ -223,6 +217,11 @@ function toCallResult(v: unknown): SourceCallResult {
   };
 }
 
+/** The JSON of a value, or undefined when it cannot be serialized: a comparison must never throw. */
+function safeJson(v: unknown): string | undefined {
+  try { return JSON.stringify(v); } catch { return undefined; }
+}
+
 /** The header of the owner's secret (TOOL-MCP-005): `Authorization` by default, `Bearer` for that name only. */
 // @spec TOOL-MCP-005
 function secretHeader(header: string, token: string): Record<string, string> {
@@ -251,6 +250,11 @@ export class McpSource implements ToolSource {
   private readonly retry: RetryOptions;
   private readonly setupMs: number;
   private readonly catalogMs: number;
+  private readonly relistGapMs: number;
+  private answersInFlight = 0;
+  private answerTimes: number[] = [];
+  /** The session of a connection still being set up, so that a close during it can still end the session (TOOL-SVC-008). */
+  private inflightSession: string | undefined;
   private readonly stopCtl = new AbortController();
   private stopping = false;
   private started = false;
@@ -263,17 +267,18 @@ export class McpSource implements ToolSource {
     this.url = entry.url;
     this.header = entry.header;
     this.token = entry.token;
-    // A secret with a control character cannot be a header value: it is never sent (TOOL-MCP-005).
-    this.tokenOk = !/[\u0000-\u001f\u007f]/.test(entry.token);
+    // A secret must be a header value: no control character, and no character above U+00FF (TOOL-MCP-005). Otherwise it is never sent.
+    this.tokenOk = [...entry.token].every((c) => { const n = c.charCodeAt(0); return n >= 32 && n !== 127 && n <= 255; });
     this.retry = { ...DEFAULT_RETRY, ...env.retry };
     this.setupMs = env.setupTimeoutMs ?? SETUP_TIMEOUT_MS;
     this.catalogMs = cfg.tools.catalog_ms;
+    this.relistGapMs = env.relistGapMs ?? MIN_RELIST_GAP_MS;
     // TOOL-MCP-008: the note is about the host, not the `external` mark: a plain http secret to a host off the LAN is noted.
     const url = new URL(entry.url);
     const host = url.hostname;
     const offLan = host === "" || offLanHost(host, cfg.network?.lan ?? []);
     const notes: string[] = [];
-    if (!this.tokenOk) notes.push("credential has a control character, so it is not sent");
+    if (!this.tokenOk) notes.push("credential cannot be sent: it has a character a header cannot carry, so it is not sent");
     if (url.protocol === "http:" && entry.token !== "" && offLan) notes.push("credential sent without TLS");
     this.detail = notes.length > 0 ? notes.join("; ") : undefined;
   }
@@ -353,12 +358,14 @@ export class McpSource implements ToolSource {
     const init = await this.exchange({ id: ++this.nextId, method: "initialize", params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "cohost-tools", version: "1" } } }, undefined, signal);
     if (!isObj(init.result)) throw new Down();
     const session = init.session;
+    this.inflightSession = session;
     try {
       await this.notify("notifications/initialized", undefined, session, signal);
       const tools = await this.listAll(session, signal);
       if (this.stopping) throw new Down();
       const conn = this.newConn(session);
       this.conn = conn;
+      this.inflightSession = undefined;
       this.tools = tools;
       this.setState("ok");
       this.emit();
@@ -367,7 +374,8 @@ export class McpSource implements ToolSource {
       return conn;
     } catch (err) {
       // A session that initialized but did not list is closed on the server, so the next attempt starts clean.
-      if (session !== undefined) void this.deleteSession(session);
+      this.inflightSession = undefined;
+      if (session !== undefined && !this.stopping) void this.deleteSession(session);
       throw err;
     }
   }
@@ -375,7 +383,7 @@ export class McpSource implements ToolSource {
   private newConn(session: string | undefined): Conn {
     let end!: () => void;
     const lost = new Promise<void>((r) => { end = r; });
-    return { session, ctl: new AbortController(), relisting: false, dirty: false, lost, end };
+    return { session, ctl: new AbortController(), relisting: false, dirty: false, lastListAt: Date.now(), lost, end };
   }
 
   /** Ends a connection once: the stream and the timer stop, the state follows, and the supervisor reconnects. */
@@ -384,6 +392,7 @@ export class McpSource implements ToolSource {
     conn.lostBy = by;
     if (this.conn === conn) this.conn = undefined;
     clearInterval(conn.timer);
+    clearTimeout(conn.waiting);
     conn.ctl.abort();
     this.setState(by === "auth" ? "auth" : "down");
     conn.end();
@@ -396,28 +405,35 @@ export class McpSource implements ToolSource {
   // @spec TOOL-MCP-004, TOOL-MCP-003
   private async relist(conn: Conn): Promise<void> {
     if (conn.lostBy !== undefined || this.stopping) return;
-    if (conn.relisting) { conn.dirty = true; return; }
+    if (conn.relisting || conn.waiting !== undefined) { conn.dirty = true; return; }
+    const wait = conn.lastListAt + this.relistGapMs - Date.now();
+    if (wait > 0) {
+      conn.waiting = setTimeout(() => { conn.waiting = undefined; void this.relist(conn); }, wait);
+      return;
+    }
     conn.relisting = true;
+    conn.dirty = false;
+    conn.lastListAt = Date.now();
     try {
-      do {
-        conn.dirty = false;
-        const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
-        let tools: SourceTool[];
-        try {
-          tools = await this.listAll(conn.session, signal);
-        } catch (err) {
-          this.lose(conn, err instanceof Refused ? "auth" : "down");
-          return;
-        }
-        if (conn.lostBy !== undefined) return;
-        if (JSON.stringify(tools) !== JSON.stringify(this.tools)) {
-          this.tools = tools;
-          this.emit();
-        }
-      } while (conn.dirty && conn.lostBy === undefined);
+      const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(this.setupMs)]);
+      let tools: SourceTool[];
+      try {
+        tools = await this.listAll(conn.session, signal);
+      } catch (err) {
+        this.lose(conn, err instanceof Refused ? "auth" : "down");
+        return;
+      }
+      if (conn.lostBy !== undefined) return;
+      // The catalog is published only when the list changed (main.ts compares the published catalog).
+      const next = safeJson(tools);
+      if (next === undefined || next !== safeJson(this.tools)) {
+        this.tools = tools;
+        this.emit();
+      }
     } finally {
       conn.relisting = false;
     }
+    if (conn.dirty && conn.lostBy === undefined) void this.relist(conn);
   }
 
   /**
@@ -572,7 +588,13 @@ export class McpSource implements ToolSource {
     }
     if (res.status === 401 || res.status === 403) { await discard(res); this.lose(conn, "auth"); return false; }
     // A 404 is a session the server forgot: the connection is replaced on a new session (TOOL-MCP-026).
-    if (res.status === 404) { await discard(res); this.lose(conn, "down"); return false; }
+    // With no session id, a 404 is a server without sessions: no stream, the connection stays up. With one, a ping decides:
+    // the connection is dropped only when the ping fails (TOOL-MCP-026).
+    if (res.status === 404) {
+      await discard(res);
+      if (conn.session !== undefined && !(await this.probe(conn))) this.lose(conn, "down");
+      return false;
+    }
     if (!res.ok || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) { await discard(res); return false; }
     try {
       for await (const data of eventData(res, true)) {
@@ -602,16 +624,23 @@ export class McpSource implements ToolSource {
   }
 
   /**
-   * A request the server sends the client is answered with a JSON-RPC error: the client declares no capability to answer it
-   * (TOOL-MCP-021). The answer is best-effort and nothing waits on it.
+   * A server's `ping` is answered with an empty result; any other request the server sends is answered with a JSON-RPC error,
+   * since the client declares no capability to answer it (TOOL-MCP-021). At most one such answer is in flight and five start in
+   * any second; a request past either limit is dropped unanswered. The answer is best-effort and nothing waits on it.
    */
   // @spec TOOL-MCP-021
   private answerServer(conn: Conn, msg: Record<string, unknown>): void {
     const id = msg.id;
     if (typeof id !== "number" && typeof id !== "string") return;
-    const body = JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32601, message: "method not supported" } });
+    const now = Date.now();
+    this.answerTimes = this.answerTimes.filter((t) => now - t < 1000);
+    if (this.answersInFlight >= ANSWERS_IN_FLIGHT || this.answerTimes.length >= ANSWERS_PER_SECOND) return;
+    this.answerTimes.push(now);
+    const outcome = msg.method === "ping" ? { result: {} } : { error: { code: -32601, message: "method not supported" } };
+    const body = JSON.stringify({ jsonrpc: "2.0", id, ...outcome });
     const signal = AbortSignal.any([conn.ctl.signal, AbortSignal.timeout(CANCEL_TIMEOUT_MS)]);
-    this.post(body, conn.session, signal).catch(() => undefined);
+    this.answersInFlight++;
+    this.post(body, conn.session, signal).catch(() => undefined).finally(() => { this.answersInFlight--; });
   }
 
   /**
@@ -667,9 +696,10 @@ export class McpSource implements ToolSource {
     this.stopping = true;
     this.stopCtl.abort();
     const conn = this.conn;
-    if (conn === undefined) return;
-    const session = conn.session;
-    this.lose(conn, "down");
+    // A connection still being set up has its session in `inflightSession`: it is closed too (TOOL-SVC-008).
+    const session = conn?.session ?? this.inflightSession;
+    if (conn !== undefined) this.lose(conn, "down");
+    this.inflightSession = undefined;
     if (session !== undefined) await this.deleteSession(session);
   }
 }

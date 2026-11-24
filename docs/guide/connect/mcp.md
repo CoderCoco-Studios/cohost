@@ -60,6 +60,8 @@ A server's answer is untrusted. The co-host gives the model the text of the resu
 - **The server shows as not connected.** The address is wrong, the server is down, or it did not answer within 10 seconds when connecting. Open the URL from the machine running cohost to check.
 - **A tool is listed but not offered.** It is not enabled, it acts without the acts mark, it is not approved yet, or its definition changed after you approved it.
 - **A tool's answer is an error.** The server reported an error for that call. The co-host shows the error and keeps the server connected.
+- **The server's detail says the credential cannot be sent.** The token has a character a header cannot carry: a control character, or a character above U+00FF, such as a curly quote pasted from a web page. The co-host does not send it and does not show it. Retype the token with plain characters, save it, and restart `tools`.
+- **A tool is missing from the list.** The server's detail counts the tools it left out: a name that is not letters, digits, hyphens or underscores, a name longer than 64 characters, an argument schema over 4000 characters or nested more than 64 levels deep, or tools beyond the limit of 32 per server. The count is in the detail, and the other tools are not affected.
 
 This client has been tested against its own test servers only. Run a new server once with a harmless tool, and read its result in the feed, before you trust it with more.
 

@@ -4,6 +4,7 @@ import { FakeMcp, toolJson } from "./mcp-server.js";
 import { approved, catalogServer, catalogTool, entry, startMcp, waitFor, waitServer } from "./mcp-helpers.js";
 import { resultOf } from "./helpers.js";
 import { eventData } from "../src/mcp.js";
+import { everythingOut } from "./mcp-helpers.js";
 
 const web = toolJson("web");
 const MIB = 1024 * 1024;
@@ -74,13 +75,6 @@ test("a GET stream with one event over 1 MiB is not read: its notification does 
   await s.stop();
 });
 
-test("a GET stream answered 404 starts a new session", async () => { // @spec TOOL-MCP-026
-  const srv = await FakeMcp.start({ tools: [web] });
-  srv.byMethod.GET = () => ({ status: 404, body: "session not found" });
-  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } }, { catalogMs: 5000 });
-  await srv.waitUntil(() => srv.rpcs("initialize").length >= 2, "a second session after the 404");
-  await s.stop();
-});
 
 // ---- TOOL-MCP-004: list_changed is coalesced
 
@@ -323,24 +317,13 @@ test("external true on a host on the LAN does not make a plain http secret 'cred
 
 // ---- server requests and pings
 
-test("a server ping is answered with a JSON-RPC error, not a result", async () => { // @spec TOOL-MCP-021
-  const srv = await FakeMcp.start({ tools: [web] });
-  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
-  await waitServer(s, "search", "ok");
-  await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
-  srv.push({ jsonrpc: "2.0", id: 4242, method: "ping" });
-  await srv.waitUntil(() => srv.seen.some((x) => x.rpc?.id === 4242 && x.rpc?.error !== undefined), "an error answer to the ping");
-  const answer = srv.seen.find((x) => x.rpc?.id === 4242)!;
-  assert.equal(answer.rpc!.result, undefined);
-  await s.stop();
-});
 
 test("a token with a control character is said so in the server's detail, and is not sent", async () => { // @spec TOOL-MCP-005
   const srv = await FakeMcp.start({ tools: [web] });
   const s = await startMcp({ servers: { search: entry(srv, { token: "tok\r\nX-Evil: 1" }) }, allow: {} });
   await waitFor(() => s.catalogs().length > 0, "catalog");
   await sleep(100);
-  assert.match(catalogServer(s, "search")!.detail, /control character/);
+  assert.match(catalogServer(s, "search")!.detail, /cannot be sent/);
   assert.equal(srv.seen.length, 0, "no request was made with it");
   await s.stop();
 });
@@ -363,4 +346,179 @@ test("an event of 900 KB that arrives in 64-byte chunks is parsed in linear time
   assert.equal(got.length, 1);
   assert.equal(got[0]!.length, text.length);
   assert.ok(ms < 2000, `parsed in ${ms.toFixed(0)} ms`);
+});
+
+// ---- TOOL-MCP-026: a 404 on the GET stream
+
+test("a GET stream answered 404 with no session id is no stream, and the connection stays up", async () => { // @spec TOOL-MCP-026
+  const srv = await FakeMcp.start({ tools: [web] });
+  srv.requireSession = false;
+  srv.byMethod.initialize = (_seen, ctx) => ctx.result({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "x", version: "1" } });
+  srv.byMethod.GET = () => ({ status: 404, body: "no stream here" });
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } });
+  await waitServer(s, "search", "ok");
+  await sleep(300);
+  assert.equal(srv.rpcs("initialize").length, 1, "one session: the connection stayed up");
+  assert.equal(catalogServer(s, "search")?.state, "ok");
+  await s.stop();
+});
+
+test("a GET stream answered 404 with a session the server still knows is probed by a ping, and the connection stays up", async () => { // @spec TOOL-MCP-026
+  const srv = await FakeMcp.start({ tools: [web] });
+  srv.byMethod.GET = () => ({ status: 404, body: "no stream" });
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } });
+  await waitServer(s, "search", "ok");
+  await srv.waitUntil(() => srv.rpcs("ping").length >= 1, "a ping after the 404");
+  await sleep(200);
+  assert.equal(srv.rpcs("initialize").length, 1, "the ping answered: no new session");
+  assert.equal(catalogServer(s, "search")?.state, "ok");
+  await s.stop();
+});
+
+test("a GET stream answered 404 for a session the server forgot starts exactly one new session", async () => { // @spec TOOL-MCP-026
+  const srv = await FakeMcp.start({ tools: [web] });
+  let first = true;
+  srv.byMethod.GET = () => {
+    if (first) { first = false; srv.expireSessions(); }
+    return { status: 404, body: "session not found" };
+  };
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } });
+  await srv.waitUntil(() => srv.rpcs("initialize").length >= 2, "a new session");
+  await waitServer(s, "search", "ok");
+  await sleep(300);
+  assert.equal(srv.rpcs("initialize").length, 2, "exactly one new session");
+  await s.stop();
+});
+
+test("a server that forgets its sessions on every stream answer is reconnected on the backoff, not in a loop", async () => { // @spec TOOL-MCP-003, TOOL-MCP-026
+  const srv = await FakeMcp.start({ tools: [web] });
+  srv.byMethod.GET = () => { srv.expireSessions(); return { status: 404, body: "gone" }; };
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  await sleep(500);
+  const n = srv.rpcs("initialize").length;
+  assert.ok(n >= 2, "it reconnects");
+  assert.ok(n <= 25, `and is bounded by the backoff: ${n} initializes in 500 ms (about 14 with the backoff)`);
+  await s.stop();
+});
+
+// ---- TOOL-MCP-021: answers to a server's requests are capped
+
+test("server requests on the stream are answered one at a time and five a second; the rest are dropped unanswered", async () => { // @spec TOOL-MCP-021
+  const srv = await FakeMcp.start({ tools: [web] });
+  let inFlight = 0;
+  let maxInFlight = 0;
+  srv.byMethod[""] = async (_seen, ctx) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await sleep(100);
+    inFlight--;
+    return ctx.result({});
+  };
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  await waitServer(s, "search", "ok");
+  await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  for (let i = 1; i <= 3000; i++) srv.push({ jsonrpc: "2.0", id: 100000 + i, method: "ping" });
+  await sleep(900);
+  const answers = srv.seen.filter((x) => x.httpMethod === "POST" && x.rpc !== undefined && x.rpc.method === undefined && x.rpc.result !== undefined).length;
+  assert.ok(answers >= 1 && answers <= 5, `at most five answers in the first second, got ${answers}`);
+  assert.equal(maxInFlight, 1, "one answer in flight at a time");
+  await s.stop();
+});
+
+// ---- TOOL-MCP-004: a sustained flood of notifications
+
+test("list_changed at one every millisecond for 1.5 s costs at most one list per gap, and an unchanged list publishes no catalog", async () => { // @spec TOOL-MCP-004
+  const srv = await FakeMcp.start({ tools: [web] });
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } }, { mcp: { relistGapMs: 200 } });
+  await waitServer(s, "search", "ok");
+  await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  const lists0 = srv.rpcs("tools/list").length;
+  const cat0 = s.catalogs().length;
+  for (let i = 0; i < 1500; i++) { srv.notify("notifications/tools/list_changed"); await sleep(1); }
+  await sleep(300);
+  const lists = srv.rpcs("tools/list").length - lists0;
+  assert.ok(lists <= 10, `at most one list per 200 ms gap, got ${lists}`);
+  assert.ok(s.catalogs().length - cat0 <= 1, "the unchanged list published no catalog");
+  await s.stop();
+});
+
+// ---- TOOL-CAT-002 / TOOL-MCP-018: schema limits are counted in the detail
+
+const nest = (levels: number): Record<string, unknown> => {
+  let v: Record<string, unknown> = {};
+  for (let i = 1; i < levels; i++) v = { a: v };
+  return v;
+};
+
+test("a schema is listed up to 64 levels deep, and a deeper or larger one is left out and counted", async () => { // @spec TOOL-CAT-002, TOOL-MCP-018
+  const srv = await FakeMcp.start({
+    tools: [
+      toolJson("l64", { inputSchema: nest(64) }),
+      toolJson("l65", { inputSchema: nest(65) }),
+      toolJson("hundred", { inputSchema: nest(100) }),
+      toolJson("wide", { inputSchema: { type: "object", properties: { x: "S".repeat(5000) } } }),
+    ],
+  });
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  await waitServer(s, "search", "ok");
+  assert.ok(JSON.stringify(nest(100)).length < 4000, "the 100-level schema is under the size limit: only its depth refuses it");
+  assert.deepEqual(s.catalogs().at(-1)!.tools.map((t) => t.name), ["search__l64"]);
+  assert.match(catalogServer(s, "search")!.detail, /3 left out/);
+  await s.stop();
+});
+
+// ---- TOOL-MCP-012: the chunk boundaries of the parser
+
+test("a line end split across chunks is read once, and an empty chunk or a lone carriage return changes nothing", async () => { // @spec TOOL-MCP-012
+  const enc = new TextEncoder();
+  for (const chunks of [["data: x\n", "\r", "\n", "data: y\n\n"], ["data: x\n", "", "\n", "data: y\n\n"]]) {
+    const body = new ReadableStream<Uint8Array>({ start(c) { for (const ch of chunks) c.enqueue(enc.encode(ch)); c.close(); } });
+    const got: string[] = [];
+    for await (const d of eventData(new Response(body), false)) got.push(d);
+    assert.deepEqual(got, ["x", "y"], JSON.stringify(chunks));
+  }
+});
+
+// ---- TOOL-MCP-005: a token a header cannot carry
+
+test("a token with a character a header cannot carry is said so in the detail, and no request carries it", async () => { // @spec TOOL-MCP-005
+  const srv = await FakeMcp.start({ tools: [web] });
+  const s = await startMcp({ servers: { search: entry(srv, { token: "t\u00f6k\u20ac" }) }, allow: {} });
+  await waitFor(() => s.catalogs().length > 0, "catalog");
+  await sleep(100);
+  assert.match(catalogServer(s, "search")!.detail, /cannot be sent/);
+  assert.equal(srv.seen.length, 0, "no request was made");
+  assert.equal(everythingOut(s).includes("\u20ac"), false, "the token is in no event or log line");
+  await s.stop();
+});
+
+// ---- TOOL-SVC-008: a close while a session is being set up
+
+test("closing the service while a session is still being set up closes that session with DELETE and opens no stream", async () => { // @spec TOOL-SVC-008
+  const srv = await FakeMcp.start({ tools: [web] });
+  srv.byMethod["tools/list"] = async (_seen, ctx) => { await sleep(400); return ctx.result({ tools: [web] }); };
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  await srv.waitUntil(() => srv.rpcs("tools/list").length > 0, "the list is under way");
+  await s.stop();
+  const del = srv.seen.find((x) => x.httpMethod === "DELETE");
+  assert.ok(del, "a DELETE was sent for the session");
+  assert.equal(del!.headers["mcp-session-id"], "sess-1");
+  await sleep(500);
+  assert.equal(srv.streams.length, 0, "no stream was opened after the close");
+  assert.equal(srv.rpcs("tools/list").length, 1, "no list after the close");
+});
+
+// ---- TOOL-MCP-021: a ping is answered with an empty result
+
+test("a server ping is answered with an empty result", async () => { // @spec TOOL-MCP-021
+  const srv = await FakeMcp.start({ tools: [web] });
+  const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  await waitServer(s, "search", "ok");
+  await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  srv.push({ jsonrpc: "2.0", id: 4242, method: "ping" });
+  await srv.waitUntil(() => srv.seen.some((x) => x.rpc?.id === 4242 && x.rpc?.result !== undefined), "the answer to the ping");
+  const answer = srv.seen.find((x) => x.rpc?.id === 4242 && x.rpc?.result !== undefined)!;
+  assert.deepEqual(answer.rpc!.result, {});
+  assert.equal(answer.rpc!.error, undefined);
+  await s.stop();
 });

@@ -4,7 +4,7 @@ The attention region: scores incoming senses, decides when the co-host should sp
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). The spec file holds 168 specs: 143 `[x]`, 24 `[ ]`, 1 `[D]` (SAL-TRIG-010). The gaps are the 23 interjection specs (SAL-INTJ, the interjection half of early reply, #226) and SAL-BARGE-001, which the early-reply work revises. The LLD lists open questions.
+**PARTIAL** (date and commit in `index.yaml`). The spec file holds 169 specs: 168 `[x]`, 0 `[ ]`, 1 `[D]` (SAL-TRIG-010). No spec is open; the interjection half of early reply (SAL-INTJ, #226) is built, but the segment has no refreshed audit yet. The LLD lists open questions.
 
 ## Decisions applied
 
@@ -29,7 +29,7 @@ SAL-REM-001 to SAL-REM-008 are `[x]`: due timer reminders (`Reminders` in `remin
 
 ## Barge-in and echo gate
 
-SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, reflex lines that never interrupt, and barge-in across a streamed line whose playback renews `speaking` (SAL-BUSY-005 to 008). SAL-BARGE-001 is revised by the early-reply work and stays a gap. Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
+SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the cortex-state and cooldown reset, reflex lines that never interrupt, and barge-in across a streamed line whose playback renews `speaking` (SAL-BUSY-005 to 008). SAL-BARGE-001 is `[x]`: its exemptions for a final that SAL-INTJ-009 or SAL-INTJ-010 handles are built with the interjection (SAL-INTJ-009 to SAL-INTJ-013). Design: the HLD's Barge-in and echo gate protocol and Future / ideal state section.
 
 ## References
 
@@ -40,7 +40,7 @@ SAL-BARGE-002 to SAL-BARGE-012 are `[x]`: the barge-in publisher, its gates, the
 - docs/intent/salience/salience-design.md
 
 ### EARS
-- docs/intent/salience/salience-specs.md (168 specs, prefix `SAL`: 143 `[x]`, 24 `[ ]`, 1 `[D]`)
+- docs/intent/salience/salience-specs.md (169 specs, prefix `SAL`: 168 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec SAL-`)
 - services/salience/test/salience.region.test.ts
@@ -96,13 +96,13 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 |
 | Control | SAL-CTRL-001 to SAL-CTRL-007 | 7 | 0 | 0 |
 | Injection Flags | SAL-INJ-001 to SAL-INJ-004 | 4 | 0 | 0 |
-| Barge-in | SAL-BARGE-001 to SAL-BARGE-012 | 11 | 0 | 1 |
+| Barge-in | SAL-BARGE-001 to SAL-BARGE-012 | 12 | 0 | 0 |
 | Health and Lifecycle | SAL-HEALTH-001 to SAL-HEALTH-005 | 5 | 0 | 0 |
 | Reminders | SAL-REM-001 to SAL-REM-008 | 8 | 0 | 0 |
 | Early Provisional Transcripts | SAL-PROV-001 to SAL-PROV-034 | 34 | 0 | 0 |
-| Interjection | SAL-INTJ-001 to SAL-INTJ-023 | 0 | 0 | 23 |
+| Interjection | SAL-INTJ-001 to SAL-INTJ-024 | 24 | 0 | 0 |
 
-**Summary:** 168 specs: 143 implemented, 24 gaps, 1 deferred. The gaps are SAL-INTJ-001 to SAL-INTJ-023 (interjection, #226) and SAL-BARGE-001 (revised by the early-reply work; its interjection clause waits on #226). `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 169 specs: 168 implemented, 0 gaps, 1 deferred (SAL-TRIG-010). The interjection specs SAL-INTJ-001 to SAL-INTJ-024 (#226) and the interjection clauses of SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 are built. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 
@@ -120,7 +120,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 ## Work Required
 
 - #225 (cortex handling of a provisional focus) must land before ears publishes early transcripts: cortex would otherwise treat a provisional focus as an ordinary one and reply twice.
-- #226 must re-verify SAL-PROV-016 and the interjection clauses of SAL-TRIG-001 (they are built here as the non-interjection branch only).
+- #226 (done): SAL-PROV-016 and the interjection clauses of SAL-TRIG-001 are met, with the interjection built in `Salience.final`, `askInterjection` and `interjectionSpoken` in `salience.ts`.
 
 - Open LLD questions: repeated mentions across decisions, and several viewers named `unknown`.
 

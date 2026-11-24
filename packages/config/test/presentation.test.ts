@@ -117,7 +117,10 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
     const node = nodeOf(k);
     switch (w.type) {
       case "timezone": case "voice": case "sources": case "textarea": case "mcp-servers": case "tool-list": case "avatar-model": break;
-      case "slider": assert.equal(node.type, "number", `${k}: a slider is on a numeric key`); break;
+      case "slider":
+        assert.equal(node.type, "number", `${k}: a slider is on a numeric key`);
+        if (w.step !== undefined) assert.ok(Number.isFinite(w.step) && w.step > 0, `${k}: a slider step is finite and above 0`);
+        break;
       case "model":
         assert.ok(KINDS.includes(w.kind), `${k}: model kind ${String(w.kind)}`);
         assert.equal(node.type, "string", `${k}: a model widget is on a string key`);

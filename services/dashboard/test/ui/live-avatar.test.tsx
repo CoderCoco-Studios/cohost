@@ -157,3 +157,20 @@ test("the route is read every 2 s while the card is on screen and no longer afte
   await sleep(2300);
   assert.equal(reads(), n);
 });
+
+// @spec DASH-AVS-010
+test("a renderer read still in flight is not joined by another while the card waits for it", async () => {
+  const app = bootWith(() => new Promise(() => {}));
+  frame(app, "avatar.state", { ...state, driver: "browser", connected: true });
+  await sleep(50);
+  await sleep(2300);
+  assert.equal(app.fetch.callsTo("GET /avatar/renderer").length, 1);
+});
+
+// @spec DASH-AVS-010
+test("a malformed renderer answer (a non-number sentFps) shows no renderer line", async () => {
+  const app = bootWith({ json: { pages: [{ sentFps: "x" }] } });
+  frame(app, "avatar.state", { ...state, driver: "browser", connected: true });
+  await sleep(50);
+  assert.equal(rline(), null);
+});

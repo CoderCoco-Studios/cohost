@@ -3,6 +3,7 @@
 // frame reloads. The page is the same origin as the frame, so every message names that origin, never `*`.
 import { useEffect, useId, useRef, useState } from "react";
 import { useRuntime } from "../../app/providers";
+import { savedFraming } from "./RendererStatus";
 import type { SectionState } from "./store";
 
 export type Aspect = "16:9" | "square" | "tall";
@@ -57,19 +58,24 @@ export function AvatarPreview({ st }: { st: SectionState }) {
   const [aspect, setAspect] = useState<Aspect>(() => readAspect(local));
   const frame = useRef<HTMLIFrameElement>(null);
   const drafts = draftsOf(st);
+  const saved = savedFraming(st);
+  const savedFrame: Framing = { zoom: saved.zoom, offsetY: saved.offsetY, turn: saved.turn };
   const hasDrafts = drafts.model !== undefined || drafts.framingEdited;
 
   const post = (message: object): void => { frame.current?.contentWindow?.postMessage(message, location.origin); };
 
-  // Framing drafts are sent at once, then at most once per DRAFT_GAP_MS, and the last value of a burst is sent after the pause.
+  // Framing moves are sent at once, then at most once per DRAFT_GAP_MS, and the last value of a burst is sent after the pause.
   const lastSent = useRef(0);
   const trailing = useRef<{ id?: number; value?: Framing }>({});
+  const cancelTrailing = (): void => {
+    if (trailing.current.id !== undefined) window.clearTimeout(trailing.current.id);
+    trailing.current = {};
+  };
   const sendFraming = (f: Framing): void => {
     const t = trailing.current;
     const wait = lastSent.current + DRAFT_GAP_MS - Date.now();
     if (wait <= 0) {
-      if (t.id !== undefined) window.clearTimeout(t.id);
-      t.id = undefined; t.value = undefined;
+      cancelTrailing();
       lastSent.current = Date.now();
       post({ type: "framing", framing: f });
       return;
@@ -83,16 +89,24 @@ export function AvatarPreview({ st }: { st: SectionState }) {
       }, wait);
     }
   };
-  const cancelTrailing = (): void => {
-    if (trailing.current.id !== undefined) window.clearTimeout(trailing.current.id);
-    trailing.current = {};
-  };
-  useEffect(() => cancelTrailing, []);
+  useEffect(() => cancelTrailing, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A model draft is posted when it changes; the None row is the empty name.
-  useEffect(() => { if (drafts.model !== undefined) post({ type: "model", name: drafts.model }); }, [drafts.model]); // eslint-disable-line react-hooks/exhaustive-deps
-  const framingKey = drafts.framing ? `${drafts.framing.zoom}|${drafts.framing.offsetY}|${drafts.framing.turn}` : undefined;
-  useEffect(() => { if (drafts.framing) sendFraming(drafts.framing); }, [framingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The framing draft: a valid edited framing is posted as it moves; when the edits return to the saved values, the saved framing
+  // is posted so the frame does not keep the draft (the model draft may still be on the frame, so the others stay).
+  const framingWas = useRef(false);
+  const framingKey = drafts.framing ? `${drafts.framing.zoom}|${drafts.framing.offsetY}|${drafts.framing.turn}` : drafts.framingEdited ? "invalid" : "saved";
+  useEffect(() => {
+    if (drafts.framing) sendFraming(drafts.framing);
+    else if (framingWas.current && hasDrafts) { cancelTrailing(); post({ type: "framing", framing: savedFrame }); }
+    framingWas.current = drafts.framingEdited;
+  }, [framingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The model draft: when the model choice changes, or a draft goes while others remain, the frame is given the current model
+  // (the chosen one, or the saved one when the choice is back to it). Nothing is posted with no draft left: Save or Discard clears.
+  useEffect(() => {
+    if (!hasDrafts) return;
+    post({ type: "model", name: drafts.model ?? saved.model });
+  }, [drafts.model, hasDrafts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save or Discard takes the drafts away: the frame is told to drop them, and nothing queued is sent after it.
   const had = useRef(false);

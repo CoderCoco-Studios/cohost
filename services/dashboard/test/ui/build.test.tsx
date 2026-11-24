@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -147,4 +147,31 @@ test("three and @pixiv/three-vrm are development dependencies of the dashboard p
     assert.ok(p.devDependencies?.[name], `${name} in devDependencies`);
     assert.equal(p.dependencies?.[name], undefined, `${name} not in dependencies`);
   }
+});
+
+/** Whether a script parses as a module, checked by `node --check` on a copy in its own folder (nothing runs). */
+function parses(js: string): { ok: boolean; stderr: string } {
+  const dir = mkdtempSync(join(tmpdir(), "dash-parse-"));
+  try {
+    const file = join(dir, "entry.mjs");
+    writeFileSync(file, js);
+    const c = spawnSync("node", ["--check", file], { encoding: "utf8" });
+    return { ok: c.status === 0, stderr: c.stderr };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// @spec DASH-BUILD-009, DASH-AVS-011
+test("every entry script parses, and the dashboard entry holds the notices name as a string and no bare build constant", () => {
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  for (const page of ["index.html", "avatar.html"] as const) {
+    const js = read(entryFiles(page).scripts[0]!);
+    const check = parses(js);
+    assert.ok(check.ok, `${page} entry does not parse: ${check.stderr}`);
+  }
+  const name = notices()[0]!;
+  const idx = indexJs();
+  assert.ok(idx.includes(JSON.stringify(name)), "the index entry names the notices file as a string literal");
+  assert.doesNotMatch(idx, /(?<![\w$.'"`])__COHOST_NOTICES__(?![\w$])/, "no bare build constant is left in the index entry");
 });

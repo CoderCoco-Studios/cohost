@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, manifestLicence, type BundledPackage } from "../../ui/notices";
+import { Script } from "node:vm";
+import { ALLOWED_LICENCES, isLicenceFile, licenceAllowed, buildNotices, manifestLicence, substituteNoticesName, type BundledPackage } from "../../ui/notices";
 
 const MIT = "Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software ...";
 const pkg = (over: Partial<BundledPackage> = {}): BundledPackage => ({ name: "left-pad", version: "1.3.0", license: "MIT", workspace: false, files: [{ name: "LICENSE", text: MIT }], ...over });
@@ -125,4 +126,12 @@ test("a manifest's licence is its license string or object type; the legacy lice
   assert.equal(manifestLicence({}), undefined);
   assert.equal(manifestLicence({ licenses: [] }), undefined);
   assert.equal(manifestLicence({ licenses: [{}] }), undefined);
+});
+
+// @spec DASH-AVS-011
+test("the build's constant becomes the notices name as a string, and the globalThis fallback in the same script is left alone", () => {
+  const src = 'var n = typeof __COHOST_NOTICES__ !== "undefined" ? __COHOST_NOTICES__ : globalThis.__COHOST_NOTICES__; x.__COHOST_NOTICES__ = "";';
+  const out = substituteNoticesName(src, "third-party-notices-abcd1234.txt");
+  assert.equal(out, 'var n = typeof "third-party-notices-abcd1234.txt" !== "undefined" ? "third-party-notices-abcd1234.txt" : globalThis.__COHOST_NOTICES__; x.__COHOST_NOTICES__ = "";');
+  assert.doesNotThrow(() => new Script(out), "the substituted script still parses");
 });

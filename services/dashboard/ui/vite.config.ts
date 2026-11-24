@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { createDevProxy } from "./dev-proxy";
-import { buildNotices, isLicenceFile, manifestLicence, type BundledPackage } from "./notices";
+import { buildNotices, isLicenceFile, manifestLicence, substituteNoticesName, type BundledPackage } from "./notices";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -53,10 +53,6 @@ function readPackage(dir: string, name: string): BundledPackage {
   return { name: manifest.name ?? name, version: manifest.version ?? "0.0.0", license, workspace: false, files };
 }
 
-/** The build-time constant the notices plugin replaces with the hashed notices file name (DASH-AVS-011, read in ui/src/app/notices.ts). */
-// @spec DASH-AVS-011
-const NOTICES_CONSTANT = "__COHOST_NOTICES__";
-
 /**
  * Writes `assets/third-party-notices-<hash>.txt` for the packages every entry bundles, and names it on the first line of
  * each entry script. The file name also replaces `__COHOST_NOTICES__` in each entry, so the Avatar settings can link to it.
@@ -83,7 +79,7 @@ function thirdPartyNotices(): Plugin {
       this.emitFile({ type: "asset", fileName: `assets/${fileName}`, source: text });
       for (const item of Object.values(bundle)) {
         if (item.type !== "chunk" || !item.isEntry) continue;
-        item.code = `/* Third-party notices: assets/${fileName} */\n${item.code.split(NOTICES_CONSTANT).join(JSON.stringify(fileName))}`;
+        item.code = `/* Third-party notices: assets/${fileName} */\n${substituteNoticesName(item.code, fileName)}`;
       }
     },
   };

@@ -55,6 +55,13 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
   const api = useApi();
   const settings = useSettings();
   const [list, refresh] = useModels();
+  // A save changes the file's etag: the list is read again, so the applied badge and the Delete guard follow the saved model.
+  const etag = useRef(st.etag);
+  useEffect(() => {
+    if (etag.current === st.etag) return;
+    etag.current = st.etag;
+    void refresh();
+  }, [st.etag]); // eslint-disable-line react-hooks/exhaustive-deps
   const groupName = useId();
   const reasonId = useId();
   const [busy, setBusy] = useState(false);

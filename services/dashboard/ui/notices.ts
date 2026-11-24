@@ -127,3 +127,19 @@ export function buildNotices(packages: readonly BundledPackage[]): Notices {
   const hash = createHash("sha256").update(text).digest("hex").slice(0, 8);
   return { text, fileName: `third-party-notices-${hash}.txt` };
 }
+
+/** The build-time constant the dashboard reads for the notices file name (ui/src/app/notices.ts, DASH-AVS-011). */
+export const NOTICES_CONSTANT = "__COHOST_NOTICES__";
+
+/** A bare reference to the constant: not a member access (`globalThis.__COHOST_NOTICES__`), not part of a longer name, not a string. */
+const BARE_NOTICES_CONSTANT = /(?<![\w$.'"`])__COHOST_NOTICES__(?![\w$])/g;
+
+/**
+ * Replaces each bare reference to the constant in an entry script with the notices file name as a string literal. A member
+ * access of the same name (the fallback `globalThis.__COHOST_NOTICES__`) and a longer identifier stay as they are.
+ */
+// @spec DASH-AVS-011
+export function substituteNoticesName(code: string, fileName: string): string {
+  const literal = JSON.stringify(fileName);
+  return code.replace(BARE_NOTICES_CONSTANT, () => literal);
+}

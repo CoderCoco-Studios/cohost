@@ -657,3 +657,81 @@ test("the group links to the third-party notices file beside the status line, as
   assert.match(link.getAttribute("href") ?? "", /^\/assets\/third-party-notices-[0-9a-f]{8}\.txt$/);
   delete (globalThis as { __COHOST_NOTICES__?: string }).__COHOST_NOTICES__;
 });
+
+// ---------------------------------------------------------------- review follow-ups (drafts, refresh, polls, names, answers)
+
+// @spec DASH-AVS-006
+test("picking the saved model again after another pick puts the saved model back on the frame", async () => {
+  await open({ active: "Kiki.vrm", renderer: { model: "Kiki.vrm" } });
+  const user = userEvent.setup();
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.2" } });
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  await user.click(screen.getByRole("radio", { name: /Kiki\.vrm/ }));
+  assert.deepEqual(posted.at(-1), { message: { type: "model", name: "Kiki.vrm" }, origin: location.origin });
+});
+
+// @spec DASH-AVS-006
+test("a framing edit moved back to its saved value puts the saved framing on the frame, and the model draft stays", async () => {
+  await open({ renderer: { zoom: 1 } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1.5" } });
+  assert.deepEqual(posted.at(-1), { message: { type: "framing", framing: { zoom: 1.5, offsetY: 0, turn: 0 } }, origin: location.origin });
+  fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "1" } });
+  assert.deepEqual(posted.at(-1), { message: { type: "framing", framing: { zoom: 1, offsetY: 0, turn: 0 } }, origin: location.origin });
+  assert.ok(sent("model").some((m) => m.name === "Mimi.vrm"), "the model draft was posted and still stands");
+});
+
+// @spec DASH-AVS-006
+test("a slider burst followed at once by Discard sends no framing draft after the clear", async () => {
+  await open({ renderer: { zoom: 1 } });
+  const zoom = within(key("zoom")).getByRole("slider", { name: "Zoom" });
+  for (let i = 0; i < 5; i++) fireEvent.change(zoom, { target: { value: String(1.1 + i * 0.1) } });
+  fireEvent.click(bar("Discard"));
+  const at = posted.findIndex((p) => (p.message as { type?: string }).type === "clear");
+  assert.ok(at >= 0, "the clear is posted");
+  await sleep(300);
+  assert.equal(posted.slice(at + 1).length, 0, "nothing is posted after the clear");
+});
+
+// @spec DASH-AVS-002
+test("after a successful Save the model list is read again, so the applied badge and the Delete guard follow the saved model", async () => {
+  const b = await open({ active: "Kiki.vrm", renderer: { model: "Kiki.vrm" } });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("radio", { name: /Mimi\.vrm/ }));
+  b.app.fetch.on("GET /avatar/models", { json: listAnswer([model("Kiki.vrm"), model("Mimi.vrm")], "Mimi.vrm") });
+  await user.click(bar("Save"));
+  await settle(8);
+  assert.ok(b.app.fetch.callsTo("GET /avatar/models").length >= 2, "the list was read again");
+  assert.match(text(rowOf(/Mimi\.vrm/)), /applied/);
+  assert.equal((within(rowOf(/Mimi\.vrm/)).getByRole("button", { name: /^Delete/ }) as HTMLButtonElement).disabled, true);
+  assert.equal((within(rowOf(/Kiki\.vrm/)).getByRole("button", { name: /^Delete/ }) as HTMLButtonElement).disabled, false);
+});
+
+// @spec DASH-AVS-004
+test("an upload name with query characters is sent as one encoded name, not as further parameters", async () => {
+  const b = await open({ routes: { "POST /avatar/models": { status: 201, json: { ok: true, model: model("x.vrm") } } } });
+  pick(vrm("a&replace=1&b.vrm"));
+  await settle(6);
+  const call = b.app.fetch.calls.filter((c) => c.method === "POST" && c.path.startsWith("/avatar/models"))[0]!;
+  assert.equal(nameParam(call.path).get("name"), "a&replace=1&b.vrm");
+  assert.equal(nameParam(call.path).get("replace"), null);
+});
+
+// @spec DASH-AVS-008
+test("a status read still in flight is not joined by another read: no second read until the first has answered", async () => {
+  const b = await open({ routes: { "GET /avatar/renderer": () => new Promise(() => {}) } });
+  const reads = () => b.app.fetch.callsTo("GET /avatar/renderer").length;
+  assert.equal(reads(), 1);
+  await sleep(2300);
+  assert.equal(reads(), 1, "no read piles up behind the one in flight");
+  b.unmount();
+});
+
+// @spec DASH-AVS-008
+test("a malformed renderer answer is a failed read: the line says so, no NaN is shown, and the rest of the group renders", async () => {
+  await open({ routes: { "GET /avatar/renderer": { json: { state: "live", driver: "browser", fps: 30, applied: null, pages: [{ sentFps: "x", model: null, since: 1 }] } } } });
+  assert.match(text(group()), /Could not read the renderer status/);
+  assert.doesNotMatch(text(group()), /NaN/);
+  assert.ok(key("zoom"), "the framing rows still render");
+});

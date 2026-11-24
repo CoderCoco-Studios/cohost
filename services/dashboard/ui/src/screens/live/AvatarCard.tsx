@@ -17,7 +17,7 @@ export function rendererLine(r: RendererPages): string {
 }
 
 /**
- * Reads `GET /avatar/renderer` every 2 s while `on` (the latest avatar state names the browser driver). An unavailable route
+ * Reads `GET /avatar/renderer` every 2 s while `on` (the latest avatar state names the browser driver), the next read scheduled after the last answers. An unavailable route
  * (the LAN listener answers 404) leaves no answer, so no stale line stays on the card.
  */
 // @spec DASH-AVS-010
@@ -27,25 +27,21 @@ function useRendererPages(on: boolean): RendererPages | null | undefined {
   useEffect(() => {
     if (!on) { setPages(undefined); return; }
     let live = true;
-    const read = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async (): Promise<void> => {
       const r = await api.get<{ pages?: unknown }>("/avatar/renderer");
-      if (!live) return;
-      const ok = r.ok && Array.isArray(r.data?.pages) && r.data.pages.every((p) => typeof (p as { sentFps?: unknown })?.sentFps === "number");
-      setPages(ok ? { pages: r.data.pages as { sentFps: number }[] } : null);
+      if (live) {
+        const ok = r.ok && Array.isArray(r.data?.pages) && r.data.pages.every((p) => Number.isFinite((p as { sentFps?: unknown } | null)?.sentFps));
+        setPages(ok ? { pages: r.data.pages as { sentFps: number }[] } : null);
+        timer = setTimeout(() => void read(), 2000);
+      }
     };
     void read();
-    const id = setInterval(() => void read(), 2000);
-    return () => { live = false; clearInterval(id); };
+    return () => { live = false; clearTimeout(timer); };
   }, [on, api]);
   return pages;
 }
 
-/**
- * The avatar preview: the SVG face drawn from the latest `avatar.state`, the driver name (with "(disconnected)" when it
- * is not connected) and the current emotion, which mirrors what the avatar driver receives. `avatar.state` adds no feed
- * row (DASH-UI-004). The card is dimmed and `aria-busy` while the socket is closed (DASH-UI-001).
- */
-// @spec DASH-UI-004, DASH-UI-001
 export function AvatarCard() {
   const latest = useFeed((f) => f.latest["avatar.state"]);
   const waiting = useFeed((f) => f.status === "connecting" && f.stoppedAt === undefined);

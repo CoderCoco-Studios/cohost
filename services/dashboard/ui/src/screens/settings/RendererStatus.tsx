@@ -25,22 +25,38 @@ export type StatusRead =
   | { kind: "unavailable" }
   | { kind: "error"; detail: string };
 
-/** Reads the status now and every 2 s until the page is gone (the real clock, not the runtime's). */
+/** Whether an answer has the shape the status block reads: the fields it shows and the numbers it does arithmetic on are finite. */
+export function validAnswer(d: unknown): d is RendererAnswer {
+  if (!d || typeof d !== "object") return false;
+  const s = d as Partial<RendererAnswer>;
+  const a = s.applied;
+  const finite = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v);
+  return typeof s.state === "string" && Array.isArray(s.pages)
+    && s.pages.every((p) => !!p && typeof p === "object" && finite((p as { sentFps?: unknown }).sentFps))
+    && !!a && typeof a === "object" && typeof a.configuredModel === "string" && finite(a.zoom) && finite(a.offsetY) && finite(a.turn);
+}
+
+/**
+ * Reads the status now and then 2 s after each answer until the page is gone. The next read is scheduled only when the last one
+ * has answered, so reads never pile up, and an answer is taken only while its read is the current one.
+ */
 export function useRendererStatus(): StatusRead {
   const api = useApi();
   const [read, setRead] = useState<StatusRead>({ kind: "loading" });
   useEffect(() => {
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const once = async (): Promise<void> => {
       const r = await api.get<RendererAnswer>("/avatar/renderer");
-      if (!live) return;
-      if (r.ok && r.data && Array.isArray(r.data.pages)) setRead({ kind: "ready", status: r.data });
-      else if (!r.ok && r.status === 404) setRead({ kind: "unavailable" });
-      else setRead({ kind: "error", detail: r.ok ? "the answer had an unexpected shape" : r.detail });
+      if (live) {
+        if (r.ok && validAnswer(r.data)) setRead({ kind: "ready", status: r.data });
+        else if (!r.ok && r.status === 404) setRead({ kind: "unavailable" });
+        else setRead({ kind: "error", detail: r.ok ? "the answer had an unexpected shape" : r.detail });
+        timer = setTimeout(() => void once(), 2000);
+      }
     };
     void once();
-    const id = setInterval(() => void once(), 2000);
-    return () => { live = false; clearInterval(id); };
+    return () => { live = false; clearTimeout(timer); };
   }, [api]);
   return read;
 }

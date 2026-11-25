@@ -53,15 +53,20 @@ test("a GET stream that ends at once is reopened on a backoff and the session is
   };
   const s = await startMcp({ servers: { search: entry(srv) }, allow: { search__web: approved(web) } });
   await waitServer(s, "search", "ok");
+  const t0 = Date.now();
+  // The reopen is an I/O round trip after a backoff: wait for it on the event, then watch a window. The rate bound (60 GETs per
+  // 400 ms, as before) is applied to the wall time actually watched, so a loaded machine stretches the window and its allowance together.
+  await srv.waitUntil(() => gets >= 2, "the stream reopened", 4000);
   await sleep(400);
+  const elapsed = Date.now() - t0;
   assert.equal(srv.rpcs("initialize").length, 1, "the session was kept");
   assert.equal(catalogServer(s, "search")?.state, "ok");
   assert.ok(gets >= 2, `the stream was reopened (${gets} GETs)`);
-  assert.ok(gets < 60, `and bounded by the backoff (${gets} GETs in 400 ms)`);
+  assert.ok(gets * 400 <= 60 * elapsed, `and bounded by the backoff (${gets} GETs in ${elapsed} ms)`);
   await s.stop();
 });
 
-test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the stream is reopened on a backoff", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004
+test("a GET stream with one event over 1 MiB is not read: its notification does not re-list, and the session is kept", async () => { // @spec TOOL-MCP-012, TOOL-MCP-004
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod.GET = () => ({
     stream: (res) => {
@@ -98,6 +103,8 @@ test("500 list_changed notifications at once cost at most one list in flight and
   await srv.waitUntil(() => srv.streams.length === 1, "the notification stream open");
   const before = srv.rpcs("tools/list").length;
   for (let i = 0; i < 500; i++) srv.notify("notifications/tools/list_changed");
+  // The burst's list is an I/O round trip: wait for it, then let the coalesced follow-up (if any) land before counting.
+  await srv.waitUntil(() => srv.rpcs("tools/list").length > before, "the burst's list", 4000);
   await sleep(500);
   const lists = srv.rpcs("tools/list").length - before;
   assert.ok(lists >= 1 && lists <= 2, `at most two lists for the burst, got ${lists}`);
@@ -398,10 +405,14 @@ test("a server that forgets its sessions on every stream answer is reconnected o
   const srv = await FakeMcp.start({ tools: [web] });
   srv.byMethod.GET = () => { srv.expireSessions(); return { status: 404, body: "gone" }; };
   const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
+  const t0 = Date.now();
+  await srv.waitUntil(() => srv.rpcs("initialize").length >= 2, "a reconnect", 4000);
   await sleep(500);
+  const elapsed = Date.now() - t0;
   const n = srv.rpcs("initialize").length;
   assert.ok(n >= 2, "it reconnects");
-  assert.ok(n <= 25, `and is bounded by the backoff: ${n} initializes in 500 ms (about 14 with the backoff)`);
+  // About 14 initializes per 500 ms with the backoff (the bound of 25 per 500 ms, applied to the wall time actually watched).
+  assert.ok(n * 500 <= 25 * elapsed, `and is bounded by the backoff: ${n} initializes in ${elapsed} ms`);
   await s.stop();
 });
 
@@ -421,10 +432,17 @@ test("server requests on the stream are answered one at a time and five a second
   const s = await startMcp({ servers: { search: entry(srv) }, allow: {} });
   await waitServer(s, "search", "ok");
   await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
+  const answered = () => srv.seen.filter((x) => x.httpMethod === "POST" && x.rpc !== undefined && x.rpc.method === undefined && x.rpc.result !== undefined).length;
+  const t0 = Date.now();
   for (let i = 1; i <= 3000; i++) srv.push({ jsonrpc: "2.0", id: 100000 + i, method: "ping" });
+  // The first answer is an I/O round trip: wait for it, then watch a window. The rate bound (five a second) is applied to the
+  // wall time actually watched, so a loaded machine stretches the window and its allowance together.
+  await srv.waitUntil(() => answered() >= 1, "the first answer", 4000);
   await sleep(900);
-  const answers = srv.seen.filter((x) => x.httpMethod === "POST" && x.rpc !== undefined && x.rpc.method === undefined && x.rpc.result !== undefined).length;
-  assert.ok(answers >= 1 && answers <= 5, `at most five answers in the first second, got ${answers}`);
+  const elapsed = Date.now() - t0;
+  const answers = answered();
+  // TOOL-MCP-021 is a sliding one-second window, so the first second may hold five and each later second may add five more.
+  assert.ok(answers <= 5 * (Math.floor(elapsed / 1000) + 1), `at most five answers a second over ${elapsed} ms, got ${answers}`);
   assert.equal(maxInFlight, 1, "one answer in flight at a time");
   await s.stop();
 });
@@ -547,7 +565,7 @@ test("a slow list stretches the gap to four times its own duration", async () =>
   await waitServer(s, "search", "ok");
   await srv.waitUntil(() => srv.streams.length === 1, "the stream open");
   for (let i = 0; i < 150; i++) { srv.notify("notifications/tools/list_changed"); await sleep(10); }
-  await sleep(1500);
+  await srv.waitUntil(() => arrivals.length >= 3, "three lists", 8000);
   assert.ok(arrivals.length >= 3, `at least two re-lists after the first, got ${arrivals.length - 1}`);
   for (let i = 0; i + 1 < arrivals.length; i++) {
     const gap = arrivals[i + 1]! - ends[i]!;

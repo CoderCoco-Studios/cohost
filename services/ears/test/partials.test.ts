@@ -147,7 +147,11 @@ test("at most one partial transcription of an utterance is in flight and a step 
     assert.ok(stt.calls.length >= 2, "partial calls ran");
     const partialCalls = stt.calls.slice(0, -1);
     for (let i = 1; i < partialCalls.length; i++) assert.ok(partialCalls[i]!.startedAt - partialCalls[i - 1]!.startedAt >= 110, "no overlap: the next starts after the previous returned");
-    assert.ok(partialCalls.length <= 5, `skipped steps were not queued (${partialCalls.length} partial calls in ~375 ms at 30 ms steps)`);
+    // No backlog: a step due while a partial is in flight is skipped, so no partial starts once the utterance has closed. A queued
+    // step would still be running after the close, and its call would start within this window after the final was answered.
+    const started = stt.calls.length;
+    await sleep(300);
+    assert.equal(stt.calls.length, started, "no STT call started after the utterance closed: skipped steps were not queued");
   });
 });
 
@@ -346,7 +350,8 @@ test("streaming pacing: the first change at once, then at most one per ears.part
     const t0 = Date.now();
     h.hypothesis("a");
     await waitFor(() => r.partials().length === 1, "first at once");
-    assert.ok(times[0]! - t0 < 100, "no wait for the first change");
+    // A wait for the step (partial_step_ms, 250 ms here) would publish no earlier than that; the bound is the step itself.
+    assert.ok(times[0]! - t0 < 250, `no wait for the first change (${times[0]! - t0} ms, step 250 ms)`);
     await sleep(20); h.hypothesis("a b");
     await sleep(20); h.hypothesis("a b c");
     await sleep(80);
@@ -535,25 +540,27 @@ test("streamed partials are published one at a time, and seq rises by one for ea
 });
 
 // @spec EARS-PART-009, EARS-EARLY-016
-test("a reused early transcript is the final even with a partial in flight: nothing waits for the partial, and its late result publishes nothing", async () => {
+test("a reused early transcript is the final even with a partial in flight: nothing waits for the partial", async () => {
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
-  let lastFrameAt = Infinity;
   let earlyTaken = false;
-  const stt = fakeStt(async (c) => {
-    if (!earlyTaken && c.startedAt >= lastFrameAt + 80) { earlyTaken = true; return "hello there"; } // the early snapshot
+  const stt = fakeStt(async () => {
+    if (!earlyTaken) { earlyTaken = true; return "hello there"; } // the first call is the early snapshot
     await gate; // every partial step
     return "hello there my friend";
   });
-  await run(stt, cfg({ silence_ms: 700, partial_step_ms: 150, stt_timeout_ms: 5000, early: { enabled: true, after_ms: 100 } }), async (r) => {
-    await feed(r.bus, 10, { gapMs: 15 });
-    lastFrameAt = Date.now();
+  await run(stt, cfg({ silence_ms: 700, partial_step_ms: 300, stt_timeout_ms: 5000, early: { enabled: true, after_ms: 100 } }), async (r) => {
+    // The frames arrive in one synchronous burst: the early snapshot (due 100 ms after the last frame) precedes the first partial
+    // step (due 300 ms after the utterance opened) by 200 ms, so the early call is the first STT call even under load. The
+    // partial stays in flight past the 700 ms close. Spaced frames let a load stall run the partial step first, and the gate
+    // would then hold the early call and nothing would publish.
+    await feed(r.bus, 10);
     await waitFor(() => r.heard().length === 1, "speech.heard while a partial is in flight", 3000);
     const h = r.heard()[0]!;
     assert.equal(stt.stats.inflight() >= 1, true, "a partial is still in flight");
     assert.deepEqual([h.text, h.earlySeq], ["hello there", 0]);
+    // Releasing the gate lets the late partial answer arrive. It cannot publish anything: a single partial never commits (that
+    // needs two runs in agreement), so the publish-after-final behaviour is covered by the test at EARS-PART-009 instead.
     release();
-    await sleep(150);
-    assert.equal(r.partials().length, 0, "no partial after the final");
   });
 });

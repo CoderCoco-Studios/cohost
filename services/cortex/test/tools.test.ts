@@ -310,12 +310,16 @@ test("maxTokens is tools.reply.max_tokens, 512 by default", async () => {
 });
 
 // @spec CTX-TOOL-004
-test("the offer is fixed for the think: a catalog that goes stale or changes during a wait changes nothing for later rounds", async () => {
+test("the offer is fixed for the think: a catalog that goes stale or changes during a wait changes nothing for later rounds", async (t) => {
+  // The catalog's freshness is wall-clock (3 intervals of 40 ms here), so the clock is mocked: a load stall between the catalog and
+  // the think must not make round 1 offer nothing, and the staleness is advanced by hand while the wait is in flight.
+  t.mock.timers.enable({ apis: ["Date"] });
   const s = await ready({ catalog: [tool("clock")], intervalMs: 40 });
   s.bus.auto = () => ({ delayMs: 220 });
   const thinking = s.cortex.think(speech());
   s.llm.rounds.push({ text: "[happy] Let me look.", calls: [call("c1")] }, { text: "[happy] It is noon." });
   await waitFor(() => s.bus.requests.length === 1, "the request");
+  t.mock.timers.tick(200); // the first catalog is now older than three intervals
   await s.catalog([tool("clock"), tool("extra")], 40);
   await thinking;
   assert.equal(s.llm.calls.length, 2);

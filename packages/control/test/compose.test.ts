@@ -167,3 +167,50 @@ test("no service mounts ./secrets, ./secrets/units, the workspace root or any ho
     }
   }
 });
+
+// ---- the tools network (DEPLOY-NET-001, -002, -003; DEPLOY-COMPOSE-026)
+
+interface Net { driver?: string; internal?: boolean }
+type WithNets = Svc & { networks?: unknown; extra_hosts?: string[] };
+const compose = base as unknown as { networks?: Record<string, Net | null>; services: Record<string, WithNets> };
+/** The networks a service joins: its `networks:` list or map keys, else only the project's `default` network. */
+const joined = (s: WithNets): string[] => {
+  if (s.networks === undefined) return ["default"];
+  return Array.isArray(s.networks) ? (s.networks as string[]) : Object.keys(s.networks as object);
+};
+
+// @spec DEPLOY-NET-001
+test("the base Compose file declares a bridge network tools-redis that is not internal", () => {
+  const net = compose.networks?.["tools-redis"];
+  assert.ok(net !== undefined, "tools-redis is declared");
+  assert.ok(net === null || net.driver === undefined || net.driver === "bridge", "a bridge network");
+  assert.ok(net === null || net.internal !== true, "not internal: the outbound route carries the egress to MCP servers (DEPLOY-NET-003)");
+  for (const name of Object.keys(compose.networks ?? {})) assert.ok(name === "tools-redis" || name === "default", `no other network is declared: ${name}`);
+});
+
+// @spec DEPLOY-NET-002, DEPLOY-COMPOSE-026
+test("redis joins default and tools-redis, tools joins tools-redis alone, and no other service declares a network, so tools-redis holds exactly redis and tools", () => {
+  assert.deepEqual([...joined(compose.services.redis!)].sort(), ["default", "tools-redis"]);
+  assert.deepEqual(joined(compose.services.tools!), ["tools-redis"]);
+  for (const file of [base, gpu]) {
+    for (const [name, s] of Object.entries(file.services as Record<string, WithNets>)) {
+      if (name === "redis" || name === "tools") continue;
+      assert.equal(s.networks, undefined, `${name} declares no networks: key`);
+    }
+  }
+  const onToolsRedis = Object.entries(compose.services).filter(([, s]) => joined(s).includes("tools-redis")).map(([n]) => n).sort();
+  assert.deepEqual(onToolsRedis, ["redis", "tools"]);
+  assert.ok(!joined(compose.services.tools!).includes("default"), "tools is not on the default network");
+  // the only service tools can name besides itself is redis: every other service shares no network with it
+  const reach = Object.entries(compose.services).filter(([n, s]) => n !== "tools" && joined(s).some((net) => joined(compose.services.tools!).includes(net))).map(([n]) => n);
+  assert.deepEqual(reach, ["redis"]);
+  assert.deepEqual(Object.keys((compose.services.tools as { depends_on?: object }).depends_on ?? {}), ["redis"]);
+});
+
+// @spec DEPLOY-NET-003
+test("tools keeps the host gateway for host-side MCP servers, and the Compose file adds no proxy or firewall service for the egress", () => {
+  assert.ok(compose.services.tools!.extra_hosts?.includes("host.docker.internal:host-gateway"));
+  const names = Object.keys(compose.services);
+  assert.deepEqual(names.filter((n) => /proxy|squid|firewall|egress|gateway|nginx|traefik|envoy/i.test(n)), []);
+  assert.ok((compose.networks?.["tools-redis"] as Net | null)?.internal !== true, "the network keeps its outbound route");
+});

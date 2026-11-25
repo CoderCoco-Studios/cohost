@@ -55,11 +55,20 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
   volumes:
     - ./config:/app/config
 
+# The network `tools` lives on: it holds `redis` and `tools` and nothing else, so `tools` can name no other container
+# (DEPLOY-NET-001, DEPLOY-NET-002). It is not `internal`: the bridge's outbound route carries `tools` to the MCP servers the
+# owner configures by URL, and the host gateway reaches host-side ones (DEPLOY-NET-003). Every other service stays on the
+# project's `default` network and declares no `networks:` key.
+networks:
+  tools-redis:
+    driver: bridge
+
 services:  # @spec DEPLOY-COMPOSE-001
   # ---------- infrastructure ----------
   redis:  # @spec DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-009, DEPLOY-COMPOSE-013, DEPLOY-COMPOSE-014, DEPLOY-COMPOSE-015
     image: redis:8.10.3-alpine
     restart: unless-stopped
+    networks: [default, tools-redis]   # @spec DEPLOY-NET-002: the one service on both networks
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes: [redis-data:/data]
     ports: ["127.0.0.1:6379:6379"]   # for `pnpm dev` outside docker
@@ -312,6 +321,7 @@ services:  # @spec DEPLOY-COMPOSE-001
   tools:  # @spec DEPLOY-COMPOSE-026, DEPLOY-COMPOSE-027
     <<: *ts-base
     build: { context: ., args: { SERVICE: tools } }
+    networks: [tools-redis]   # @spec DEPLOY-NET-002: redis by name, and nothing else of the stack
     environment:
       REDIS_URL: redis://redis:6379
       CONFIG_DIR: /app/config

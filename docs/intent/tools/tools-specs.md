@@ -17,7 +17,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 - [x] **TOOL-SVC-009**: When a call ends, the service shall log the tool name, the origin, the status and the duration at `info`, and shall log no argument, no result text, no secret and no userinfo or query string of a server URL at any level.
 
 - [x] **TOOL-SVC-010**: The `tools` unit's manifest entry shall declare `secrets` as exactly `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret` and `chat.youtube.api_key`, so the service's secrets projection holds no other secret path (deployment DEPLOY-SECRET-003).
-- [ ] **TOOL-SVC-011**: When an MCP server's URL names a host that does not resolve or cannot be reached from the service's network (a Compose service other than `redis`, deployment DEPLOY-NET-002), the service shall treat the server as `down` like any unreachable server, with a sentence the service wrote and no resolver or socket error text.
+- [x] **TOOL-SVC-011**: When an MCP server's URL names a host that does not resolve or cannot be reached from the service's network (a Compose service other than `redis`, deployment DEPLOY-NET-002), the service shall treat the server as `down` like any unreachable server, with a sentence the service wrote and no resolver or socket error text.
 
 ## Tools and the catalog (TOOL-CAT)
 

@@ -101,3 +101,17 @@ test("memory.notes.request and reply entries carry optional platform and userId"
   assert.equal(rep.safeParse({ id: "1", viewers: [{ ...entry, platform: "irc" }] }).success, false);
   assert.equal(rep.safeParse({ id: "1", viewers: [{ ...entry, userId: 9 }] }).success, false);
 });
+
+// @spec BUS-EVT-061
+test("a speech focus and notes request and reply entries keep speakerId unchanged", () => {
+  const focus = P["attention.focus"]!.safeParse({ reason: "r", score: 1, focus: { kind: "speech", who: "Chris", speakerId: "D1", text: "hi" } });
+  assert.ok(focus.success);
+  assert.equal(focus.data.focus.speakerId, "D1");
+  const req = P["memory.notes.request"]!.safeParse({ id: "n1", viewers: [{ user: "Chris", speakerId: "D1" }] });
+  assert.ok(req.success);
+  assert.equal(req.data.viewers[0].speakerId, "D1");
+  const reply = P["memory.notes.reply"]!.safeParse({ id: "n1", viewers: [{ user: "Ann", speakerId: "D1", regular: false, msgCount: 1, notes: [] }] });
+  assert.ok(reply.success);
+  assert.equal(reply.data.viewers[0].speakerId, "D1");
+  assert.equal(P["memory.notes.request"]!.safeParse({ id: "n1", viewers: [{ user: "x", speakerId: 7 }] }).success, false);
+});

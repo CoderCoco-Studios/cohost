@@ -37,6 +37,13 @@ test("tick: a mention publishes attention.focus naming who and what", async () =
   assert.equal(s.ctx.unseen().length, 0, "what was scored is now seen");
 });
 
+test("tick: a speech focus carries the speakerId of its speech.heard", async () => { // @spec SAL-FOCUS-008
+  const sp = setup({ trigger_on_speech: false });
+  await sp.s.onEvent(event("speech.heard", { speaker: "Chris", speakerId: "D1", text: "look at this", durationMs: 900 }));
+  await sp.s.tick();
+  assert.deepEqual(sp.bus.of("attention.focus")[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this", mention: false });
+});
+
 test("tick: speech and vision focus are mapped for the cortex", async () => { // @spec SAL-FOCUS-003
   const sp = setup({ trigger_on_speech: false }); // this test exercises the poll's mapping; the trigger is covered in salience.trigger.test.ts
   await sp.s.onEvent(event("speech.heard", { speaker: "Chris", text: "look at this", durationMs: 900 }));

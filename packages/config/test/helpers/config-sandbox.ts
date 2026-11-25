@@ -30,14 +30,25 @@ export function isolateEnv(): void {
   });
 }
 
-/** A fresh root/config directory pair; CONFIG_DIR and COHOST_ENV_FILE point into it. `.env` goes in the root, the rest in config/. */
+/** Where the operator's credentials file lives for a sandbox whose config directory is `dir`: `secrets/secrets.yaml` beside it (CFG-SEC-001). */
+export const secretsIn = (dir: string): string => join(dir, "..", "secrets", "secrets.yaml");
+
+/**
+ * A fresh root/config directory pair; CONFIG_DIR, COHOST_ENV_FILE and COHOST_SECRETS_FILE point into it. `.env` goes in the
+ * root, `secrets.yaml` in the root's `secrets/` directory (mode 0700), the rest in config/. The tests run inside the real
+ * workspace, so COHOST_SECRETS_FILE keeps the loader off the repository's own `secrets/`.
+ */
 export function sandbox(files: Record<string, string> = {}): string {
   const root = mkdtempSync(join(tmpdir(), "cohost-cfg-"));
   const dir = join(root, "config");
   mkdirSync(dir);
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(name === ".env" ? root : dir, name), text);
+  mkdirSync(join(root, "secrets"), { mode: 0o700 });
+  for (const [name, text] of Object.entries(files)) {
+    writeFileSync(name === ".env" ? join(root, name) : name === "secrets.yaml" ? secretsIn(dir) : join(dir, name), text);
+  }
   process.env.CONFIG_DIR = dir;
   process.env.COHOST_ENV_FILE = join(root, ".env");
+  process.env.COHOST_SECRETS_FILE = secretsIn(dir);
   delete process.env.COHOST_ISOLATION;
   return dir;
 }

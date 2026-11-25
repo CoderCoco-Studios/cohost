@@ -69,37 +69,43 @@ const checkout = (): string => {
 const mode = (file: string): number => statSync(file).mode & 0o777;
 
 // @spec DEPLOY-INST-005
-test("a missing .env or config file is copied from its example, secrets.yaml with mode 0600, and an existing file is never overwritten", () => {
+test("a missing .env or config file is copied from its example, secrets/secrets.yaml with mode 0600 in a 0700 directory, and an existing file is never overwritten", () => {
   const dir = checkout();
+  const secrets = join(dir, "secrets", "secrets.yaml");
   const first = runBlock("seed-files", "seed_files", { cwd: dir });
   assert.equal(first.status, 0, first.stderr);
   assert.equal(readFileSync(join(dir, ".env"), "utf8"), "CONTROL_TOKEN=\n");
-  for (const [f, ex] of [["config.yaml", "config.example.yaml"], ["secrets.yaml", "secrets.example.yaml"], ["personality.md", "personality.example.md"], ["expressions.yaml", "expressions.example.yaml"]] as const) {
+  for (const [f, ex] of [["config.yaml", "config.example.yaml"], ["personality.md", "personality.example.md"], ["expressions.yaml", "expressions.example.yaml"]] as const) {
     assert.equal(readFileSync(join(dir, "config", f), "utf8"), `# ${ex}\n`, f);
   }
-  assert.equal(mode(join(dir, "config", "secrets.yaml")), 0o600);
+  assert.equal(readFileSync(secrets, "utf8"), "# secrets.example.yaml\n", "copied from config/secrets.example.yaml");
+  assert.equal(mode(secrets), 0o600);
+  assert.equal(mode(join(dir, "secrets")), 0o700);
+  assert.equal(existsSync(join(dir, "config", "secrets.yaml")), false, "the credentials file is not seeded into ./config");
   assert.doesNotMatch(first.stdout, /Twitch|Discord|OBS/, "no instruction to fill operator values into .env");
 
-  // the operator's edits survive a second run, and a loose-mode secrets.yaml is not touched (it is not ours to rewrite)
+  // the operator's edits survive a second run, and a loose-mode secrets file is not touched (it is not ours to rewrite)
   writeFileSync(join(dir, ".env"), "MINE=1\n");
   writeFileSync(join(dir, "config", "config.yaml"), "mine: 1\n");
-  writeFileSync(join(dir, "config", "secrets.yaml"), "mine: 2\n");
-  chmodSync(join(dir, "config", "secrets.yaml"), 0o640);
+  writeFileSync(secrets, "mine: 2\n");
+  chmodSync(secrets, 0o640);
   assert.equal(runBlock("seed-files", "seed_files", { cwd: dir }).status, 0);
   assert.equal(readFileSync(join(dir, ".env"), "utf8"), "MINE=1\n");
   assert.equal(readFileSync(join(dir, "config", "config.yaml"), "utf8"), "mine: 1\n");
-  assert.equal(readFileSync(join(dir, "config", "secrets.yaml"), "utf8"), "mine: 2\n");
-  assert.equal(mode(join(dir, "config", "secrets.yaml")), 0o640);
+  assert.equal(readFileSync(secrets, "utf8"), "mine: 2\n");
+  assert.equal(mode(secrets), 0o640);
 });
 
 // @spec DEPLOY-INST-005
-test("only the missing files are seeded", () => {
+test("only the missing files are seeded, and an existing secrets directory keeps its mode", () => {
   const dir = checkout();
   writeFileSync(join(dir, "config", "config.yaml"), "mine: 1\n");
+  mkdirSync(join(dir, "secrets"), { mode: 0o750 });
   runBlock("seed-files", "seed_files", { cwd: dir });
   assert.equal(readFileSync(join(dir, "config", "config.yaml"), "utf8"), "mine: 1\n");
-  assert.ok(existsSync(join(dir, "config", "secrets.yaml")));
-  assert.equal(mode(join(dir, "config", "secrets.yaml")), 0o600);
+  assert.ok(existsSync(join(dir, "secrets", "secrets.yaml")));
+  assert.equal(mode(join(dir, "secrets", "secrets.yaml")), 0o600);
+  assert.equal(mode(join(dir, "secrets")), 0o750, "an existing directory is not re-moded");
 });
 
 /** The repository's own loader reads `dashboard.port` from a config directory of the given text, run as the installer runs it. */
@@ -126,7 +132,8 @@ test("next steps say pnpm dashboard, build the URL from the dashboard.port the c
   assert.doesNotMatch(o, /^\s*\d\. docker compose up -d\b/m);
   assert.match(o, /docker compose --profile eyes --profile ears --profile mouth --profile discord up -d/, "the optional profiles step names eyes, ears, mouth and discord");
   assert.match(o, /connections\.discord\.token/, "it names the one Discord bot");
-  assert.match(o, /config\/secrets\.yaml/);
+  assert.match(o, /secrets\/secrets\.yaml/, "the credentials file is named by its new path");
+  assert.doesNotMatch(o, /config\/secrets\.yaml/, "no step names the retired ./config location");
   assert.match(o, /Discord connector/);
   assert.doesNotMatch(o, /DISCORD_TOKEN|DASHBOARD_PORT|edit \.env/i, "no retired variable");
 });
@@ -197,6 +204,18 @@ test("install.sh installs, builds the addon, typechecks, then probes redis and p
   assert.match(src, /if \[\[ \$PULL -eq 1 \]\]; then probe ollama 60 /);
   assert.match(src, /echo "  \$name ok"/);
   assert.match(src, /die "smoke probe failed: \$name did not pass within/);
+});
+
+// @spec DEPLOY-SECRET-006
+test("install.sh runs the secrets projection after typecheck and before any docker compose command, and stops with the projection's message on failure", () => {
+  const code = src.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  const proj = code.indexOf("node packages/control/dist/project-secrets.js");
+  assert.ok(proj >= 0, "install.sh runs the projection entry");
+  assert.ok(code.indexOf("pnpm typecheck") < proj, "after the workspace is built");
+  assert.ok(proj < code.indexOf("docker compose pull") && proj < code.indexOf("docker compose up"), "before the first docker compose command that creates a container");
+  const line = code.slice(proj).split("\n")[0]!;
+  assert.match(line, /\|\|\s*die\b|\|\|\s*exit\b/, "a failing projection stops the installer");
+  assert.doesNotMatch(line, />\s*\/dev\/null|2>\s*\/dev\/null/, "the projection's message is not swallowed");
 });
 
 // @spec DEPLOY-INST-014

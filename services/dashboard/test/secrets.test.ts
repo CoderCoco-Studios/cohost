@@ -322,10 +322,11 @@ test("two requests in flight are applied one after the other and leave the file 
   assert.deepEqual(t.values(), Object.fromEntries(paths.map((p) => [p, `v-${p}`])));
 });
 
-// @spec DASH-SECRET-001, MOD-CFG-015
-test("restart lists, in manifest order, the running units that declare the secret's section; none while Docker is unavailable", async () => {
-  const readers = SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).map((s) => s.id);
-  assert.ok(readers.length >= 2);
+// @spec DASH-SECRET-001, MOD-CFG-015, MOD-MAN-015
+test("restart lists, in manifest order, the running units whose manifest secrets list declares the path; none while Docker is unavailable", async () => {
+  const readers = SERVICE_MANIFEST.filter((s) => (s.secrets ?? []).includes(OPENAI)).map((s) => s.id);
+  assert.deepEqual(readers, ["salience", "affect", "memory", "cortex", "eyes"]);
+  assert.ok(SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).length > readers.length - 1, "units read the llm section; only those declaring the path restart");
   const svc = (service: string, status: string) => ({ service, status });
   const running = [...readers].reverse().map((id) => svc(id, "running")).concat([svc("voice", "running")]);
   const t = await boot({ control: true, stack: { services: running as never } });
@@ -335,6 +336,21 @@ test("restart lists, in manifest order, the running units that declare the secre
   assert.deepEqual(((await (await stopped.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN)).json()) as { restart: string[] }).restart, []);
   const noDocker = await boot({ control: true, stack: { docker: { ok: false } as never, services: running as never } });
   assert.deepEqual(((await (await noDocker.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN)).json()) as { restart: string[] }).restart, []);
+});
+
+// @spec DASH-SECRET-001, MOD-MAN-015
+test("a unit that reads a section but does not declare the path is not restarted, and a path no unit declares restarts nothing", async () => {
+  const everyone = SERVICE_MANIFEST.map((s) => ({ service: s.composeName, status: "running" }));
+  const t = await boot({ control: true, stack: { services: everyone as never } });
+  const restartOf = async (body: unknown, path: string) => ((await (await t.put(`/secrets/${path}`, body, TOKEN)).json()) as { restart: string[] }).restart;
+  assert.deepEqual(await restartOf({ value: "d" }, "connections.discord.token"), ["connector-discord"]);
+  assert.deepEqual(await restartOf({ value: "y" }, "chat.youtube.api_key"), ["chat", "tools"], "tools declares the stream-info credentials; chat the user ones");
+  assert.deepEqual(await restartOf({ value: "t" }, "chat.twitch.access_token"), ["chat"], "tools reads the chat section but declares no user token");
+  assert.deepEqual(await restartOf({ value: "v" }, "voice.openai.api_key"), ["voice"], "mouth and avatar read other sections and declare none");
+  assert.deepEqual(await restartOf({ value: "hf" }, "voice.pocket.hf_token"), [], "the Pocket token reaches only the engine container, through its own file");
+  assert.deepEqual(await restartOf({ value: null }, "voice.pocket.hf_token"), [], "a clear lists the same units as a set");
+  const multi = (await (await t.put("/secrets", { values: { "connections.discord.token": "d", "ears.http.token": "e" } }, TOKEN)).json()) as { restart: string[] };
+  assert.deepEqual(multi.restart, ["ears", "connector-discord"], "PUT /secrets: the union in manifest order");
 });
 
 // @spec DASH-SECRET-003, DASH-HOST-004, DASH-HOST-005

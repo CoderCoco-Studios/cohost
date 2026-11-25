@@ -13,7 +13,7 @@ interface Svc {
   command?: string[];
   restart?: string;
   profiles?: string[];
-  volumes?: string[];
+  volumes?: unknown[];
   env_file?: string;
   environment?: Record<string, string>;
   healthcheck?: { disable?: boolean; test?: string[] };
@@ -41,7 +41,8 @@ test("consolidate builds the memory image and runs the consolidate entry point i
 test("consolidate inherits the shared env, config volume and environment, and restates nothing that hides them", () => {
   const memory = compose.services.memory!;
   assert.equal(svc.env_file, ".env");
-  assert.deepEqual(svc.volumes, ["./config:/app/config"]);
+  assert.deepEqual((svc.volumes as unknown[]).filter((m) => typeof m === "string"), ["./config:/app/config"]);
+  assert.deepEqual((svc.volumes as unknown[]).filter((m) => typeof m !== "string"), [{ type: "bind", source: "./secrets/units/memory", target: "/app/secrets", read_only: true, bind: { create_host_path: false } }], "the memory unit's projection (DEPLOY-SECRET-002)");
   assert.deepEqual(svc.volumes, memory.volumes);
   for (const k of ["DATABASE_URL", "OLLAMA_URL", "CONFIG_DIR", "COHOST_ISOLATION"]) {
     assert.ok(svc.environment?.[k] !== undefined, `${k} is set`);

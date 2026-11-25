@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { ISOLATION_OVERRIDES, SECRET_PATHS } from "@cohost/config";
+import { SERVICE_MANIFEST } from "../src/index.js";
 
 // Structural checks of the Compose files against the control plane: the healthcheck wiring, the isolation
 // pass-through, and image pinning. Docker is not run.
@@ -14,7 +16,7 @@ interface Svc {
   environment?: Record<string, string>;
   healthcheck?: { test: string[]; interval: string; timeout: string; retries: number; start_period: string };
   build?: { args: Record<string, string> };
-  volumes?: string[];
+  volumes?: unknown[];
 }
 const load = (f: string) => parse(readFileSync(root(f), "utf8"), { merge: true }) as { services: Record<string, Svc>; "x-ts-service"?: Svc };
 const base = load("docker-compose.yml");
@@ -39,12 +41,13 @@ test("every x-ts-service application service runs the heartbeat healthcheck on t
   assert.ok(appServices.length >= 10);
 });
 
-const IN_NETWORK = ["CONFIG_DIR", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
+const IN_NETWORK = ["COHOST_SECRETS_FILE", "CONFIG_DIR", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
 
 // @spec CTRL-RUNTIME-009, DEPLOY-COMPOSE-017
 test("the shared environment is the in-network addresses plus the one pass-through COHOST_ISOLATION: ${COHOST_ISOLATION:-}", () => {
   const env = base["x-ts-service"]!.environment!;
   assert.equal(env.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
+  assert.equal(env.COHOST_SECRETS_FILE, "", "pinned empty so .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)");
   assert.deepEqual(Object.keys(env).sort(), ["COHOST_ISOLATION", ...IN_NETWORK]);
   for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(env[name], undefined, `${name} has no entry`);
   for (const [name, s] of appServices) {
@@ -115,4 +118,48 @@ test("every application service mounts ./config:/app/config, and no Compose entr
   }
   const ports = base.services.postgres as unknown as { ports?: string[] };
   assert.deepEqual(ports.ports, ["127.0.0.1:5432:5432"], "the fixed credential is reachable from the host loopback only");
+});
+
+// ---- per-unit secrets projections (DEPLOY-SECRET-001, -002, -008)
+
+type LongMount = { type?: string; source?: string; target?: string; read_only?: boolean; bind?: { create_host_path?: boolean } };
+/** Every mount of a service as a source path and the raw entry, whichever syntax it is written in. */
+const mountsOf = (s: Svc): { source: string; raw: string | LongMount }[] =>
+  ((s.volumes ?? []) as (string | LongMount)[]).map((raw) => ({ raw, source: typeof raw === "string" ? raw.split(":")[0]! : (raw.source ?? "") }));
+const services = Object.entries(base.services).filter(([name]) => !ENGINE_SERVERS.includes(name));
+/** The unit whose projection a service mounts: the one-shots built as `memory` mount `memory`'s (DEPLOY-SECRET-002). */
+const unitOf = (name: string): string => (name === "consolidate" || name === "reembed" ? "memory" : name);
+
+// @spec DEPLOY-SECRET-002, DEPLOY-COMPOSE-025
+test("a service whose unit declares a secret path mounts ./secrets/units/<composeName> read-only at /app/secrets in the long syntax with create_host_path false, and nothing else under ./secrets", () => {
+  const declares = (unit: string): boolean => (SERVICE_MANIFEST.find((u) => u.composeName === unit)?.secrets?.length ?? 0) > 0;
+  for (const [name, s] of services) {
+    const underSecrets = mountsOf(s).filter((m) => /^(\.\/)?secrets(\/|$)/.test(m.source));
+    if (name === "models" || !declares(unitOf(name))) {
+      assert.deepEqual(underSecrets, [], `${name} declares no secret path and mounts nothing under ./secrets`);
+      continue;
+    }
+    assert.deepEqual(underSecrets.map((m) => m.raw), [
+      { type: "bind", source: `./secrets/units/${unitOf(name)}`, target: "/app/secrets", read_only: true, bind: { create_host_path: false } },
+    ], `${name} mounts its own unit's projection and nothing else under ./secrets`);
+  }
+  for (const unit of ["chat", "eyes", "ears", "salience", "affect", "memory", "cortex", "tools", "voice", "connector-discord", "consolidate", "reembed"]) {
+    assert.ok(mountsOf(base.services[unit]!).some((m) => m.source === `./secrets/units/${unitOf(unit)}`), `${unit} mounts its projection`);
+  }
+  for (const unit of ["mouth", "avatar", "models"]) assert.ok(!JSON.stringify(base.services[unit]!.volumes).includes("secrets"), `${unit} mounts none`);
+});
+
+// @spec DEPLOY-SECRET-001, DEPLOY-SECRET-008, DEPLOY-COMPOSE-025
+test("no service mounts ./secrets, ./secrets/units, the workspace root or any host path whose subtree holds secrets/secrets.yaml", () => {
+  const operatorFile = resolve(root("secrets/secrets.yaml"));
+  for (const file of [base, gpu]) {
+    for (const [name, s] of Object.entries(file.services)) {
+      for (const m of mountsOf(s)) {
+        if (!m.source.startsWith(".") && !m.source.startsWith("/") && !m.source.startsWith("~")) continue; // a named volume holds no host path
+        const host = resolve(root(""), m.source);
+        const holds = operatorFile === host || operatorFile.startsWith(host + sep);
+        assert.ok(!holds, `${name} mounts ${m.source}, whose subtree holds secrets/secrets.yaml`);
+      }
+    }
+  }
 });

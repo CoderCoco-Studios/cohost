@@ -315,7 +315,7 @@ arrows:
     blocks: [deployment]
     blockedBy: [region-hooks, model-backends, ears, avatar, module-contract, event-bus]
     detail: docs-site.md
-    next: "156 specs: 153 [x], 3 [ ]. DOCS-BUILD-001 and -002 name the mise tasks (#344), [ ] until the deployment implementation PR. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "156 specs: 152 [x], 4 [ ]. DOCS-BUILD-001, -002 and DOCS-README-003 name the mise tasks (#344), [ ] until the deployment implementation PR. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

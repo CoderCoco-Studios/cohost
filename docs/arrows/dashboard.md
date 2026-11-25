@@ -24,7 +24,7 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (427 specs, prefix `DASH`: 416 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (427 specs, prefix `DASH`: 411 `[x]`, 16 `[ ]`, 0 `[D]`; DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344 and close with its implementation; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:

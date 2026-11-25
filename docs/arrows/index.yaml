@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "215 specs: 210 [x], 0 [ ], 5 [D] (the early-reply events BUS-EVT-052 to 060, the 37-payload catalogue and the timing stamps of BUS-EVT-024 are built, #221)."
+    next: "215 specs: 205 [x], 5 [ ], 5 [D]. BUS-NAT-BLD-001, -002, -005, -009 and BUS-NAT-ERR-011 rewritten for the mise tasks (#344), [ ] until the deployment implementation PR. (The early-reply events BUS-EVT-052 to 060, the 37-payload catalogue and the timing stamps of BUS-EVT-024 are built, #221)."
     drift: null
 
   model-backends:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "177 specs: 177 [x], 0 [ ]. YouTube viewer retention is an owner decision in the LLD."
+    next: "177 specs: 175 [x], 2 [ ]: MEM-REEMBED-001 and MEM-CONSOL-012 name the mise tasks (#344), [ ] until the deployment implementation PR. YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "427 specs: 416 [x], 11 [ ] (the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
+    next: "427 specs: 411 [x], 16 [ ]: DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks (#344), [ ] until the deployment implementation PR; and the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
     drift: null
 
   control-plane:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "126 specs: 123 [x], 3 [ ] (DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, all manual checks on a Docker host). The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "141 specs: 99 [x], 42 [ ]. Per-project toolchains and the mise command surface (#344, design): DEPLOY-TOOL-001..012, DEPLOY-INST-015, -016, DEPLOY-CI-012 new; DEPLOY-IMG-001, -006, DEPLOY-INST-004, -007, -008, -009, -011, -012, -014, DEPLOY-CI-001..004, -006, -007, DEPLOY-SECRET-006, DEPLOY-REPO-002, -006, DEPLOY-HOST-001, -003..006 and DEPLOY-README-006 rewritten, all [ ] until the implementation PR. Still open besides: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:
@@ -315,7 +315,7 @@ arrows:
     blocks: [deployment]
     blockedBy: [region-hooks, model-backends, ears, avatar, module-contract, event-bus]
     detail: docs-site.md
-    next: "156 specs: 155 [x], 1 [ ]. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "156 specs: 153 [x], 3 [ ]. DOCS-BUILD-001 and -002 name the mise tasks (#344), [ ] until the deployment implementation PR. DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
 unmapped:

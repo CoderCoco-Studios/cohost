@@ -41,8 +41,8 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### My settings are not being read
 
-- **Cause:** the co-host reads `config/` (including `config.yaml` and `secrets.yaml`) and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml`. A copy in some other folder is ignored.
-- **Fix:** edit `config/config.yaml`, `config/secrets.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
+- **Cause:** the co-host reads `config/` (including `config.yaml`), `secrets/secrets.yaml` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml`. A copy in some other folder is ignored.
+- **Fix:** edit `config/config.yaml`, `secrets/secrets.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
 
 ### A program on my PC cannot reach the voice service
 
@@ -127,7 +127,7 @@ Work down the list:
 ### I changed a setting and nothing happened
 
 - **Cause:** services read their settings when they start.
-- **Fix:** restart the services that read them; the **Settings** screen offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. A credential saved on the **Settings** screen or in `config/secrets.yaml` applies the same way: restart the service that reads it. Changes to `.env` need a **Launch**.
+- **Fix:** restart the services that read them; the **Settings** screen offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. A credential saved on the **Settings** screen or in `secrets/secrets.yaml` applies the same way: restart the service that reads it. Changes to `.env` need a **Launch**.
 
 ### A reflex never fires
 

@@ -66,7 +66,7 @@ test("the Discord page describes ears, mouth and the Discord connector as separa
   assert.match(md, /\| `discord` \|[\s\S]*\| `ears` \|[\s\S]*\| `mouth` \|/);
   assert.match(md, /mouth\.outputs/);
   assert.match(md, /COMPOSE_PROFILES=discord,ears,mouth/);
-  assert.match(md, /`config\/secrets\.yaml`[\s\S]*?connections:\s+discord:\s+token:/);
+  assert.match(md, /`secrets\/secrets\.yaml`[\s\S]*?connections:\s+discord:\s+token:/);
   assert.doesNotMatch(md, /DISCORD_TOKEN/);
   assert.match(md, /connections:\s+discord:[\s\S]*?guild_id:[\s\S]*?voice_channel_id:/);
   assert.match(md, /\*\*Connect\*\*/);

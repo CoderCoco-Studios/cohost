@@ -46,9 +46,9 @@ Rust is required before any program that runs on your machine will start, that i
 2. Installs Docker if it is missing. If it had to install Docker, it stops and asks you to log out and back in, then run it again.
 3. Installs the NVIDIA container toolkit when it finds a GPU.
 4. Installs Node 26 if Node is missing or older, and enables pnpm.
-5. Creates `.env` from `.env.example`, creates your personal files in `config/` (`config.yaml`, `secrets.yaml`, `personality.md` and `expressions.yaml`), switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
+5. Creates `.env` from `.env.example`, creates your personal files in `config/` (`config.yaml`, `personality.md` and `expressions.yaml`) and your credentials file `secrets/secrets.yaml`, switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
 6. Installs a C compiler if there is none, then rustup and the pinned Rust toolchain.
-7. Runs `pnpm install --frozen-lockfile`, then `pnpm build:native`, then a type check.
+7. Runs `pnpm install --frozen-lockfile`, then `pnpm build:native`, then a type check, then copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`.
 8. Unless you pass `--no-pull`, downloads the container images and the models.
 9. Starts [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.md#postgres) and checks they answer.
 10. Prints what to do next.

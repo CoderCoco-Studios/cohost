@@ -41,7 +41,7 @@ Because only the connector logs in, `ears` and `mouth` need no Discord token, an
 
 4. In Discord's advanced settings, turn on Developer Mode. Then right-click your server and choose to copy its ID, and do the same for the voice channel.
 
-5. Put the bot's token in the **Bot token** secret field of **Settings**, **Discord** (it shows **Set** afterwards and never shows the value; saving needs your control token). Or edit `config/secrets.yaml` by hand (copy it from `config/secrets.example.yaml` if it is not there yet). Credentials live only in that file:
+5. Put the bot's token in the **Bot token** secret field of **Settings**, **Discord** (it shows **Set** afterwards and never shows the value; saving needs your control token). Or edit `secrets/secrets.yaml` by hand (copy it from `config/secrets.example.yaml` if it is not there yet). Credentials live only in that file:
 
    ```yaml
    connections:
@@ -77,7 +77,7 @@ Because only the connector logs in, `ears` and `mouth` need no Discord token, an
 
 ## Where the voice goes
 
-The co-host's voice goes to the places named under `mouth.outputs` in `config/config.yaml`. There is one output today, `discord`. The connector's connection is set under `connections.discord` (the bot token is `connections.discord.token` in `config/secrets.yaml`). Routing, using the keys' defaults:
+The co-host's voice goes to the places named under `mouth.outputs` in `config/config.yaml`. There is one output today, `discord`. The connector's connection is set under `connections.discord` (the bot token is `connections.discord.token` in `secrets/secrets.yaml`). Routing, using the keys' defaults:
 
 ```yaml
 connections:
@@ -109,7 +109,7 @@ Listening is a list of [audio sources](../../start/glossary.md#audio-source) in 
 
 ## If it didn't
 
-- **`discord` shows `degraded`.** `connections.discord.token` in `config/secrets.yaml` is missing or empty, so the connector idles and registers nothing. Fill it in and restart the connector.
+- **`discord` shows `degraded`.** `connections.discord.token` in `secrets/secrets.yaml` is missing or empty, so the connector idles and registers nothing. Fill it in and restart the connector.
 - **It joins but nothing is heard.** Check you turned on the **Server Members** intent, that the bot has **Connect** and **Speak** in that channel, and that the guild and channel IDs are the right ones.
 - **It hears you but never speaks.** Check that `mouth` is running and that `mouth.outputs.discord.enabled` is `true`.
 - **Voice quality or joining problems.** The Discord voice path depends on native audio libraries that have not yet been run against a real Discord server. If it fails to join, read the connector's log with `docker compose logs connector-discord` and open an issue.

@@ -29,7 +29,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    cd cohost
    ```
 
-2. Run the installer. It installs what is missing (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the connection to the [bus](../../start/glossary.md#bus) and writes your `.env`, `config/config.yaml` and `config/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
+2. Run the installer. It installs what is missing (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the connection to the [bus](../../start/glossary.md#bus) and writes your `.env`, `config/config.yaml` and `secrets/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
 
    ```bash
    ./scripts/install.sh --no-pull
@@ -45,7 +45,9 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    pnpm build:native
    cp .env.example .env
    cp config/config.example.yaml config/config.yaml
-   cp config/secrets.example.yaml config/secrets.yaml
+   mkdir -m 700 secrets
+   cp config/secrets.example.yaml secrets/secrets.yaml
+   chmod 600 secrets/secrets.yaml
    ```
 
    Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one.

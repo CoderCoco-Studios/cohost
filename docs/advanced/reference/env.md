@@ -7,7 +7,7 @@ verified: f126b94
 
 # Environment variables and ports
 
-`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `config/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
+`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `secrets/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
 
 [Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run from source read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
 
@@ -44,8 +44,9 @@ Needed before configuration can be read.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `secrets.yaml`, `personality.md` and `expressions.yaml`. Compose sets `/app/config` |
+| `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `personality.md` and `expressions.yaml` (credentials are in `secrets/secrets.yaml`, which it does not move). Compose sets `/app/config` |
 | `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run from source |
+| `COHOST_SECRETS_FILE` | `secrets/secrets.yaml` at the workspace root | A test seam: the tests point it at a credentials file in a temporary folder. Do not set it in `.env`; Compose pins it empty in the containers, so each reads its own copy of its credentials |
 | `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache |
 | `COHOST_DOCKER_BIN` | `docker` | The [Docker](../../start/glossary.md#docker) executable the dashboard and `cohostctl` run. Set it to `docker.exe` on [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration |
 

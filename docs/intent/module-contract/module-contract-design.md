@@ -50,6 +50,7 @@ Each application unit in `SERVICE_MANIFEST` carries, beside its existing fields 
 | Field | Meaning |
 |---|---|
 | `config` | Dotted schema paths of the sections the service reads (`voice`, `brain.salience`, `llm`) |
+| `secrets` | The secret paths the service reads (paths of `SECRET_PATHS`, the wildcard `tools.servers.*.token` included), each inside a section its `config` names; the control plane projects exactly these into the unit's container and no other credential reaches it ([deployment](../deployment/deployment-design.md) Secret scoping). Empty when the unit reads none |
 | `uses` | Services whose absence degrades one of this service's features (cortex uses salience, affect, memory, tools; tools uses memory; mouth uses voice); `requires` stays the subset an isolated start brings up, and must be a subset |
 | `pause` | Whether the service honours `pause` (salience, cortex, affect) |
 | `test.inputs` | The inputs the dashboard may feed it: service-level injection kinds (`text`, `image`, `audio`) or bus event types |
@@ -70,7 +71,7 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | Unit | `config` | `uses` | `pause` | `test.inputs` | `test.observe` |
 |---|---|---|---|---|---|
 | chat | `chat`, `viewer_text`, `cohost` | | no | `text` (service) | `chat.message`, `inject.result` |
-| eyes | `vision`, `network` | | no | `image` (service) | `vision.summary`, `inject.result` |
+| eyes | `vision`, `llm`, `network` | | no | `image` (service) | `vision.summary`, `inject.result` |
 | ears | `ears`, `network` | | no | `audio` (service) | `speech.heard`, `inject.result` |
 | salience | `brain.salience`, `brain.cortex`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm`, `tools` | affect, cortex | yes | `chat.message`, `speech.heard`, `vision.summary` | `attention.focus`, `brain.say` |
 | affect | `brain.affect`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | yes | `chat.message`, `speech.heard`, `vision.summary`, `brain.say` | `affect.state` |
@@ -81,6 +82,21 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | mouth | `mouth` | voice | no | `brain.say` (through voice) | `voice.playing`, `voice.done`, `voice.failed` |
 | avatar | `avatar` | voice | no | `brain.say`, `affect.state` | `avatar.state` |
 | connector-discord | `connections` | | no | `audio` (service; target `connector-discord`) | `inject.result` |
+
+Initial `secrets` declarations, checked against the credentials each service's code reads (`tools`' list is its segment's, TOOL-SVC-010). `eyes` describes frames through the chat-model layer with the `llm` credentials (`vision.provider` `openai`, `anthropic` or `bedrock`), and `salience` and `affect` run their hook modules through the same layer, so each declares the `llm` keys; `voice` reads only its OpenAI-compatible key, because the Pocket token reaches only the engine container. The list is explicit, not every secret under the unit's sections: `salience` and `cortex` read the `tools` section and use no MCP token, and `tools` reads `chat` and uses no chat user token.
+
+| Unit | `secrets` |
+|---|---|
+| chat | `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `chat.youtube.api_key` |
+| eyes | `vision.obs.password`, `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
+| ears | `ears.http.token`, `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` |
+| salience, affect, memory, cortex | `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
+| tools | `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.youtube.api_key` |
+| voice | `voice.openai.api_key` |
+| connector-discord | `connections.discord.token` |
+| mouth, avatar | none |
+
+`voice.pocket.hf_token` is declared by no unit: it reaches only the `tts-pocket` engine container, through its own file (deployment Speech engine servers).
 
 The `dashboard` section is read by the dashboard itself, which is not a unit: it applies on the dashboard's next start. The `renderer` section (the browser renderer's model and framing) is read by the dashboard alone as well, and declared by no unit, but the dashboard applies a save of it at once and restarts nothing ([dashboard](../dashboard/dashboard-design.md) Avatar settings; the presentation table marks it `live`).
 

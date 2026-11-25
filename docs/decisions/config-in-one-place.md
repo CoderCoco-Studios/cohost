@@ -69,9 +69,9 @@ An isolated start must flip a backend for one container without editing `config.
 
 ### `config.yaml` for operator settings, `secrets.yaml` for credentials, `.env` for bootstrap and access (chosen)
 
-Every operator setting is a literal key of `config.yaml` with a schema default. Credentials live in a second git-ignored file, `config/secrets.yaml`, in the same bind-mounted directory, merged by the loader at the secret paths. `.env` keeps only what must exist before configuration can be read, and the dashboard's own access controls. Isolation presets are start-time overrides: the control plane passes them to one container in a single dedicated variable, `COHOST_ISOLATION`, and the loader applies them by key path, so no other environment variable reaches a setting and no setting reads one.
+Every operator setting is a literal key of `config.yaml` with a schema default. Credentials live in a second git-ignored file, `secrets/secrets.yaml`, outside the bind-mounted config directory, merged by the loader at the secret paths; each container sees only its unit's projection of it (deployment Secret scoping). `.env` keeps only what must exist before configuration can be read, and the dashboard's own access controls. Isolation presets are start-time overrides: the control plane passes them to one container in a single dedicated variable, `COHOST_ISOLATION`, and the loader applies them by key path, so no other environment variable reaches a setting and no setting reads one.
 
-- Settings apply on restart: **passes**; both files are in `./config`, read at process start.
+- Settings apply on restart: **passes**; `config.yaml` is in `./config` and each container's credentials are in its projection of `secrets/secrets.yaml`, refreshed by the control plane before a restart; both are read at process start.
 - No secret returned: **passes**; reads report set or not set, and credentials are written only through a write-only route.
 - Access controls: **passes**; they stay in `.env`.
 - Redis alone or no bus: **passes**; the loader reads two local files.

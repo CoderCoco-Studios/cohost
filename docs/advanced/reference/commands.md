@@ -58,7 +58,7 @@ Exit codes: 0 for success, 1 for a failure or a refusal, 2 for a usage error. Ev
 
 ## Docker Compose
 
-`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you.
+`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you. A hand-run `docker compose up` or `restart` uses the credentials the dashboard or `cohostctl` last copied into `secrets/units/`; after you change `secrets/secrets.yaml`, start or restart through one of those, or run `node packages/control/dist/project-secrets.js` first.
 
 | Profile | Services | Why it is optional |
 | --- | --- | --- |

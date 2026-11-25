@@ -93,7 +93,7 @@ llm:
     base_url: "http://127.0.0.1:8901/v1"
 ```
 
-`model` is the name the server knows its model by, and the stub accepts any. A real server wants its own model id there. When the server needs a key, put it in `config/secrets.yaml` as `llm.openai.api_key`, as [Choose a model](../../guide/tune/model.md) describes. From inside a [container](../../start/glossary.md#container) the services cannot reach your machine as `127.0.0.1`; use `host.docker.internal` in the address instead. Then restart the services that read the `llm` section: `cortex`, `memory`, `salience` and `affect`.
+`model` is the name the server knows its model by, and the stub accepts any. A real server wants its own model id there. When the server needs a key, put it in `secrets/secrets.yaml` as `llm.openai.api_key`, as [Choose a model](../../guide/tune/model.md) describes. From inside a [container](../../start/glossary.md#container) the services cannot reach your machine as `127.0.0.1`; use `host.docker.internal` in the address instead. Then restart the services that read the `llm` section: `cortex`, `memory`, `salience` and `affect`, and `eyes` when `vision.provider` is `openai`.
 
 ## How you know it worked
 

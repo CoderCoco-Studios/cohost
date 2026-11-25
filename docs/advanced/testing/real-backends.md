@@ -27,7 +27,7 @@ The pattern: run the services from [One service on its own](isolated.md) with ev
 | `eyes` | [OBS](../../start/glossary.md#obs) over [obs-websocket](../../start/glossary.md#obs-websocket) and a vision model | Yes | An isolated start of `eyes` (`vision.provider: stub`) with an image injected from the dashboard, or a hand-published `vision.summary`. Leave `vision.enabled: false` unless OBS is up |
 | `ears` | The Discord [connector](../../start/glossary.md#connector) and an [STT](../../start/glossary.md#stt) container ([faster-whisper](../../start/glossary.md#whisper)) | STT is GPU-friendly | An isolated start of `ears` (`ears.stt_engine: stub`) with audio injected from the dashboard, or a hand-published `speech.heard`; the `http` and `dir` sources need no account |
 | `mouth` | The Discord connector's [sink](../../start/glossary.md#sink) and `voice` | No | An isolated start of `mouth` (`mouth.outputs.dryrun.enabled: true` with `mouth.outputs.discord.enabled: false`). The dashboard's `?sink=1` page is a second, independent sink |
-| `connector-discord` | The one Discord bot (`connections.discord.token` in `config/secrets.yaml`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
+| `connector-discord` | The one Discord bot (`connections.discord.token` in `secrets/secrets.yaml`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
 | `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.sources: [fake]`), or a hand-published `chat.message` |
 | `avatar` | [VTube Studio](../../start/glossary.md#vtube-studio) or a [VMC](../../start/glossary.md#vmc) receiver | No; the app renders | An isolated start of `avatar` (`avatar.driver: "null"`, also the default in `config.example.yaml`) |
 
@@ -93,8 +93,11 @@ docker compose exec ollama ollama ps
 `docker compose build` builds every service image, and `scripts/compose-smoke.sh` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
 
 ```bash
+node packages/control/dist/project-secrets.js
 docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar
 ```
+
+The first line copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`, which a hand-run `docker compose up` does not do; the dashboard and `cohostctl` do it before every start.
 
 Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>-<seq>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
 
@@ -106,7 +109,7 @@ Reading a channel needs only its name, with no login. Set `chat.twitch.channel: 
 node --import tsx services/chat/src/index.ts
 ```
 
-`chat` logs `connected to twitch chat` with `authenticated: false` and publishes `chat.message` [events](../../start/glossary.md#event) as people talk, so pick a busy channel. With `chat.twitch.channel` empty it idles `degraded` instead of exiting. Posting back and the authenticated path need the `chat.twitch` credentials in `config/secrets.yaml`; see [Twitch chat](../../guide/connect/twitch.md).
+`chat` logs `connected to twitch chat` with `authenticated: false` and publishes `chat.message` [events](../../start/glossary.md#event) as people talk, so pick a busy channel. With `chat.twitch.channel` empty it idles `degraded` instead of exiting. Posting back and the authenticated path need the `chat.twitch` credentials in `secrets/secrets.yaml`; see [Twitch chat](../../guide/connect/twitch.md).
 
 ## VMC avatar driver
 
@@ -122,7 +125,7 @@ With a listener on UDP port 39539, a `brain.say` produces `/VMC/Ext/Blend/Val`, 
 
 Needed only by `eyes` with `vision.enabled: true`, and for the stream itself; every other service ignores OBS.
 
-- OBS 28 or newer, where obs-websocket v5 is built in. Under Tools, WebSocket Server Settings, enable the server on port 4455 (`vision.obs.port`) and set a password (`vision.obs.password` in `config/secrets.yaml`).
+- OBS 28 or newer, where obs-websocket v5 is built in. Under Tools, WebSocket Server Settings, enable the server on port 4455 (`vision.obs.port`) and set a password (`vision.obs.password` in `secrets/secrets.yaml`).
 - A source named exactly as `vision.obs.source` (default `Game Capture`) that can produce a screenshot.
 - Reachable from the `eyes` container: `vision.obs.host: host.docker.internal` for OBS on the same Windows PC as Docker Desktop, or the gaming PC's LAN address for two PCs, with obs-websocket listening on the LAN and the firewall open on 4455.
 - A vision model pulled into Ollama (`vision.model`); `vision.provider: stub` replaces it with fixed text.
@@ -133,7 +136,7 @@ Checks:
 1. With OBS closed, `eyes` is `degraded` with `obs: down` and retries every 10 seconds, doubling up to 60.
 2. Start OBS: `eyes` connects without a restart, and `vision.summary` events appear when the screen changes.
 3. Restart OBS mid-run: `eyes` reconnects.
-4. Change `vision.obs.password` in `config/secrets.yaml` and restart `eyes`: `eyes` shows `degraded` and the log carries the login error.
+4. Change `vision.obs.password` in `secrets/secrets.yaml` and restart `eyes`: `eyes` shows `degraded` and the log carries the login error.
 
 ## Discord: one bot
 
@@ -141,7 +144,7 @@ One Discord connector holds the bot's login and its voice connection. `ears` (he
 
 | | Discord connector |
 | --- | --- |
-| Token in `config/secrets.yaml` | `connections.discord.token`, the only Discord token |
+| Token in `secrets/secrets.yaml` | `connections.discord.token`, the only Discord token |
 | Bot permissions in the voice channel | Connect and Speak |
 | Privileged intents | Server Members |
 | [Compose profile](../../start/glossary.md#compose-profile) | `discord`, beside `ears` and `mouth` |

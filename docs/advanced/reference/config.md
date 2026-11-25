@@ -7,7 +7,7 @@ verified: f126b94
 
 # Configuration reference
 
-`config/config.yaml` holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes. Every value is a literal: no environment variable is read for any key. Credentials live in `config/secrets.yaml`, and `.env` holds only what must exist before configuration can be read plus the dashboard's access controls; see [Environment and ports](env.md). This page lists every key of `config/config.example.yaml`, spelled as the dotted path it has in that file. Keys under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and keys inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
+`config/config.yaml` holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes. Every value is a literal: no environment variable is read for any key. Credentials live in `secrets/secrets.yaml`, and `.env` holds only what must exist before configuration can be read plus the dashboard's access controls; see [Environment and ports](env.md). This page lists every key of `config/config.example.yaml`, spelled as the dotted path it has in that file. Keys under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and keys inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
 
 Terms used in the tables, defined once in the [glossary](../../start/glossary.md): [Ollama](../../start/glossary.md#ollama), [Postgres](../../start/glossary.md#postgres), [pgvector](../../start/glossary.md#pgvector), [embedding](../../start/glossary.md#embedding), [OBS](../../start/glossary.md#obs), [obs-websocket](../../start/glossary.md#obs-websocket), [Redis](../../start/glossary.md#redis), [bus](../../start/glossary.md#bus), [event](../../start/glossary.md#event), [hook](../../start/glossary.md#hook), [reflex](../../start/glossary.md#reflex), [connector](../../start/glossary.md#connector), [sink](../../start/glossary.md#sink), [Whisper](../../start/glossary.md#whisper), [Kokoro](../../start/glossary.md#kokoro), [VTube Studio](../../start/glossary.md#vtube-studio), [VMC](../../start/glossary.md#vmc), [valence and arousal](../../start/glossary.md#valence-arousal), [cortex](../../start/glossary.md#cortex), [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect), [STT](../../start/glossary.md#stt) and [GPU](../../start/glossary.md#gpu).
 
@@ -16,12 +16,12 @@ Terms used in the tables, defined once in the [glossary](../../start/glossary.md
 | Topic | Rule |
 | --- | --- |
 | The files | `config/config.example.yaml` is committed. `config/config.yaml` is yours and git-ignored: `scripts/install.sh` copies it, and any service that finds it missing copies it on first run. `personality.md` and `expressions.yaml` work the same way |
-| Where it is read from | The `config/` folder at the workspace root (the nearest folder holding `pnpm-workspace.yaml`), whatever directory a service starts in. `CONFIG_DIR` overrides the folder, and `secrets.yaml` sits beside `config.yaml` in it |
+| Where it is read from | The `config/` folder at the workspace root (the nearest folder holding `pnpm-workspace.yaml`), whatever directory a service starts in. `CONFIG_DIR` overrides the folder. Credentials are read from `secrets/secrets.yaml` at the workspace root, which `CONFIG_DIR` does not move |
 | Literal values | Every value is written as a literal. A `${...}` placeholder anywhere in `config.yaml` is refused when the file loads, with a message naming the key, and the service does not start. A blank value means "use the schema's default" for most keys |
 | When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
 | Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
 | Editing | The dashboard's Settings screen edits one section at a time from the same schema, keeps your comments, shows a secret only as set or not set (and writes it to `secrets.yaml` through its own route, never to `config.yaml`), refuses a save when the file changed under it, and offers to restart the services that read the section |
-| Secrets | The eleven credential keys listed under [Credentials](#credentials-secrets-yaml) live in `config/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
+| Secrets | The eleven credential keys listed under [Credentials](#credentials-secrets-yaml) live in `secrets/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
 
 The defaults shown are the schema's, and where the example file sets a different value that is noted.
 
@@ -488,7 +488,7 @@ A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, a
 
 ## Credentials (`secrets.yaml`)
 
-`config/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), sits beside `config.yaml` and is merged into the loaded config, so a service reads each as the dotted path it has here. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+`secrets/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 in a folder of mode 0700 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), and lives outside `config/` so that no container can read it. Before the dashboard or `cohostctl` starts or restarts a service, it copies into `secrets/units/<service>/secrets.yaml` only the keys that service uses, and that copy is the one the service's container sees; a service reads each key as the dotted path it has here. Edit only `secrets/secrets.yaml`; the copies are rewritten on every start. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
 
 | Key | Default | What it is |
 | --- | --- | --- |

@@ -49,7 +49,7 @@ This engine sends the text of every line to the address you write. There is no d
 2. Set `voice.openai.base_url` to the server's address including its version path, for example `http://my-gpu-box:8880/v1`.
 3. Set `voice.openai.model` to the model name the server expects, for example `tts-1`.
 4. Set `voice.voice` to a voice name the server knows. It has no default.
-5. For a hosted service, put the key in `voice.openai.api_key` in `config/secrets.yaml`. It is sent only to `base_url`.
+5. For a hosted service, put the key in `voice.openai.api_key` in `secrets/secrets.yaml`. It is sent only to `base_url`.
 
 If `base_url`, `model` or `voice` is blank, the co-host still starts, but it speaks nothing and the dashboard shows voice as degraded, with the missing key named.
 

@@ -1151,6 +1151,7 @@ test("notes request: a speech focus with a speakerId is asked as {user, speakerI
   assert.deepEqual(bus.of("memory.notes.request")[0]!.viewers, [{ user: "gus_voice", speakerId: "D7" }]);
   assert.match(llm.system, /plays banjo/, "the linked viewer's notes reach the prompt");
   assert.match(llm.system, /Gus/, "the notes appear under the linked chat viewer's display, not the voice name");
+  assert.doesNotMatch(llm.system, /gus_voice[^]*plays banjo/, "the voice name does not head the People block");
   const none = setup();
   await none.cortex.think({ reason: "engaged", score: 1, focus: { kind: "speech" as const, who: "Chris", text: "hi", mention: false } });
   assert.deepEqual(none.bus.of("memory.notes.request")[0]!.viewers, [{ user: "Chris" }], "no speakerId: asked by name alone");

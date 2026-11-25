@@ -203,11 +203,15 @@ test("the root tsconfig.json is a solution file referencing the 8 packages, the 
   assert.deepEqual([...paths].sort(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].sort());
 });
 
-// @spec DEPLOY-SECRET-011
-test("compose-smoke.sh creates, before its first docker compose up, an empty-mapping secrets.yaml (mode 0700 directory) for every ./secrets/units/<name> the Compose file mounts, and leaves an existing file untouched", () => {
-  // The script runs against a copy of the repository's scripts, Compose file and .env.example with a stand-in `docker` that
-  // records what ./secrets/units held when `compose up` ran and answers every health probe healthy. The workspace is not built
-  // when the script runs, so it must learn the mounted directories from docker-compose.yml itself: `compose config` fails here.
+/**
+ * Runs compose-smoke.sh against a copy of the repository's scripts, Compose file and .env.example with a stand-in `docker`.
+ * The stand-in logs every command to `cmds.txt`, records what ./secrets/units held when the first `compose up` ran, answers
+ * every health probe healthy (the container of service `tools` as `TOOLS_STATE`), and answers `compose exec ... <name>`:
+ * a name containing `salience` exits SALIENCE_EXIT (default 1: it does not resolve), one containing `redis` exits REDIS_EXIT
+ * (default 0: it resolves). The workspace is not built when the script runs, so it must learn the mounted secrets directories
+ * from docker-compose.yml itself: `compose config` fails here.
+ */
+function smoke(env: Record<string, string> = {}) {
   const work = mkdtempSync(join(tmpdir(), "cohost-smoke-"));
   mkdirSync(join(work, "scripts"));
   copyFileSync(root("scripts/compose-smoke.sh"), join(work, "scripts", "compose-smoke.sh"));
@@ -216,14 +220,17 @@ test("compose-smoke.sh creates, before its first docker compose up, an empty-map
   const bin = join(work, "bin");
   mkdirSync(bin);
   const seen = join(work, "seen.txt");
+  const cmds = join(work, "cmds.txt");
   writeFileSync(join(bin, "docker"), [
     "#!/bin/bash",
+    `echo "$*" >> "${cmds}"`,
     'case "$1 $2" in',
     `  "compose up") if [ ! -f "${seen}" ]; then (cd "${work}" && for d in secrets/units/*; do printf '%s %s %s\\n' "$d" "$(stat -c %a "$d")" "$(cat "$d/secrets.yaml" 2>&1 | tr '\\n' '~')"; done) > "${seen}" 2>&1; fi; exit 0;;`,
-    '  "compose ps") echo cid1; exit 0;;',
+    '  "compose ps") echo "cid-$4"; exit 0;;',
     '  "compose config") exit 1;;',
+    '  "compose exec") case "$*" in *salience*) exit "${SALIENCE_EXIT:-1}";; *redis*) exit "${REDIS_EXIT:-0}";; esac; exit 0;;',
     "esac",
-    'case "$1" in inspect) echo "running healthy restarts=0"; exit 0;; esac',
+    'case "$1" in inspect) if [ "$4" = "cid-tools" ]; then echo "${TOOLS_STATE:-running healthy restarts=0}"; else echo "running healthy restarts=0"; fi; exit 0;; esac',
     "exit 0",
   ].join("\n"));
   chmodSync(join(bin, "docker"), 0o755);
@@ -231,8 +238,14 @@ test("compose-smoke.sh creates, before its first docker compose up, an empty-map
   const keep = join(work, "secrets", "units", "memory");
   mkdirSync(keep, { recursive: true, mode: 0o700 });
   writeFileSync(join(keep, "secrets.yaml"), "llm: {openai: {api_key: keep-me}}\n", { mode: 0o600 });
+  const r = spawnSync("bash", [join(work, "scripts", "compose-smoke.sh")], { cwd: work, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME ?? "/", SMOKE_WAIT: "3", ...env } });
+  const log = existsSync(cmds) ? readFileSync(cmds, "utf8").trim().split("\n") : [];
+  return { work, r, seen, log };
+}
 
-  const r = spawnSync("bash", [join(work, "scripts", "compose-smoke.sh")], { cwd: work, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME ?? "/", SMOKE_WAIT: "5" } });
+// @spec DEPLOY-SECRET-011
+test("compose-smoke.sh creates, before its first docker compose up, an empty-mapping secrets.yaml (mode 0700 directory) for every ./secrets/units/<name> the Compose file mounts, and leaves an existing file untouched", () => {
+  const { work, r, seen } = smoke();
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(existsSync(seen), "docker compose up ran");
 
@@ -247,4 +260,37 @@ test("compose-smoke.sh creates, before its first docker compose up, an empty-map
     else assert.match(at.text, /^(\{\}~?|\{\s*\}~?)$/, `${name}: secrets.yaml holds an empty YAML mapping`);
   }
   assert.equal(statSync(join(work, "secrets", "units", "chat")).mode & 0o777, 0o700);
+});
+
+// @spec DEPLOY-NET-004
+test("compose-smoke.sh starts tools after the named services are healthy, waits for it to be healthy, then resolves redis (must succeed) and salience (must fail) with dns.lookup through docker compose exec", () => {
+  const { r, log } = smoke();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const at = (needle: RegExp) => log.findIndex((l) => needle.test(l));
+  const upDefault = at(/^compose up -d --build redis salience affect avatar/);
+  const upTools = at(/^compose up -d\b.*\btools\b/);
+  const psTools = at(/^compose ps -aq tools/);
+  const inspectTools = at(/^inspect .*cid-tools/);
+  const execRedis = at(/^compose exec -T tools node -e .*dns\.lookup.*\bredis\b|^compose exec -T tools node -e .*\bredis\b.*dns\.lookup/);
+  const execSalience = at(/^compose exec -T tools node -e .*\bsalience\b/);
+  const inspectLast = log.map((l, i) => (/^inspect .*cid-(salience|affect|avatar)/.test(l) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+  for (const [name, i] of Object.entries({ upDefault, upTools, psTools, inspectTools, execRedis, execSalience })) assert.ok(i >= 0, `${name} ran: ${log.join(" | ")}`);
+  assert.ok(upDefault < inspectLast && inspectLast < upTools, "tools starts after the named services are healthy");
+  assert.ok(upTools < inspectTools && inspectTools < execRedis, "and the lookups wait for tools to be healthy");
+  assert.ok(log.some((l) => /dns\.lookup/.test(l)), "the script calls dns.lookup");
+  assert.match(r.stdout, /ok\s+tools/);
+});
+
+// @spec DEPLOY-NET-004
+test("compose-smoke.sh fails the run when salience resolves from tools, when redis does not, and when tools is not healthy", () => {
+  const leaky = smoke({ SALIENCE_EXIT: "0" });
+  assert.notEqual(leaky.r.status, 0, "a salience that resolves means tools shares a network with it");
+  assert.match(leaky.r.stdout + leaky.r.stderr, /salience/);
+  const cut = smoke({ REDIS_EXIT: "1" });
+  assert.notEqual(cut.r.status, 0, "a redis that does not resolve means tools cannot reach the bus");
+  const sick = smoke({ TOOLS_STATE: "running unhealthy restarts=0" });
+  assert.notEqual(sick.r.status, 0);
+  assert.ok(!sick.log.some((l) => /^compose exec/.test(l)), "no lookup runs against an unhealthy tools");
+  const restarted = smoke({ TOOLS_STATE: "running healthy restarts=2" });
+  assert.notEqual(restarted.r.status, 0, "a restart of tools fails the run");
 });

@@ -1,7 +1,7 @@
 # Every operator setting: models, hooks, timings, voice, avatar, senses, addresses and ports. Copy to config.yaml
 # (install.sh does this); config.yaml is git-ignored and is the one that's read. Every value is a literal, edited here or
 # on the dashboard's Settings screen; no environment variable is read and a placeholder written as a dollar sign and braces fails the load.
-# Credentials (API keys, tokens, passwords) live in secrets.yaml beside this file (see secrets.example.yaml); .env holds
+# Credentials (API keys, tokens, passwords) live in secrets/secrets.yaml, outside this directory (see secrets.example.yaml); .env holds
 # only what must exist before this file can be read, and the dashboard's own access controls.
 
 cohost:

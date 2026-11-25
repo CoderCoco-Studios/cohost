@@ -12,6 +12,14 @@ SERVICES=("$@"); [ ${#SERVICES[@]} -gt 0 ] || SERVICES=(salience affect avatar)
 cleanup() { docker compose down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
+# The run uses no credential and the workspace is not built (so the projection itself is not available): give every
+# ./secrets/units/<name> directory the Compose file mounts an empty projection, mode 0700, and leave an existing file alone.
+# The directories are read from docker-compose.yml, because a mount whose source is missing fails `up`.  @spec DEPLOY-SECRET-011
+for name in $(grep -o '\./secrets/units/[A-Za-z0-9_-]*' docker-compose.yml | sed 's#.*/##' | sort -u); do
+  mkdir -p -m 700 "secrets/units/$name"
+  [ -e "secrets/units/$name/secrets.yaml" ] || (umask 077 && echo '{}' > "secrets/units/$name/secrets.yaml")
+done
+
 docker compose up -d --build redis "${SERVICES[@]}"
 deadline=$((SECONDS + ${SMOKE_WAIT:-60}))   # one budget for all services; a healthy stack passes in about 15 s
 

@@ -68,7 +68,11 @@ test("no operator setting is interpolated into the Compose files: the only ${VAR
 // @spec DEPLOY-COMPOSE-024
 test("no service passes EARS_HTTP_TOKEN or any other credential variable through its environment", () => {
   for (const [name, s] of [...Object.entries(base.services), ["x-ts-service", base["x-ts-service"]!] as const]) {
-    for (const k of Object.keys(s.environment ?? {})) assert.doesNotMatch(k, /TOKEN|SECRET|API_KEY|ACCESS_KEY/, `${name} passes ${k}`);
+    for (const k of Object.keys(s.environment ?? {})) {
+      // COHOST_SECRETS_FILE is the loader's path variable, pinned to the empty string (DEPLOY-COMPOSE-003), not a credential.
+      if (k === "COHOST_SECRETS_FILE") { assert.equal(s.environment![k], "", `${name} pins it empty`); continue; }
+      assert.doesNotMatch(k, /TOKEN|SECRET|API_KEY|ACCESS_KEY/, `${name} passes ${k}`);
+    }
   }
   assert.doesNotMatch(readFileSync(root("docker-compose.yml"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n"), /EARS_HTTP_TOKEN|DISCORD_TOKEN/);
 });

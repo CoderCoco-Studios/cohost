@@ -45,7 +45,7 @@ export interface DashboardDeps {
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
   /** The control token whenever one is configured (`CONTROL_TOKEN`), in either control mode: the secret write and a sensitive config change need it even with control off. */
   controlToken?: string;
-  /** The secrets file for `PUT /secrets`. Defaults to `config/secrets.yaml`; tests pin it. */
+  /** The secrets file for `PUT /secrets`. Defaults to the loader's `secrets/secrets.yaml`; tests pin it. */
   secretsFile?: () => string;
   /** The pick-list routes' backing servers. Defaults to `urls.tts()` and `urls.ollama()` and a 3 s timeout; tests pin them. */
   options?: Partial<OptionsDeps>;
@@ -91,6 +91,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     write: d.configWrite ?? defaultWrite,
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),
+    secretsFile: d.secretsFile,
     controlMode: !!d.control,
     controlToken: d.control?.token ?? d.controlToken,
     body: readText,

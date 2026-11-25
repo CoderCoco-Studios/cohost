@@ -1,3 +1,4 @@
+import { WS } from "./workspace.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
@@ -11,7 +12,7 @@ test("compose: chat's isolated start sets only COHOST_ISOLATION, carrying {CHAT_
   const exec: ExecFile = async (_file, _args, opts) => { calls.push({ env: opts.env }); return { stdout: "", stderr: "" }; };
   const chat = SERVICE_MANIFEST.find((s) => s.id === "chat")!;
   assert.deepEqual(chat.isolatedEnv, { CHAT_SOURCES: "[fake]" });
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   assert.deepEqual(await rt.start("chat", { env: chat.isolatedEnv }), { ok: true });
   assert.equal(calls.length, 1);
   const env = calls[0]!.env;

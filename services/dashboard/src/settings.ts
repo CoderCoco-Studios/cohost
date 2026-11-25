@@ -1,7 +1,6 @@
 import type http from "node:http";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
+import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, secretsPath, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
 import { bearerOk, type ServiceDef } from "@cohost/control";
 import { modelIssue, type AppliedView, type Framing, type Loadable } from "./applied.js";
 import type { ModelStore } from "./models.js";
@@ -17,6 +16,8 @@ export interface SettingsDeps {
   /** The latest stack status. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
   /** True when `CONTROL_ENABLED=1`: every `PUT /config/:section` then needs the control token (DASH-CTRL-004). */
+  /** The operator's secrets file (`secrets/secrets.yaml`), for which secrets are set. Defaults to the loader's `secretsPath()`. */
+  secretsFile?: () => string;
   controlMode?: boolean;
   /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
   controlToken?: string;
@@ -40,8 +41,8 @@ const json = (res: http.ServerResponse, status: number, value: unknown): void =>
   res.end(JSON.stringify(value));
 };
 
-/** The secret paths `secrets.yaml` (beside `config.yaml`) holds a value for. */
-const secretsSet = (d: SettingsDeps): string[] => setSecretPaths(join(dirname(d.file()), "secrets.yaml"));
+/** The secret paths the operator's secrets file holds a value for. */
+const secretsSet = (d: SettingsDeps): string[] => setSecretPaths((d.secretsFile ?? secretsPath)());
 
 /** The declared sections, in manifest order, then `dashboard` and `renderer` (host-run, read by no unit's start-up config). */
 // @spec MOD-CFG-001

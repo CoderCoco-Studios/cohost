@@ -4,6 +4,7 @@ import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES, loadConfig } fro
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
+import { projectManifestSecrets } from "./secrets.js";
 import { ComposeRuntime, defaultExec, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
 
 /** One container of the Compose project, as `docker compose ps` reports it. */
@@ -289,6 +290,8 @@ export class StackController {
 
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
+    const projected = await projectManifestSecrets(this.cwd, this.manifest); // CTRL-RUNTIME-014
+    if (projected) return { ok: false, detail: projected.detail };
     const secret = this.writePocketSecret();
     if (!secret.ok) return { ok: false, detail: secret.detail };
     const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);

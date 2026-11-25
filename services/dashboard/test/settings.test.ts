@@ -32,7 +32,7 @@ async function boot(o: Opts = {}) {
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
-    configFile: () => file, ...(o.write ? { configWrite: o.write } : {}),
+    configFile: () => file, secretsFile: () => file.replace(/config\.yaml$/, "secrets.yaml"), ...(o.write ? { configWrite: o.write } : {}),
     ...(o.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller } } : {}),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

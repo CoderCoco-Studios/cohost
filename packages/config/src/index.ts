@@ -13,6 +13,7 @@ export {
   type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
 } from "./pipeline.js";
 export { updateSecrets } from "./secrets.js";
+export { projectSecrets, type SecretUnit } from "./project.js";
 export { writeFileAtomic } from "./atomic.js";
 export { ollamaModels, type OllamaModels } from "./models.js";
 export * from "./editor.js";
@@ -56,9 +57,18 @@ let cached: Config | undefined;
 export const dotEnvPath = (): string =>
   process.env.COHOST_ENV_FILE || join(findWorkspaceRoot() ?? dirname(configDir()), ".env");
 
-/** `secrets.yaml`, beside `config.yaml`: the credentials the loader merges at the secret paths. The loader never creates it. */
-// @spec CFG-SEC-001
-export const secretsPath = (): string => join(configDir(), "secrets.yaml");
+/**
+ * The operator's credentials file, which the loader merges at the secret paths and never creates: `COHOST_SECRETS_FILE` when
+ * set and non-empty, else `secrets/secrets.yaml` under the workspace root, else `secrets/secrets.yaml` in the parent of the
+ * config directory when there is no workspace root, whatever `CONFIG_DIR` says. In a container the variable is empty and the
+ * workspace root is `/app`, so the path is the unit's projection (deployment DEPLOY-SECRET-002).
+ */
+// @spec CFG-SEC-001, CFG-ENV-012
+export const secretsPath = (): string => {
+  const override = process.env.COHOST_SECRETS_FILE;
+  if (override) return resolve(override);
+  return join(findWorkspaceRoot() ?? dirname(configDir()), "secrets", "secrets.yaml");
+};
 
 /**
  * The secret paths (CFG-SEC-003) that `secrets.yaml` holds a value for, sorted: the read side of the secret route and the

@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "62 specs: 58 [x], 4 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check; MOD-MAN-015, the manifest secrets list, and MOD-MAN-002, eyes declaring llm, #318)."
+    next: "62 specs: 60 [x], 2 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "232 specs: 229 [x], 3 [ ] (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012: secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE, #318). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "232 specs: 232 [x], 0 [ ]. secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "140 specs: 138 [x], 2 [ ], 0 [D]. TOOL-SVC-010 (secrets list, #318) and TOOL-SVC-011 (network reach, #319) designed, not built. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
+    next: "140 specs: 139 [x], 1 [ ], 0 [D]. TOOL-SVC-010 (secrets list) is built, #318; TOOL-SVC-011 (network reach, #319) is designed, not built. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
     drift: null
 
   voice:
@@ -279,19 +279,19 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "427 specs: 410 [x], 17 [ ] (DASH-SECRET-001, -002, -008, -009, -012, -013 for secrets/secrets.yaml and restarts by secrets list, #318; the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
+    next: "427 specs: 416 [x], 11 [ ] (the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
     drift: null
 
   control-plane:
-    status: MAPPED
+    status: AUDITED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-14
+    audited: 2026-11-24
     audited_sha: cb06bf3
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "113 specs: 109 [x], 2 [ ], 2 [D] (CTRL-LAT-009, -010 deferred; CTRL-RUNTIME-014, -015, the secrets projection, #318)."
+    next: "113 specs: 111 [x], 0 [ ], 2 [D] (CTRL-LAT-009, -010 deferred). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "126 specs: 100 [x], 26 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..011, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
+    next: "126 specs: 118 [x], 8 [ ] (DEPLOY-ENG-018 and -020, manual; the tools network DEPLOY-NET-001 to -004 and -006 and the network clause of DEPLOY-COMPOSE-026, designed for #319, not built). Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

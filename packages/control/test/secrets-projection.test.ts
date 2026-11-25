@@ -79,7 +79,7 @@ test("start, both forms of restart, consolidate and reembed project every unit's
   assert.equal(calls.length, 5);
   for (const c of calls) {
     assert.deepEqual(c.units, projected.map((s) => s.composeName).sort(), `before \`${c.args.join(" ")}\`: every unit directory exists`);
-    assert.deepEqual(c.contents.tools, { tools: { servers: { weather: { token: "w-token" } } } }, "tools holds only its declared paths that are set");
+    assert.deepEqual(c.contents.tools, { chat: { twitch: { client_id: "cid" } }, tools: { servers: { weather: { token: "w-token" } } } }, "tools holds only its declared paths that are set");
     assert.deepEqual(c.contents["connector-discord"], { connections: { discord: { token: "disc" } } });
     assert.deepEqual(c.contents.voice, {});
   }
@@ -143,7 +143,7 @@ test("node packages/control/dist/project-secrets.js projects for the workspace r
   const ok = runEntry(w.root, w.operator);
   assert.equal(ok.status, 0, ok.stderr);
   assert.deepEqual(readdirSync(w.units).sort(), projected.map((s) => s.composeName).sort());
-  assert.deepEqual(parse(readFileSync(join(w.units, "tools", "secrets.yaml"), "utf8")), { tools: { servers: { weather: { token: "w-token" } } } });
+  assert.deepEqual(parse(readFileSync(join(w.units, "tools", "secrets.yaml"), "utf8")), { chat: { twitch: { client_id: "cid" } }, tools: { servers: { weather: { token: "w-token" } } } });
 
   const bad = workspace(`llm:\n  openai:\n    api_key: ${MARKER}\nbroken: [unclosed\n`);
   writeFileSync(join(bad.root, "pnpm-workspace.yaml"), "packages: []\n");

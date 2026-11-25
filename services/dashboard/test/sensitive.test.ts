@@ -32,7 +32,7 @@ async function boot(mode: Mode) {
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
-    configFile: () => file,
+    configFile: () => file, secretsFile: () => file.replace(/config\.yaml$/, "secrets.yaml"),
     configWrite: (f, text) => { writes.push(f); writeFileSync(f, text); },
     ...(mode !== "no-token" ? { controlToken: TOKEN } : {}),
     ...(mode === "control" ? { control: { token: TOKEN, runtime: "compose", advanced: false, controller: {} as never } } : {}),

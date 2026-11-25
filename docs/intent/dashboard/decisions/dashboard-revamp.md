@@ -32,7 +32,7 @@ Every new dependency is dev-only: it is bundled into the static files or run by 
 | `react`, `react-dom` | 19.3.1 | The UI framework (owner decision) |
 | `typescript` | 7.0.2 | Type-checking the UI with the rest of the monorepo; the root `typescript` dependency |
 | `@types/react`, `@types/react-dom` | 19.3.0 | Types for React |
-| `vite` | 8.3.8 | Bundle, dev server; needs Node `^20.19.0 \|\| >=22.12.0`, which the root `engines.node` of `>=26` satisfies |
+| `vite` | 8.3.8 | Bundle, dev server; needs Node `^20.19.0 \|\| >=22.12.0`, which the Node `mise.toml` pins satisfies |
 | `@vitejs/plugin-react` | 6.3.0 | JSX transform and hot reload under Vite |
 | `happy-dom`, `@happy-dom/global-registrator` | 21.0.4 | DOM emulation registered as globals for `node:test`; implements `<dialog>.showModal()` |
 | `@testing-library/react` | 16.3.3 | Rendering and role-based queries in tests |

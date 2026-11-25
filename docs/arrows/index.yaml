@@ -283,7 +283,7 @@ arrows:
     drift: null
 
   control-plane:
-    status: PARTIAL
+    status: MAPPED
     parent: null
     sampled: 2026-10-31
     audited: 2026-11-14

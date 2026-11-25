@@ -71,7 +71,7 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | Unit | `config` | `uses` | `pause` | `test.inputs` | `test.observe` |
 |---|---|---|---|---|---|
 | chat | `chat`, `viewer_text`, `cohost` | | no | `text` (service) | `chat.message`, `inject.result` |
-| eyes | `vision`, `network` | | no | `image` (service) | `vision.summary`, `inject.result` |
+| eyes | `vision`, `llm`, `network` | | no | `image` (service) | `vision.summary`, `inject.result` |
 | ears | `ears`, `network` | | no | `audio` (service) | `speech.heard`, `inject.result` |
 | salience | `brain.salience`, `brain.cortex`, `brain.working_memory_events`, `brain.working_memory_own_lines`, `brain.input_limits`, `viewer_text`, `cohost`, `llm`, `tools` | affect, cortex | yes | `chat.message`, `speech.heard`, `vision.summary` | `attention.focus`, `brain.say` |
 | affect | `brain.affect`, `brain.input_limits`, `viewer_text`, `cohost`, `llm` | | yes | `chat.message`, `speech.heard`, `vision.summary`, `brain.say` | `affect.state` |
@@ -83,12 +83,12 @@ Initial declarations (the `config` and `uses` values are the owning segments' to
 | avatar | `avatar` | voice | no | `brain.say`, `affect.state` | `avatar.state` |
 | connector-discord | `connections` | | no | `audio` (service; target `connector-discord`) | `inject.result` |
 
-Initial `secrets` declarations (the owning segments' to confirm, as for `config`; `tools`' list is its segment's, TOOL-SVC-010). The list is explicit, not every secret under the unit's sections: `salience` and `cortex` read the `tools` section and use no MCP token, and `tools` reads `chat` and uses no chat user token.
+Initial `secrets` declarations, checked against the credentials each service's code reads (`tools`' list is its segment's, TOOL-SVC-010). `eyes` describes frames through the chat-model layer with the `llm` credentials (`vision.provider` `openai`, `anthropic` or `bedrock`), and `salience` and `affect` run their hook modules through the same layer, so each declares the `llm` keys; `voice` reads only its OpenAI-compatible key, because the Pocket token reaches only the engine container. The list is explicit, not every secret under the unit's sections: `salience` and `cortex` read the `tools` section and use no MCP token, and `tools` reads `chat` and uses no chat user token.
 
 | Unit | `secrets` |
 |---|---|
 | chat | `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `chat.youtube.api_key` |
-| eyes | `vision.obs.password` |
+| eyes | `vision.obs.password`, `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 | ears | `ears.http.token`, `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` |
 | salience, affect, memory, cortex | `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 | tools | `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.youtube.api_key` |

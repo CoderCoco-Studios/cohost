@@ -93,8 +93,11 @@ docker compose exec ollama ollama ps
 `docker compose build` builds every service image, and `scripts/compose-smoke.sh` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
 
 ```bash
+node packages/control/dist/project-secrets.js
 docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar
 ```
+
+The first line copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`, which a hand-run `docker compose up` does not do; the dashboard and `cohostctl` do it before every start.
 
 Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>-<seq>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
 

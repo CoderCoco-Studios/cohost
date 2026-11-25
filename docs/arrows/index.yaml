@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "62 specs: 59 [x], 3 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check; MOD-MAN-015, the manifest secrets list, #318)."
+    next: "62 specs: 58 [x], 4 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check; MOD-MAN-015, the manifest secrets list, and MOD-MAN-002, eyes declaring llm, #318)."
     drift: null
 
 
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "427 specs: 411 [x], 16 [ ] (DASH-SECRET-001, -002, -008, -009, -012 for secrets/secrets.yaml, #318; the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
+    next: "427 specs: 410 [x], 17 [ ] (DASH-SECRET-001, -002, -008, -009, -012, -013 for secrets/secrets.yaml and restarts by secrets list, #318; the renderer page specs that need a browser or GPU, DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
     drift: null
 
   control-plane:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "123 specs: 101 [x], 22 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..008, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
+    next: "126 specs: 101 [x], 25 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..011, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
     drift: null
 
   docs-site:

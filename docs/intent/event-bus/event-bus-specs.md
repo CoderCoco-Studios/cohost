@@ -298,6 +298,7 @@ Design: LLD Other schema notes and Event catalogue. The three events and their f
 - [x] **BUS-EVT-058**: When a `brain.say` is validated, the system shall accept an optional `interjected` that is the boolean `true`, shall reject `false`, and a `brain.say` without it shall remain valid. <!-- test: packages/bus/test/early.test.ts -->
 - [x] **BUS-EVT-059**: The system shall give `speech.early` and `speech.retracted` no `injected` or `remember` member. <!-- test: packages/bus/test/early.test.ts -->
 - [x] **BUS-EVT-060**: When an `attention.resolve` with `outcome` `withdraw` is validated, the system shall accept a `reason` only from `resumed`, `muted`, `paused`, `forgotten`, `superseded` and `timeout`, and shall reject any other value. <!-- test: packages/bus/test/early.test.ts -->
+- [x] **BUS-EVT-061**: When a `speech` focus of an `attention.focus` (or of a confirm `attention.resolve`, BUS-EVT-010), a `memory.notes.request` viewer entry or a `memory.notes.reply` viewer entry carries `speakerId` (a string), the system shall keep it unchanged, so a consumer can name a voice speaker by Discord id. <!-- test: packages/bus/test/chat-contracts.test.ts -->
 
 ## Avatar frames (AVF)
 

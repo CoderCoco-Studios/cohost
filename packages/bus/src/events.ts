@@ -81,6 +81,8 @@ const FocusRef = z.object({
   /** The chat source and the viewer's platform id, for chat focus (BUS-EVT-036). */
   platform: z.enum(["twitch", "youtube", "discord"]).optional(),
   userId: z.string().optional(),
+  /** The Discord speaker id of a speech focus, so memory can reach a linked speaker's notes (BUS-EVT-061). */
+  speakerId: z.string().optional(),
   text: z.string(),
   mention: z.boolean().default(false),
 });
@@ -93,6 +95,8 @@ const viewerRef = z.object({
   user: z.string(),
   platform: z.enum(["twitch", "youtube", "discord"]).optional(),
   userId: z.string().optional(),
+  /** A voice speaker's Discord id (BUS-EVT-061). */
+  speakerId: z.string().optional(),
 });
 
 export const EventPayloads = {
@@ -376,6 +380,7 @@ export const EventPayloads = {
         user: z.string(),
         platform: z.enum(["twitch", "youtube", "discord"]).optional(),
         userId: z.string().optional(),
+        speakerId: z.string().optional(),
         regular: z.boolean(),
         msgCount: z.number().int(),
         notes: z.array(

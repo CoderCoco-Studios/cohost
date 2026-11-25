@@ -368,24 +368,25 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.equal((await store.listDeletions(key)).at(-1)!.reason, null, "a blank reason stores none");
   });
 
-  // @spec MEM-SURF-002
-  t("a viewer is found by display name, case-insensitively, the most recently seen when several share it", async ({ store, advance }) => {
+  // @spec MEM-SURF-002, MEM-SURF-006
+  t("a name-keyed viewer is found by display name, case-insensitively, the most recently seen when several share it", async ({ store, advance }) => {
     const name = `Shared${uid("")}`;
-    const first = vkey("first");
-    const second = vkey("second");
+    const first = viewerKey({ platform: "twitch", user: name });
+    const second = viewerKey({ platform: "youtube", user: name });
     await store.touchViewer(first, name);
     advance(1000);
     await store.touchViewer(second, name.toUpperCase());
-    assert.equal((await store.findViewerByDisplay(name.toLowerCase()))!.key, second, "latest last_seen wins");
+    assert.equal((await store.findNameKeyedViewerByDisplay(name.toLowerCase()))!.key, second, "latest last_seen wins");
     advance(1000);
     await store.touchViewer(first, name);
-    assert.equal((await store.findViewerByDisplay(name))!.key, first);
-    assert.equal(await store.findViewerByDisplay(`Nobody${uid("")}`), undefined);
-    const renamed = vkey("renamed");
-    await store.touchViewer(renamed, `Old${renamed}`);
-    await store.touchViewer(renamed, `New${renamed}`);
-    assert.equal(await store.findViewerByDisplay(`Old${renamed}`), undefined, "lookups use the current display");
-    assert.equal((await store.findViewerByDisplay(`new${renamed}`))!.key, renamed);
+    assert.equal((await store.findNameKeyedViewerByDisplay(name))!.key, first);
+    assert.equal(await store.findNameKeyedViewerByDisplay(`Nobody${uid("")}`), undefined);
+    const user = `Ren${uid("")}`;
+    const renamed = viewerKey({ platform: "twitch", user });
+    await store.touchViewer(renamed, `Old${user}`);
+    await store.touchViewer(renamed, `New${user}`);
+    assert.equal(await store.findNameKeyedViewerByDisplay(`Old${user}`), undefined, "lookups use the current display");
+    assert.equal((await store.findNameKeyedViewerByDisplay(`new${user}`))!.key, renamed);
   });
 
   // @spec MEM-STORE-003, MEM-BACKEND-006, MEM-REFLECT-008
@@ -487,19 +488,71 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     assert.deepEqual(await store.listNotes(v.key), []);
   });
 
-  // @spec MEM-VOICE-007
-  t("a name matching no display never resolves through a linked id's Discord display name; a display match still resolves", async ({ store }) => {
+  // @spec MEM-VOICE-007, MEM-SURF-009
+  t("a name matching no display never resolves through a linked id's Discord display name; a name-keyed display match still resolves", async ({ store }) => {
     const id = uid("d").replace(/-/g, "");
-    const chat = vkey("chat");
+    const chat = viewerKey({ platform: "twitch", user: `Dee${id}` });
     await store.touchViewer(chat, `Dee${id}`);
     await store.linkDiscord(id, chat);
     await store.touchSpeaker(id, `DeeVoice${id}`);
-    assert.equal(await store.findViewerByDisplay(`DEEVOICE${id}`), undefined, "no alias through discord_display");
-    assert.equal((await store.findViewerByDisplay(`dee${id}`))!.key, chat);
-    assert.equal(await store.findViewerByDisplay(`nobody${id}`), undefined);
-    const other = vkey("o");
+    assert.equal(await store.findNameKeyedViewerByDisplay(`DEEVOICE${id}`), undefined, "no alias through discord_display");
+    assert.equal((await store.findNameKeyedViewerByDisplay(`dee${id}`))!.key, chat);
+    assert.equal(await store.findNameKeyedViewerByDisplay(`nobody${id}`), undefined);
+    const other = viewerKey({ platform: "twitch", user: `DeeVoice${id}` });
     await store.touchViewer(other, `DeeVoice${id}`);
-    assert.equal((await store.findViewerByDisplay(`DeeVoice${id}`))!.key, other, "a viewer whose display matches is found");
+    assert.equal((await store.findNameKeyedViewerByDisplay(`DeeVoice${id}`))!.key, other, "a name-keyed viewer whose display matches is found");
+    // No display lookup can return an id-keyed or voice row.
+    assert.equal("findViewerByDisplay" in store, false, "the unrestricted display lookup is gone");
+  });
+
+  // @spec MEM-REG-006, MEM-SURF-006
+  t("the owner's regular flag on a key-looking name creates no placeholder, so it cannot take over a voice row", async ({ store, now }) => {
+    const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } }).brain.memory;
+    const w = uid("").replace(/-/g, "");
+    for (const name of [`discord:${w}`, `Twitch:Name:${w}`, `YOUTUBE:id:${w}`]) {
+      assert.equal(await store.setRegular(name, true), undefined, name);
+      assert.equal(await store.getViewer(name.toLowerCase()), undefined, `${name}: no row`);
+    }
+    // The takeover the refusal prevents: a voice key marked regular first, then claimed by a chat viewer with the same display.
+    await store.setRegular(`discord:${w}`, true);
+    const voice = await store.touchSpeaker(w, `Eve${w}`);
+    assert.equal(voice.placeholder, false, "an unlinked voice row is not a placeholder");
+    await store.insertNote({ userKey: voice.key, category: "general", text: `eve note ${w}` });
+    const chat = viewerKey({ platform: "twitch", userId: `9${w}`, user: `Eve${w}` });
+    await store.touchViewer(chat, `Eve${w}`);
+    assert.deepEqual((await store.listNotes(voice.key)).map((n) => n.text), [`eve note ${w}`], "the speaker's notes stay on the voice row");
+    assert.deepEqual(await store.listNotes(chat), []);
+    assert.deepEqual(await buildNotesReply(store, cfg, [{ user: `Eve${w}` }] as never, now()), [], "the voice row is not name-keyed");
+    // A plain name still makes a placeholder (MEM-REG-003).
+    assert.equal((await store.setRegular(`Plain${w}`, true))!.placeholder, true);
+  });
+
+  // @spec MEM-SURF-008, MEM-VOICE-007
+  t("a notes entry with speakerId reaches only the chat viewer its id is linked to, whatever that viewer's key", async ({ store, now }) => {
+    const cfg = testConfig({ brain: { memory: { store: "memory", embedder: "hash" } } }).brain.memory;
+    const w = uid("").replace(/-/g, "");
+    const ask = (entry: Record<string, unknown>) => buildNotesReply(store, cfg, [entry] as never, now());
+    const byId = viewerKey({ platform: "twitch", userId: `5${w}`, user: `Ida${w}` });
+    const named = viewerKey({ platform: "twitch", user: `Nia${w}` });
+    await store.touchViewer(byId, `Ida${w}`);
+    await store.touchViewer(named, `Nia${w}`);
+    await store.insertNote({ userKey: byId, category: "general", text: `ida ${w}` });
+    await store.insertNote({ userKey: named, category: "general", text: `nia ${w}` });
+    await store.linkDiscord(`I${w}`, byId);
+    await store.linkDiscord(`N${w}`, named);
+    await store.touchSpeaker(`I${w}`, `IdaVoice${w}`);
+    await store.touchSpeaker(`N${w}`, `NiaVoice${w}`);
+    const texts = async (e: Record<string, unknown>) =>
+      (await ask(e)).map((v) => [v.user, (v as { speakerId?: string }).speakerId, v.notes.map((n) => n.text)]);
+    assert.deepEqual(await texts({ user: `IdaVoice${w}`, speakerId: `I${w}` }), [[`Ida${w}`, `I${w}`, [`ida ${w}`]]]);
+    assert.deepEqual(await texts({ user: "ignored", speakerId: `i${w}` }), [[`Ida${w}`, `i${w}`, [`ida ${w}`]]], "the id is compared lowercased");
+    assert.deepEqual(await texts({ user: `NiaVoice${w}`, speakerId: `N${w}` }), [[`Nia${w}`, `N${w}`, [`nia ${w}`]]]);
+    // An unlinked speaker and a refused id find nothing; other entry fields do not steer the lookup.
+    await store.touchSpeaker(`U${w}`, `Unlinked${w}`);
+    assert.deepEqual(await ask({ user: `Unlinked${w}`, speakerId: `U${w}` }), []);
+    assert.deepEqual(await ask({ user: "x", speakerId: `id:5${w}` }), []);
+    assert.deepEqual(await ask({ user: "x", speakerId: `name:nia${w}` }), []);
+    assert.deepEqual(await texts({ user: `Nia${w}`, platform: "twitch", speakerId: `U${w}` }), []);
   });
 
   // @spec MEM-SURF-006, MEM-VOICE-007
@@ -529,6 +582,14 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await store.linkDiscord(`l${w}`, solo);
     await store.touchSpeaker(`l${w}`, `Linked${w}`);
     assert.deepEqual(await ask({ user: `Linked${w}` }), []);
+    // A link to a name-keyed target is no alias either: a name-only ask by the Discord display finds nothing (MEM-VOICE-007).
+    const nk = viewerKey({ platform: "twitch", user: `Nk${w}` });
+    await store.touchViewer(nk, `Nk${w}`);
+    await store.insertNote({ userKey: nk, category: "general", text: `nk note ${w}` });
+    await store.linkDiscord(`k${w}`, nk);
+    await store.touchSpeaker(`k${w}`, `NkVoice${w}`);
+    assert.deepEqual(await ask({ user: `NkVoice${w}` }), []);
+    assert.deepEqual(await texts({ user: `Nk${w}` }), [`nk note ${w}`], "the viewer's own display still resolves");
     // Hostile names and ids address no other viewer's row.
     for (const user of [`id:1${w}`, `twitch:id:1${w}`, `name:solo${w}`.toLowerCase()]) {
       assert.deepEqual(await texts({ user }), [], user);

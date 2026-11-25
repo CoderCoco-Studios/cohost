@@ -317,17 +317,25 @@ A Discord id that begins with `id:` or `name:` (any letter case) is refused by
 `touchSpeaker` and `link_discord`: no row, no link, and no chat viewer changes, so a
 Discord id can never form a chat viewer's key (`MEM-VOICE-011`).
 
-**Names.** The cortex asks for notes by the display name it knows, and for a
-voice line that is the Discord display name. A name-only entry resolves only to a
-name-keyed viewer: a chat row keyed by name, or an owner placeholder until chat
-claims it (`MEM-SURF-006`, `MEM-REG-003`). It never resolves to a row keyed by an
-id, nor to a voice row. A link's `discord_display` is not a name key: a name-only
-entry that carries a linked speaker's Discord display name finds nothing, and the
-linked speaker's notes are reached by the chat viewer's own name or by platform
-and id (`MEM-VOICE-007`). An unlinked voice viewer is keyed `discord:<speakerId>`
-and no notes request reaches it; once its id is linked (`MEM-VOICE-004`) its notes
-are the chat viewer's and surface as the chat viewer's do. Hint-only surfacing
-(`MEM-VOICE-008`) therefore applies to linked speakers.
+**Names.** The cortex asks for notes by the identity it knows. A chat line
+carries a platform and user id; a voice line carries the Discord speaker id
+(`speakerId`). A name-only entry resolves only to a name-keyed viewer: a chat row
+keyed by name, or an owner placeholder until chat claims it (`MEM-SURF-006`,
+`MEM-REG-003`). It never resolves to a row keyed by an id, nor to a voice row. A
+link's `discord_display` is not a name key (`MEM-VOICE-007`). An entry that
+carries `speakerId` resolves only through that id's link to the chat viewer it
+names and surfaces that viewer's notes (`MEM-SURF-008`), so a linked speaker's
+voice turn reaches the notes however the chat viewer is keyed. An unlinked voice
+viewer is keyed `discord:<speakerId>` and no notes request reaches it; once its id
+is linked (`MEM-VOICE-004`) its notes are the chat viewer's. Hint-only surfacing
+(`MEM-VOICE-008`) applies to linked speakers. Among equal displays the latest
+`last_seen` wins, then the lowest `user_key` (`MEM-SURF-009`).
+
+**Owner placeholders.** A name that looks like a viewer key (`<text>:` prefix, any
+letter case) is refused when the owner sets the regular flag, so a placeholder is
+never keyed like a voice or chat row (`MEM-REG-006`). The refusal also covers a
+display name that contains a colon after its first character (`Dr: Who`): such a
+name cannot be an owner placeholder.
 
 **Privacy.** Voice lines go through the same capture hook, validation and writer
 as chat lines, so politics is never stored and money never becomes a note
@@ -519,7 +527,7 @@ Factories in `services/memory/src/backend.ts`:
 
 Both stores implement `MemoryBackend` (`services/memory/src/store.ts`): `init, connect,
 reembed, remember, recall, touchViewer, recentSince, getMeta, setMeta, close` for memories,
-viewers and metadata; for viewers `getViewer, findViewerByDisplay, ensureViewer, touchSpeaker,
+viewers and metadata; for viewers `getViewer, findNameKeyedViewerByDisplay, getLinkedViewer, ensureViewer, touchSpeaker,
 setRegular, listViewers, linkDiscord, unlinkDiscord, listLinks`; and for viewer notes
 `embedText, insertNote, reinforceNote, markSurfaced, listNotes, listDeletions, deleteNote,
 restoreDeletion, clearNotes, dirtyNoteCount, dirtyViewerKeys, commitViewer, purgeSoftDeletions,
@@ -744,7 +752,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Passes cover dirty viewers only | A pass processes only viewers with at least one dirty note, so a quiet viewer's fade, demotion and drop are persisted when they next get a dirty note | a pass that sweeps every viewer's notes | Owner decision. Persisting a fade is housekeeping, not correctness: effective strength is computed from the stored strength and `strength_at` whenever a note is read, so a quiet viewer's stale rows are never shown stronger than they are (notes below `drop_below` are not surfaced, `MEM-SURF-003`). `MEM-CONSOL-004`, `MEM-NOTE-003` |
 | Strength at promotion | A promoted note keeps its stored strength and `strength_at`, so its effective strength rises at promotion because the core half-life is longer | restart the clock or rebase the strength at promotion | Owner decision: accepted. A note mentioned three times is meant to be held more firmly. `MEM-NOTE-006` |
 | Surfacing transport | Cortex asks with `memory.notes.request` at reply time, in parallel with recall | memory pushes notes in `memory.viewer` on every chat line and the cortex caches them; the cortex reads Postgres |. Asking at reply time returns current notes (a deleted note is gone on the next reply), covers the other viewers in the window, and puts notes on the bus only when a reply needs them. Pushing on every line doubles stream traffic and leaves stale notes cached; reading Postgres breaks HLD tenet 1. `MEM-SURF-001` |
-| Viewer lookup for surfacing | By platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, among name-keyed rows only and only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
+| Viewer lookup for surfacing | By the link of the Discord speaker id when the request entry carries `speakerId` (owner ruling 2026-11-24: ask by linked id); by platform and user id (`viewerKey`) when the request entry carries them; by the key of its platform and name for an entry with a platform and no user id; by display name, case-insensitive, most recently seen first, among name-keyed rows only and only for an entry with no platform | Display name only | Owner decision 2026-11-16: a sensitive note about one viewer must never be applied to another (HLD tenet 9), and two viewers on different platforms can share a name. The window and `attention.focus` carry the identity for this. `MEM-SURF-002`, `MEM-SURF-006`, `MEM-SURF-007` |
 | Suppression matching | Embedding similarity (`suppress_similarity`, default 0.8) against the same viewer's reason-carrying deletions, plus the reasons in the hook prompts | exact text match; leave it to the model |. Exact text misses rewordings; a model alone is the component whose mistakes suppression exists to stop. `MEM-CAPTURE-006`, `MEM-CONSOL-009` |
 | Owner access path | `memory.viewers.request` / `memory.viewers.reply` over the bus | the dashboard queries Postgres; memory serves an HTTP API the dashboard calls | HLD tenet 1: only memory touches Postgres and services do not call each other over HTTP. event names. `MEM-ADMIN-*` |
 | Sensitive-cooldown concurrency | Each sensitive note is timed by `last_surfaced_at`, with no lock between concurrent `memory.notes.request`s | a row lock or an atomic claim-and-return per note | Owner decision: accepted. The cooldown is a courtesy, not a safety property, and a race costs at most one repeated hint. `MEM-SURF-004` |

@@ -86,3 +86,12 @@ test("recentSince reads strictly after a (ts, id) cursor, including rows that sh
   assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 3 }, 1)).map((m) => m.text), ["d"]);
   assert.deepEqual((await s.recentSince({ ts: new Date(T0).toISOString(), id: 0 }, 2)).map((m) => m.text), ["a", "b"]);
 });
+
+// @spec MEM-SURF-009
+test("equal displays with equal last_seen resolve to the lowest user_key, whatever the insertion order", async () => {
+  const { s } = make();
+  await s.touchViewer("youtube:name:zed", "Zed");
+  await s.touchViewer("twitch:name:zed", "ZED");
+  await s.touchViewer("kick:name:zed", "zed");
+  assert.equal((await s.findNameKeyedViewerByDisplay("zed"))!.key, "kick:name:zed");
+});

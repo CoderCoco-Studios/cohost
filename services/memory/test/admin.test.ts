@@ -196,3 +196,14 @@ test("unlink_discord removes a link, and an unknown id is not_found", async () =
   assert.deepEqual([again.ok, again.error], [false, "not_found"]);
   assert.deepEqual(await store.listLinks("twitch:id:1"), []);
 });
+
+// @spec MEM-REG-006, MEM-ADMIN-006
+test("set_regular on a key-looking name that matches no viewer is not_found and creates no row", async () => {
+  const { store, ask } = setup();
+  for (const name of ["discord:555", "Twitch:Name:bob"]) {
+    const r = await ask({ op: "set_regular", name, regular: true });
+    assert.equal(r.ok, false, name);
+    assert.equal(await store.getViewer(name.toLowerCase()), undefined, name);
+  }
+  assert.equal((await ask({ op: "set_regular", name: "Plain", regular: true })).ok, true, "a plain name still makes a placeholder");
+});

@@ -71,6 +71,8 @@ export const isVoiceKey = (key: string): boolean => key.startsWith(VOICE_PREFIX)
 // @spec MEM-VIEWER-011
 /** A chat viewer's key in the shared `viewerKey` format (SHARED-GUARD-025..027). */
 export const isViewerKey = (key: string): boolean => /^[^:]+:(id|name):/.test(key);
+/** A name that looks like a viewer key (`<text>:` prefix, any letter case): never an owner placeholder's name (MEM-REG-006). */
+export const looksLikeKey = (name: string): boolean => /^[^:]+:/.test(name);
 /**
  * Whether a viewer lookup may read a row (MEM-VIEWER-011): a chat viewer in the `viewerKey` format, a voice viewer (MEM-VOICE-001,
  * a separate namespace the voice rules read), or an owner placeholder (MEM-REG-003, keyed by its lower-cased name until chat claims it).

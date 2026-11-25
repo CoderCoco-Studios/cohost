@@ -9,15 +9,16 @@ export type NotesReplyViewers = BusEvent<"memory.notes.reply">["data"]["viewers"
 export type NotesEntry = BusEvent<"memory.notes.request">["data"]["viewers"][number];
 
 /** What surfacing needs from a store. */
-export type SurfaceStore = Pick<MemoryBackend, "findNameKeyedViewerByDisplay" | "getViewer" | "listNotes" | "markSurfaced">;
+export type SurfaceStore = Pick<MemoryBackend, "findNameKeyedViewerByDisplay" | "getLinkedViewer" | "getViewer" | "listNotes" | "markSurfaced">;
 
 /**
  * The viewer row an entry names (MEM-SURF-002, MEM-SURF-006, MEM-SURF-007): by the `viewerKey` of its platform and id, by the
  * `viewerKey` of its platform and name, or, with no platform, by display name among the name-keyed rows only (MEM-SURF-006). A link's
  * `discord_display` is never a name key (MEM-VOICE-007).
  */
-// @spec MEM-SURF-002, MEM-SURF-006, MEM-SURF-007, MEM-VOICE-007
+// @spec MEM-SURF-002, MEM-SURF-006, MEM-SURF-007, MEM-SURF-008, MEM-VOICE-007
 async function resolveEntry(store: SurfaceStore, e: NotesEntry) {
+  if (e.speakerId) return store.getLinkedViewer(e.speakerId); // MEM-SURF-008: only through the link, never the voice row
   if (e.platform && e.userId) return store.getViewer(viewerKey({ platform: e.platform, userId: e.userId, user: e.user }));
   if (e.platform) return store.getViewer(viewerKey({ platform: e.platform, user: e.user }));
   return store.findNameKeyedViewerByDisplay(e.user);
@@ -58,8 +59,7 @@ export async function buildNotesReply(
     for (const { row } of ranked) if (isSensitive(row)) surfaced.push(row.id);
     out.push({
       user: viewer.display,
-      ...(entry.platform ? { platform: entry.platform } : {}),
-      ...(entry.userId ? { userId: entry.userId } : {}),
+      ...(entry.speakerId ? { speakerId: entry.speakerId } : { ...(entry.platform ? { platform: entry.platform } : {}), ...(entry.userId ? { userId: entry.userId } : {}) }),
       regular: viewer.regular,
       msgCount: viewer.msgCount,
       notes: ranked.map(({ row, strength }) => {

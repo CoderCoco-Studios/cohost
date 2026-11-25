@@ -349,3 +349,19 @@ test("sensitive notes stay hint-only and for the first entry only when entries c
   assert.deepEqual(out.map((v) => v.notes.map((n) => "text" in n)), [[false], []]);
   assert.doesNotMatch(JSON.stringify(out), /flu|cough/);
 });
+
+// @spec MEM-SURF-008
+test("an entry with speakerId reaches the linked chat viewer's notes and echoes the id; unlinked or refused ids find nothing", async () => {
+  const { store, cfg, now } = setup();
+  const chat = viewerKey({ platform: "twitch", userId: "ID7", user: "Gus" });
+  await store.touchViewer(chat, "Gus");
+  await store.linkDiscord("D7", chat);
+  await store.touchSpeaker("D7", "gus_voice");
+  await note(store, chat, "plays banjo");
+  const ask = (e: Record<string, unknown>) => buildNotesReply(store, cfg, [e] as never, now());
+  const out = await ask({ user: "gus_voice", speakerId: "d7" });
+  assert.deepEqual(out.map((v) => [v.user, (v as { speakerId?: string }).speakerId, v.notes.map((n) => n.text)]), [["Gus", "d7", ["plays banjo"]]]);
+  await store.touchSpeaker("D8", "lone");
+  assert.deepEqual(await ask({ user: "lone", speakerId: "D8" }), []);
+  assert.deepEqual(await ask({ user: "x", speakerId: "id:ID7" }), []);
+});

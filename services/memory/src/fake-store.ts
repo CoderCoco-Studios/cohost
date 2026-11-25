@@ -3,7 +3,7 @@ import { HashEmbedder } from "@cohost/llm";
 import type { ReflectCursor } from "./cursor.js";
 import type { ChatIds, ChatRemoval, Memory, MemoryKind, MemoryBackend, ReembedResult, ViewerTouch } from "./store.js";
 import {
-  checkedDiscordId, clamp01, effectiveStrength, isNameKeyed, isReadableViewer, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  checkedDiscordId, clamp01, effectiveStrength, isNameKeyed, isReadableViewer, looksLikeKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type DeletionRow, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -110,9 +110,12 @@ export class InMemoryStore implements MemoryBackend {
     return v && isReadableViewer(v) ? { ...v } : undefined;
   }
 
-  // @spec MEM-VIEWER-011
-  async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
-    return this.latestByDisplay(name, (r) => isReadableViewer(r));
+  // @spec MEM-SURF-008
+  async getLinkedViewer(discordId: string): Promise<ViewerRow | undefined> {
+    let id: string;
+    try { id = checkedDiscordId(discordId); } catch { return undefined; }
+    const link = this.links.get(id);
+    return link ? this.getViewer(link.userKey) : undefined;
   }
 
   // @spec MEM-SURF-006, MEM-VOICE-007
@@ -223,7 +226,7 @@ export class InMemoryStore implements MemoryBackend {
     let v = byKey && isReadableViewer(byKey) ? byKey
       : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === keyOrName.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!v) {
-      if (!regular || isViewerKey(keyOrName)) return undefined; // an owner placeholder is named by a display name, never a viewerKey
+      if (!regular || looksLikeKey(keyOrName)) return undefined; // MEM-REG-006: an owner placeholder is named by a display name, never a key
       // MEM-REG-003: a placeholder keyed by the lower-cased name.
       const key = keyOrName.toLowerCase();
       const now = new Date(this.clock());

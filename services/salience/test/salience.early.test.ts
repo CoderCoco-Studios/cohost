@@ -615,3 +615,13 @@ test("early: a final that arrives while its provisional focus is publishing take
   assert.equal(focuses(e)[0]!.focus?.text, "look at this one");
   assert.equal(focuses(e)[0]!.provisional, undefined);
 });
+
+test("early: a speakerId rides the provisional focus and the confirm's speech focus", async () => { // @spec SAL-FOCUS-008
+  const e = setup({});
+  await e.s.onEvent(early("look at this one", { speakerId: "D1" }));
+  await flush();
+  assert.deepEqual(focuses(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one", source: "discord", mention: false });
+  await e.s.onEvent(heard("look at this one please", { speakerId: "D1" }));
+  await flush();
+  assert.deepEqual(resolves(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one please", source: "discord", mention: false });
+});

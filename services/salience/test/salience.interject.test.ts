@@ -606,3 +606,9 @@ test("interject: a refused confirm makes no request, withdraws the focus, and re
   assert.equal(focuses(e)[1]!.focus?.text, fin);
   assert.equal(e.s.ctx.all().some((x) => x.kind === "speech" && x.unfinished), false, "no unfinished line");
 });
+
+test("interject: the interjected confirm's speech focus carries the speakerId of the early transcript", async () => { // @spec SAL-FOCUS-008
+  const e = setup({}, { draw: 0.1 });
+  await asked(e, EARLY, "u1", 3, { speakerId: "D1" });
+  assert.deepEqual(resolves(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: EARLY, source: "discord", mention: false });
+});

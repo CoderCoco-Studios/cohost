@@ -1141,3 +1141,32 @@ test("a removal during the recall wait does not abort the think; its prompt is b
   assert.doesNotMatch(llm.calls[0]![1]!.content, /about to vanish/);
   assert.doesNotMatch(llm.system, /sam is new/);
 });
+
+// @spec CTX-NOTES-012
+test("notes request: a speech focus with a speakerId is asked as {user, speakerId}; its reply entry matches by that id", async () => {
+  const { cortex, bus, llm } = setup({
+    notes: (req) => [{ user: "Gus", speakerId: (req.viewers[0] as { speakerId?: string }).speakerId!, regular: true, msgCount: 9, notes: [general("plays banjo")] }] as unknown as NotesViewers,
+  });
+  await cortex.think({ reason: "engaged", score: 1, focus: { kind: "speech" as const, who: "gus_voice", speakerId: "D7", text: "hi Coco", mention: false } } as never);
+  assert.deepEqual(bus.of("memory.notes.request")[0]!.viewers, [{ user: "gus_voice", speakerId: "D7" }]);
+  assert.match(llm.system, /plays banjo/, "the linked viewer's notes reach the prompt");
+  assert.match(llm.system, /Gus/, "the notes appear under the linked chat viewer's display, not the voice name");
+  assert.doesNotMatch(llm.system, /gus_voice[^]*plays banjo/, "the voice name does not head the People block");
+  const none = setup();
+  await none.cortex.think({ reason: "engaged", score: 1, focus: { kind: "speech" as const, who: "Chris", text: "hi", mention: false } });
+  assert.deepEqual(none.bus.of("memory.notes.request")[0]!.viewers, [{ user: "Chris" }], "no speakerId: asked by name alone");
+});
+
+// @spec CTX-NOTES-012
+test("notes reply: an entry with a speakerId matches no other requested viewer, by name or by id", async () => {
+  const { cortex, llm } = setup({
+    notes: () => [
+      { user: "amy", speakerId: "D9", regular: false, msgCount: 1, notes: [general("stranger note")] },
+      { user: "amy", platform: "twitch", regular: false, msgCount: 1, notes: [general("amy note")] },
+    ] as unknown as NotesViewers,
+  });
+  await cortex.onEvent(say("amy"));
+  await cortex.think({ reason: "engaged", score: 1, focus: { kind: "speech" as const, who: "gus_voice", speakerId: "D7", text: "hi", mention: false } } as never);
+  assert.doesNotMatch(llm.system, /stranger note/, "a speakerId entry for another speaker is dropped");
+  assert.match(llm.system, /amy note/);
+});

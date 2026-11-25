@@ -6,7 +6,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 113 specs: 111 `[x]`, 0 `[ ]`, 2 `[D]`.
 
-**MAPPED**: 113 specs: 111 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps. The last audit pass (at cb06bf3) covered 109 of them; CTRL-RUNTIME-014 and -015 are verified by their tests, and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
+**MAPPED**: 113 specs: 111 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps. The last audit pass (at cb06bf3) covered the other 111 (all but CTRL-RUNTIME-014 and -015, which are verified by their tests), and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
 ## Orientation
 

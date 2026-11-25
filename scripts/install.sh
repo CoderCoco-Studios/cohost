@@ -108,8 +108,9 @@ command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo npm 
 
 # ---------------------------------------------------------------- .env and config files  @spec DEPLOY-INST-005, DEPLOY-INST-006
 # begin seed-files
-# Copies each missing file from its example and never overwrites one that exists. secrets.yaml holds credentials, so it is
-# private (mode 0600) from the moment it exists; an existing one keeps whatever mode the operator gave it.
+# Copies each missing file from its example and never overwrites one that exists. The credentials file is
+# secrets/secrets.yaml, outside ./config (which every container mounts): its directory is created with mode 0700 when absent
+# and the file is private (mode 0600) from the moment it exists; an existing file or directory keeps the mode the operator gave it.
 # @spec DEPLOY-INST-005
 seed_files() {
   local f
@@ -117,16 +118,16 @@ seed_files() {
     cp .env.example .env
     log "Wrote .env from its template: the dashboard's access controls and Compose settings."
   fi
-  for f in config.yaml secrets.yaml personality.md expressions.yaml; do
+  for f in config.yaml personality.md expressions.yaml; do
     [[ -f "config/$f" ]] && continue
-    if [[ $f == secrets.yaml ]]; then
-      (umask 077 && cp "config/${f%.*}.example.${f##*.}" "config/$f") && chmod 600 "config/$f"
-      log "Wrote config/$f from its .example (mode 0600): your credentials go here (git-ignored)."
-    else
-      cp "config/${f%.*}.example.${f##*.}" "config/$f"
-      log "Wrote config/$f from its .example: this one is yours (git-ignored)."
-    fi
+    cp "config/${f%.*}.example.${f##*.}" "config/$f"
+    log "Wrote config/$f from its .example: this one is yours (git-ignored)."
   done
+  if [[ ! -f secrets/secrets.yaml ]]; then
+    [[ -d secrets ]] || mkdir -m 700 secrets
+    (umask 077 && cp config/secrets.example.yaml secrets/secrets.yaml) && chmod 600 secrets/secrets.yaml
+    log "Wrote secrets/secrets.yaml from config/secrets.example.yaml (mode 0600): your credentials go here (git-ignored, mounted by no container)."
+  fi
 }
 # end seed-files
 seed_files
@@ -177,6 +178,9 @@ log "Building the bus addon"
 pnpm build:native || die "pnpm build:native failed (see the error above)."
 log "Typechecking"
 pnpm typecheck
+# One file per service under secrets/units/, so every directory Compose mounts exists before any `docker compose` command (DEPLOY-SECRET-006).
+log "Projecting secrets/secrets.yaml into one file per service"
+node packages/control/dist/project-secrets.js || die "the secrets projection failed (see the message above); fix secrets/secrets.yaml and re-run."
 
 # ---------------------------------------------------------------- pull
 if [[ $PULL -eq 1 ]]; then
@@ -237,7 +241,7 @@ print_next_steps() {
   cat <<EOF
 
 Done. Next:
-  1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and config/secrets.yaml (API keys,
+  1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and secrets/secrets.yaml (API keys,
      tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
   2. pnpm dashboard                    # start the dashboard on this machine (it brings up the stack)
   3. open ${url}     # enter CONTROL_TOKEN from .env when asked, press Launch
@@ -245,7 +249,7 @@ ${port_note:+${port_note}
 }     (the dashboard's startup log shows the URL it actually listens on; it differs when DASHBOARD_HOST is set)
   4. docker compose --profile eyes --profile ears --profile mouth --profile discord up -d
      # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
-     # the one Discord bot is connections.discord.token in config/secrets.yaml, used by the Discord connector;
+     # the one Discord bot is connections.discord.token in secrets/secrets.yaml, used by the Discord connector;
      # ears and mouth need no token
   5. optional speech engines: to use the pocket TTS (voice.engine: pocket) or a streaming STT server (ears.stt_engine:
      nemotron or kyutai), add pocket, nemotron or kyutai to COMPOSE_PROFILES in .env (for example COMPOSE_PROFILES=pocket,nemotron),

@@ -28,8 +28,10 @@ async function boot(config: string | undefined = WITH_WEATHER, secrets?: string)
   if (secrets !== undefined) writeFileSync(secretsFile, secrets, { mode: 0o600 });
   const bus = new FakeBus();
   const rec = recordingLog();
-  const readers = SERVICE_MANIFEST.filter((s) => s.config.includes("tools")).map((s) => s.id);
-  const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [...readers].reverse().concat(["voice"]).map((service) => ({ service, status: "running" })) as never };
+  // every unit that reads the tools section is running; only those that declare the MCP token path are restarted
+  const sectionReaders = SERVICE_MANIFEST.filter((s) => s.config.includes("tools")).map((s) => s.id);
+  const readers = SERVICE_MANIFEST.filter((s) => (s.secrets ?? []).includes("tools.servers.*.token")).map((s) => s.id);
+  const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [...sectionReaders].reverse().concat(["voice"]).map((service) => ({ service, status: "running" })) as never };
   const handler = createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
@@ -50,9 +52,9 @@ async function boot(config: string | undefined = WITH_WEATHER, secrets?: string)
 }
 
 // @spec DASH-SECRET-013
-test("a token for a server the saved config.yaml holds is set trimmed and cleared like any secret, and restart lists the running units that declare the tools section in manifest order", async () => {
+test("a token for a server the saved config.yaml holds is set trimmed and cleared like any secret, and restart lists the running units whose secrets list declares tools.servers.*.token", async () => {
   const t = await boot();
-  assert.ok(t.readers.length >= 3 && t.readers.includes("tools") && t.readers.includes("cortex") && t.readers.includes("salience"));
+  assert.deepEqual(t.readers, ["tools"], "only the tools unit declares tools.servers.*.token; salience and cortex read the section and use no MCP token");
   const set = await t.put(`/secrets/${WEATHER}`, { value: "  mcp-token-1 " });
   assert.equal(set.status, 200);
   assert.deepEqual(await set.json(), { ok: true, set: true, restart: t.readers });

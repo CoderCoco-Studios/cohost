@@ -25,6 +25,12 @@ export interface ServiceDef {
   isolatedEnv: Readonly<Record<string, string>>;
   /** Dotted config schema paths of the sections this unit reads; the settings editor's section-to-unit map. */
   config: readonly string[];
+  /**
+   * The secret paths (paths of `SECRET_PATHS`, the wildcard `tools.servers.*.token` included) this unit reads, each inside a
+   * section `config` names. The control plane projects exactly these into the unit's container (deployment DEPLOY-SECRET-003);
+   * the list is explicit, not every secret under the unit's sections. Empty when the unit reads none.
+   */
+  secrets: readonly string[];
   /** Units whose absence degrades one of this unit's features; `requires` is the subset an isolated start brings up. */
   uses: readonly string[];
   /** Whether the unit honours the `pause` and `resume` control commands. */
@@ -45,36 +51,40 @@ const svc = (
   over: Partial<Omit<ServiceDef, "id" | "composeName">> = {},
 ): ServiceDef => ({
   id, composeName: id, pnpmFilter: `@cohost/${id}`, groups: [], defaultMode: "resume", infra: false, isolatedEnv: {},
-  config: [], uses: [], pause: false, test: { inputs: [], observe: [] }, ...over,
+  config: [], secrets: [], uses: [], pause: false, test: { inputs: [], observe: [] }, ...over,
 });
+
+/** The chat-model credentials of the `llm` section: every unit that builds the model client declares them (MOD-MAN-015). */
+const LLM_SECRETS = ["llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key"] as const;
 
 const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
-// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014, MOD-MAN-015
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
-    config: ["chat", "viewer_text", "cohost"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
+    config: ["chat", "viewer_text", "cohost"],
+    secrets: ["chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
     groups: ["salience"], defaultMode: "fresh",
-    config: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], uses: ["affect", "cortex"], pause: true,
+    config: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], secrets: LLM_SECRETS, uses: ["affect", "cortex"], pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary"], observe: ["attention.focus", "brain.say"] },
   }),
   svc("affect", {
     groups: ["affect"], defaultMode: "fresh",
-    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"], pause: true,
+    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"], secrets: LLM_SECRETS, pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary", "brain.say"], observe: ["affect.state"] },
   }),
   svc("memory", {
     groups: ["memory", "memory-recall", "memory-notes"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
-    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
+    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"], secrets: LLM_SECRETS,
     test: { inputs: ["chat.message", "memory.recall.request"], observe: ["memory.recall.reply", "memory.viewer"] },
   }),
   svc("cortex", {
     requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" },
-    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], uses: ["salience", "affect", "memory", "tools"], pause: true,
+    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], secrets: LLM_SECRETS, uses: ["salience", "affect", "memory", "tools"], pause: true,
     test: { inputs: ["attention.focus"], observe: ["brain.status", "brain.say"] },
   }),
   // The tool-calling unit (services/tools, TOOL-SVC-*): it answers a tool call from cortex over the bus and reads no
@@ -82,11 +92,13 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("tools", {
     groups: ["tools"], defaultMode: "fresh", isolatedEnv: { TOOLS_MODE: "mock" },
     config: ["tools", "cohost", "chat", "viewer_text", "network"], uses: ["memory"],
+    // The MCP tokens and the stream-info credentials; it reads the chat section but uses no chat user token (TOOL-SVC-010).
+    secrets: ["tools.servers.*.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.youtube.api_key"],
     test: { inputs: ["text"], observe: ["tool.result", "inject.result"] },
   }),
   svc("voice", {
     groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" },
-    config: ["voice", "network"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
+    config: ["voice", "network"], secrets: ["voice.openai.api_key"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
   }),
   svc("avatar", {
     groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" },
@@ -94,11 +106,11 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("eyes", {
     groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
-    config: ["vision", "network"], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
+    config: ["vision", "llm", "network"], secrets: ["vision.obs.password", ...LLM_SECRETS], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears", "network"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    config: ["ears", "network"], secrets: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
@@ -108,7 +120,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   // group is that subscription's. Its unit id is the process name; the platform name `discord` is its connector id, tags and
   // config section. The injected clip is answered with Discord off, so the isolation preset keeps the input working.
   svc("connector-discord", {
-    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"],
+    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"], secrets: ["connections.discord.token"],
     test: { inputs: ["audio"], observe: ["inject.result"] },
   }),
   compose("redis", { infra: true }),

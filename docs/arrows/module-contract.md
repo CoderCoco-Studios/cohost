@@ -36,7 +36,7 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 - docs/intent/module-contract/module-contract-design.md
 
 ### EARS
-- docs/intent/module-contract/module-contract-specs.md (62 specs: 58 `[x]`, 4 `[ ]`, 0 `[D]`; MOD-MAN-015, the manifest `secrets` list, and MOD-MAN-002, eyes declaring `llm`, #318)
+- docs/intent/module-contract/module-contract-specs.md (62 specs: 60 `[x]`, 2 `[ ]`, 0 `[D]`; MOD-MAN-015, the manifest `secrets` lists, and MOD-MAN-002, eyes declaring `llm`, are built, #318)
 
 ### Code
 - packages/control/src/manifest.ts, health.ts

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EVENT_TYPES } from "@cohost/bus";
-import { ISOLATION_OVERRIDES, schemaAt } from "@cohost/config";
+import { ISOLATION_OVERRIDES, SECRET_PATHS, schemaAt } from "@cohost/config";
 import { SERVICE_MANIFEST, findService } from "../src/index.js";
 
 const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
@@ -25,7 +25,7 @@ test("every unit carries config, uses, pause and test (inputs and observe)", () 
 // @spec MOD-MAN-002
 test("config sections are the declared ones and each is a path of ConfigSchema", () => {
   const want: Record<string, string[]> = {
-    chat: ["chat", "viewer_text", "cohost"], eyes: ["vision", "network"], ears: ["ears", "network"],
+    chat: ["chat", "viewer_text", "cohost"], eyes: ["vision", "llm", "network"], ears: ["ears", "network"],
     salience: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"],
     affect: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"],
     memory: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"],
@@ -94,4 +94,45 @@ test("no unit lists tts-pocket, stt-nemotron or stt-kyutai among its uses or req
   }
   assert.deepEqual(findService("voice")!.uses, []);
   assert.deepEqual(findService("ears")!.uses, []);
+});
+
+const OPENAI_LLM = ["llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key"];
+const TOOLS_SECRETS = ["tools.servers.*.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.youtube.api_key"];
+
+// @spec MOD-MAN-015
+test("every unit carries a secrets list of SECRET_PATHS entries, each inside a section its config names, with no path twice", () => {
+  const known = new Set(SECRET_PATHS); // the wildcard tools.servers.*.token counts as one entry
+  const inside = (path: string, sections: readonly string[]) => sections.some((sec) => path === sec || path.startsWith(`${sec}.`));
+  for (const s of SERVICE_MANIFEST) {
+    assert.ok(Array.isArray(s.secrets), `${s.id} secrets`);
+    for (const p of s.secrets) {
+      assert.ok(known.has(p), `${s.id}: ${p} is not a path of SECRET_PATHS`);
+      assert.ok(inside(p, s.config), `${s.id}: ${p} lies outside every section its config names`);
+    }
+    assert.equal(new Set(s.secrets).size, s.secrets.length, `${s.id} lists a path twice`);
+  }
+  for (const s of SERVICE_MANIFEST.filter((x) => !x.pnpmFilter)) assert.deepEqual(s.secrets, [], `${s.id}: a compose-only service reads none`);
+});
+
+// @spec MOD-MAN-015
+test("the initial declarations: each unit lists the credentials its code reads and no more (the list is explicit, not every secret under its sections)", () => {
+  const want: Record<string, string[]> = {
+    chat: ["chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key"],
+    eyes: ["vision.obs.password", ...OPENAI_LLM],
+    ears: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"],
+    salience: OPENAI_LLM, affect: OPENAI_LLM, memory: OPENAI_LLM, cortex: OPENAI_LLM,
+    tools: TOOLS_SECRETS,
+    voice: ["voice.openai.api_key"],
+    "connector-discord": ["connections.discord.token"],
+    mouth: [], avatar: [],
+  };
+  for (const [id, secrets] of Object.entries(want)) assert.deepEqual([...findService(id)!.secrets].sort(), [...secrets].sort(), id);
+  const declared = new Set(SERVICE_MANIFEST.flatMap((s) => s.secrets));
+  assert.ok(!declared.has("voice.pocket.hf_token"), "the Pocket token reaches only the tts-pocket engine container, through its own file");
+  assert.ok(!SERVICE_MANIFEST.find((s) => s.id === "salience")!.secrets.includes("tools.servers.*.token"), "salience and cortex read the tools section and use no MCP token");
+});
+
+// @spec TOOL-SVC-010
+test("the tools unit declares secrets as exactly tools.servers.*.token, chat.twitch.client_id, chat.twitch.client_secret and chat.youtube.api_key", () => {
+  assert.deepEqual([...findService("tools")!.secrets].sort(), [...TOOLS_SECRETS].sort());
 });

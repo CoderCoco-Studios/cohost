@@ -4,38 +4,48 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
+type Mount = string | { type?: string; source?: string; target?: string; read_only?: boolean; bind?: { create_host_path?: boolean } };
+/** The long-syntax mount of a unit's secrets projection (DEPLOY-SECRET-002). */
+const secretsMount = (unit: string) => ({ type: "bind", source: `./secrets/units/${unit}`, target: "/app/secrets", read_only: true, bind: { create_host_path: false } });
+/** The short-syntax mounts of a service, and its long-syntax ones: the secrets projection is the one long-syntax mount. */
+const shortMounts = (v: Mount[] | undefined): string[] => (v ?? []).filter((m): m is string => typeof m === "string");
+const longMounts = (v: Mount[] | undefined) => (v ?? []).filter((m) => typeof m !== "string");
+
 // Structural check of chat's data mount. Docker is not run: the file is parsed as YAML with merge keys resolved.
 
 const root = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 const compose = parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as {
-  services: Record<string, { volumes?: string[]; build?: unknown; environment?: Record<string, string>; env_file?: string | string[]; ports?: string[]; depends_on?: Record<string, unknown>; profiles?: string[] }>;
+  services: Record<string, { volumes?: Mount[]; build?: unknown; environment?: Record<string, string>; env_file?: string | string[]; ports?: string[]; depends_on?: Record<string, unknown>; profiles?: string[] }>;
 };
 
-// @spec DEPLOY-COMPOSE-022
-test("chat mounts ./data/chat beside ./config, and no other application service mounts ./data", () => {
-  assert.deepEqual(compose.services.chat!.volumes, ["./config:/app/config", "./data/chat:/app/data/chat"]);
+// @spec DEPLOY-COMPOSE-022, DEPLOY-SECRET-002
+test("chat mounts ./data/chat beside ./config and its own secrets projection, and no other application service mounts ./data", () => {
+  assert.deepEqual(shortMounts(compose.services.chat!.volumes), ["./config:/app/config", "./data/chat:/app/data/chat"]);
+  assert.deepEqual(longMounts(compose.services.chat!.volumes), [secretsMount("chat")]);
   for (const [name, svc] of Object.entries(compose.services)) {
     if (name === "chat" || !svc.build || name === "tts-pocket") continue; // tts-pocket mounts its token directory under ./data (DEPLOY-ENG-019)
-    assert.ok(!(svc.volumes ?? []).some((v) => v.includes("./data")), `${name} has no ./data mount`);
+    assert.ok(!shortMounts(svc.volumes).some((v) => v.includes("./data")) && !longMounts(svc.volumes).some((v) => String((v as { source?: string }).source).includes("./data")), `${name} has no ./data mount`);
   }
 });
 
 // @spec DEPLOY-COMPOSE-020
-test("mouth mounts only the shared config directory, publishes no port and waits for redis alone", () => {
-  const mouth = compose.services.mouth as { volumes?: string[]; ports?: string[]; depends_on?: Record<string, unknown>; profiles?: string[] };
+test("mouth mounts only the shared config directory (it declares no secret, so no secrets mount), publishes no port and waits for redis alone", () => {
+  const mouth = compose.services.mouth as { volumes?: Mount[]; ports?: string[]; depends_on?: Record<string, unknown>; profiles?: string[] };
   assert.deepEqual(mouth.volumes, ["./config:/app/config"]);
+  assert.ok(!JSON.stringify(mouth.volumes).includes("secrets"), "no secrets mount for a unit that declares no secret path (DEPLOY-SECRET-002)");
   assert.equal(mouth.ports, undefined);
   assert.deepEqual(Object.keys(mouth.depends_on ?? {}), ["redis"]);
   assert.deepEqual(mouth.profiles, ["mouth"]);
 });
 
 // @spec DEPLOY-COMPOSE-023
-test("connector-discord waits for redis alone, publishes no port, mounts only the shared config, and no service has a Discord token entry (ears and mouth inherit the shared environment)", () => {
+test("connector-discord waits for redis alone, publishes no port, mounts only the shared config and its own secrets projection, and no service has a Discord token entry (ears and mouth inherit the shared environment)", () => {
   const c = compose.services["connector-discord"]!;
   assert.deepEqual(Object.keys(c.depends_on ?? {}), ["redis"]);
   assert.deepEqual(c.depends_on!.redis, { condition: "service_healthy" });
   assert.equal(c.ports, undefined);
-  assert.deepEqual(c.volumes, ["./config:/app/config"]);
+  assert.deepEqual(shortMounts(c.volumes), ["./config:/app/config"]);
+  assert.deepEqual(longMounts(c.volumes), [secretsMount("connector-discord")]);
   assert.deepEqual(c.profiles, ["discord"]);
   const shared = (parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as { "x-ts-service": { environment: Record<string, string> } })["x-ts-service"].environment;
   for (const name of ["ears", "mouth", "connector-discord"]) assert.deepEqual(compose.services[name]!.environment, shared, `${name} inherits the shared environment unchanged`);

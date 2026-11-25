@@ -67,7 +67,7 @@ test("loadConfig seeds config.yaml from the example, validates, caches until for
 // ---- CFG-ENV-012: cohost source reads only the permitted environment variables
 
 const ALLOWED = new Set([
-  "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "LOG_LEVEL", "HEARTBEAT_INTERVAL_MS",
+  "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_SECRETS_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "LOG_LEVEL", "HEARTBEAT_INTERVAL_MS",
   "REDIS_URL", "DATABASE_URL", "OLLAMA_URL", "TTS_URL", "STT_URL", "VOICE_URL", "VOICE_PORT",
   "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST", "VIEWERS_TOKEN", "PATH", "HOSTNAME", "WSLENV",
 ]);
@@ -113,6 +113,7 @@ test("cohost source reads only the permitted environment variables; the pending 
   }
   const unexpected = found.filter((r) => !ALLOWED.has(r.split("::")[1]!) && !PENDING.has(r));
   assert.deepEqual(unexpected, [], "an environment variable that is not in the permitted set; operator settings are config.yaml or secrets.yaml keys");
+  assert.ok(found.includes("packages/config/src/index.ts::COHOST_SECRETS_FILE"), "the loader reads COHOST_SECRETS_FILE (CFG-SEC-001)");
   const stale = [...PENDING].filter((r) => !found.includes(r));
   assert.deepEqual(stale, [], "a pending read that no longer exists: delete it from PENDING");
 });

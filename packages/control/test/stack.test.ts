@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { WS } from "./workspace.js";
 import {
   StackController, ServiceController, stackState,
   type ExecFile, type ContainerStatus, type Runtime, type StackStatus,
@@ -230,7 +231,7 @@ test("stack: docker binary lookup is COHOST_DOCKER_BIN, else docker, else docker
   const mk = (env: NodeJS.ProcessEnv, onPath: (n: string) => boolean) => {
     const calls: Call[] = [];
     const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env }); return { stdout: "[]", stderr: "" }; };
-    return { calls, stack: new StackController({ exec, env, onPath, cwd: "/r" }) };
+    return { calls, stack: new StackController({ exec, env, onPath, cwd: WS }) };
   };
   const a = mk({ COHOST_DOCKER_BIN: "/opt/d" }, () => true);
   await a.stack.status();
@@ -277,7 +278,7 @@ test("every docker compose call sets COHOST_ISOLATION to the empty string, whate
     const calls: Call[] = [];
     const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, env: opts.env }); return { stdout: args[1] === "ps" ? ps([]) : "", stderr: "" }; };
     const stack = new StackController({
-      exec, cwd: "/root", env: { COHOST_ISOLATION: '{"AVATAR_DRIVER":"null"}', WSLENV: "PATH/l" }, onPath: (n) => n === bin,
+      exec, cwd: WS, env: { COHOST_ISOLATION: '{"AVATAR_DRIVER":"null"}', WSLENV: "PATH/l" }, onPath: (n) => n === bin,
       now: () => 0, sleep: async () => {}, readPocketConfig: () => ({ token: "", engine: "kokoro" }),
     });
     await stack.status();

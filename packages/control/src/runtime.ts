@@ -2,6 +2,7 @@ import { execFile as nodeExecFile } from "node:child_process";
 import { ISOLATION_ENV, encodeIsolation } from "@cohost/config";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
+import { projectManifestSecrets, projectionRoot } from "./secrets.js";
 
 export interface RuntimeResult {
   ok: boolean;
@@ -77,13 +78,18 @@ export class ComposeRuntime implements Runtime {
     return dockerEnv(bin, base, { [ISOLATION_ENV]: preset ? encodeIsolation(preset) : "" });
   }
 
-  // @spec CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-RUNTIME-013, CTRL-STACK-012
+  // @spec CTRL-RUNTIME-014, CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-RUNTIME-013, CTRL-STACK-012
   private async run(id: string, verb: string[], preset?: Readonly<Record<string, string>>): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);
     const base = this.o.env ?? process.env;
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
+    // A command that creates, starts or restarts a container projects first; stop only stops (CTRL-RUNTIME-014).
+    if (verb[0] !== "stop") {
+      const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
+      if (failed) return { ok: false, detail: failed.detail };
+    }
     try {
       await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: this.composeEnv(docker.bin, base, preset), cwd: this.o.cwd });
       return { ok: true };
@@ -115,6 +121,8 @@ export class ComposeRuntime implements Runtime {
     const base = this.o.env ?? process.env;
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
+    const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
+    if (failed) return { ok: false, detail: failed.detail };
     try {
       const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", job], { env: this.composeEnv(docker.bin, base), cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
       const last = lastLine(stdout);

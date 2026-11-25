@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
+import { WS } from "./workspace.js";
 import { ComposeRuntime, SERVICE_MANIFEST, type ExecFile } from "../src/index.js";
 
 const hasDocker = (name: string) => name === "docker";
@@ -21,7 +22,7 @@ function fakeExec(fail?: string) {
 // @spec CTRL-RUNTIME-001
 test("compose: exact argv for start / stop / restart, via execFile (no shell string)", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   assert.deepEqual(await rt.start("cortex"), { ok: true });
   await rt.stop("cortex");
   await rt.restart("cortex");
@@ -35,7 +36,7 @@ test("compose: exact argv for start / stop / restart, via execFile (no shell str
 // @spec CTRL-RUNTIME-004
 test("compose: crafted ids are rejected without exec", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec });
   for (const id of ["nope", "cortex; rm -rf /", "$(id)", "--help"]) {
     const r = await rt.start(id);
     assert.equal(r.ok, false);
@@ -46,7 +47,7 @@ test("compose: crafted ids are rejected without exec", async () => {
 // @spec CTRL-RUNTIME-002
 test("compose: an isolation preset goes in the child env and restart recreates", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { A: "1" } });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: { A: "1" } });
   await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } });
   assert.deepEqual(calls[0]!.args, ["compose", "up", "-d", "--force-recreate", "cortex"]);
   assert.equal(calls[0]!.env[ISOLATION_ENV], '{"LLM_PROVIDER":"mock"}');
@@ -56,7 +57,7 @@ test("compose: an isolation preset goes in the child env and restart recreates",
 // @spec CTRL-RUNTIME-009
 test("compose: a preset reaches the container as the one COHOST_ISOLATION variable, JSON of override names to values, and no per-name variable is set", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   await rt.start("avatar", { env: { AVATAR_DRIVER: "null" } });
   await rt.restart("eyes", { env: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" } });
   await rt.start("ears", { env: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" } });
@@ -69,7 +70,7 @@ test("compose: a preset reaches the container as the one COHOST_ISOLATION variab
 // @spec CTRL-RUNTIME-009
 test("compose: every manifest preset is accepted, and a name that is no isolation override fails the action without running docker", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {} });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   for (const def of SERVICE_MANIFEST) assert.deepEqual(await rt.start(def.id, { env: def.isolatedEnv }), { ok: true }, def.id);
   const before = calls.length;
   const bad = await rt.start("cortex", { env: { LLM_PROVIDER_TYPO: "mock" } });
@@ -88,7 +89,7 @@ test("compose: the x-ts-service environment passes through exactly COHOST_ISOLAT
 
 // @spec CTRL-RUNTIME-003
 test("compose: a failing command is ok:false with stderr as detail", async () => {
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec: fakeExec("no such service").exec });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: fakeExec("no such service").exec });
   assert.deepEqual(await rt.start("cortex"), { ok: false, detail: "no such service" });
 });
 
@@ -99,10 +100,10 @@ test("compose: consolidate runs the fixed one-shot argv with a long timeout and 
     seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
     return { stdout: "starting\nconsolidate completed\n\n", stderr: "warn" };
   };
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {}, cwd: "/stack" });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {}, cwd: WS });
   assert.deepEqual(await rt.consolidate(), { ok: true, detail: "consolidate completed" });
-  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "consolidate"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
-  const quiet = new ComposeRuntime({ onPath: hasDocker, exec: async () => ({ stdout: "", stderr: "" }) });
+  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "consolidate"], timeoutMs: 30 * 60_000, cwd: WS }]);
+  const quiet = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: async () => ({ stdout: "", stderr: "" }) });
   assert.deepEqual(await quiet.consolidate(), { ok: true });
 });
 
@@ -114,19 +115,19 @@ test("compose: reembed runs the fixed one-shot argv with a long timeout and repo
     seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
     return { stdout: "x\nreembed completed\n", stderr: "" };
   };
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: {}, cwd: "/stack" });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {}, cwd: WS });
   assert.deepEqual(await rt.reembed(), { ok: true, detail: "reembed completed" });
-  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "reembed"], timeoutMs: 30 * 60_000, cwd: "/stack" }]);
+  assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "reembed"], timeoutMs: 30 * 60_000, cwd: WS }]);
   const boom: ExecFile = async () => { throw Object.assign(new Error("exit 1"), { stdout: "", stderr: " boom \n" }); };
-  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: boom }).reembed(), { ok: false, detail: "boom" });
+  assert.deepEqual(await new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: boom }).reembed(), { ok: false, detail: "boom" });
 });
 
 test("compose: a failing consolidate is ok:false with stderr, else stdout tail, else the error message, cut to 500", async () => {
   const fail = (stdout: string, stderr: string, message = "exit 1"): ExecFile => async () => { throw Object.assign(new Error(message), { stdout, stderr }); };
-  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
-  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("a\nconsolidate failed\n", "") }).consolidate(), { ok: false, detail: "consolidate failed" });
-  assert.deepEqual(await new ComposeRuntime({ onPath: hasDocker, exec: fail("", "") }).consolidate(), { ok: false, detail: "exit 1" });
-  const long = await new ComposeRuntime({ onPath: hasDocker, exec: fail("", "x".repeat(900)) }).consolidate();
+  assert.deepEqual(await new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: fail("", " no such service \n") }).consolidate(), { ok: false, detail: "no such service" });
+  assert.deepEqual(await new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: fail("a\nconsolidate failed\n", "") }).consolidate(), { ok: false, detail: "consolidate failed" });
+  assert.deepEqual(await new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: fail("", "") }).consolidate(), { ok: false, detail: "exit 1" });
+  const long = await new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: fail("", "x".repeat(900)) }).consolidate();
   assert.equal(long.detail?.length, 500);
 });
 
@@ -134,7 +135,7 @@ test("compose: a failing consolidate is ok:false with stderr, else stdout tail, 
 test("compose: the docker binary is COHOST_DOCKER_BIN, else docker, else docker.exe, with the same argv", async () => {
   const run = async (env: NodeJS.ProcessEnv, onPath: (n: string) => boolean) => {
     const { exec, calls } = fakeExec();
-    const r = await new ComposeRuntime({ exec, env, onPath }).start("cortex");
+    const r = await new ComposeRuntime({ cwd: WS, exec, env, onPath }).start("cortex");
     return { r, calls };
   };
   const a = await run({ COHOST_DOCKER_BIN: "/opt/d" }, () => true);
@@ -148,7 +149,7 @@ test("compose: the docker binary is COHOST_DOCKER_BIN, else docker, else docker.
 // @spec CTRL-STACK-012
 test("compose: with no docker found every action resolves ok:false naming COHOST_DOCKER_BIN, without exec or throwing", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ exec, env: {}, onPath: () => false });
+  const rt = new ComposeRuntime({ cwd: WS, exec, env: {}, onPath: () => false });
   for (const r of [await rt.start("cortex"), await rt.stop("cortex"), await rt.restart("cortex"), await rt.consolidate()]) {
     assert.equal(r.ok, false);
     assert.match(r.detail!, /COHOST_DOCKER_BIN/);
@@ -160,7 +161,7 @@ test("compose: with no docker found every action resolves ok:false naming COHOST
 test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV for a preset; another binary gets the env unchanged", async () => {
   const run = async (bin: string, env: NodeJS.ProcessEnv, preset: Record<string, string> = { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" }) => {
     const { exec, calls } = fakeExec();
-    await new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: preset });
+    await new ComposeRuntime({ cwd: WS, exec, env: { COHOST_DOCKER_BIN: bin, ...env } }).start("mouth", { env: preset });
     return calls[0]!.env;
   };
   const exe = await run("docker.exe", {});
@@ -173,7 +174,7 @@ test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV f
   assert.equal(empty.WSLENV, ISOLATION_ENV);
   const none = await new Promise<NodeJS.ProcessEnv>((resolve) => {
     const { exec, calls } = fakeExec();
-    void new ComposeRuntime({ exec, env: { COHOST_DOCKER_BIN: "docker.exe", [ISOLATION_ENV]: "ambient" } }).stop("mouth").then(() => resolve(calls[0]!.env));
+    void new ComposeRuntime({ cwd: WS, exec, env: { COHOST_DOCKER_BIN: "docker.exe", [ISOLATION_ENV]: "ambient" } }).stop("mouth").then(() => resolve(calls[0]!.env));
   });
   assert.equal(none[ISOLATION_ENV], "", "no preset: empty, replacing the ambient value");
   assert.equal(none.WSLENV, ISOLATION_ENV, "the empty value is forwarded too, so Windows Compose does not read .env");
@@ -184,7 +185,7 @@ test("compose: a Windows docker.exe gets COHOST_ISOLATION named once in WSLENV f
 // @spec CTRL-RUNTIME-013
 test("compose: every action without a preset sets COHOST_ISOLATION to the empty string over an ambient value", async () => {
   const { exec, calls } = fakeExec();
-  const rt = new ComposeRuntime({ onPath: hasDocker, exec, env: { [ISOLATION_ENV]: '{"CHAT_SOURCES":"[fake]"}' } });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: { [ISOLATION_ENV]: '{"CHAT_SOURCES":"[fake]"}' } });
   await rt.start("chat");
   await rt.start("chat", { env: {} });
   await rt.stop("chat");

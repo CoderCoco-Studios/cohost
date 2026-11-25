@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -17,7 +20,7 @@ interface Svc {
   profiles?: string[];
   build?: { context?: string; dockerfile?: string; args: { SERVICE: string } };
   restart?: string;
-  volumes?: string[];
+  volumes?: unknown[];
   depends_on?: Record<string, { condition?: string }>;
   healthcheck?: { test?: string[]; interval?: string };
 }
@@ -56,6 +59,7 @@ const IN_NETWORK = {
   STT_URL: "http://stt:8000",
   VOICE_URL: "http://voice:8700",
   CONFIG_DIR: "/app/config",
+  COHOST_SECRETS_FILE: "", // pinned empty so a value in .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)
 };
 const TOOLS_ENVIRONMENT = ["COHOST_ISOLATION", "CONFIG_DIR", "REDIS_URL"];
 
@@ -132,24 +136,25 @@ test("compose-smoke.sh no longer expects a compose dashboard", () => {
 });
 
 // @spec DEPLOY-IMG-004, DEPLOY-IMG-005
-test(".dockerignore keeps the VTube Studio token and the user-owned config files, secrets.yaml included, out of the build context; the examples stay in", () => {
+test(".dockerignore keeps the VTube Studio token, the secrets directory and the user-owned config files out of the build context; the examples stay in", () => {
   const lines = readFileSync(root(".dockerignore"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
-  for (const f of ["config/.vts-token", "config/config.yaml", "config/secrets.yaml", "config/personality.md", "config/expressions.yaml", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
+  for (const f of ["config/.vts-token", "secrets", "config/config.yaml", "config/personality.md", "config/expressions.yaml", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
+  assert.ok(!lines.includes("config/secrets.yaml"), "the credentials file no longer lives in ./config");
   assert.ok(!lines.some((l) => /example/.test(l) || l === "config" || l === "config/*"), "the config/*.example.* files stay in the context");
 });
 
 // @spec DEPLOY-CI-002
-test("compose-smoke.sh starts the services from .env.example alone: it sets no operator setting and needs no secrets.yaml", () => {
+test("compose-smoke.sh starts the services from .env.example alone: it sets no operator setting and needs no credential (its secrets directories hold empty mappings only)", () => {
   const sh = readFileSync(root("scripts/compose-smoke.sh"), "utf8");
   const code = sh.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
   assert.match(code, /\[ -f \.env \] \|\| cp \.env\.example \.env/);
-  assert.doesNotMatch(code, /COHOST_ISOLATION|secrets\.yaml|LLM_PROVIDER|CHAT_SOURCE|AVATAR_DRIVER|DISCORD_TOKEN/);
+  assert.doesNotMatch(code, /COHOST_ISOLATION|LLM_PROVIDER|CHAT_SOURCE|AVATAR_DRIVER|DISCORD_TOKEN/);
   // the services it starts need no model, credential or optional profile
   for (const s of ["salience", "affect", "avatar"]) assert.equal(compose.services[s]!.profiles, undefined, s);
 });
 
 // @spec DEPLOY-COMPOSE-026
-test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile, publishes no port, mounts only ./config and depends on redis healthy alone", () => {
+test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile, publishes no port, mounts only ./config read-only and its own secrets projection, and depends on redis healthy alone", () => {
   const tools = compose.services.tools!;
   assert.ok(tools, "tools is a compose service");
   assert.equal(tools.build?.context, ".");
@@ -160,7 +165,9 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
   assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
   assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
   assert.equal(tools.ports, undefined);
-  assert.deepEqual(tools.volumes, ["./config:/app/config:ro"], "the config mount is read-only");
+  assert.deepEqual(tools.volumes?.filter((m) => typeof m === "string"), ["./config:/app/config:ro"], "the config mount is read-only");
+  assert.deepEqual(tools.volumes?.filter((m) => typeof m !== "string"), [{ type: "bind", source: "./secrets/units/tools", target: "/app/secrets", read_only: true, bind: { create_host_path: false } }], "its projection, long syntax, the source never created (DEPLOY-SECRET-002)");
+  assert.equal(tools.volumes?.length, 2, "no volume beyond those two");
   assert.equal(tools.environment?.REDIS_URL, "redis://redis:6379");
   assert.equal(tools.environment?.CONFIG_DIR, "/app/config");
   assert.equal(tools.environment?.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
@@ -173,7 +180,7 @@ test("tools gets no more host access than the other application services: no pri
   const tools = compose.services.tools as Svc & Record<string, unknown>;
   assert.ok(tools, "tools is a compose service");
   for (const k of ["privileged", "cap_add", "network_mode", "pid", "ipc", "devices", "security_opt"]) assert.equal(tools[k], undefined, `tools sets no ${k}`);
-  assert.ok(!(tools.volumes ?? []).some((v) => /docker\.sock|\.\/data|^\//.test(v)), "no docker socket, no ./data and no absolute host path");
+  assert.ok(!(tools.volumes ?? []).some((v) => /docker\.sock|\.\/data|^\//.test(String(typeof v === "string" ? v : (v as { source?: string }).source))), "no docker socket, no ./data and no absolute host path");
 });
 
 // @spec DEPLOY-COMPOSE-027
@@ -194,4 +201,50 @@ test("the root tsconfig.json is a solution file referencing the 8 packages, the 
   assert.equal(services.length, 13, services.join(","));
   assert.ok(services.includes("services/tools"));
   assert.deepEqual([...paths].sort(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].sort());
+});
+
+// @spec DEPLOY-SECRET-011
+test("compose-smoke.sh creates, before its first docker compose up, an empty-mapping secrets.yaml (mode 0700 directory) for every ./secrets/units/<name> the Compose file mounts, and leaves an existing file untouched", () => {
+  // The script runs against a copy of the repository's scripts, Compose file and .env.example with a stand-in `docker` that
+  // records what ./secrets/units held when `compose up` ran and answers every health probe healthy. The workspace is not built
+  // when the script runs, so it must learn the mounted directories from docker-compose.yml itself: `compose config` fails here.
+  const work = mkdtempSync(join(tmpdir(), "cohost-smoke-"));
+  mkdirSync(join(work, "scripts"));
+  copyFileSync(root("scripts/compose-smoke.sh"), join(work, "scripts", "compose-smoke.sh"));
+  copyFileSync(root("docker-compose.yml"), join(work, "docker-compose.yml"));
+  copyFileSync(root(".env.example"), join(work, ".env.example"));
+  const bin = join(work, "bin");
+  mkdirSync(bin);
+  const seen = join(work, "seen.txt");
+  writeFileSync(join(bin, "docker"), [
+    "#!/bin/bash",
+    'case "$1 $2" in',
+    `  "compose up") if [ ! -f "${seen}" ]; then (cd "${work}" && for d in secrets/units/*; do printf '%s %s %s\\n' "$d" "$(stat -c %a "$d")" "$(cat "$d/secrets.yaml" 2>&1 | tr '\\n' '~')"; done) > "${seen}" 2>&1; fi; exit 0;;`,
+    '  "compose ps") echo cid1; exit 0;;',
+    '  "compose config") exit 1;;',
+    "esac",
+    'case "$1" in inspect) echo "running healthy restarts=0"; exit 0;; esac',
+    "exit 0",
+  ].join("\n"));
+  chmodSync(join(bin, "docker"), 0o755);
+  // an existing projection must survive: memory's file holds a marker
+  const keep = join(work, "secrets", "units", "memory");
+  mkdirSync(keep, { recursive: true, mode: 0o700 });
+  writeFileSync(join(keep, "secrets.yaml"), "llm: {openai: {api_key: keep-me}}\n", { mode: 0o600 });
+
+  const r = spawnSync("bash", [join(work, "scripts", "compose-smoke.sh")], { cwd: work, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME ?? "/", SMOKE_WAIT: "5" } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(existsSync(seen), "docker compose up ran");
+
+  const mounted = new Set([...readFileSync(root("docker-compose.yml"), "utf8").matchAll(/\.\/secrets\/units\/([A-Za-z0-9_-]+)/g)].map((m) => m[1]!));
+  assert.ok(mounted.size >= 10, `the Compose file mounts a directory per unit that declares a secret: ${[...mounted].join(",")}`);
+  const atUp = new Map(readFileSync(seen, "utf8").trim().split("\n").map((l) => { const [dir, perm, ...rest] = l.split(" "); return [dir!.replace("secrets/units/", ""), { perm, text: rest.join(" ") }] as const; }));
+  for (const name of mounted) {
+    const at = atUp.get(name);
+    assert.ok(at, `${name}: the directory exists before the first up`);
+    assert.equal(at.perm, "700", `${name}: directory mode`);
+    if (name === "memory") assert.match(at.text, /keep-me/, "an existing file is left untouched");
+    else assert.match(at.text, /^(\{\}~?|\{\s*\}~?)$/, `${name}: secrets.yaml holds an empty YAML mapping`);
+  }
+  assert.equal(statSync(join(work, "secrets", "units", "chat")).mode & 0o777, 0o700);
 });

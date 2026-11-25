@@ -6,4 +6,5 @@ export * from "./stack.js";
 export * from "./lock.js";
 export * from "./controller.js";
 export * from "./config.js";
+export * from "./secrets.js";
 export * from "./cli.js";

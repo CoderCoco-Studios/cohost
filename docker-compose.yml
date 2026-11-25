@@ -36,7 +36,7 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
   <<: *ts-base
   env_file: .env
   # The environment every application service gets: the in-network addresses, and the one pass-through for an isolated
-  # start. Operator settings live in config/config.yaml and credentials in config/secrets.yaml (the ./config mount below);
+  # start. Operator settings live in config/config.yaml and credentials in secrets/secrets.yaml, which no container mounts (each service mounts its own projection);
   # nothing else is interpolated here, and .env adds only the bootstrap variables of the HLD's "what lives where" table.
   environment:  # @spec DEPLOY-COMPOSE-003
     REDIS_URL: redis://redis:6379
@@ -46,6 +46,9 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
     CONFIG_DIR: /app/config
+    # Empty so a value in .env cannot point the loader away from the unit's own projection at /app/secrets/secrets.yaml
+    # (DEPLOY-SECRET-002); tools carries no env_file, so it needs no pin.
+    COHOST_SECRETS_FILE: ""
     # The JSON preset the control plane sets on the `docker compose` process for an isolated start; empty leaves the
     # literal values of config.yaml in charge (CTRL-RUNTIME-009).
     COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
@@ -183,6 +186,11 @@ services:  # @spec DEPLOY-COMPOSE-001
     volumes:
       - ./config:/app/config
       - ./data/chat:/app/data/chat
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/chat
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
 
   # ---------- the brain: four regions that only talk over the bus ----------
   # salience decides *when* to speak (and fires reflexes), affect keeps the mood,
@@ -190,14 +198,35 @@ services:  # @spec DEPLOY-COMPOSE-001
   salience:
     <<: *ts-service
     build: { context: ., args: { SERVICE: salience } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/salience
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
 
   affect:
     <<: *ts-service
     build: { context: ., args: { SERVICE: affect } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/affect
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
 
   memory:
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/memory
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     depends_on:  # @spec DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
@@ -211,6 +240,13 @@ services:  # @spec DEPLOY-COMPOSE-001
   consolidate:  # @spec DEPLOY-COMPOSE-018, DEPLOY-COMPOSE-019
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/memory
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     command: ["node", "services/memory/dist/consolidate.js"]
     restart: "no"
     profiles: [maintenance]  # @spec DEPLOY-COMPOSE-004
@@ -225,6 +261,13 @@ services:  # @spec DEPLOY-COMPOSE-001
   reembed:  # @spec DEPLOY-COMPOSE-021
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/memory
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     command: ["node", "services/memory/dist/reembed.js"]
     restart: "no"
     profiles: [maintenance]  # @spec DEPLOY-COMPOSE-004
@@ -236,6 +279,13 @@ services:  # @spec DEPLOY-COMPOSE-001
   cortex:
     <<: *ts-service
     build: { context: ., args: { SERVICE: cortex } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/cortex
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     depends_on:  # @spec DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
       ollama: { condition: service_started }
@@ -243,6 +293,13 @@ services:  # @spec DEPLOY-COMPOSE-001
   voice:  # @spec DEPLOY-COMPOSE-005, DEPLOY-COMPOSE-006, DEPLOY-COMPOSE-007
     <<: *ts-service
     build: { context: ., args: { SERVICE: voice } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/voice
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     ports: ["127.0.0.1:8700:8700"]   # for the host-run dashboard (audio proxy, /health); containers use http://voice:8700
     depends_on:  # @spec DEPLOY-ENG-013, DEPLOY-COMPOSE-005
       redis: { condition: service_healthy }
@@ -261,6 +318,11 @@ services:  # @spec DEPLOY-COMPOSE-001
       COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
     volumes:
       - ./config:/app/config:ro   # read-only: tools never writes config (DEPLOY-COMPOSE-026)
+      - type: bind   # DEPLOY-SECRET-002: its projection only, read-only, never created by Compose
+        source: ./secrets/units/tools
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
 
   # @spec DEPLOY-COMPOSE-028
   avatar:
@@ -270,11 +332,25 @@ services:  # @spec DEPLOY-COMPOSE-001
   eyes:
     <<: *ts-service
     build: { context: ., args: { SERVICE: eyes } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/eyes
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     profiles: [eyes]  # @spec DEPLOY-COMPOSE-004
 
   ears:
     <<: *ts-service
     build: { context: ., args: { SERVICE: ears } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/ears
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     profiles: [ears]  # @spec DEPLOY-COMPOSE-004
     depends_on:  # @spec DEPLOY-COMPOSE-005, DEPLOY-ENG-013
       redis: { condition: service_healthy }
@@ -292,10 +368,17 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # The Discord connector (CONN-*): the one bot login and voice connection, publishing source `discord` and playing sink
   # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume. The bot token is
-  # connections.discord.token in config/secrets.yaml, read through the shared ./config mount like every credential.
+  # connections.discord.token in secrets/secrets.yaml, which reaches the connector as its own projection (DEPLOY-SECRET-002).
   connector-discord:  # @spec DEPLOY-COMPOSE-023
     <<: *ts-service
     build: { context: ., args: { SERVICE: connector-discord } }
+    volumes:
+      - ./config:/app/config
+      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
+        source: ./secrets/units/connector-discord
+        target: /app/secrets
+        read_only: true
+        bind: { create_host_path: false }
     profiles: [discord]  # @spec DEPLOY-COMPOSE-004
 
 volumes:  # @spec DEPLOY-COMPOSE-009

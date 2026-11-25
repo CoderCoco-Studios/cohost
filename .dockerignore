@@ -4,6 +4,7 @@ node_modules
 **/dist
 .git
 data
+secrets
 .env
 **/*.tsbuildinfo
 **/*.log
@@ -11,7 +12,6 @@ data
 target
 config/.vts-token
 config/config.yaml
-config/secrets.yaml
 config/personality.md
 config/expressions.yaml
 # @spec DEPLOY-IMG-004, DEPLOY-IMG-005

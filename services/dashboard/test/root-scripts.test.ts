@@ -42,6 +42,15 @@ test("the built UI is git-ignored", () => {
   assert.ok(root(".gitignore").split("\n").includes("services/dashboard/dist-ui/"));
 });
 
+// @spec DEPLOY-REPO-003
+test("the .gitignore excludes the secrets directory and the user-owned config files, and no longer names config/secrets.yaml", () => {
+  const lines = root(".gitignore").split("\n").map((l) => l.trim());
+  for (const f of ["node_modules/", "dist/", "*.tsbuildinfo", ".env", "data/", "secrets/", "services/dashboard/dist-ui/", "*.log", ".DS_Store", "config/config.yaml", "config/personality.md", "config/expressions.yaml"]) {
+    assert.ok(lines.includes(f), `${f} is ignored`);
+  }
+  assert.ok(!lines.includes("config/secrets.yaml"), "the credentials file lives in secrets/, not config/");
+});
+
 // @spec DASH-BUILD-008
 test("the UI tsconfig covers the UI source and test/ui and emits nothing", () => {
   const cfg = readFileSync(new URL("../ui/tsconfig.json", import.meta.url), "utf8").replace(/^\s*\/\/.*$/gm, "");

@@ -4,7 +4,7 @@ import { readFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { ConfigSchema, loadConfig } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo } from "./helpers/config-sandbox.js";
+import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
@@ -240,7 +240,7 @@ test("the five engine secret keys default to the empty string and merge from sec
     "config.yaml": MINIMAL_YAML.replace("ears: {}", "ears: { openai: { api_key: pasted } }"),
     "secrets.yaml": "ears:\n  nemotron:\n    api_key: nem\n  kyutai:\n    api_key: kyu\nvoice:\n  openai:\n    api_key: vk\n  pocket:\n    hf_token: hf\n",
   });
-  chmodSync(join(dir, "secrets.yaml"), 0o600);
+  chmodSync(secretsIn(dir), 0o600);
   const cfg = loadConfig(true);
   assert.equal(cfg.ears.nemotron.api_key, "nem");
   assert.equal(cfg.ears.kyutai.api_key, "kyu");

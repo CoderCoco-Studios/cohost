@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "138 specs: 138 [x], 0 [ ], 0 [D]. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
+    next: "140 specs: 138 [x], 2 [ ], 0 [D]. TOOL-SVC-010 (secrets list, #318) and TOOL-SVC-011 (network reach, #319) designed, not built. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
     drift: null
 
   voice:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "109 specs: 107 [x], 2 [ ] (DEPLOY-ENG-018 and -020, manual)."
+    next: "123 specs: 100 [x], 23 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..008, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
     drift: null
 
   docs-site:

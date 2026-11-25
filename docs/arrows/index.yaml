@@ -87,7 +87,7 @@ arrows:
     blocks: [working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, shared-runtime, connections, module-contract]
     blockedBy: [config]
     detail: event-bus.md
-    next: "214 specs: 209 [x], 0 [ ], 5 [D] (the early-reply events BUS-EVT-052 to 060, the 37-payload catalogue and the timing stamps of BUS-EVT-024 are built, #221)."
+    next: "215 specs: 210 [x], 0 [ ], 5 [D] (the early-reply events BUS-EVT-052 to 060, the 37-payload catalogue and the timing stamps of BUS-EVT-024 are built, #221)."
     drift: null
 
   model-backends:
@@ -183,7 +183,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, region-hooks, working-memory, tools]
     detail: salience.md
-    next: "169 specs: 168 [x], 0 [ ], 1 [D]. The interjection half of early reply (SAL-INTJ-001 to 024, #226) is built, with SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 met; a refreshed audit is needed before the segment is marked AUDITED. Early reply's salience half (SAL-PROV-001 to 034, SAL-IN-001 and 007, SAL-FOCUS-004 and 006, SAL-TRIG-001 and 002) is built. Counting a burst once, the guarded scorer prompt (#172), viewer keys, chat.removed forgetting (#182) and due timer reminders (#209, SAL-REM) are built. 1 [D] is SAL-TRIG-010."
+    next: "170 specs: 169 [x], 0 [ ], 1 [D]. The interjection half of early reply (SAL-INTJ-001 to 024, #226) is built, with SAL-BARGE-001, SAL-PROV-016 and SAL-TRIG-001 met; a refreshed audit is needed before the segment is marked AUDITED. Early reply's salience half (SAL-PROV-001 to 034, SAL-IN-001 and 007, SAL-FOCUS-004 and 006, SAL-TRIG-001 and 002) is built. Counting a burst once, the guarded scorer prompt (#172), viewer keys, chat.removed forgetting (#182) and due timer reminders (#209, SAL-REM) are built. 1 [D] is SAL-TRIG-010."
     drift: null
 
   affect:
@@ -207,7 +207,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "174 specs: 174 [x], 0 [ ]. YouTube viewer retention is an owner decision in the LLD."
+    next: "177 specs: 177 [x], 0 [ ]. YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -219,7 +219,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks, working-memory, tools]
     detail: cortex.md
-    next: "285 specs: 284 [x], 0 [ ], 1 [D]. The tool loop (#210) and the early reply (#225: CTX-PROV, CTX-INTJ, CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) are built."
+    next: "286 specs: 285 [x], 0 [ ], 1 [D]. The tool loop (#210) and the early reply (#225: CTX-PROV, CTX-INTJ, CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) are built."
     drift: null
 
   tools:

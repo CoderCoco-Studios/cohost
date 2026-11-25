@@ -4,7 +4,7 @@ The language region: the only service that calls the chat LLM. Turns `attention.
 
 ## Status
 
-**PARTIAL.** The spec file holds 285 specs: 284 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The early reply (CTX-PROV, CTX-INTJ, and CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) closed with #225. The LLD has an open question (a repeat on a mention).
+**PARTIAL.** The spec file holds 286 specs: 285 `[x]`, 0 `[ ]`, 1 `[D]` (CTX-REPLAN-001, dynamic speech). The early reply (CTX-PROV, CTX-INTJ, and CTX-EVT-001, 009, CTX-GATE-001, CTX-SAY-006, CTX-START-002) closed with #225. The LLD has an open question (a repeat on a mention).
 
 ## Spoken fallback line
 
@@ -66,7 +66,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 - docs/intent/cortex/cortex-design.md
 
 ### EARS
-- docs/intent/cortex/cortex-specs.md (285 specs, prefix `CTX`: 284 `[x]`, 0 `[ ]`, 1 `[D]`)
+- docs/intent/cortex/cortex-specs.md (286 specs, prefix `CTX`: 285 `[x]`, 0 `[ ]`, 1 `[D]`)
 
 ### Tests (files carrying `@spec CTX-`)
 - services/cortex/test/cortex.region.test.ts
@@ -134,7 +134,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Forgetting | CTX-FORGET-001 to CTX-FORGET-003 | 3 | 0 | 0 |
 | Early reply, tools, release | CTX-PROV, CTX-INTJ, CTX-TOOL, CTX-REL | 101 | 0 | 0 |
 
-**Summary:** 285 specs: 284 implemented, 0 gaps, 1 deferred. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 286 specs: 285 implemented, 0 gaps, 1 deferred. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

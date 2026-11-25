@@ -4,7 +4,7 @@ The typed Redis Streams bus (`@cohost/bus`) that is the only channel between coh
 
 ## Status
 
-**AUDITED** (date and commit in `index.yaml`). Spec file: 214 specs, 209 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 209 `[x]` specs, 201 have an `@spec` annotation in a test file and 8 do not (listed under Work Required; recounted 2026-11-23). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 are `[x]`: `examples/rust-bus/tests/round_trip.rs` ran against the Redis service of `test.yml` on PR #247 (GitHub Actions run 45095337667, 2026-11-23, log line `RAN round_trip against redis://127.0.0.1:6379`; re-run green on head 65aeab0, run 45096011116), and that file fails, not skips, when `REDIS_URL` is set and Redis is unreachable. `packages/bus/test/example-rust-bus.test.ts` asserts the same under `pnpm test`, and a dedicated `test.yml` step fails on a `SKIP` line. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
+**AUDITED** (date and commit in `index.yaml`). Spec file: 215 specs, 210 `[x]`, 0 `[ ]`, 5 `[D]`. Every `[x]` line is observed in code. Of the 210 `[x]` specs, 202 have an `@spec` annotation in a test file and 8 do not (listed under Work Required; recounted 2026-11-23). A `<!-- test: -->` pointer in the spec file names the test file that carries the annotation. The `[D]` lines are listed under Work Required. The docs site's extension guides added BUS-NAT-EX-001 to BUS-NAT-EX-005 (the Rust example client `cohost-example-bus`); BUS-NAT-EX-001 is verified by a manifest test. BUS-NAT-EX-002 to BUS-NAT-EX-005 are `[x]`: `examples/rust-bus/tests/round_trip.rs` ran against the Redis service of `test.yml` on PR #247 (GitHub Actions run 45095337667, 2026-11-23, log line `RAN round_trip against redis://127.0.0.1:6379`; re-run green on head 65aeab0, run 45096011116), and that file fails, not skips, when `REDIS_URL` is set and Redis is unreachable. `packages/bus/test/example-rust-bus.test.ts` asserts the same under `pnpm test`, and a dedicated `test.yml` step fails on a `SKIP` line. The avatar-frame stream (BUS-AVF-001 to BUS-AVF-012) is built on the frames path (`avatar-frame.ts`, `frames.ts`, the `Bus` facade). Its three Redis-gated tests in `avatar-frames.test.ts` skip without a Redis server; where none ran, they are unproven.
 
 ## Native transport: events path native, frames path TypeScript (built)
 
@@ -35,7 +35,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 - docs/intent/event-bus/event-bus-design.md
 
 ### EARS
-- docs/intent/event-bus/event-bus-specs.md (214 specs: 209 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
+- docs/intent/event-bus/event-bus-specs.md (215 specs: 210 `[x]`, 0 `[ ]`, 5 `[D]`; retired numbers listed in the spec file are not reused)
 
 ### Tests
 - packages/bus/test/: early.test.ts, bus.test.ts, clauses.test.ts, tool-events.test.ts, timers.test.ts, resilience.test.ts, native-api.test.ts, native-loops.test.ts, native-binding.test.ts, native-integration.test.ts, native-panic.test.ts, native-build.test.ts, native-bench.test.ts, frames.test.ts, contract.test.ts, connector.test.ts, upload.test.ts, partial.test.ts, timing.test.ts, control-routing.test.ts
@@ -93,7 +93,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Test double | BUS-TEST-001 to 012 | 12 | 0 | 0 |
 | Tool timer hash | BUS-TIMER-001 to 002 | 2 | 0 | 0 |
 
-**Summary:** 214 specs: 209 implemented, 0 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060) and the 37-payload catalogue (BUS-EVT-001) are built. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 215 specs: 210 implemented, 0 gaps, 5 deferred. The early-reply specs (BUS-EVT-052 to 060) and the 37-payload catalogue (BUS-EVT-001) are built. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Work Required
 

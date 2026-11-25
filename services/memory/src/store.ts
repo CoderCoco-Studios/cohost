@@ -4,7 +4,7 @@ import type { Embedder } from "@cohost/llm";
 import { tracked } from "@cohost/shared";
 import type { ReflectCursor } from "./cursor.js";
 import {
-  checkedDiscordId, clamp01, effectiveStrength, isViewerKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
+  checkedDiscordId, clamp01, effectiveStrength, looksLikeKey, isVoiceKey, reinforcedStrength, voiceKey, withDefaultHint,
   type Category, type DeletionRow, type Layer, type LinkResult, type LinkRow, type NewNote, type NoteOp, type NoteRow, type ViewerRow, type ViewerSummary,
 } from "./notes.js";
 
@@ -53,8 +53,8 @@ export interface MemoryBackend {
   /** Count one chat line for the viewer: upsert by `key` (a `viewerKey`, stored as given, MEM-VIEWER-008), keep `display` and the subscriber flag current, claim a matching placeholder row (MEM-REG-004). */
   touchViewer(userKey: string, display: string, opts?: { isSub?: boolean }): Promise<ViewerTouch>;
   getViewer(userKey: string): Promise<ViewerRow | undefined>;
-  /** The viewer whose current display name equals `name` case-insensitively, the latest `last_seen` when several do, any key form. Reads only rows MEM-VIEWER-011 allows. */
-  findViewerByDisplay(name: string): Promise<ViewerRow | undefined>;
+  /** The chat viewer a Discord speaker id is linked to (MEM-SURF-008); undefined when the id has no link or the id is refused (MEM-VOICE-011). */
+  getLinkedViewer(discordId: string): Promise<ViewerRow | undefined>;
   /**
    * The name-keyed viewer (MEM-SURF-006) whose display equals `name` case-insensitively, the latest `last_seen` when several do: a chat row keyed
    * `<platform>:name:<name>` or an owner placeholder (MEM-REG-003). Never an id-keyed chat row or a voice row, whatever its display.
@@ -419,10 +419,13 @@ export class MemoryStore implements MemoryBackend {
     return rows[0] && this.toViewer(rows[0]);
   }
 
-  async findViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
+  // @spec MEM-SURF-008
+  async getLinkedViewer(discordId: string): Promise<ViewerRow | undefined> {
+    let id: string;
+    try { id = checkedDiscordId(discordId); } catch { return undefined; }
     const { rows } = await this.query<ViewerSql>(
-      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${READABLE_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`,
-      [name],
+      `SELECT ${VIEWER_COLS} FROM viewers WHERE user_key = (SELECT user_key FROM viewer_links WHERE discord_id = $1) AND ${READABLE_VIEWER}`,
+      [id],
     );
     return rows[0] && this.toViewer(rows[0]);
   }
@@ -430,7 +433,7 @@ export class MemoryStore implements MemoryBackend {
   // @spec MEM-SURF-006, MEM-VOICE-007
   async findNameKeyedViewerByDisplay(name: string): Promise<ViewerRow | undefined> {
     const { rows } = await this.query<ViewerSql>(
-      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${NAME_KEYED_VIEWER} ORDER BY last_seen DESC, user_key LIMIT 1`,
+      `SELECT ${VIEWER_COLS} FROM viewers WHERE lower(display) = lower($1) AND ${NAME_KEYED_VIEWER} ORDER BY last_seen DESC, user_key COLLATE "C" LIMIT 1`,
       [name],
     );
     return rows[0] && this.toViewer(rows[0]);
@@ -534,7 +537,7 @@ export class MemoryStore implements MemoryBackend {
       [keyOrName, regular],
     );
     if (updated.rows.length) return this.toViewer(updated.rows[0]!);
-    if (!regular || isViewerKey(keyOrName)) return undefined; // an owner placeholder is named by a display name, never a viewerKey
+    if (!regular || looksLikeKey(keyOrName)) return undefined; // MEM-REG-006: an owner placeholder is named by a display name, never a key
     // MEM-REG-003: a placeholder keyed by the lower-cased name.
     const key = keyOrName.toLowerCase();
     const { rows } = await this.query<ViewerSql>(

@@ -64,6 +64,7 @@ type ViewerRef = BusEvent<"memory.notes.request">["data"]["viewers"][number];
 
 /** The one identity a viewer ref is deduplicated by: its `viewerKey`, or its name when it has no platform. */
 function refKey(r: ViewerRef): string {
+  if (r.speakerId) return `speaker:${r.speakerId.toLowerCase()}`;
   return r.platform ? viewerKey({ platform: r.platform, userId: r.userId, user: r.user }) : `name:${normalizeKey(r.user)}`;
 }
 
@@ -85,7 +86,8 @@ function notesViewers(focus: Focus, events: readonly ContextEvent[]): ViewerRef[
   const ref = (user: string, platform?: ViewerRef["platform"], userId?: string): ViewerRef =>
     platform ? { user, platform, ...(userId ? { userId } : {}) } : { user };
   const who = focus.focus?.who?.trim();
-  if (who) add(ref(who, focus.focus?.platform, focus.focus?.userId));
+  // @spec CTX-NOTES-012: a speech focus with a Discord speaker id is asked by that id, never by name.
+  if (who) add(focus.focus?.kind === "speech" && focus.focus.speakerId ? { user: who, speakerId: focus.focus.speakerId } : ref(who, focus.focus?.platform, focus.focus?.userId));
   for (let i = events.length - 1; i >= 0; i--) {
     const e = events[i]!;
     if (e.kind !== "chat") continue;
@@ -100,13 +102,16 @@ function notesViewers(focus: Focus, events: readonly ContextEvent[]): ViewerRef[
  * matches on its full key (`refKey`: the user id, or the name when it has none); an entry with no platform matches by
  * name, and only when exactly one requested viewer has that name. An entry with a user id but no platform matches nothing.
  */
-// @spec CTX-NOTES-011
+// @spec CTX-NOTES-011, CTX-NOTES-012
 function matchNotes(people: People, requested: readonly ViewerRef[]): People {
   const out: People = [];
   const matched = new Set<number>();
   for (const entry of people) {
     let idx = -1;
-    if (entry.platform) {
+    if (entry.speakerId) {
+      const key = refKey({ user: "", speakerId: entry.speakerId });
+      idx = requested.findIndex((r) => r.speakerId !== undefined && refKey(r) === key);
+    } else if (entry.platform) {
       const key = refKey(entry);
       idx = requested.findIndex((r) => refKey(r) === key);
     } else if (!entry.userId) {

@@ -29,6 +29,7 @@ interface Held {
   since?: number;
   /** The focus's own fields, kept so an interjection can confirm it (SAL-INTJ-006). */
   speaker: string;
+  speakerId?: string;
   text: string;
   source?: string;
   timing?: { audioEndedAt: number; closedAt?: number };
@@ -54,7 +55,7 @@ interface EarlyScore { utteranceId: string; seq: number; text: string; score: nu
 interface EarlyPass { utteranceId: string; seq: number; finalArrived: boolean; retracted: boolean }
 
 /** What salience keeps about a speech entry: its bus source, its utterance (SAL-PROV-028) and the early transcript it answers. */
-interface SpeechInfo { source?: string; utteranceId?: string; earlySeq?: number; text: string }
+interface SpeechInfo { speakerId?: string; source?: string; utteranceId?: string; earlySeq?: number; text: string }
 
 export interface SalienceDeps {
   cfg: Config;
@@ -306,7 +307,7 @@ export class Salience {
         kind: "speech", eventId: `early:${d.utteranceId}:${d.seq}`, ts: Date.now(), speaker: d.speaker, text: d.text,
         ...(d.timing ? { timing: d.timing } : {}), seen: false,
       };
-      this.speechInfo.set(transient, { source: d.source, utteranceId: d.utteranceId, earlySeq: d.seq, text: d.text });
+      this.speechInfo.set(transient, { ...(d.speakerId !== undefined ? { speakerId: d.speakerId } : {}), source: d.source, utteranceId: d.utteranceId, earlySeq: d.seq, text: d.text });
       const pass: EarlyPass = { utteranceId: d.utteranceId, seq: d.seq, finalArrived: false, retracted: false };
       this.deciding = true;
       this.earlyInFlight = pass;
@@ -341,7 +342,7 @@ export class Salience {
       : undefined;
     const h: Held = {
       utteranceId: d.utteranceId, seq: d.seq, reason: "engaged", score: decision.score, scored: decision.scored,
-      speaker: d.speaker, text: d.text, ...(d.source !== undefined ? { source: d.source } : {}), ...(timing ? { timing } : {}),
+      speaker: d.speaker, ...(d.speakerId !== undefined ? { speakerId: d.speakerId } : {}), text: d.text, ...(d.source !== undefined ? { source: d.source } : {}), ...(timing ? { timing } : {}),
     };
     h.prevState = this.cortexState;
     h.prevSince = this.cortexSince;
@@ -351,7 +352,7 @@ export class Salience {
     h.focused = this.d.bus.publish("attention.focus", {
       reason: h.reason,
       score: h.score,
-      focus: { kind: "speech", who: d.speaker, text: d.text, source: d.source },
+      focus: { kind: "speech", who: d.speaker, ...(d.speakerId !== undefined ? { speakerId: d.speakerId } : {}), text: d.text, source: d.source }, // @spec SAL-FOCUS-008
       provisional: true,
       utteranceId: d.utteranceId,
       seq: d.seq,
@@ -459,7 +460,7 @@ export class Salience {
         outcome: "confirm",
         reason: h.reason,
         score: h.score,
-        focus: { kind: "speech", who: d.speaker, text: entry.kind === "speech" ? entry.text : d.text, source: d.source },
+        focus: { kind: "speech", who: d.speaker, ...(d.speakerId !== undefined ? { speakerId: d.speakerId } : {}), text: entry.kind === "speech" ? entry.text : d.text, source: d.source },
         ...propagatedFlags(entry),
         ...(timing ? { timing } : {}),
       });
@@ -497,7 +498,7 @@ export class Salience {
   private async final(ev: BusEvent): Promise<void> {
     const d = ev.data as BusEvent<"speech.heard">["data"];
     const entry = this.ctx.push(ev);
-    if (entry) this.speechInfo.set(entry, { source: d.source, utteranceId: d.utteranceId, earlySeq: d.earlySeq, text: d.text }); // @spec SAL-FOCUS-003
+    if (entry) this.speechInfo.set(entry, { ...(d.speakerId !== undefined ? { speakerId: d.speakerId } : {}), source: d.source, utteranceId: d.utteranceId, earlySeq: d.earlySeq, text: d.text }); // @spec SAL-FOCUS-003
     this.scheduler.noteActivity();
     const spoken = this.spokenFor(d.utteranceId);
     let stopped = false;
@@ -572,7 +573,7 @@ export class Salience {
     try {
       await this.d.bus.publish("attention.resolve", {
         utteranceId: h.utteranceId, seq: h.seq, outcome: "confirm", interjected: true, reason: h.reason, score: h.score,
-        focus: { kind: "speech", who: h.speaker, text: h.text, ...(h.source !== undefined ? { source: h.source } : {}) },
+        focus: { kind: "speech", who: h.speaker, ...(h.speakerId !== undefined ? { speakerId: h.speakerId } : {}), text: h.text, ...(h.source !== undefined ? { source: h.source } : {}) },
         ...(h.timing ? { timing: h.timing } : {}),
       });
     } catch (err) {
@@ -784,7 +785,7 @@ export class Salience {
       focus:
         r ? { kind: "reminder", text: r.note } // @spec SAL-REM-005
         : f?.kind === "chat" ? { kind: "chat", who: f.user, text: f.text, mention: f.mention }
-        : f?.kind === "speech" ? { kind: "speech", who: f.speaker, text: f.text, ...(info?.source !== undefined ? { source: info.source } : {}) }
+        : f?.kind === "speech" ? { kind: "speech", who: f.speaker, ...(info?.speakerId !== undefined ? { speakerId: info.speakerId } : {}), text: f.text, ...(info?.source !== undefined ? { source: info.source } : {}) }
         : f?.kind === "vision" ? { kind: "vision", text: f.text }
         : undefined,
       ...(info?.utteranceId !== undefined ? { utteranceId: info.utteranceId } : {}), // @spec SAL-PROV-028

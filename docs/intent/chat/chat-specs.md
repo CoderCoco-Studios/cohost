@@ -22,7 +22,7 @@ Segment `chat` (prefix `CHAT`). LLD: [chat-design.md](chat-design.md). Markers: 
 
 ## Source contract
 
-- [ ] **CHAT-SRC-001**: A chat source shall report exactly one of the states `starting`, `waiting`, `reading`, `retrying` and `stopped`.
+- [x] **CHAT-SRC-001**: A chat source shall report exactly one of the states `starting`, `waiting`, `reading`, `retrying` and `stopped`. <!-- test: services/chat/test/sources.test.ts --> <!-- test: services/chat/test/twitch.test.ts --> <!-- test: services/chat/test/fake.test.ts --> <!-- test: services/chat/test/youtube.test.ts -->
 - [x] **CHAT-SRC-002**: The chat service shall treat the first time a source reports any state other than `starting`, a failure included, as that source's first outcome. <!-- test: services/chat/test/sources.test.ts -->
 - [x] **CHAT-SRC-003**: When every source listed in `chat.sources` has had a first outcome, or 30 seconds after the chat service starts, whichever comes first, the chat service shall signal heartbeat `ready`. <!-- test: services/chat/test/sources.test.ts -->
 - [x] **CHAT-SRC-004**: While a listed source has had no first outcome after the chat service has signalled `ready`, the chat service shall report that source's dependency `down`. <!-- test: services/chat/test/sources.test.ts -->

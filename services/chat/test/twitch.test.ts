@@ -198,6 +198,45 @@ test("a disconnect makes the source retrying with a warning, and the library's r
   assert.equal(t.states.at(-1)![0], "reading");
 });
 
+// @spec CHAT-SRC-001
+test("the Twitch source reports starting until its client connects, then reading", async () => {
+  const t = await startTwitch();
+  assert.equal(t.src.state().state, "starting", "no state is reported before the client connects");
+  assert.deepEqual(t.states, [], "nothing is reported on start");
+  t.handlers.onConnect!();
+  assert.equal(t.src.state().state, "reading");
+  assert.deepEqual(t.states, [["reading", undefined]]);
+});
+
+// @spec CHAT-SRC-001
+test("the Twitch source reports retrying on each disconnect and reading again on each reconnect; the library owns the backoff", async () => {
+  const t = await startTwitch();
+  t.handlers.onConnect!();
+  for (let i = 0; i < 2; i++) {
+    t.handlers.onDisconnect!(false, new Error("socket reset"));
+    assert.equal(t.src.state().state, "retrying");
+    t.handlers.onConnect!();
+    assert.equal(t.src.state().state, "reading");
+  }
+  assert.deepEqual(t.states.map(([s]) => s), ["reading", "retrying", "reading", "retrying", "reading"]);
+  assert.deepEqual(t.calls.filter((c) => c === "connect"), ["connect"], "the source never calls connect itself on a drop");
+});
+
+// @spec CHAT-SRC-001
+test("a Twitch start rejected for a missing refresh token reports no state of its own", async () => {
+  const rc = removalClient();
+  const states: string[] = [];
+  const src = new TwitchSource({
+    channel: "chan", twitch: { client_id: "i", client_secret: "s", access_token: "a", refresh_token: " " } as never,
+    tokenPath: join(mkdtempSync(join(tmpdir(), "tw-")), "t.json"),
+    createAuth: () => ({ onRefresh() {}, addUserForToken: async () => "uid" }) as never,
+    createClient: () => rc.client as never,
+  });
+  await assert.rejects(src.start({ ...quietEnv(), onState: (s: string) => { states.push(s); } } as never), /chat\.twitch\.refresh_token/);
+  assert.deepEqual(states, [], "the rejection is the service's to record as stopped (CHAT-PLAN-011)");
+  assert.equal(src.state().state, "starting");
+});
+
 // @spec CHAT-TW-014, CHAT-FORGET-001
 test("onMessageRemove reports a message removal naming the message id", async () => {
   const t = await startTwitch();

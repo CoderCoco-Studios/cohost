@@ -101,7 +101,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
    `host.docker.internal` is how a [container](../../start/glossary.md#container) reaches OBS running on the same machine. If OBS is on a second PC, put that PC's address in `vision.obs.host` instead, and make sure obs-websocket listens on the network and the firewall allows port 4455.
 
-   The OBS WebSocket password is a credential, so it goes in the **OBS password** secret field of **Settings**, **Vision** (saving needs your control token), or in `config/secrets.yaml` by hand:
+   The OBS WebSocket password is a credential, so it goes in the **OBS password** secret field of **Settings**, **Vision** (saving needs your control token), or in `secrets/secrets.yaml` by hand:
 
    ```yaml
    vision:
@@ -135,7 +135,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 - **No sound on stream.** Check that **Control audio via OBS** is ticked, that the address is the sink page (`?sink=1`), and that the dashboard page is reachable from OBS. Open the same address in a browser: the page says whether audio is on, and **Turn audio on** starts playback if the browser blocked it.
 - **The second PC cannot load the page.** Use the `dashboard.lan_port` port (3001 by default), not `dashboard.port` (3000), and check the AI PC's firewall.
-- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check `vision.obs.host`, `vision.obs.port` and `vision.obs.source` in `config/config.yaml`, `vision.obs.password` in `config/secrets.yaml`, and that the named source exists in OBS. Restart `eyes` after an edit.
+- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check `vision.obs.host`, `vision.obs.port` and `vision.obs.source` in `config/config.yaml`, `vision.obs.password` in `secrets/secrets.yaml`, and that the named source exists in OBS. Restart `eyes` after an edit.
 - **The eyes have not been run against a real OBS yet.** The obs-websocket path is covered by tests, not yet by a live run. If it misbehaves, the logs will say where.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).

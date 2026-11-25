@@ -16,7 +16,7 @@ The words your co-host says are written by a [language model](../../start/glossa
 
 ## How the choice works
 
-Which model answers is a `config/config.yaml` setting, `llm.provider`. The model's name goes in `llm.model`, written the way that provider names it. Credentials such as API keys never go in `config.yaml`; they go in `config/secrets.yaml` (copy it from `config/secrets.example.yaml` if it is not there yet). It is git-ignored, and each key is named by its dotted path.
+Which model answers is a `config/config.yaml` setting, `llm.provider`. The model's name goes in `llm.model`, written the way that provider names it. Credentials such as API keys never go in `config.yaml`; they go in `secrets/secrets.yaml` (copy it from `config/secrets.example.yaml` if it is not there yet). It is git-ignored, and each key is named by its dotted path.
 
 | `llm.provider` | What it is | Key in `secrets.yaml` |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ llm:
     base_url: "http://<box-ip>:8000/v1"
 ```
 
-The key goes in `config/secrets.yaml`:
+The key goes in `secrets/secrets.yaml`:
 
 ```yaml
 llm:
@@ -115,7 +115,7 @@ llm:
     fallbacks: true
 ```
 
-The key goes in `config/secrets.yaml`:
+The key goes in `secrets/secrets.yaml`:
 
 ```yaml
 llm:
@@ -142,7 +142,7 @@ llm:
   bedrock: { region: us-east-1 }
 ```
 
-Put your AWS access key in `config/secrets.yaml`. This is the only way Bedrock is given credentials:
+Put your AWS access key in `secrets/secrets.yaml`. This is the only way Bedrock is given credentials:
 
 ```yaml
 llm:

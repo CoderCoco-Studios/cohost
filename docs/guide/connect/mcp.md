@@ -20,7 +20,9 @@ The co-host also has four built-in tools (clock, stream info, memory lookup and 
 
 1. Open **Settings**, **Tools**, and add a server under **MCP servers**. Give it a name made of lower-case letters, digits and hyphens, starting with a letter. A name cannot contain an underscore.
 2. Enter its URL. Use `https` whenever the server offers it. A URL with a user name or password in it is refused; put a credential in the token field instead.
-3. If the server needs a token, enter it in the server's **Token** field. It is kept in `config/secrets.yaml` under `tools.servers.<name>.token`, is never shown again once saved, and is sent only to that server's URL.
+3. If the server needs a token, enter it in the server's **Token** field. It is kept in `secrets/secrets.yaml` under `tools.servers.<name>.token`, is never shown again once saved, and is sent only to that server's URL.
+
+   The `tools` service runs on its own [Docker](../../start/glossary.md#docker) network that holds only [Redis](../../start/glossary.md#redis), so a URL that names another cohost service (`http://postgres:5432`) does not resolve. A server on your PC is `http://host.docker.internal:<port>/...`. To run a server in a [container](../../start/glossary.md#container), publish its port on `127.0.0.1` and use the same `host.docker.internal` address; do not join it to a cohost network.
 4. If the server takes its token in a header other than `Authorization`, set the header name. A blank header means `Authorization`, which is sent as `Bearer <token>`. Any other header receives the token as written.
 5. Save, and restart the `tools` service. In the dashboard, open the Services screen and restart `tools`, or from a terminal in the cohost folder run `docker compose restart tools`.
 

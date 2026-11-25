@@ -17,7 +17,7 @@ By the end of this page the co-host will be reading the live chat of a YouTube b
 
 ## Steps
 
-1. Put the key in `config/secrets.yaml`, never in `config.yaml`. Or write it through the dashboard's secrets route, which never shows it again once saved.
+1. Put the key in `secrets/secrets.yaml`, never in `config.yaml`. Or write it through the dashboard's secrets route, which never shows it again once saved.
 
    ```yaml
    chat:

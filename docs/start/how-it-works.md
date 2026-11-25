@@ -51,7 +51,7 @@ Speech from a Discord voice channel takes the same road with a shorter start. Th
 - Messages between programs live on the bus, which is built on [Redis](glossary.md#redis).
 - Memories and viewer notes live in [Postgres](glossary.md#postgres).
 - The language, speech and vision models run on [Ollama](glossary.md#ollama), a text-to-speech server and a speech-to-text server, all on your own machine. If you choose a hosted model instead, only the brain's chat call and the after-stream reflection leave your machine.
-- Your settings live in four files you own: `config/config.yaml` for behaviour and operator settings, `config/secrets.yaml` for credentials, `config/personality.md` for who the co-host is, and `.env` for the dashboard's access tokens and a few per-machine settings.
+- Your settings live in four files you own: `config/config.yaml` for behaviour and operator settings, `secrets/secrets.yaml` for credentials, `config/personality.md` for who the co-host is, and `.env` for the dashboard's access tokens and a few per-machine settings.
 
 ## Where to go next
 

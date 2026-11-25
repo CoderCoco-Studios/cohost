@@ -23,6 +23,7 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 - [x] **MOD-MAN-012**: A test shall fail when, for a unit that has a Compose service, the `service` its heartbeat publishes (the `service` its entry file passes to `runService` and the one its `health.ts` declares) differs from the unit id, or when the `SERVICE` build argument its Compose service passes to the `Dockerfile`, from which the container healthcheck takes the name it checks (DEPLOY-HC-001), differs from the unit id. <!-- test: packages/control/test/derived-lists.test.ts -->
 - [x] **MOD-MAN-013**: The manifest shall list no unit among the `uses` of any unit for `tts-pocket`, `stt-nemotron` or `stt-kyutai`, so a profile that is not enabled never adds a `needs` annotation (MOD-LIFE-001) to `voice` or `ears`.
 - [x] **MOD-MAN-014**: A test shall fail when a Compose service of the profiles `pocket`, `nemotron` or `kyutai` has no unit in `SERVICE_MANIFEST`, or when one of those units has no Compose service named for its `composeName`.
+- [ ] **MOD-MAN-015**: Each unit in `SERVICE_MANIFEST` shall carry a `secrets` list, and a test shall fail when a listed path is not a path of `SECRET_PATHS` (the wildcard `tools.servers.*.token` counting as one) or lies outside every section the unit's `config` names, or when a unit's list holds a path twice.
 
 ## Settings editor (MOD-CFG)
 

@@ -7,7 +7,7 @@ verified: f126b94
 
 # Environment variables and ports
 
-`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `config/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
+`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `secrets/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
 
 [Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run from source read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
 

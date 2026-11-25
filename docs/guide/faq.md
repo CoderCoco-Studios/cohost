@@ -68,7 +68,7 @@ Only the sink page (the audio for a second PC's OBS) listens on the network, on 
 ## Where are my files?
 
 - `config/config.yaml`, `config/personality.md` and `config/expressions.yaml`: your settings, personality and avatar expressions. Git ignores them.
-- `config/secrets.yaml`: your credentials (tokens, API keys, the OBS password). Git ignores it. Never share it.
+- `secrets/secrets.yaml`: your credentials (tokens, API keys, the OBS password). Git ignores it. Never share it.
 - `.env`: the dashboard's access tokens and a few per-machine settings. Never share it.
 - `data/`: files the co-host must remember between runs, such as refreshed Twitch tokens. `COHOST_DATA_DIR` moves it.
 

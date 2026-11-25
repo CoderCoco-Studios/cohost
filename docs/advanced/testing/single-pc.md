@@ -44,6 +44,15 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
    docker compose run --rm consolidate
    ```
 
+8. Check the reach of the tool service. `tools` sits on a network that holds only Redis, so it should not reach the other containers. Start the stack, then from inside `tools` try the address of the [Postgres](../../start/glossary.md#postgres) container (a container on the default network only):
+
+   ```bash
+   pg=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(docker compose ps -q postgres)")
+   docker compose exec -T tools node -e 'const s=require("node:net").connect(5432,process.argv[1]);s.on("connect",()=>{console.log("reachable");process.exit(0)});s.on("error",()=>{console.log("not reachable");process.exit(1)});setTimeout(()=>{console.log("not reachable");process.exit(1)},3000)' "$pg"
+   ```
+
+   It should print `not reachable`. Then, with the same command against `host.docker.internal` and each port Compose publishes on `127.0.0.1` (Redis 6379, Postgres 5432, [Ollama](../../start/glossary.md#ollama) 11434, voice 8700, [TTS](../../start/glossary.md#tts) 8880, [STT](../../start/glossary.md#stt) 8000) and the dashboard's two ports, write down which answer. The host gateway is not filtered, so some of those may be reachable; the point is to record which. Repeat the whole step on a native Linux Docker Engine if you have one. This is the manual check DEPLOY-NET-006 holds (tracked in [#330](https://github.com/CoderCoco-Studios/cohost/issues/330)).
+
 ## Optional: the speech engine servers
 
 Run these after step 7 with the `pocket` profile, or `nemotron` or `kyutai`, enabled in `COMPOSE_PROFILES` and selected in `config/config.yaml`. The first build of an enabled profile takes minutes.
@@ -59,6 +68,7 @@ Run these after step 7 with the `pocket` profile, or `nemotron` or `kyutai`, ena
 - Step 4: the feed shows `brain.say`, `voice.utterance` and `voice.done`, and you hear the reply on the [sink](../../start/glossary.md#sink) page.
 - Step 5: `inject.result` answers with `ok: true` for each upload, and the feed shows `vision.summary` and `speech.heard`.
 - Step 7: the command exits 0. Viewer notes are tidied; skipping it loses nothing, because `memory` catches up at its next start.
+- Step 8: the Postgres address prints `not reachable` from inside `tools`, and you have a written list of what `host.docker.internal` reaches.
 
 ## If it didn't
 

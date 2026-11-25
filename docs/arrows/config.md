@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 231 specs: 230 implemented, 0 deferred, 1 gap (#318: CFG-SEC-001, `secretsPath()` moves to `secrets/secrets.yaml`). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 232 specs: 229 implemented, 0 deferred, 3 gaps (#318: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (231 specs, prefix `CFG`: 230 `[x]`, 1 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (232 specs, prefix `CFG`: 229 `[x]`, 3 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -91,7 +91,7 @@ Orientation:
 | User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
 
-**Summary:** 231 specs: 230 implemented, 1 gap (#318: CFG-SEC-001, `secretsPath()` moves to `secrets/secrets.yaml`), 0 deferred. CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
+**Summary:** 232 specs: 229 implemented, 3 gaps (#318: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012), 0 deferred. CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 
 ## Coverage notes
 

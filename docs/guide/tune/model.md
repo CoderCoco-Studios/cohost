@@ -36,7 +36,10 @@ pnpm cohostctl restart cortex
 pnpm cohostctl restart memory
 pnpm cohostctl restart salience
 pnpm cohostctl restart affect
+pnpm cohostctl restart eyes
 ```
+
+Restart `eyes` too when it describes the screen with a hosted provider (`vision.provider` `openai`, `anthropic` or `bedrock`), because it then uses the same keys.
 
 Or press **Save** on the dashboard's **Settings** screen and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The **Settings** screen edits both: ordinary keys are written to `config.yaml`, and an API key or password has a masked field (marked **Set** or **Not set**) that writes `secrets.yaml` and needs your control token.
 

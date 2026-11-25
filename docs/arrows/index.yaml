@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "231 specs: 230 [x], 1 [ ] (CFG-SEC-001, secrets/secrets.yaml, #318). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "232 specs: 229 [x], 3 [ ] (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012: secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE, #318). The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "111 specs: 109 [x], 0 [ ], 2 [D] (CTRL-LAT-009, -010)."
+    next: "113 specs: 109 [x], 2 [ ], 2 [D] (CTRL-LAT-009, -010 deferred; CTRL-RUNTIME-014, -015, the secrets projection, #318)."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "126 specs: 101 [x], 25 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..011, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
+    next: "126 specs: 100 [x], 26 [ ] (DEPLOY-ENG-018 and -020, manual; secret scoping DEPLOY-SECRET-001..011, the tools network DEPLOY-NET-001..006 and seven amended specs, designed for #318/#319 and awaiting owner sign-off)."
     drift: null
 
   docs-site:

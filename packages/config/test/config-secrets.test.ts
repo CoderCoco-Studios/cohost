@@ -434,3 +434,16 @@ test("the shipped secrets.example.yaml carries a commented tools.servers.<name>.
   assert.ok(commented.some((l) => /token/.test(l)));
   assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /tools:/, "the example is commented out");
 });
+
+// @spec CFG-SCH-083, CFG-SEC-016
+test("a tools.servers name that holds a dot fails the load naming the entry, and a token for such a name in secrets.yaml is warned about by path, never dropped silently", () => {
+  sandbox({
+    "config.yaml": `${MINIMAL_YAML}tools: { servers: { "a.b": { url: "https://x.example/mcp" } } }\n`,
+    "secrets.yaml": "tools:\n  servers:\n    a.b:\n      token: tk-SECRET\n",
+  });
+  chmodSync(process.env.COHOST_SECRETS_FILE!, 0o600);
+  let thrown = "";
+  const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
+  assert.match(thrown, /tools\.servers\.a\.b/, "the load fails and names the entry");
+  assert.ok(warnings.some((w) => w.includes("tools.servers.a.b") && !w.includes("tk-SECRET")), `the stray token is warned about by path: ${warnings.join(" | ")}`);
+});

@@ -251,6 +251,8 @@ ${port_note:+${port_note}
      # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
      # the one Discord bot is connections.discord.token in secrets/secrets.yaml, used by the Discord connector;
      # ears and mouth need no token
+     # a hand-run docker compose up skips the secrets projection: after editing secrets/secrets.yaml, run
+     # node packages/control/dist/project-secrets.js first, or start and restart through the dashboard or cohostctl
   5. optional speech engines: to use the pocket TTS (voice.engine: pocket) or a streaming STT server (ears.stt_engine:
      nemotron or kyutai), add pocket, nemotron or kyutai to COMPOSE_PROFILES in .env (for example COMPOSE_PROFILES=pocket,nemotron),
      select it in config/config.yaml, then press Launch again. The first build of an enabled profile takes minutes; later launches reuse it.

@@ -154,6 +154,16 @@ test("next steps name the engine profiles pocket, nemotron and kyutai, the engin
 });
 
 // @spec DEPLOY-INST-008
+test("next steps warn that a hand-run docker compose up skips the secrets projection and name the command that refreshes it", () => {
+  const o = nextSteps(MINIMAL_YAML).stdout;
+  const at = o.indexOf("--profile eyes");
+  assert.ok(at >= 0);
+  const step = o.slice(at, o.indexOf("5. optional speech engines"));
+  assert.match(step, /project-secrets/, "the step names the projection command");
+  assert.match(step, /skips|does not (run|refresh)|not refresh/i, "and says that a hand-run compose up does not run it");
+});
+
+// @spec DEPLOY-INST-008
 test("when the loader fails the first error line goes to stderr and the URL has no port; the installer still finishes", () => {
   const bad = nextSteps(MINIMAL_YAML.replace("name: Coco", "name: ''"));
   assert.equal(bad.status, 0);

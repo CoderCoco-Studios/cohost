@@ -249,3 +249,47 @@ test("projecting an operator file that sets every path of SECRET_PATHS gives eac
   const expand = (p: string): string[] => (p === "tools.servers.*.token" ? ["tools.servers.a.token", "tools.servers.b.token"] : [p]);
   for (const u of units) assert.deepEqual(flat(read(w, u.composeName)).sort(), u.secrets.flatMap(expand).sort(), u.composeName);
 });
+
+// @spec DEPLOY-SECRET-007
+test("the operator's file is rejected when it resolves inside ./config, ./data or ./secrets/units, a regular file included", async () => {
+  for (const sub of ["config", "data", join("secrets", "units")]) {
+    const w = workspace();
+    const dir = join(w.root, sub);
+    mkdirSync(dir, { recursive: true });
+    const inside = join(dir, "mine.yaml");
+    writeFileSync(inside, OPERATOR, { mode: 0o600 });
+    process.env.COHOST_SECRETS_FILE = inside; // a regular file, not a link
+    const msg = await rejection(projectSecrets(w.root, [{ composeName: "chat", secrets: ["chat.twitch.client_id"] }]));
+    assert.ok(msg.includes(inside), `${sub}: ${msg}`);
+    assert.equal(existsSync(unitFile(w, "chat")), false, `${sub}: no unit file`);
+  }
+});
+
+// @spec DEPLOY-SECRET-007
+test("each of ./config, ./data and ./secrets/units is resolved first: a link to a directory the file lives in is rejected, a link elsewhere is not", async () => {
+  for (const sub of ["config", "data"]) {
+    const w = workspace();
+    const real = mkdtempSync(join(tmpdir(), "cohost-real-"));
+    writeFileSync(join(real, "mine.yaml"), OPERATOR, { mode: 0o600 });
+    symlinkSync(real, join(w.root, sub)); // ./config (or ./data) is itself a link to the real directory
+    symlinkSync(join(real, "mine.yaml"), w.operator); // the operator's file is a link into that real directory
+    const msg = await rejection(projectSecrets(w.root, [{ composeName: "chat", secrets: ["chat.twitch.client_id"] }]));
+    assert.ok(msg.includes(w.operator), `${sub}: ${msg}`);
+    assert.equal(existsSync(unitFile(w, "chat")), false);
+  }
+  const w = workspace(OPERATOR);
+  symlinkSync(mkdtempSync(join(tmpdir(), "cohost-real-")), join(w.root, "config"));
+  await projectSecrets(w.root, [{ composeName: "chat", secrets: ["chat.twitch.client_id"] }]);
+  assert.deepEqual(read(w, "chat"), { chat: { twitch: { client_id: "cid" } } });
+});
+
+// @spec DEPLOY-SECRET-009, CFG-SEC-019
+test("a unit name that is not lower-case letters, digits and hyphens fails naming the name and writes nothing", async () => {
+  for (const name of ["../../config", "a/b", "Chat", "", ".", "a b", "chat.yaml"]) {
+    const w = workspace(OPERATOR);
+    const msg = await rejection(projectSecrets(w.root, [{ composeName: "chat", secrets: ["chat.twitch.client_id"] }, { composeName: name, secrets: ["connections.discord.token"] }]));
+    assert.ok(msg.includes(JSON.stringify(name)), `${JSON.stringify(name)}: ${msg}`);
+    assert.equal(existsSync(unitFile(w, "chat")), false, "no unit file for any unit");
+    assert.equal(existsSync(join(w.root, "config")), false, "nothing outside secrets/units");
+  }
+});

@@ -1,5 +1,5 @@
 import { realpathSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { Document, isMap } from "yaml";
 import { secretPathMatches } from "./schema.js";
 import { loadSecrets } from "./secrets.js";
@@ -11,6 +11,19 @@ export interface SecretUnit {
   composeName: string;
   secrets: readonly string[];
 }
+
+/** The real path of `p` with every link resolved; a path that does not exist yet resolves through its nearest existing parent. */
+function realPathOf(p: string): string | undefined {
+  const abs = resolve(p);
+  try { return realpathSync(abs); } catch { /* not there: resolve the parent */ }
+  const parent = dirname(abs);
+  if (parent === abs) return undefined;
+  const up = realPathOf(parent);
+  return up === undefined ? undefined : join(up, basename(abs));
+}
+
+/** A Compose service name as the manifest spells one; anything else could name a path outside `secrets/units/`. */
+const UNIT_NAME = /^[a-z0-9-]+$/;
 
 const isLink = (p: string): boolean => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
 
@@ -33,6 +46,9 @@ function unitText(values: Readonly<Record<string, string>>, declared: readonly s
  */
 // @spec CFG-SEC-019, DEPLOY-SECRET-003, DEPLOY-SECRET-005, DEPLOY-SECRET-007, DEPLOY-SECRET-009, DEPLOY-SECRET-010
 export async function projectSecrets(root: string, units: readonly SecretUnit[]): Promise<void> {
+  for (const u of units) {
+    if (!UNIT_NAME.test(u.composeName)) throw new Error(`Cannot project secrets: ${JSON.stringify(u.composeName)} is not a unit name (lower-case letters, digits and hyphens)`);
+  }
   const secretsDir = join(root, "secrets");
   const unitsDir = join(secretsDir, "units");
   for (const dir of [secretsDir, unitsDir]) {
@@ -45,16 +61,11 @@ export async function projectSecrets(root: string, units: readonly SecretUnit[])
   }
 
   const file = secretsPath();
-  if (isLink(file)) {
-    let target = "";
-    try { target = realpathSync(file); } catch { /* a link that resolves to nothing is read as an absent file below */ }
-    if (target !== "") {
-      let base = resolve(root);
-      try { base = realpathSync(root); } catch { /* root itself is not there yet */ }
-      for (const sub of ["config", "data", join("secrets", "units")]) {
-        const dir = join(base, sub);
-        if (target === dir || target.startsWith(dir + sep)) throw new Error(`Cannot project secrets: ${file} is a symbolic link into ${join(root, sub)}, which a container mounts`);
-      }
+  const real = realPathOf(file);
+  for (const sub of ["config", "data", join("secrets", "units")]) {
+    const dir = realPathOf(join(root, sub));
+    if (dir !== undefined && real !== undefined && (real === dir || real.startsWith(dir + sep))) {
+      throw new Error(`Cannot project secrets: ${file} resolves inside ${join(root, sub)}, which a container mounts`);
     }
   }
   const { values } = loadSecrets(file);

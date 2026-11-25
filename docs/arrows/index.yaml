@@ -283,15 +283,15 @@ arrows:
     drift: null
 
   control-plane:
-    status: AUDITED
+    status: MAPPED
     parent: null
     sampled: 2026-10-31
-    audited: 2026-11-24
+    audited: 2026-11-14
     audited_sha: cb06bf3
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "113 specs: 111 [x], 0 [ ], 2 [D] (CTRL-LAT-009, -010 deferred). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318."
+    next: "113 specs: 111 [x], 0 [ ], 2 [D] (CTRL-LAT-009, -010 deferred). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the other 109 specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:

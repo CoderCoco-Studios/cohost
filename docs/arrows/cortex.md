@@ -119,7 +119,7 @@ CTX-EVT-010 (end pending lines on `voice.stop`), CTX-GATE-010 (no abort) and CTX
 | Think gating | CTX-GATE-001 to CTX-GATE-013 | 13 | 0 | 0 |
 | Memory recall | CTX-RECALL-001 to CTX-RECALL-005 | 5 | 0 | 0 |
 | Viewer notes | CTX-VIEWER-001 to CTX-VIEWER-004 | 4 | 0 | 0 |
-| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-011 | 11 | 0 | 0 |
+| Viewer notes from memory | CTX-NOTES-001 to CTX-NOTES-012 | 12 | 0 | 0 |
 | Prompt and reply | CTX-PROMPT-001 to CTX-PROMPT-020 | 20 | 0 | 0 |
 | Fallback acknowledgement | CTX-FALL-001 to CTX-FALL-012 | 12 | 0 | 0 |
 | Critic | CTX-CRITIC-001 to CTX-CRITIC-013 | 13 | 0 | 0 |

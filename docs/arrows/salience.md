@@ -90,7 +90,7 @@ Depends on event-bus, config, working-memory (`Context`, `propagatedFlags`), reg
 | Intake | SAL-IN-001 to SAL-IN-009 | 9 | 0 | 0 |
 | Scoring | SAL-SCORE-001 to SAL-SCORE-014 | 14 | 0 | 0 |
 | Speak Decision | SAL-DECIDE-001 to SAL-DECIDE-019 | 19 | 0 | 0 |
-| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-007 | 7 | 0 | 0 |
+| Focus Publication | SAL-FOCUS-001 to SAL-FOCUS-008 | 8 | 0 | 0 |
 | Speech Trigger | SAL-TRIG-001 to SAL-TRIG-010 | 9 | 1 | 0 |
 | Busy Gating | SAL-BUSY-001 to SAL-BUSY-008 | 8 | 0 | 0 |
 | Reflexes | SAL-REFLEX-001 to SAL-REFLEX-008 | 8 | 0 | 0 |

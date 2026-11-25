@@ -333,7 +333,9 @@ is linked (`MEM-VOICE-004`) its notes are the chat viewer's. Hint-only surfacing
 
 **Owner placeholders.** A name that looks like a viewer key (`<text>:` prefix, any
 letter case) is refused when the owner sets the regular flag, so a placeholder is
-never keyed like a voice or chat row (`MEM-REG-006`).
+never keyed like a voice or chat row (`MEM-REG-006`). The refusal also covers a
+display name that contains a colon after its first character (`Dr: Who`): such a
+name cannot be an owner placeholder.
 
 **Privacy.** Voice lines go through the same capture hook, validation and writer
 as chat lines, so politics is never stored and money never becomes a note
@@ -525,7 +527,7 @@ Factories in `services/memory/src/backend.ts`:
 
 Both stores implement `MemoryBackend` (`services/memory/src/store.ts`): `init, connect,
 reembed, remember, recall, touchViewer, recentSince, getMeta, setMeta, close` for memories,
-viewers and metadata; for viewers `getViewer, findViewerByDisplay, ensureViewer, touchSpeaker,
+viewers and metadata; for viewers `getViewer, findNameKeyedViewerByDisplay, getLinkedViewer, ensureViewer, touchSpeaker,
 setRegular, listViewers, linkDiscord, unlinkDiscord, listLinks`; and for viewer notes
 `embedText, insertNote, reinforceNote, markSurfaced, listNotes, listDeletions, deleteNote,
 restoreDeletion, clearNotes, dirtyNoteCount, dirtyViewerKeys, commitViewer, purgeSoftDeletions,

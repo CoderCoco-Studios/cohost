@@ -115,7 +115,7 @@ release (a `voice.done` for it, below) or its valve, so an operator `say` over a
    In parallel, publish `memory.notes.request` for the viewers in the focus and the
    window and wait for its reply under the same deadline (`CTX-NOTES-001`,
    `CTX-NOTES-002`; see Viewer notes).
-4. Viewer note: look up the `viewerKey` of `focus.focus` (its `platform`, `userId` and `who`) and put the note in the prompt; it
+4. Viewer note: look up the `viewerKey` of `focus.focus` (its `platform`, `userId` and `who`; a speech focus is matched by its `speakerId`, `CTX-NOTES-012`) and put the note in the prompt; it
    is deleted only once the reply's `brain.say` (its first clause) is published, so a vetoed, dropped
    or failed reply keeps it for the next one (`CTX-VIEWER-003`; looked up at
    `cortex.ts`, deleted by the `onPublished` callback of `say()`,
@@ -369,7 +369,7 @@ viewers (core: who they are; recent: what they are up to lately) are fetched for
 each reply, for the viewer being replied to and for the other viewers in the
 working-memory window, whatever their message count. Step 3 of the think pipeline
 publishes `memory.notes.request {id, viewers}` alongside the recall request; `viewers`
-is the focus's viewer (`who`, `platform`, `userId`) followed by the distinct chat viewers in the window, one entry per `viewerKey`, newest
+is the focus's viewer (`who`, `platform`, `userId`; for a speech focus that carries a Discord `speakerId`, `who` and `speakerId` alone, which memory resolves through the speaker's link, `CTX-NOTES-012`) followed by the distinct chat viewers in the window, one entry per `viewerKey`, newest
 first, each entry carrying the display name and the platform and user id of its window entry (`CTX-NOTES-001`). Memory identifies each by platform and user id, so notes about one viewer never reach another viewer who shares the name. Both replies share one
 `recall_timeout_ms` deadline, and a missing reply means no notes, never a stalled
 reply (`CTX-NOTES-002`, HLD tenet 3). Memory has already capped, ordered and

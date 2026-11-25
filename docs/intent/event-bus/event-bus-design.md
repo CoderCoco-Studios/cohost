@@ -465,8 +465,8 @@ Viewer-notes events (design in the memory, cortex and dashboard segments):
 
 | # | Type | Payload | Producers -> consumers (intended) | spec |
 |---|---|---|---|---|
-| 20 | `memory.notes.request` | `id`, `viewers` (non-empty array of `user` (display name), `platform?`, `userId?`; first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
-| 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `platform?`, `userId?` (echoing the request entry it answers), `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
+| 20 | `memory.notes.request` | `id`, `viewers` (non-empty array of `user` (display name), `platform?`, `userId?`, `speakerId?` (a voice speaker's Discord id: memory resolves it through the speaker's link); first = viewer being replied to) | cortex -> memory | BUS-EVT-020 |
+| 21 | `memory.notes.reply` | `id`, `viewers` (array of `user`, `platform?`, `userId?`, `speakerId?` (echoing the request entry it answers; for a `speakerId` entry `user` is the linked chat viewer's display), `regular`, `msgCount`, `notes`: array of `layer`, `category`, `text?` (never for `health`/`family`), `hint?`, `strength`) | memory -> cortex | BUS-EVT-020 |
 | 22 | `memory.viewers.request` | `id`, `op` (`list`, `get`, `delete_note`, `restore`, `clear`, `set_regular`, `link_discord`, `unlink_discord`) with per-op fields | dashboard -> memory | BUS-EVT-021 |
 | 23 | `memory.viewers.reply` | `id`, `ok`, `error?` (`not_found`, `failed`), `detail?`, `data?` | memory -> dashboard | BUS-EVT-021 |
 

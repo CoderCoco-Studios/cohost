@@ -72,6 +72,7 @@ Design: LLD § Native transport (Rust crate `crates/cohost-bus` behind napi-rs f
 | Streamed lines | BUS-EVT-037 to 042 | 6 | 0 | 0 |
 | Tool events | BUS-EVT-043 to 051 | 9 | 0 | 0 |
 | Early reply | BUS-EVT-052 to 060 | 9 | 0 | 0 |
+| Speaker id on notes | BUS-EVT-061 | 1 | 0 | 0 |
 | Consumer-group subscription | BUS-SUB-001 to 013 | 13 | 0 | 0 |
 | Live tail and backfill | BUS-TAIL-001 to 005 | 5 | 0 | 0 |
 | Health stream | BUS-HEALTH-001 to 004 | 4 | 0 | 0 |

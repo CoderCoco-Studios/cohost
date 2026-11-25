@@ -120,7 +120,8 @@ function matchNotes(people: People, requested: readonly ViewerRef[]): People {
     }
     if (idx < 0 || matched.has(idx)) continue;
     matched.add(idx);
-    out.push({ ...entry, user: requested[idx]!.user });
+    // A speaker-id entry keeps the linked chat viewer's own display (CTX-NOTES-012); the others show under the requested name.
+    out.push(entry.speakerId ? { ...entry } : { ...entry, user: requested[idx]!.user });
   }
   return out;
 }

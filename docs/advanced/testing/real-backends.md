@@ -90,7 +90,7 @@ docker compose exec ollama ollama ps
 
 ### The services as containers
 
-`docker compose build` builds every service image, and `scripts/compose-smoke.sh` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
+`docker compose build` builds every service image, and `scripts/compose-smoke.sh` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy, then starts `tools` and checks from inside it that `redis` resolves and `salience` does not. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
 
 ```bash
 node packages/control/dist/project-secrets.js

@@ -74,6 +74,7 @@ test("a recovery port that is taken is logged at fatal and exits 1", async () =>
     assert.equal(ok, false);
     assert.deepEqual(exits, [1]);
     assert.ok(lines.some((l) => l.startsWith(`fatal dashboard cannot listen on 127.0.0.1:${port} (config recovery)`)), lines.join("\n"));
+    assert.ok(!lines.some((l) => l.includes("could not be read")), "the port came from the file");
   } finally { busy.close(); }
 });
 
@@ -95,4 +96,25 @@ test("DASHBOARD_HOST beyond loopback with control off stops the start with exit 
   assert.deepEqual(exits, [1]);
   assert.equal(ran, false);
   assert.ok(lines.some((l) => l.startsWith("error DASHBOARD_HOST is 0.0.0.0")), lines.join("\n"));
+});
+
+// @spec DASH-RCV-002
+test("a taken default port, used because the dashboard section could not be read, is named as such in the fatal line", { timeout: 20_000 }, async (t) => {
+  const busy = net.createServer();
+  // Port 3000 is the default. When something else holds it, that holder may let go at any moment and the recovery listener
+  // would then bind and wait for a valid file, so the case is skipped rather than run against a port it does not own.
+  const held = await new Promise<boolean>((r) => { busy.once("error", () => r(false)); busy.listen(3000, "127.0.0.1", () => r(true)); });
+  if (!held) { t.skip("port 3000 is in use"); return; }
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "cohost-rcvl-"));
+    writeFileSync(join(dir, "config.yaml"), "dashboard: [x\n");
+    const { log, lines } = logger();
+    const exits: number[] = [];
+    const ok = await runRecovery({ env: {}, log, error: new ConfigError("Invalid", []), files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "secrets.yaml") }, exit: (c) => exits.push(c), signals: false });
+    assert.equal(ok, false);
+    assert.deepEqual(exits, [1]);
+    const fatal = lines.find((l) => l.startsWith("fatal dashboard cannot listen on 127.0.0.1:3000 (config recovery)"));
+    assert.ok(fatal, lines.join("\n"));
+    assert.match(fatal, /the dashboard section of config\.yaml could not be read, so the default port 3000 was used: free that port, or fix config\.yaml by hand/);
+  } finally { busy.close(); }
 });

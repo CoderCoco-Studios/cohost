@@ -222,10 +222,10 @@ test("with control enabled every recovery write needs the token; with it off a t
 });
 
 // @spec DASH-RCV-010
-test("stack and lifecycle posts are refused with the config gate's text (404 with control off), other routes 503, health and the UI served", async () => {
+test("stack posts other than stop and every lifecycle post are refused with the config gate's text (404 with control off), other routes 503, health and the UI served", async () => {
   const on = await rig(STALE, { controlEnabled: true, controlToken: "tok" });
   try {
-    for (const path of ["/stack/launch", "/stack/stop", "/services/voice/start", "/services/voice/restart"]) {
+    for (const path of ["/stack/launch", "/stack/rebuild", "/stack/restart", "/services/voice/start", "/services/voice/stop", "/services/voice/restart"]) {
       const res = await fetch(`${on.url}${path}`, { method: "POST", headers: { authorization: "Bearer tok" } });
       assert.equal(res.status, 409, path);
       assert.match(((await res.json()) as { detail: string }).detail, /^the config is invalid \(3 problems; first: .*recovery screen/);
@@ -277,6 +277,10 @@ test("in normal mode GET /recovery is inactive and a recovery write is a 409", a
   try {
     assert.deepEqual(await (await fetch(`${url}/recovery`)).json(), { active: false });
     assert.equal((await fetch(`${url}/recovery/reset-all`, { method: "POST", body: "{}" })).status, 409);
+    assert.equal((await fetch(`${url}/recovery/raw`, { method: "POST", body: "{}" })).status, 409);
+    const raw = await fetch(`${url}/recovery/raw?file=secrets`);
+    assert.equal(raw.status, 409);
+    assert.match(((await raw.json()) as { detail: string }).detail, /not in config recovery mode/);
   } finally { await new Promise((r) => { server.close(r); server.closeAllConnections(); }); }
 });
 

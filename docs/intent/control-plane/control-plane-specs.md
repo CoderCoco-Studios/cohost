@@ -69,6 +69,7 @@ Specs for `packages/control` and the semantics the dashboard and compose consume
 ## Config gate (CTRL-GATE)
 
 - [x] **CTRL-GATE-001**: When `configRefusal(check = checkConfig)` is called, the system shall return undefined when `check` returns no problem, and otherwise the text `the config is invalid (<n> problem(s); first: <path>): fix it on the dashboard's config recovery screen (mise run dashboard), then try again`, `<path>` being the first problem's path, or its file when the path is empty; a failure `check` throws shall propagate. <!-- test: packages/control/test/config-gate.test.ts -->
+- [x] **CTRL-GATE-002**: The system shall build a `StackController` and run its `stopAll` without reading `config.yaml` or `secrets.yaml`, so that `docker compose stop` of the project runs, through the Compose invocation of CTRL-STACK-001 and CTRL-STACK-012, while the configuration is invalid (the dashboard's recovery-mode Stop, dashboard DASH-RCV-019; `cohostctl stop-all`, CTRL-CLI-018). <!-- test: packages/control/test/config-gate.test.ts -->
 
 ## Control configuration (CTRL-CONFIG)
 

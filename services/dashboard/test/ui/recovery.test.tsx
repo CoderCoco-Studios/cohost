@@ -159,3 +159,97 @@ test("reset-all without the token says which secrets.yaml keys wait for it", asy
   await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
   await screen.findByText(/voice\.openai\.api_key in secrets\.yaml need the control token/);
 });
+
+const SYNTAX: RecoveryProblem = { file: "config", path: "", message: "not valid YAML at line 3, column 9 (BAD_INDENT)", kind: "syntax", secret: false, sensitive: false, raw: true, actions: none };
+const SECRETS_SYNTAX: RecoveryProblem = { ...PROBLEMS[3]!, raw: true };
+const BROKEN_TEXT = "cohost:\n  name: [Coco\n";
+const RAW = { ok: true, file: "config", path: "/cohost/config/config.yaml", text: BROKEN_TEXT, etag: "e1", message: SYNTAX.message, line: 3, col: 9 };
+
+// @spec DASH-RCV-020, DASH-RCV-013
+test("a syntax error row edits the file as text: the textarea holds it with the position, Save sends it with the etag, the rows follow", async () => {
+  const b = open({ ...STATE, problems: [SYNTAX] });
+  const r = row("/cohost/config/config.yaml");
+  assert.doesNotMatch(r.textContent ?? "", /Fix this by hand/);
+  b.app.fetch.on("GET /recovery/raw?file=config", { json: RAW });
+  await userEvent.click(within(r).getByRole("button", { name: "Edit config.yaml as text" }));
+  const area = await within(r).findByRole("textbox", { name: "config.yaml" });
+  assert.ok(area instanceof HTMLTextAreaElement);
+  assert.equal(area.value, BROKEN_TEXT);
+  assert.match(r.textContent ?? "", /line 3, column 9/);
+
+  const still = { ...SYNTAX, message: "not valid YAML at line 2, column 15 (UNEXPECTED_TOKEN)" };
+  b.app.fetch.on("POST /recovery/raw", { json: { ok: true, etag: "e2", rawEtag: "r2", problems: [still], valid: false } });
+  await userEvent.clear(area);
+  await userEvent.type(area, "cohost:{enter}  name: [[Coco, x");
+  await userEvent.click(within(r).getByRole("button", { name: "Save" }));
+  await waitFor(() => assert.match(row("/cohost/config/config.yaml").textContent ?? "", /line 2, column 15/));
+  assert.deepEqual(JSON.parse(b.app.fetch.callsTo("POST /recovery/raw")[0]!.body!), { file: "config", etag: "e1", text: "cohost:\n  name: [Coco, x" });
+  const again = within(row("/cohost/config/config.yaml")).getByRole("textbox", { name: "config.yaml" });
+  assert.ok(again instanceof HTMLTextAreaElement);
+  assert.equal(again.value, "cohost:\n  name: [Coco, x", "the textarea stays open with what was typed");
+
+  const schema: RecoveryProblem = { file: "config", path: "dashboard.port", message: "Expected number", kind: "schema", secret: false, sensitive: false, resetPath: "dashboard.port", actions: { set: true, reset: true, fallback: false } };
+  b.app.fetch.on("POST /recovery/raw", { json: { ok: true, etag: "e3", problems: [schema], valid: false } });
+  await userEvent.click(within(row("/cohost/config/config.yaml")).getByRole("button", { name: "Save" }));
+  await waitFor(() => assert.ok(screen.getByRole("heading", { level: 2, name: "dashboard.port" })));
+  assert.equal(screen.queryByRole("textbox", { name: "config.yaml" }), null, "the editor closes once the file parses");
+  assert.equal((JSON.parse(b.app.fetch.callsTo("POST /recovery/raw")[1]!.body!) as { etag: string }).etag, "r2", "the next save carries the etag of the text written");
+});
+
+// @spec DASH-RCV-020
+test("a raw save that finds the file changed reads it again and says so; a refused save shows its detail; Cancel closes the editor", async () => {
+  const b = open({ ...STATE, problems: [SYNTAX] });
+  b.app.fetch.on("GET /recovery/raw?file=config", { json: RAW });
+  await userEvent.click(screen.getByRole("button", { name: "Edit config.yaml as text" }));
+  await screen.findByRole("textbox", { name: "config.yaml" });
+  b.app.fetch.on("POST /recovery/raw", { status: 409, json: { ok: false, etag: "e7" } });
+  b.app.fetch.on("GET /recovery/raw?file=config", { json: { ...RAW, text: "changed: [\n", etag: "e7" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText(/The file changed since it was read/);
+  await waitFor(() => {
+    const area = screen.getByRole("textbox", { name: "config.yaml" });
+    assert.ok(area instanceof HTMLTextAreaElement);
+    assert.equal(area.value, "changed: [\n");
+  });
+  b.app.fetch.on("POST /recovery/raw", { status: 403, json: { ok: false, detail: "changing config.yaml needs the control token" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  const alert = await screen.findByRole("alert");
+  assert.match(alert.textContent ?? "", /needs the control token/);
+  assert.equal((JSON.parse(b.app.fetch.callsTo("POST /recovery/raw").at(-1)!.body!) as { etag: string }).etag, "e7");
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  assert.equal(screen.queryByRole("textbox", { name: "config.yaml" }), null);
+  assert.ok(screen.getByRole("button", { name: "Edit config.yaml as text" }));
+});
+
+// @spec DASH-RCV-020
+test("editing secrets.yaml as text asks for the control token on a 401", async () => {
+  const b = open({ ...STATE, problems: [SECRETS_SYNTAX] });
+  b.app.fetch.on("GET /recovery/raw?file=secrets", { status: 401, text: "unauthorized" });
+  await userEvent.click(screen.getByRole("button", { name: "Edit secrets.yaml as text" }));
+  await screen.findByRole("dialog", { name: "Access" });
+  assert.equal(b.app.fetch.callsTo("GET /recovery/raw?file=secrets").length, 1);
+});
+
+// @spec DASH-RCV-021
+test("Stop the stack is offered only with control enabled, and reports its result", async () => {
+  const off = open();
+  off.app.fetch.on("GET /services/control", { json: { enabled: false } });
+  await waitFor(() => assert.ok(off.app.fetch.callsTo("GET /services/control").length >= 1));
+  assert.equal(screen.queryByRole("button", { name: "Stop the stack" }), null);
+  off.unmount();
+
+  const app = makeApp();
+  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false } });
+  renderApp(<RecoveryScreen initial={STATE} reload={() => {}} navigate={() => {}} probe={async () => {}} here={HERE} pollMs={5} />, app);
+  const stop = await screen.findByRole("button", { name: "Stop the stack" });
+  app.fetch.on("POST /stack/stop", { status: 502, json: { ok: false, detail: "Cannot connect to the Docker daemon" } });
+  await userEvent.click(stop);
+  assert.match((await screen.findByRole("alert")).textContent ?? "", /Cannot connect to the Docker daemon/);
+  app.fetch.on("POST /stack/stop", { json: { ok: true, action: "stop" } });
+  await userEvent.click(screen.getByRole("button", { name: "Stop the stack" }));
+  await screen.findByText("The stack is stopped.");
+  assert.equal(app.fetch.callsTo("POST /stack/stop").length, 2);
+  app.fetch.on("POST /stack/stop", { status: 401, text: "unauthorized" });
+  await userEvent.click(screen.getByRole("button", { name: "Stop the stack" }));
+  await screen.findByRole("dialog", { name: "Access" });
+});

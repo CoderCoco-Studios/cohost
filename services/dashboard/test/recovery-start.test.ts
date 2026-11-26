@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -88,6 +88,92 @@ test("the built dashboard on a stale config.yaml serves recovery mode, reset-all
     assert.match(out, /dashboard online: http:\/\/127\.0\.0\.1:\d+/);
     const logged = readFileSync(join(data, "logs", "dashboard.log"), "utf8");
     assert.match(logged, /config recovery: reset all/);
+  } finally {
+    child.kill("SIGTERM");
+    const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 15_000))]);
+    if (code === "timeout") child.kill("SIGKILL");
+  }
+});
+
+/** Whether `port` on 127.0.0.1 can be bound right now. */
+const portFree = (port: number): Promise<boolean> => new Promise((resolve) => {
+  const s = net.createServer();
+  s.once("error", () => resolve(false));
+  s.listen(port, "127.0.0.1", () => s.close(() => resolve(true)));
+});
+
+/**
+ * A config.yaml with a YAML syntax error, control enabled: the recovery screen's Stop runs `docker compose stop` through
+ * `COHOST_DOCKER_BIN` (a script that records its argv) without a valid config, the raw editor reads and saves the file with the
+ * token, and the same process comes up normally on the port the saved text names. A file that does not parse names no port,
+ * so recovery listens on the default 3000; the case is skipped when that port is taken on this machine.
+ */
+// @spec DASH-RCV-016, DASH-RCV-017, DASH-RCV-019, DASH-RCV-011, CTRL-GATE-002
+test("the built dashboard on a config.yaml syntax error stops the stack and is fixed through the raw editor", async (t) => {
+  if (!(await portFree(3000))) { t.skip("port 3000, the recovery default for a file that does not parse, is in use"); return; }
+  const root = mkdtempSync(join(tmpdir(), "cohost-dash-raw-"));
+  // A workspace root of its own, so the Stop's lifecycle lock (data/control.lock under the workspace root) is never the repo's.
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
+  const config = join(root, "config");
+  const data = join(root, "data");
+  mkdirSync(config);
+  const [port, lanPort] = [await freePort(), await freePort()];
+  const example = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+  const valid = example.replace(/^ {2}port: 3000 .*$/m, `  port: ${port}`).replace(/^ {2}lan_port: 3001 .*$/m, `  lan_port: ${lanPort}`);
+  assert.notEqual(valid, example);
+  const broken = valid.replace(/^ {2}name: "Coco"/m, "  name: [Coco");
+  assert.notEqual(broken, valid);
+  const configFile = join(config, "config.yaml");
+  const secretsFile = join(root, "secrets.yaml");
+  writeFileSync(configFile, broken);
+  const calls = join(root, "docker-calls");
+  const docker = join(root, "docker");
+  writeFileSync(docker, `#!/bin/sh\necho "$@" >> '${calls}'\nif [ "$1 $2" = "compose ps" ]; then echo '[]'; fi\nexit 0\n`, { mode: 0o755 });
+
+  const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], {
+    cwd: root, // the workspace root findWorkspaceRoot resolves: the lifecycle lock is taken in this temp root, never in the repo's data/
+    env: {
+      PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: secretsFile,
+      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: docker, CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let out = "";
+  child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+  child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
+  const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
+  const base = "http://127.0.0.1:3000";
+  const auth = { authorization: "Bearer tok" };
+  try {
+    await until("the recovery line", async () => (/config recovery mode: 1 problem; fix them at http:\/\/127\.0\.0\.1:3000/.test(out) ? true : undefined));
+    const s = await (await fetch(`${base}/recovery`)).json() as { problems: { kind: string; raw?: boolean }[] };
+    assert.deepEqual(s.problems.map((p) => [p.kind, p.raw]), [["syntax", true]]);
+
+    assert.equal((await fetch(`${base}/stack/stop`, { method: "POST" })).status, 401);
+    const stop = await fetch(`${base}/stack/stop`, { method: "POST", headers: auth });
+    assert.equal(stop.status, 200);
+    assert.deepEqual(await stop.json(), { ok: true, action: "stop" });
+    assert.equal(readFileSync(calls, "utf8"), "compose stop\n");
+    assert.equal(existsSync(join(root, "data", "control.lock")), false, "the lifecycle lock, taken in the temp workspace root, is released");
+
+    assert.equal((await fetch(`${base}/recovery/raw?file=config`)).status, 401);
+    const raw = await (await fetch(`${base}/recovery/raw?file=config`, { headers: auth })).json() as { text: string; etag: string; message: string; line: number };
+    assert.equal(raw.text, broken);
+    assert.match(raw.message, /^not valid YAML at line \d+, column \d+/);
+    const saved = await fetch(`${base}/recovery/raw`, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ file: "config", etag: raw.etag, text: valid }) });
+    assert.equal(saved.status, 200);
+    const body = await saved.json() as { valid: boolean; moved?: boolean; port?: number };
+    assert.deepEqual([body.valid, body.moved, body.port], [true, true, port]);
+    assert.equal(readFileSync(configFile, "utf8"), valid);
+    assert.deepEqual(checkConfig({ configFile, secretsFile }), []);
+
+    await until("the normal dashboard", async () => ((await fetch(`http://127.0.0.1:${port}/recovery`)).ok ? true : undefined));
+    assert.deepEqual(await (await fetch(`http://127.0.0.1:${port}/recovery`)).json(), { active: false });
+    assert.match(out, /leaving config recovery mode/);
+    const logged = readFileSync(join(data, "logs", "dashboard.log"), "utf8");
+    assert.match(logged, /config recovery: stop/);
+    assert.match(logged, /config recovery: raw edit config\.yaml/);
+    assert.ok(!logged.includes("[Coco"), "the file's text is never logged");
   } finally {
     child.kill("SIGTERM");
     const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 15_000))]);

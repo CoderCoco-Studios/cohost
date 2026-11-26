@@ -152,9 +152,11 @@ When `config/config.yaml` or `secrets/secrets.yaml` does not validate, for examp
 - **Reset to default** removes the key so its default applies; for a key inside a list it resets the whole list.
 - **Remove from config.yaml** takes a credential out of `config.yaml`. Credentials live in `secrets/secrets.yaml`: set it in **Settings**, in the section the row names, once the dashboard is back.
 - **Reset all failing keys** does the above for every key it can. Keys that have no default and no fallback stay in the list for you to set.
-- **Check again** reads the files again after you edit one by hand (a YAML syntax error is fixed that way).
+- **Edit config.yaml as text** (or **Edit secrets.yaml as text**) appears when the file is not valid YAML, so no key can be named. It opens the whole file in a text box, with the line and column the parser stopped at above it. Fix the line and press **Save**: the file is replaced as you typed it and checked at once. If it still does not parse, the box stays open with the new position; once it parses, any key that is still wrong gets its own row. Opening `secrets.yaml` here always needs the control token, because it holds your credentials.
+- **Stop the stack** (with control enabled) runs `docker compose stop` for the whole stack, as the Stop button on the Services screen does, without needing a valid config. It asks for the control token.
+- **Check again** reads the files again after you edit one by hand.
 
-Every write keeps the rest of the file and its comments, needs the control token where every other change does, and is checked at once. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file. See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
+Every write keeps the rest of the file and its comments, needs the control token where every other change does, and is checked at once. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file; stopping the whole stack works (**Stop the stack**, or `mise run cohostctl stop-all`). See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
 
 ## If it didn't
 

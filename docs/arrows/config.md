@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 232 specs: 232 implemented, 0 deferred, 0 gaps (#318 built: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets` in `packages/config/src/project.ts`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 260 specs: 230 implemented, 0 deferred, 30 gaps (the logging design of #349: CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, and the rewritten CFG-URL-004 and CFG-ENV-012; #318 built: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets` in `packages/config/src/project.ts`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (232 specs, prefix `CFG`: 232 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (260 specs, prefix `CFG`: 230 `[x]`, 30 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -62,7 +62,7 @@ Orientation:
 2. `loadConfig()` — `.env` load, seed, placeholder rejection (CFG-ENV-011), null-dropping, secrets merge, isolation overrides by key path from `COHOST_ISOLATION` (CFG-ISO-007), zod validation, unknown-key warning, module cache (`index.ts`, `pipeline.ts`).
 3. `ConfigSchema` / `ModuleSchema` / `ExpressionMapSchema` / `Emotion` — shape, defaults, backend-selection enums with blank-to-default preprocessing (`schema.ts`).
 4. `ensureFromExample`, `loadPersonality`, `savePersonality`, `loadExpressions` — user-owned files seeded from `*.example.*` (`index.ts`).
-5. `env`, `envOr`, `urls.*`, `createLogger`, `setConfigLogger` — runtime helpers used by every service (`index.ts`).
+5. `env`, `envOr`, `urls.*`, `createLogger`, `setConfigLogger` — runtime helpers used by every service (`index.ts`); `createLogger` builds the process's logging sink: the readable terminal form or JSON on stdout, and the rotated JSON file `data/logs/<program>.log`, from the `logging` section it reads itself (LLD § Logging; to build, #349).
 6. `editor.ts` — the settings editor's JSON Schema export, secret marks, section reader and in-place writer.
 7. Example files — `config.example.yaml` wires the isolation preset env vars; tests load them as fixtures.
 
@@ -71,7 +71,7 @@ Orientation:
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
 | Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 |
-| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
+| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 11 | 0 | 1 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-008 | 8 | 0 | 0 |
 | Secrets file | CFG-SEC-001 to CFG-SEC-018 | 18 | 0 | 0 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-014 | 14 | 0 | 0 |
@@ -86,12 +86,13 @@ Orientation:
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Tools section and reminder expiry | CFG-SCH-075 to CFG-SCH-096 | 22 | 0 | 0 |
 | Backend selection and isolation presets | CFG-ISO-001 to CFG-ISO-011 | 11 | 0 | 0 |
-| Logger | CFG-LOG-001 | 1 | 0 | 0 |
-| Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
+| Logger | CFG-LOG-001 to CFG-LOG-025 | 1 | 0 | 24 |
+| Logging settings | CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021 | 0 | 0 | 4 |
+| Service URLs | CFG-URL-001 to CFG-URL-004 | 3 | 0 | 1 |
 | User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
 
-**Summary:** 232 specs: 232 implemented, 0 gaps, 0 deferred (#318 built: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012). CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
+**Summary:** 260 specs: 230 implemented, 30 gaps, 0 deferred. The gaps are the logging design of #349 (readable terminal lines, a rotated JSON log file per program, the `logging` section replacing `LOG_LEVEL`): CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (#318 built: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012). CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 
 ## Coverage notes
 
@@ -99,4 +100,5 @@ Annotated tests that cover only part of their spec line: CFG-SCH-001 (only `coho
 
 ## Work Required
 
+- Logging (#349): build the bootstrap read, the per-process sink, the config logger's late binding, the pretty formatter, the size rotator, the crash listener, the redaction and the `logging` section with its presentation entry and example lines (CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, CFG-URL-004), and drop `LOG_LEVEL` from the permitted variables while adding `NO_COLOR` (CFG-ENV-012). Cross-segment lines that land with it: deployment DEPLOY-COMPOSE-002, -003, -018, -020, -022, -023, -028 to -031, DEPLOY-INST-017 and DEPLOY-TOOL-022 (the `./data/logs` mount, the pinned data directory, Docker's bounded driver, the installer's directory, the test tasks' temporary directories), control-plane CTRL-RUNTIME-016 (the directory before Compose), memory MEM-START-007 (the one-shots' config failure), tools TOOL-SVC-012 (no file for `tools`), module-contract MOD-MAN-002 (every application unit declares `logging`).
 - Chat sources (YouTube chat design 2026-11-16): built for `chat.sources`, the `chat.youtube` section and its ranges, the `CHAT_SOURCES` override, the `chat.youtube.api_key` secret path and the example file (CFG-SCH-010, CFG-SCH-048 to CFG-SCH-054, CFG-ISO-003, CFG-ISO-007, CFG-PRES-006, CFG-USR-018). The `tools.servers.*.token` secret path (CFG-SEC-003) and the fourteen-name override map (CFG-ISO-006) are built; CFG-SEC-018's dashboard clause waits on DASH-SECRET-014.

@@ -621,6 +621,8 @@ overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` replace them by key path, config CFG
 `cohost.name`, `cohost.streamer` (reflect), `llm.*` (Ollama client), `DATABASE_URL`,
 `HEARTBEAT_INTERVAL_MS` (heartbeat package).
 
+The one-shots `consolidate`, `reembed` and `reflect` do not run on `runService`; each creates its logger first and loads the configuration inside a `try`, so a broken `config.yaml` ends the one-shot with the loader's message in the readable terminal form and in its log file and status 1 (MEM-START-007), as `runService` does for the service (shared-runtime SHARED-BOOT-002).
+
 Startup sequence (`startMemory` in `services/memory/src/startup.ts`, called from
 `memoryMain` in `main.ts` (`runMemory`, on the shared `runService` bootstrap); its dependencies are injected so `startup.test.ts` runs it without
 Redis, Ollama or Postgres):

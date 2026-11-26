@@ -80,6 +80,7 @@ Design: [memory-design.md](memory-design.md). Prefix `MEM`. `[x]` = implemented,
 - [x] **MEM-START-004**: Where either `brain.memory.store` or `brain.memory.embedder` is non-default, the memory service shall log a warning that it runs in mode mock with non-durable data. <!-- openspec: memory § Isolation preset and mode --> <!-- test: services/memory/test/startup.test.ts -->
 - [x] **MEM-START-005**: When the memory service has finished initializing its store, it shall start every consumer-group subscription (MEM-EVT-001) and report `ready` in its heartbeat only once every consumer group exists; a subscription that fails before its group is ready fails startup. <!-- openspec: memory § Heartbeat --> <!-- test: services/memory/test/startup.test.ts, services/memory/test/startup.test.ts -->
 - [x] **MEM-START-006**: If startup throws (including the 21st failed Postgres initialisation), the memory service shall log a fatal error and exit with code 1; on shutdown it shall stop the bus and then close the store. <!-- test: services/memory/test/main.test.ts -->
+- [ ] **MEM-START-007**: When the one-shot `consolidate`, `reembed` or `reflect` starts, it shall create its logger with `createLogger` before it loads the configuration and call `loadConfig` inside a `try`, and if the load throws, it shall log the loader's message through that logger, open no store and call no model, and end the process with status 1 (the one-shot form of SHARED-BOOT-002).
 
 ## Health
 

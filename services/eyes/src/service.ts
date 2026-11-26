@@ -114,6 +114,7 @@ export function eyesService(deps: EyesServiceDeps): { health: (cfg: Config) => H
 
       // @spec EYES-LOOK-003, EYES-LOOK-004, EYES-LOOK-005, EYES-OBS-005, EYES-GAP-001
       async function loop(): Promise<void> {
+        // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `stopped` is set by the onStop step while the loop awaits a look or its interval
         while (!stopped) {
           const t0 = now();
           try {

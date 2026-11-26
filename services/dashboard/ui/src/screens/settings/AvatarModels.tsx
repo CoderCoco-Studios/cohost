@@ -44,7 +44,7 @@ function useModels(): [ListState, () => Promise<void>] {
       setList({ status: "error", detail: r.ok ? "the answer had an unexpected shape" : r.detail });
     }
   };
-  useEffect(() => { void read(); }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void read(); }, [api]);
   return [list, read];
 }
 
@@ -65,7 +65,7 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
     if (etag.current === st.etag) return;
     etag.current = st.etag;
     void refresh();
-  }, [st.etag]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [st.etag]);
   const groupName = useId();
   const reasonId = useId();
   const [busy, setBusy] = useState(false);

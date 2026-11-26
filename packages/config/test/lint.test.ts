@@ -12,6 +12,7 @@ import { readRepo, repoRoot } from "./helpers/mise.js";
 type Severity = "off" | "warn" | "error";
 type RuleSetting = Severity | [Severity, ...unknown[]];
 interface OxlintConfig {
+  options?: { reportUnusedDisableDirectives?: Severity };
   plugins?: string[];
   categories?: Record<string, Severity>;
   rules?: Record<string, RuleSetting>;
@@ -36,11 +37,18 @@ test(".oxlintrc.json is the only oxlint configuration and turns on four plugins 
 });
 
 // @spec DEPLOY-LINT-002
-test("the promise rules are errors, and node:test's test functions are known-safe calls", () => {
+test("the promise rules are errors, no override turns them off, and node:test's test functions are known-safe calls", () => {
   const rules = rc.rules ?? {};
-  for (const r of ["typescript/no-floating-promises", "typescript/no-misused-promises", "typescript/only-throw-error", "typescript/prefer-promise-reject-errors"]) {
+  const PROMISE_RULES = ["typescript/no-floating-promises", "typescript/no-misused-promises", "typescript/only-throw-error", "typescript/prefer-promise-reject-errors"];
+  for (const r of PROMISE_RULES) {
     assert.ok(rules[r], `${r} is set`);
     assert.equal(severity(rules[r]), "error", r);
+  }
+  for (const o of rc.overrides ?? []) {
+    for (const r of PROMISE_RULES) {
+      const set = o.rules?.[r];
+      if (set !== undefined) assert.notEqual(severity(set), "off", `${o.files.join(",")} turns ${r} off`);
+    }
   }
   const floating = rules["typescript/no-floating-promises"];
   assert.ok(Array.isArray(floating));
@@ -49,10 +57,10 @@ test("the promise rules are errors, and node:test's test functions are known-saf
   assert.deepEqual(fromNodeTest.sort(), ["after", "afterEach", "before", "beforeEach", "describe", "it", "suite", "test"]);
 });
 
-/** Rules set to `off` in `.oxlintrc.json` with no `//` comment above them (over a run of consecutive `off` lines). */
+/** Rules set to `off` (`"off"` or `["off", …]`) in `.oxlintrc.json` with no `//` comment above them (over a run of `off` lines). */
 function offRulesWithoutReason(text: string): string[] {
   const lines = text.split("\n");
-  const isOff = (l: string): boolean => /^\s*"[^"]+":\s*"off",?\s*$/.test(l);
+  const isOff = (l: string): boolean => /^\s*"[^"]+":\s*(\[\s*)?"off"/.test(l);
   const out: string[] = [];
   lines.forEach((line, i) => {
     if (!isOff(line)) return;
@@ -72,6 +80,7 @@ test("no rule is a warning, and each rule turned off carries its reason", () => 
   assert.ok(Object.values(rc.rules ?? {}).some((r) => severity(r) === "off"), "the check above saw the rules turned off");
   assert.deepEqual(offRulesWithoutReason('{\n  "rules": {\n    "a/x": "error",\n    "a/y": "off"\n  }\n}'), ["a/y"], "a bare off is caught");
   assert.deepEqual(offRulesWithoutReason('{\n    // why\n    "a/y": "off",\n    "a/z": "off"\n}'), [], "one comment covers a run of offs");
+  assert.deepEqual(offRulesWithoutReason('{\n    "a/x": "error",\n    "a/y": ["off", { "k": 1 }]\n}'), ["a/y"], "the array form is caught");
 });
 
 // @spec DEPLOY-LINT-004
@@ -100,10 +109,11 @@ test("the root tsconfig.json is a solution file, and no tsconfig sets baseUrl", 
 });
 
 const DISABLE = ["oxlint", "disable"].join("-");
-/** Lines of `text` holding an inline disable comment (DISABLE) that is not one next-line rule with a `--` reason. */
+const ESLINT_DISABLE = ["eslint", "disable"].join("-");
+/** Lines of `text` holding an inline disable comment (oxlint's or eslint's) that is not one next-line rule with a `--` reason. */
 function badDisables(text: string): string[] {
   const ok = new RegExp(`^\\s*(//|/\\*|\\{/\\*)\\s*${DISABLE}-next-line [a-z-]+/[a-z0-9-]+ -- \\S`);
-  return text.split("\n").filter((l) => l.includes(DISABLE) && !ok.test(l));
+  return text.split("\n").filter((l) => (l.includes(DISABLE) || l.includes(ESLINT_DISABLE)) && !ok.test(l));
 }
 
 // @spec DEPLOY-LINT-006
@@ -116,6 +126,8 @@ test("every inline oxlint disable comment names one rule for the next line and g
   assert.equal(badDisables(`  // ${DISABLE}-next-line eslint/no-new`).length, 1, "no reason");
   assert.equal(badDisables(`  // ${DISABLE}-next-line eslint/no-new, eslint/no-shadow -- two`).length, 1, "two rules");
   assert.equal(badDisables(`/* ${DISABLE} */`).length, 1, "a whole-file disable");
+  assert.equal(badDisables(`  x(); // ${ESLINT_DISABLE}-line react-hooks/exhaustive-deps`).length, 1, "an eslint directive");
+  assert.equal(rc.options?.reportUnusedDisableDirectives, "error", "a disable comment that suppresses nothing fails the lint");
 });
 
 // @spec DEPLOY-LINT-007
@@ -128,6 +140,9 @@ test("a finding fails the lint, a warning included, and CI's lint step may not c
   const run = (file: string) => spawnSync(oxlint, ["--deny-warnings", "-c", join(dir, ".oxlintrc.json"), join(dir, file)], { cwd: dir, encoding: "utf8" });
   assert.equal(run("clean.ts").status, 0, "a clean file passes");
   assert.notEqual(run("warned.ts").status, 0, "a warning fails under --deny-warnings");
+  writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({ options: { reportUnusedDisableDirectives: "error" }, plugins: ["eslint"], categories: {}, rules: { "eslint/no-debugger": "error" } }));
+  writeFileSync(join(dir, "unused.ts"), `// ${DISABLE}-next-line eslint/no-debugger -- nothing to suppress\nexport const y = 2;\n`);
+  assert.notEqual(run("unused.ts").status, 0, "a disable comment that suppresses nothing fails");
 
   const wf = parseYaml(readRepo(".github/workflows/test.yml")) as { jobs: Record<string, { steps: { run?: string; "continue-on-error"?: unknown }[]; "continue-on-error"?: unknown }> };
   const lintJobs = Object.values(wf.jobs).filter((j) => j.steps.some((s) => s.run === "mise run lint"));

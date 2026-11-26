@@ -3,6 +3,8 @@
 // @spec DEPLOY-LINT-001, DEPLOY-LINT-002, DEPLOY-LINT-003
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // A disable comment that suppresses nothing is itself an error.
+  "options": { "reportUnusedDisableDirectives": "error" },
   "plugins": ["eslint", "typescript", "unicorn", "oxc"],
   "categories": { "correctness": "error", "suspicious": "error" },
   "rules": {
@@ -39,7 +41,8 @@
     // Off: asserting a parsed or boundary value to its known shape (JSON, fakes cast `as never` in tests) is the project's
     // pattern; the rule reports every such assertion.
     "typescript/no-unsafe-type-assertion": "off",
-    // Off: reports assertions tsc needs (`x as never` passed to a typed parameter, `object as T`), and its fix removes them.
+    // Off: about 690 hits under the project's own compiler options, many of them assertions tsc needs (`x as never` passed to
+    // a typed parameter, `object as T`); its autofix removes those and breaks the build.
     "typescript/no-unnecessary-type-assertion": "off",
     // Off: the fix is `toSorted()`/`toReversed()`, ES2023 methods outside the workspace's `lib` (ES2022); sorting a fresh
     // or owned array in place is intended.
@@ -57,11 +60,10 @@
     // Off: block scoping and strict mode make a shadowed name a local choice; no-unused-vars catches the shadowed
     // binding that is never read.
     "eslint/no-shadow": "off",
-    // Off: tsc checks returns against the declared type, and the rule does not see TypeScript's exhaustiveness (a `switch`
-    // over a union that returns in every case) or a React effect that returns a cleanup on one path only.
+    // Off until `noImplicitReturns` is set (it is not; tsc does not check this today): the rule does not see TypeScript's
+    // exhaustiveness (a `switch` over a union that returns in every case) or a React effect that returns a cleanup on one
+    // path only. Turning on `noImplicitReturns` and revisiting this rule is a follow-up.
     "typescript/consistent-return": "off",
-    // Off: the condition changes in an awaited callback or another task (`while (!stopped) await ...`), which the rule cannot see.
-    "eslint/no-unmodified-loop-condition": "off",
     // Off: the text sanitizers (viewer text, secrets, tool output) match control characters on purpose.
     "eslint/no-control-regex": "off",
     // Off: each `on*` handler is set once on a socket or audio element the code just created, and the dashboard's test fakes

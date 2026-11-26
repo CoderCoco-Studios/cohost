@@ -14,7 +14,6 @@ const base = () => ({
 });
 const parse = (tools?: unknown, brain: Record<string, unknown> = {}) =>
   ConfigSchema.safeParse({ ...base(), brain, ...(tools === undefined ? {} : { tools }) });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ok = (tools?: unknown): any => { const r = parse(tools); assert.ok(r.success, JSON.stringify(r.error?.issues)); return (r.data as any).tools; };
 const failPaths = (tools: unknown): string[] => { const r = parse(tools); return r.success ? [] : r.error.issues.map((i) => i.path.join(".")); };
 const failsAt = (tools: unknown, path: string): boolean => failPaths(tools).some((p) => p === path || p.startsWith(`${path}.`));
@@ -194,7 +193,6 @@ test("tools.reply.filler_lines is a list of non-empty strings of at most 200 cha
 // @spec CFG-SCH-096
 test("brain.salience.reminder_expiry_ms is a positive integer defaulting to 1800000", () => {
   const r = (v?: unknown) => parse(undefined, { salience: v === undefined ? {} : { reminder_expiry_ms: v } });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const get = (res: any) => res.data.brain.salience.reminder_expiry_ms;
   assert.equal(get(r()), 1800000);
   assert.equal(get(r(60000)), 60000);

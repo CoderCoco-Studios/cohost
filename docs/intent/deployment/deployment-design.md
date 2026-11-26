@@ -317,18 +317,17 @@ The rule set lives in `.oxlintrc.json` at the repository root, the only oxlint c
 | Rule | Why it is off |
 | --- | --- |
 | `typescript/no-unsafe-type-assertion` | Asserting a parsed or boundary value to its known shape is the project's pattern (JSON bodies, test fakes cast `as never`); the rule reports every one. |
-| `typescript/no-unnecessary-type-assertion` | Reports assertions tsc needs (`x as never` passed to a typed parameter, `object as T`), and its fix removes them. |
-| `typescript/consistent-return` | tsc checks returns against the declared type; the rule does not see a `switch` that returns in every case of a union, or a React effect that returns a cleanup on one path. |
+| `typescript/no-unnecessary-type-assertion` | About 690 hits under the project's own compiler options, many of them assertions tsc needs (`x as never` passed to a typed parameter, `object as T`); its autofix removes those and breaks the build. |
+| `typescript/consistent-return` | Off until `noImplicitReturns` is set (it is not, so tsc does not check this today); the rule does not see a `switch` that returns in every case of a union, or a React effect that returns a cleanup on one path. |
 | `unicorn/no-array-sort`, `unicorn/no-array-reverse` | The replacements, `toSorted()` and `toReversed()`, are ES2023, outside the workspace's `lib` (ES2022). |
 | `unicorn/no-useless-spread` | Reports deliberate copies: a snapshot of a set the loop body changes, and `[...text].length` as a code-point count; its fix changes behaviour. |
 | `unicorn/no-new-array` | `new Array(n).fill(x)` is unambiguous, and TypeScript types the one-argument form. |
 | `unicorn/prefer-add-event-listener` | Each `on*` handler is set once on a socket or audio element just created, and the dashboard's test fakes model those properties. |
 | `unicorn/consistent-function-scoping`, `eslint/no-underscore-dangle` | Style. |
 | `eslint/no-shadow` | Block scoping and strict mode make a shadowed name a local choice; `no-unused-vars` catches a shadowed binding never read. |
-| `eslint/no-unmodified-loop-condition` | The condition changes in an awaited call or another task (`while (!stopped) await …`), which the rule cannot see. |
 | `eslint/no-control-regex` | The text sanitizers match control characters on purpose. |
 
-An inline `oxlint-disable-next-line` names one rule and says after `--` why that line is the exception (a test saving `process.kill` to put it back, a rethrown caught failure); a rule that is wrong for the project is turned off in the configuration instead, with its reason.
+An inline `oxlint-disable-next-line` names one rule and says after `--` why that line is the exception (a test saving `process.kill` to put it back, a rethrown caught failure, a loop whose condition changes while it awaits); a rule that is wrong for the project is turned off in the configuration instead, with its reason. oxlint honours `eslint-disable` comments too, so the same rule holds for them, and `reportUnusedDisableDirectives` makes a disable comment that suppresses nothing an error.
 
 **Type information for tests.** tsgolint reads each file's nearest `tsconfig.json`. A package's own `tsconfig.json` covers `src/` only (it is a `tsc -b` project that emits `dist/`), so each `packages/*/test` and `services/*/test` directory holds a `tsconfig.json` that extends `tsconfig.base.json` with `noEmit` and includes the directory, and `services/dashboard/test/ui/tsconfig.json` extends the UI's options. Without them a test file would be linted under TypeScript's defaults (no `strict`, no `noUncheckedIndexedAccess`), and the type-aware rules would report what the real options make correct. These files are for the linter: they are not `tsc -b` projects, and `typecheck` does not check the tests through them (`services/avatar/test/tsconfig.json` and `services/voice/tsconfig.test.json` are `tsc -b` projects that do type-check those two services' tests). tsgolint also needs the root `tsconfig.json` to be a solution file (`"files": []` and references only) and no `baseUrl` in any tsconfig; the workspace meets both.
 

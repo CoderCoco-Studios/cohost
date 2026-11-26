@@ -57,6 +57,7 @@ async function phase(path: "events" | "frames", sources: number, prefix: string)
   const eld = monitorEventLoopDelay({ resolution: 1 }); eld.enable();
   const cpu0 = process.cpuUsage(), t0 = performance.now();
   const pubs = Array.from({ length: sources }, async (_, i) => {
+    // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `stop` is set once the run's duration has elapsed, while the publishers await their pacing
     for (let k = 0; !stop; k++) {
       const wait = t0 + (k * 1000) / RATE - performance.now();
       if (wait > 0) await sleep(wait);

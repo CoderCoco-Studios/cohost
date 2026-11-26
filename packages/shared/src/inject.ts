@@ -121,6 +121,7 @@ export function createInjectHandler(o: InjectHandlerOptions): InjectHandler {
     queue.push(ev);
     if (!active) { active = true; running = pump(); }
   }) as InjectHandler;
+  // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- the pump clears `active` when it ends and a new request starts another `running`, while drain awaits
   callback.drain = async () => { while (active && running) await running; };
   return callback;
 }

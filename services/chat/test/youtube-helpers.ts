@@ -127,7 +127,7 @@ export class StreamScript {
   get aborted(): boolean { return this.signal?.aborted === true; }
   iterable(signal: AbortSignal | undefined): AsyncIterable<StreamChunk> {
     this.signal = signal;
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    // oxlint-disable-next-line typescript/no-this-alias -- the returned iterator's methods read the fake stream through `self`, since their own `this` is the iterator
     const self = this;
     return {
       [Symbol.asyncIterator]() {

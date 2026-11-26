@@ -259,7 +259,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       sendUnlessStarted(res, 500, String(err));
     }
   };
-  return (req, res) => { void handle(req, res); };
+  return (req, res) => { void handle(req, res).catch((err: unknown) => d.log.error({ err, url: req.url }, "request handler failed")); };
 }
 
 function unauthorized(res: http.ServerResponse): void {

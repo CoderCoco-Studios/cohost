@@ -15,7 +15,6 @@ const base = () => ({
   voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
 });
 const parse = (patch: Record<string, unknown> = {}) => ConfigSchema.safeParse({ ...base(), ...patch });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ok = (patch: Record<string, unknown> = {}): any => { const r = parse(patch); assert.ok(r.success, JSON.stringify(r.error?.issues)); return r.data; };
 const failPaths = (patch: Record<string, unknown>): string[] => { const r = parse(patch); return r.success ? [] : r.error.issues.map((i) => i.path.join(".")); };
 const renderer = (r: Record<string, unknown>) => ({ renderer: r });

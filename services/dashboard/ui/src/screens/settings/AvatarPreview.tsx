@@ -89,7 +89,7 @@ export function AvatarPreview({ st }: { st: SectionState }) {
       }, wait);
     }
   };
-  useEffect(() => cancelTrailing, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => cancelTrailing, []);
 
   // The framing draft. A valid edited framing is posted as it moves. When the edits return to the saved values the saved framing is
   // posted, so the frame does not keep the draft. An invalid number posts nothing and reverts nothing (the edit stays on the page).
@@ -99,7 +99,7 @@ export function AvatarPreview({ st }: { st: SectionState }) {
     if (drafts.framing) sendFraming(drafts.framing);
     else if (!drafts.framingEdited && framingWas.current && hasDrafts) { cancelTrailing(); post({ type: "framing", framing: savedFrame }); }
     framingWas.current = drafts.framingEdited;
-  }, [framingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [framingKey]);
 
   // The model draft. The frame gets a model message only when the model choice itself changes, never for a framing move: a model
   // posted from the saved value would make the page reload the applied model. When a model draft goes while framing drafts remain,
@@ -114,14 +114,14 @@ export function AvatarPreview({ st }: { st: SectionState }) {
       post({ type: "clear" });
       if (drafts.framing) post({ type: "framing", framing: drafts.framing });
     }
-  }, [drafts.model]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [drafts.model]);
 
   // Save or Discard takes the drafts away: the frame is told to drop them, and nothing queued is sent after it.
   const had = useRef(false);
   useEffect(() => {
     if (had.current && !hasDrafts) { cancelTrailing(); post({ type: "clear" }); }
     had.current = hasDrafts;
-  }, [hasDrafts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasDrafts]);
 
   /** A frame that loads again has none of the drafts: they are sent again, the edits being still on the page. */
   const onLoad = (): void => {

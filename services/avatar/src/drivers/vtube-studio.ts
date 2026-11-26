@@ -170,7 +170,7 @@ export class VTubeStudioDriver implements AvatarDriver {
         }
         resolve();
       };
-      ws.on("open", () => { void onOpen(); });
+      ws.on("open", () => { void onOpen().catch((err: unknown) => this.ctx.log.error({ err }, "vts open handler failed")); });
       ws.on("message", (raw) => this.onMessage(String(raw)));
       ws.on("close", () => { // @spec AVATAR-VTS-007
         this.ready = false;

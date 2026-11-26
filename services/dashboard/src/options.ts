@@ -26,6 +26,7 @@ async function readCapped(body: ReadableStream<Uint8Array> | null, who: string):
   const chunks: Uint8Array[] = [];
   let size = 0;
   const reader = body?.getReader();
+  // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- the reader is fixed; the loop ends at the stream's end, by break, or at the cap, by throw
   while (reader) {
     const { done, value } = await reader.read();
     if (done) break;

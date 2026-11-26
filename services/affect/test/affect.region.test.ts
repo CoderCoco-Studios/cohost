@@ -506,6 +506,7 @@ async function drainAll(s: ReturnType<typeof queued>) {
   const settled = s.affect.settled().then(() => { done = true; });
   const deadline = Date.now() + 5_000;
   // The answer travels through a Response body, so a release can land before the fetch is issued: keep releasing until the drain ends.
+  // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `done` is set by the settled() promise while the loop awaits its timer
   while (!done) {
     if (Date.now() > deadline) throw new Error("the queue did not drain");
     s.next();

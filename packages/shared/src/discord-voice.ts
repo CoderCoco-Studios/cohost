@@ -108,7 +108,7 @@ export function createDiscordVoiceSession(o: DiscordVoiceSessionOptions): Discor
         void run(REJOIN_DELAY_MS);
       }
     };
-    conn.on(VoiceConnectionStatus.Disconnected, () => { void onDisconnected(); });
+    conn.on(VoiceConnectionStatus.Disconnected, () => { void onDisconnected().catch((err: unknown) => log.error({ err }, "voice reconnect failed")); });
     try { o.onConnected(conn, { client, channel }); } catch (err) { log.error({ err }, "onConnected failed"); }
   }
 

@@ -27,10 +27,16 @@ type Json = Record<string, unknown>;
 type SalienceEvent = { kind: string; text: string; mention?: boolean; changed?: boolean };
 
 /** A field the request must carry: a missing one throws, and the caller answers 500 naming it. */
-// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- the caller names the field's type: need<string>(req, "text")
-function need<T>(req: Json, name: string): T {
+function need(req: Json, name: string): unknown {
   if (req[name] === undefined) throw new Error(`missing field: ${name}`);
-  return req[name] as T;
+  return req[name];
+}
+
+/** A text field the request must carry. */
+function needString(req: Json, name: string): string {
+  const v = need(req, name);
+  if (typeof v !== "string") throw new Error(`field ${name} is not text`);
+  return v;
 }
 
 // --- the stand-ins. Replace these bodies with your model. --------------------
@@ -40,7 +46,7 @@ const GAME_WORDS = /\b(boss|died|clutch|raid|gg|clip|pog)\b/i;
 // #region salience
 function salience(req: Json): Json { // @spec HOOK-EX-002
   // Which of these events deserve a reaction? Here: a toy that likes game words.
-  const scores = need<SalienceEvent[]>(req, "events").map((e) => {
+  const scores = (need(req, "events") as SalienceEvent[]).map((e) => {
     let s = 0.15;
     if (e.kind === "speech") s = 0.9;
     else if (e.mention) s = 1.0;
@@ -54,7 +60,7 @@ function salience(req: Json): Json { // @spec HOOK-EX-002
 
 function affect(req: Json): Json { // @spec HOOK-EX-003
   // How does this line move the mood? Here: a two-word lexicon. Yours: a sentiment model.
-  const text = need<string>(req, "text").toLowerCase();
+  const text = needString(req, "text").toLowerCase();
   const dv = text.includes("love") ? 0.2 : text.includes("hate") ? -0.2 : 0.0;
   const da = req.mention ? 0.25 : 0.05;
   return { valence_delta: dv, arousal_delta: da };
@@ -63,7 +69,7 @@ function affect(req: Json): Json { // @spec HOOK-EX-003
 // #region critic
 function critic(req: Json): Json { // @spec HOOK-EX-004
   // Should this line be said? Here: block anything with a URL, trim to one sentence.
-  const text = need<string>(req, "text");
+  const text = needString(req, "text");
   if (text.toLowerCase().includes("http")) return { ok: false, note: "no links on air" }; // @spec HOOK-EX-009
   const first = text.trim().split(/(?<=[.!?])\s+/)[0]!;
   if (first === text) return { ok: true };

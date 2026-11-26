@@ -11,7 +11,6 @@ const baseCfg = () => ({
   voice: {}, avatar: { vtube_studio: { host: "h" }, vmc: { host: "h" } }, ears: {}, dashboard: {}, brain: {},
 });
 const parse = (chat: Record<string, unknown>) => ConfigSchema.safeParse({ ...baseCfg(), chat });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ok = (chat: Record<string, unknown>): any => { const r = parse(chat); assert.ok(r.success, JSON.stringify(r.error?.issues)); return r.data.chat; };
 const failsAt = (chat: Record<string, unknown>, path: string) => {
   const r = parse(chat);
@@ -84,7 +83,6 @@ test("an absent chat.twitch is an object of defaults, as is an absent chat.youtu
 // @spec CFG-USR-018
 test("config.example.yaml writes chat.sources [twitch] and the chat.youtube defaults as literals and no chat.source key", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chat = (parseYaml(text) as any).chat;
   assert.deepEqual(chat.sources, ["twitch"]);
   assert.equal("source" in chat, false);

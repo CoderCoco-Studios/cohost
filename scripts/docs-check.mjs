@@ -1834,7 +1834,7 @@ const EXPRESSIONS = ['idle', 'talking', 'lost'];
 /** Evaluates a v-if condition of `expression === 'x'` atoms for one expression; an atom it cannot read counts as true. */
 function evalCond(cond, expr) {
   const atoms = cond.replace(/(?:props\.)?\bexpression\s*(===|==|!==|!=)\s*(['"])(\w+)\2/g, (_m, op, _q, v) => String(op.startsWith('!') ? v !== expr : v === expr));
-  if (!/^[\s!()&|truefals]*$/.test(atoms)) return true;
+  if (!/^(?:\s|true|false|!|&&|\|\||\(|\))*$/.test(atoms)) return true;
   try {
     // oxlint-disable-next-line typescript/no-implied-eval -- `atoms` is checked above to hold only true, false, !, &&, || and parentheses
     return Boolean(new Function(`return (${atoms});`)());

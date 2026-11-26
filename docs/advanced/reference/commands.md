@@ -105,7 +105,7 @@ Each program under `examples/` that a page tells you to run has a task; the [Ext
 
 ## cohostctl
 
-`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_ENABLED` and `CONTROL_TOKEN`, which gate the dashboard's HTTP routes, do not apply. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
+`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_ENABLED` and `CONTROL_TOKEN`, which switch the dashboard's controls on and guard its HTTP routes from other machines, do not apply. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
 
 ```bash
 mise run cohostctl -- status

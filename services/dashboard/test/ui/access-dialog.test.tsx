@@ -360,6 +360,22 @@ test("the Access panel lists both tokens with their state and what they unlock, 
   assert.equal(app.rt.access.state.get().panelOpen, false);
 });
 
+// @spec DASH-ACC-008, DASH-CTRL-007
+test("the control token's entry says no token is needed from this machine when the dashboard needs none, and says nothing of it otherwise", async () => {
+  const local = makeApp();
+  local.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } });
+  const a = mount(local);
+  act(() => local.rt.access.openPanel());
+  await within(within(dlg()).getByRole("group", { name: "Control token" })).findByText(/No control token is needed from this machine/);
+  a.unmount();
+  const remote = makeApp();
+  remote.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, tokenRequired: true } });
+  mount(remote);
+  act(() => remote.rt.access.openPanel());
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  assert.doesNotMatch(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /No control token is needed/);
+});
+
 // @spec DASH-ACC-007, DASH-ACC-008
 test("Lock removes the token from both storages and the panel shows Locked", async () => {
   const user = userEvent.setup();

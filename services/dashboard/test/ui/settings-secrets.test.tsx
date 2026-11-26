@@ -45,9 +45,22 @@ test("saving a secret sends PUT /secrets/<path> with the control token, never sh
   assert.match(text(screen.getByRole("region", { name: "Restart needed" })), /voice/);
 });
 
-// @spec DASH-SET-009, DASH-SECRET-003
-test("a secret write asks for the control token through the Access dialog when none is held, and writes nothing on Cancel", async () => {
+// @spec DASH-SET-009, DASH-SECRET-003, DASH-UI-006
+test("a secret write with no token held is sent without one; on loopback it saves with no Access dialog", async () => {
   const b = await open("demo", { routes: { "PUT /secrets/demo.api_key": { json: { ok: true, set: true, restart: [] } } } });
+  const user = userEvent.setup();
+  await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");
+  await user.click(within(row("api_key")).getByRole("button", { name: "Save secret" }));
+  await settle();
+  assert.equal(b.app.rt.access.state.get().prompt, null);
+  const sent = b.app.fetch.callsTo("PUT /secrets/demo.api_key");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.headers.authorization, undefined);
+});
+
+// @spec DASH-SET-009, DASH-SECRET-003, DASH-UI-006
+test("from another machine a secret write answered 401 asks for the control token through the Access dialog, and writes nothing more on Cancel", async () => {
+  const b = await open("demo", { routes: { "PUT /secrets/demo.api_key": { status: 401, json: { ok: false, detail: "unauthorized" } } } });
   const user = userEvent.setup();
   await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");
   await user.click(within(row("api_key")).getByRole("button", { name: "Save secret" }));
@@ -56,7 +69,7 @@ test("a secret write asks for the control token through the Access dialog when n
   assert.match(b.app.rt.access.state.get().prompt!.action, /demo\.api_key/);
   act(() => b.app.rt.access.resolvePrompt(false));
   await settle();
-  assert.equal(b.app.fetch.callsTo("PUT /secrets/demo.api_key").length, 0);
+  assert.equal(b.app.fetch.callsTo("PUT /secrets/demo.api_key").length, 1, "the refused try only");
   assert.match(text(row("api_key")), /not done: locked/);
   assert.equal((within(row("api_key")).getByLabelText("Api key") as HTMLInputElement).value, "abc", "what was typed stays so the operator can retry");
 });

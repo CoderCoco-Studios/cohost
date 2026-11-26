@@ -47,7 +47,7 @@ The co-host's name and yours come from `cohost.name` and `cohost.streamer` in `c
 2. Change the text.
 3. Press **Save** (or Ctrl+S in the editor).
 
-If the dashboard asks for a token in the Access dialog, it is the `CONTROL_TOKEN` from your `.env` file. Saving writes the file and tells the [cortex](../../start/glossary.md#cortex), the part that writes replies, to read it again before its next reply.
+On the dashboard's own PC the save needs no token. From another machine the Access dialog asks for one: it is the `CONTROL_TOKEN` from your `.env` file. Saving writes the file and tells the [cortex](../../start/glossary.md#cortex), the part that writes replies, to read it again before its next reply.
 
 If you edit the file in a text editor instead, restart the cortex so it reads the new text (the [Starting and stopping](../operate/start-stop.md) page shows how).
 
@@ -64,6 +64,6 @@ You are in charge of that section: delete lines you do not like, rewrite the one
 
 ## If it didn't
 
-- The save is refused: the `CONTROL_TOKEN` is wrong or missing. Check `.env`. See [Troubleshooting](../troubleshooting.md).
+- The save is refused from another machine: the `CONTROL_TOKEN` you entered is wrong, or `.env` has none. Check `.env`. See [Troubleshooting](../troubleshooting.md).
 - The co-host sounds the same: the cortex may not be running. Check the [service health page](../operate/health.md).
 - The co-host says the emotion tags aloud or its face never changes: the `## Format` section was changed or removed. Put it back from `config/personality.example.md`.

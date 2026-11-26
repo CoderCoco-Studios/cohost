@@ -9,7 +9,7 @@ const ids = () => SCREENS.map((s) => s.id);
 function boot(hash = "", opts: { sink?: boolean; control?: boolean } = {}) {
   location.hash = hash;
   const app = makeApp({ sink: opts.sink });
-  app.fetch.on("GET /services/control", { json: opts.control ? { enabled: true, runtime: "compose", advanced: false } : { enabled: false } });
+  app.fetch.on("GET /services/control", { json: opts.control ? { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } : { enabled: false, tokenRequired: false } });
   app.fetch.on("POST /control", { status: 204 });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   const r = renderApp(<App sink={!!opts.sink} />, app);

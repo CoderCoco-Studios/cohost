@@ -27,7 +27,7 @@ export interface TestApp {
 
 /**
  * A runtime wired to fakes: a route-table `fetch`, a controllable `/ws` socket, in-memory storage and a manual clock.
- * `fetch.on("GET /services/control", { json: { enabled: false } })` answers a route; an unanswered one is a 404.
+ * `fetch.on("GET /services/control", { json: { enabled: false, tokenRequired: false } })` answers a route; an unanswered one is a 404.
  */
 export function makeApp(over: Partial<RuntimeDeps> = {}): TestApp {
   FakeSocket.reset();

@@ -28,7 +28,7 @@ async function boot(o: Opts = {}) {
   const calls: string[] = [];
   const controller = new Proxy({}, { get: (_t, name) => () => { calls.push(String(name)); throw new Error("the settings routes must never drive a unit"); } }) as unknown as ServiceController;
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...o.stack };
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: !!o.control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,

@@ -25,7 +25,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64, ttlMs = 300_000)
   const rec = recordingLog();
   const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs };
   const setup = setupControl(env, bus, rec.log);
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: !!setup.control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => UP,
     control: setup.control, uploads, stack: new StackService({ log: rec.log, bus: () => "connected" }),

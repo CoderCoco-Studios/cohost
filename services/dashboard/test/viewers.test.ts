@@ -28,7 +28,7 @@ async function boot(o: BootOpts = {}) {
   const rec = recordingLog();
   const token = o.token === null ? undefined : o.token ?? TOKEN;
   const control = o.control ? { token: "ctl", runtime: "t", advanced: false, controller: {} as never } : undefined;
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: !!control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, viewersToken: token, control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));

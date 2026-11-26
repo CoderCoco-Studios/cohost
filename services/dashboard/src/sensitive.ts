@@ -42,7 +42,3 @@ export function changedSensitiveKeys(text: string, section: string, values: Read
   return out;
 }
 
-/** What the 403 says when a sensitive change arrives and no control token is configured at all. */
-// @spec DASH-CTRL-010
-export const noTokenDetail = (keys: string): string =>
-  `changing ${keys} needs the control token, and none is configured: set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard`;

@@ -13,7 +13,7 @@ Every service that talks to the outside world is a publisher and subscriber of [
 
 - A built workspace (`mise run build`) and [Redis](../../start/glossary.md#redis) running (`mise run infra:up`). See [Developer setup](../dev-setup.md).
 - The services you want to watch running. [One service on its own](isolated.md) shows how to start them with no accounts.
-- For the dashboard routes: the [dashboard](../../guide/operate/dashboard.md) running (`mise run dashboard`) and the `CONTROL_TOKEN` from your `.env`.
+- For the dashboard routes: the [dashboard](../../guide/operate/dashboard.md) running (`mise run dashboard`). From the same machine no token is needed; from another machine, with the dashboard opened to it, the `CONTROL_TOKEN` from your `.env`.
 
 ## Injection surfaces
 
@@ -96,11 +96,13 @@ chat.message -> affect.state (mood: happy)
 
 `cortex` logs `memory region did not answer in time` because no `memory` is running. That is expected.
 
-Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token while stack control is on, which is the default:
+Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. On the same machine the route needs no token:
 
 ```bash
-curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'
+curl -XPOST localhost:3000/control -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'
 ```
+
+From another machine, with `DASHBOARD_HOST` opening the dashboard to it, add `-H "authorization: Bearer $CONTROL_TOKEN"`.
 
 This answers 204 and puts a `control` event on the bus. The page plays audio only after you turn it on with the header's **Audio off** button (it then reads **Audio on**), because browsers block autoplay.
 
@@ -137,4 +139,4 @@ To force a line without scoring, add a `brain.salience.reflexes` entry to `confi
 
 - **Nothing reacts.** The service subscribes from `latest`: start it before you publish.
 - **`bus:pub` exits 1.** The payload failed validation; read the zod issue list it printed against [Bus events](../reference/events.md).
-- **The dashboard answers 401 or 409.** 401 means the bearer token is missing or wrong; 409 means the service the injection is for is not running.
+- **The dashboard answers 401 or 409.** 401 means the bearer token is missing or wrong (only from another machine); 409 means the service the injection is for is not running.

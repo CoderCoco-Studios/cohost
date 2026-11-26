@@ -2,13 +2,14 @@ import type http from "node:http";
 import { readFileSync } from "node:fs";
 import { secretPathMatches, secretPathOf, secretsPath, setSecretPaths, toolServerNames, updateSecrets } from "@cohost/config";
 import type { Logger } from "@cohost/config";
-import { bearerOk, type ServiceDef } from "@cohost/control";
+import type { ServiceDef } from "@cohost/control";
+import { NO_TOKEN_DETAIL, tokenRefusal, type TokenGate } from "./access.js";
 import { BodyTooLarge, readText } from "./body.js";
 import type { StackSnapshot } from "./stack.js";
 
 export interface SecretsDeps {
-  /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
-  token: string | undefined;
+  /** Who must present the control token (DASH-SECRET-003, DASH-CTRL-011). */
+  gate: TokenGate;
   /** The operator's secrets file (`secrets/secrets.yaml`). Defaults to the loader's. */
   file?: () => string;
   /** Path of the saved `config.yaml`, read per request: a token is set only for a server it holds under `tools.servers`. */
@@ -72,8 +73,8 @@ const scrub = (text: string, values: readonly (string | null)[]): string =>
 
 /**
  * `PUT /secrets/:path` sets or clears one secret and `PUT /secrets` several in one atomic write, in `secrets/secrets.yaml`
- * through `updateSecrets`. Always token-gated (the token is checked before the path, so a wrong token and an unknown path
- * answer 401 and the right token 404), write-only, and never touches `config.yaml` or `.env` or a unit.
+ * through `updateSecrets`. Gated by the control token where it is required (checked before the path, so there a wrong token
+ * and an unknown path answer 401 and the right token 404), write-only, and never touches `config.yaml` or `.env` or a unit.
  */
 // @spec DASH-SECRET-001, DASH-SECRET-002, DASH-SECRET-003, DASH-SECRET-004, DASH-SECRET-005, DASH-SECRET-006, DASH-SECRET-007, DASH-SECRET-008, DASH-SECRET-009, DASH-SECRET-010, DASH-SECRET-011, DASH-SECRET-012
 // @spec DASH-SECRET-013, DASH-SECRET-014, DASH-SECRET-015
@@ -81,16 +82,7 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
   const multi = url.pathname === "/secrets";
   if (req.method !== "PUT" || !(multi || url.pathname.startsWith("/secrets/"))) return false;
 
-  if (d.token === undefined) {
-    req.resume();
-    json(res, 403, { ok: false, detail: "secrets cannot be written: no control token is configured. Set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard" });
-    return true;
-  }
-  if (!bearerOk(req.headers.authorization, d.token)) {
-    req.resume();
-    json(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" });
-    return true;
-  }
+  if (refuseSecretToken(res, tokenRefusal(d.gate, req.headers.authorization))) { req.resume(); return true; }
   let raw: string;
   try { raw = await readText(req); } catch (e) {
     if (e instanceof BodyTooLarge) { json(res, 413, { ok: false, detail: "body too large" }); return true; }
@@ -153,6 +145,18 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
     ? { ok: true, set: Object.fromEntries(changes.map(([p, v]) => [p, v !== null])), restart }
     : { ok: true, set: changes[0]![1] !== null, restart });
   return true;
+}
+
+/**
+ * Answers the control-token refusal of the secret routes, shared by recovery mode's token check (DASH-RCV-022): 403 naming
+ * `CONTROL_TOKEN` and `CONTROL_ENABLED` when none is configured, 401 with `www-authenticate: Bearer` when the request's is
+ * missing or wrong. True when it answered.
+ */
+// @spec DASH-SECRET-003, DASH-SECRET-004
+export function refuseSecretToken(res: http.ServerResponse, refusal: "none" | "wrong" | undefined): boolean {
+  if (refusal === "none") { json(res, 403, { ok: false, detail: NO_TOKEN_DETAIL }); return true; }
+  if (refusal === "wrong") { json(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
+  return false;
 }
 
 function parseObject(raw: string): Record<string, unknown> | undefined {

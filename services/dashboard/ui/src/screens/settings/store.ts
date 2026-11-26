@@ -253,7 +253,7 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           `/config/${encodeURIComponent(path)}${dryRun ? "?dryRun=1" : ""}`, { etag: s.etag, values },
           dryRun
             ? (heldToken ? { auth: "control", action: `Check ${m?.title ?? path} settings` } : {})
-            : { auth: "control", action: sensitive.length ? `Change ${sensitive.join(", ")}` : `Save ${m?.title ?? path} settings`, requireToken: sensitive.length > 0 },
+            : { auth: "control", action: sensitive.length ? `Change ${sensitive.join(", ")}` : `Save ${m?.title ?? path} settings` },
         );
         if (r.ok) {
           warnings.push(...(r.data?.warnings ?? []));
@@ -310,8 +310,8 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
       const paths = Object.keys(values).map((k) => `${section}.${k}`);
       const body = Object.fromEntries(Object.entries(values).map(([k, v]) => [`${section}.${k}`, v]));
       const r = paths.length === 1
-        ? await api.put<{ set: boolean; restart: string[] }>(`/secrets/${encodeURIComponent(paths[0]!)}`, { value: Object.values(values)[0] }, { auth: "control", action, requireToken: true })
-        : await api.put<{ set: Record<string, boolean>; restart: string[] }>("/secrets", { values: body }, { auth: "control", action, requireToken: true });
+        ? await api.put<{ set: boolean; restart: string[] }>(`/secrets/${encodeURIComponent(paths[0]!)}`, { value: Object.values(values)[0] }, { auth: "control", action })
+        : await api.put<{ set: Record<string, boolean>; restart: string[] }>("/secrets", { values: body }, { auth: "control", action });
       if (!r.ok) {
         if (r.status === 403) access.markNotSetUp("control", true);
         const named = r.data && typeof r.data === "object" && Array.isArray((r.data as { paths?: unknown }).paths) ? (r.data as { paths: string[] }).paths : undefined;

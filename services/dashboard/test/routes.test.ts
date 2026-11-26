@@ -30,7 +30,7 @@ const bus = new FakeBus();
 const tracker = new HealthTracker();
 const rec = recordingLog();
 let personality = "# Coco\n";
-const server = http.createServer(createDashboardHandler({
+const server = http.createServer(createDashboardHandler({ tokenRequired: false,
   bus, log: rec.log,
   uiDir,
   cohostName: "Coco",

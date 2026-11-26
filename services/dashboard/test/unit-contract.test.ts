@@ -48,7 +48,7 @@ async function boot(states: Record<string, HealthState> = {}) {
   const act = (action: string) => async (id: string) => { calls.push({ action, id }); return { ok: true }; };
   const controller = { start: act("start"), stop: act("stop"), restart: act("restart") } as unknown as ServiceController;
   const services = (): ServiceHealth[] => units.map((u) => ({ service: u.id, state: states[u.id] ?? "up", restarts: 0 }));
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: true,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
     stack: new StackService({ log: rec.log, bus: () => "connected" }),

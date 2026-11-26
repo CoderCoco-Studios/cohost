@@ -29,7 +29,7 @@ async function rig(text: string, o: Partial<RecoveryHandlerDeps> & { secrets?: s
   const logs: string[] = [];
   let valid = 0;
   const log = { info: (...a: unknown[]) => { logs.push(`info ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); }, error: (...a: unknown[]) => { logs.push(`error ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); } } as never;
-  const handler = createRecoveryHandler({ log, files: { configFile, secretsFile }, controlEnabled: false, uiDir: join(dir, "no-ui"), onValid: () => { valid++; }, ...o });
+  const handler = createRecoveryHandler({ log, files: { configFile, secretsFile }, controlEnabled: false, tokenRequired: !!o.controlEnabled, uiDir: join(dir, "no-ui"), onValid: () => { valid++; }, ...o });
   const server = http.createServer(handler);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -158,10 +158,7 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
   try {
     const s = await state(sec);
     assert.equal(s.problems[0]!.repair, "clear");
-    const locked = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" });
-    assert.equal(locked.status, 401, "a secrets.yaml change needs the token with control off");
-    assert.match(readFileSync(sec.secretsFile, "utf8"), /\[a\]/);
-    const res = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" }, { authorization: "Bearer tok" });
+    const res = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" });
     assert.equal(res.status, 200);
     const secrets = readFileSync(sec.secretsFile, "utf8");
     assert.match(secrets, /# mine/);
@@ -192,33 +189,26 @@ test("reset-all uses fallbacks, resets the rest in rounds, writes once, and repo
   } finally { await r.close(); }
 });
 
-// @spec DASH-RCV-003
-test("with control enabled every recovery write needs the token; with it off a typed sensitive key needs it, a reset does not", async () => {
-  const on = await rig(STALE, { controlEnabled: true, controlToken: "tok" });
+// @spec DASH-RCV-003, DASH-CTRL-011
+test("beyond loopback every recovery write needs the token; on loopback, in either control mode, a typed sensitive key needs none", async () => {
+  const remote = await rig(STALE, { controlEnabled: true, controlToken: "tok", tokenRequired: true });
   try {
-    const s = await state(on);
-    assert.equal((await post(on, "reset-all", { etag: s.etag })).status, 401);
-    assert.equal(readFileSync(on.configFile, "utf8"), STALE);
-    assert.equal((await post(on, "reset-all", { etag: s.etag }, { authorization: "Bearer tok" })).status, 200);
-  } finally { await on.close(); }
+    const s = await state(remote);
+    assert.equal((await post(remote, "reset-all", { etag: s.etag })).status, 401);
+    assert.equal(readFileSync(remote.configFile, "utf8"), STALE);
+    assert.equal((await post(remote, "reset-all", { etag: s.etag }, { authorization: "Bearer tok" })).status, 200);
+  } finally { await remote.close(); }
 
   const text = STALE.replace(/^ {2}provider: "ollama"/m, '  provider: "${LLM_PROVIDER:-ollama}"');
-  const off = await rig(text);
-  try {
-    const s = await state(off);
-    const none = await post(off, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" });
-    assert.equal(none.status, 403);
-    assert.deepEqual(((await none.json()) as { sensitive: string[] }).sensitive, ["llm.provider"]);
-    const reset = await post(off, "reset", { etag: s.etag, path: "llm.provider" });
-    assert.equal(reset.status, 200, "a reset is not a sensitive change");
-  } finally { await off.close(); }
-
-  const tokenOff = await rig(text, { controlToken: "tok" });
-  try {
-    const s = await state(tokenOff);
-    assert.equal((await post(tokenOff, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" })).status, 401);
-    assert.equal((await post(tokenOff, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" }, { authorization: "Bearer tok" })).status, 200);
-  } finally { await tokenOff.close(); }
+  for (const o of [{}, { controlToken: "tok" }, { controlEnabled: true, controlToken: "tok", tokenRequired: false }]) {
+    const local = await rig(text, o);
+    try {
+      const s = await state(local);
+      const set = await post(local, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" });
+      assert.equal(set.status, 200, JSON.stringify(o));
+      assert.match(readFileSync(local.configFile, "utf8"), /^ {2}provider: "?anthropic"?/m);
+    } finally { await local.close(); }
+  }
 });
 
 // @spec DASH-RCV-010
@@ -231,7 +221,7 @@ test("stack posts other than stop and every lifecycle post are refused with the 
       assert.match(((await res.json()) as { detail: string }).detail, /^the config is invalid \(3 problems; first: .*recovery screen/);
     }
     assert.equal((await fetch(`${on.url}/health`)).status, 200);
-    assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { enabled: true, runtime: "compose", advanced: false });
+    assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { enabled: true, runtime: "compose", advanced: false, tokenRequired: true });
     const other = await fetch(`${on.url}/stack`);
     assert.equal(other.status, 503);
     assert.match(((await other.json()) as { detail: string }).detail, /config recovery mode/);
@@ -267,7 +257,7 @@ test("the recovery port comes from the dashboard section when it validates alone
 // @spec DASH-RCV-004, DASH-RCV-010
 test("in normal mode GET /recovery is inactive and a recovery write is a 409", async () => {
   const log = { info() {}, warn() {}, error() {}, debug() {}, fatal() {} } as never;
-  const handler = createDashboardHandler({
+  const handler = createDashboardHandler({ tokenRequired: false,
     bus: { publish: async () => "1", putUpload: async () => "u" } as never, log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "", savePersonality: () => {}, services: () => [], stack: new StackService({ log, bus: () => "connected" }), uiDir: "/nonexistent", docsDir: "/nonexistent",
   });
@@ -299,27 +289,28 @@ test("startDashboard hands a valid configuration to run, and leaves a load failu
   assert.equal(seen[1], undefined);
 });
 
-// @spec DASH-RCV-003, DASH-RCV-006, DASH-RCV-007
-test("a secrets.yaml repair needs the control token in both modes; reset-all fixes config.yaml without it and names the secrets left", async () => {
+// @spec DASH-RCV-003, DASH-RCV-006, DASH-RCV-007, DASH-CTRL-011
+test("on loopback a secrets.yaml repair needs no token, with none configured too; reset-all repairs both files; beyond loopback both need it", async () => {
   const none = await rig(STALE, { secrets: "llm:\n  openai:\n    api_key: 0123\n" });
   try {
     const s = await state(none);
     const reset = await post(none, "reset", { etag: s.etag, path: "llm.openai.api_key" });
-    assert.equal(reset.status, 403);
-    assert.match(((await reset.json()) as { detail: string }).detail, /CONTROL_TOKEN/);
-    const all = await post(none, "reset-all", { etag: s.etag });
-    assert.equal(all.status, 200);
-    const body = await all.json() as { valid: boolean; problems: RecoveryProblem[]; tokenNeeded?: string[] };
-    assert.deepEqual(body.tokenNeeded, ["llm.openai.api_key"]);
-    assert.ok(body.problems.every((p) => p.file === "secrets" || p.path === "llm.model"), JSON.stringify(body.problems.map((p) => p.path)));
-    assert.match(readFileSync(none.secretsFile, "utf8"), /api_key: 0123/, "secrets.yaml untouched");
-    assert.doesNotMatch(readFileSync(none.configFile, "utf8"), /COHOST_NAME/, "config.yaml repaired");
+    assert.equal(reset.status, 200);
+    assert.match(readFileSync(none.secretsFile, "utf8"), /api_key: "0123"/);
   } finally { await none.close(); }
+
+  const remote = await rig(STALE, { controlEnabled: true, controlToken: "tok", tokenRequired: true, secrets: "llm:\n  openai:\n    api_key: 0123\n" });
+  try {
+    const s = await state(remote);
+    for (const op of ["reset", "reset-all"]) assert.equal((await post(remote, op, { etag: s.etag, path: "llm.openai.api_key" })).status, 401, op);
+    assert.match(readFileSync(remote.secretsFile, "utf8"), /api_key: 0123/, "secrets.yaml untouched");
+    assert.equal(readFileSync(remote.configFile, "utf8"), STALE);
+  } finally { await remote.close(); }
 
   const tok = await rig(EXAMPLE, { controlToken: "tok", secrets: "llm:\n  openai:\n    api_key: 0123\n" });
   try {
     const s = await state(tok);
-    const all = await post(tok, "reset-all", { etag: s.etag }, { authorization: "Bearer tok" });
+    const all = await post(tok, "reset-all", { etag: s.etag });
     assert.equal(((await all.json()) as { valid: boolean }).valid, true);
     assert.match(readFileSync(tok.secretsFile, "utf8"), /api_key: "0123"/, "an all-digit token is quoted, never cleared");
   } finally { await tok.close(); }
@@ -345,7 +336,7 @@ test("recovery mode is left once when the client of the answer that found the fi
   const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
   writeFileSync(join(dir, "config.yaml"), EXAMPLE);
   let valid = 0;
-  const handler = createRecoveryHandler({ log: { info() {}, error() {} } as never, files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "s.yaml") }, controlEnabled: false, uiDir: join(dir, "ui"), onValid: () => { valid++; } });
+  const handler = createRecoveryHandler({ log: { info() {}, error() {} } as never, files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "s.yaml") }, controlEnabled: false, tokenRequired: false, uiDir: join(dir, "ui"), onValid: () => { valid++; } });
   const req = Object.assign(new EventEmitter(), { method: "GET", url: "/recovery", headers: {} });
   const res = Object.assign(new EventEmitter(), { headersSent: false, writeHead() { return this; }, end() { return this; } });
   handler(req as never, res as never);
@@ -358,8 +349,8 @@ test("recovery mode is left once when the client of the answer that found the fi
   }));
 });
 
-// @spec DASH-RCV-003
-test("an entry of a sensitive list is as sensitive as the list: setting it needs the control token in both modes", async () => {
+// @spec DASH-RCV-003, DASH-CTRL-011
+test("an entry of a sensitive list is as sensitive as the list: setting it needs no token on loopback and the token beyond it", async () => {
   const text = EXAMPLE
     .replace("allowed_hosts: []", 'allowed_hosts: ["${HOST}"]')
     .replace(/^ {2}lan: \[\]/m, '  lan: ["${LAN}"]');
@@ -370,11 +361,10 @@ test("an entry of a sensitive list is as sensitive as the list: setting it needs
       const s = await state(none);
       assert.ok(s.problems.some((p) => p.path === path && p.sensitive), JSON.stringify(s.problems));
       const res = await post(none, "set", { etag: s.etag, path, value: "streampc" });
-      assert.equal(res.status, 403, path);
-      assert.deepEqual(((await res.json()) as { sensitive: string[] }).sensitive, [key]);
-      assert.equal(readFileSync(none.configFile, "utf8"), text);
+      assert.equal(res.status, 200, path);
+      assert.match(readFileSync(none.configFile, "utf8"), new RegExp(`${key.split(".")[1]}: \\["?streampc`));
     } finally { await none.close(); }
-    const tok = await rig(text, { controlToken: "tok" });
+    const tok = await rig(text, { controlEnabled: true, controlToken: "tok", tokenRequired: true });
     try {
       const s = await state(tok);
       const res = await post(tok, "set", { etag: s.etag, path, value: "streampc" });

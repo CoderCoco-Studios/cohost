@@ -61,7 +61,7 @@ test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and
   svc.attach(f.o);
   await svc.probe();
   const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
-  const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({
+  const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({ tokenRequired: !!control,
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], ...(control ? { control } : {}), stack: svc,
   }));
@@ -106,7 +106,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
   assert.deepEqual(of("avatar").overrides, { AVATAR_DRIVER: "null" });
   assert.deepEqual(of("cortex").overrides, {});
   assert.equal("overrides" in of("redis"), false);
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: false,
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc,
   }));
@@ -120,7 +120,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
   const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: !!setup.control,
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
@@ -140,7 +140,7 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
 // @spec DASH-HTTP-014
 test("GET /services/manifest lists the twenty units in manifest order, the tools service and the discord connector among them, each with the eight members and no compose name, pnpm filter or environment preset", async () => {
   const rec = recordingLog();
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: false,
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));

@@ -16,7 +16,7 @@ async function boot(states: Record<string, HealthState> = {}) {
   const rec = recordingLog();
   const setup = setupControl({}, bus, rec.log);
   const services = (): ServiceHealth[] => ids.map((service) => ({ service, state: states[service] ?? "up", restarts: 0 }));
-  const server = http.createServer(createDashboardHandler({
+  const server = http.createServer(createDashboardHandler({ tokenRequired: !!setup.control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
     control: setup.control,

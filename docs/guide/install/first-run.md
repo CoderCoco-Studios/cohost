@@ -51,7 +51,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    chmod 600 secrets/secrets.yaml
    ```
 
-   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
+   Then add a control token to `.env` (the dashboard refuses to start its controls without one; it is what other machines need to change anything) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
    </details>
 
 3. Start the dashboard.
@@ -62,7 +62,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on.
 
-4. Open `http://localhost:3000` in your browser. When the Access dialog asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep ^CONTROL_TOKEN= .env`.
+4. Open `http://localhost:3000` in your browser. On this PC the dashboard asks for no token. If you open it from another machine, the Access dialog asks for the value of `CONTROL_TOKEN` from your `.env`; if you used the installer, it filled one in, and `grep ^CONTROL_TOKEN= .env` finds it.
 
 5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
 

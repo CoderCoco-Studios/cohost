@@ -14,7 +14,7 @@ type Screen = "live" | "services" | "viewers" | "settings";
 function boot(view: Screen = "live", control = true) {
   location.hash = view === "live" ? "" : `#${view}`;
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: control ? { enabled: true, runtime: "compose", advanced: false } : { enabled: false } });
+  app.fetch.on("GET /services/control", { json: control ? { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } : { enabled: false, tokenRequired: false } });
   app.fetch.on("POST /tools/answer", { status: 202, text: "" });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   renderApp(<App />, app);
@@ -182,23 +182,33 @@ test("Allow posts /tools/answer {id, allow: true} with the control token and Den
   assert.deepEqual(JSON.parse(app.fetch.callsTo("POST /tools/answer")[1]!.body!), { id: "call-10", allow: false });
 });
 
-// @spec DASH-TOOL-005, DASH-TOOL-002
-test("the route needs the token whether or not control mode is on: without one held the Access dialog is asked first and no request is sent; Cancel sends nothing and the bar stays", async () => {
+// @spec DASH-TOOL-005, DASH-TOOL-002, DASH-UI-006
+test("with no token held the answer is sent without one: on loopback it goes through with no Access dialog; a 401 from another machine asks for the token, and Cancel leaves the bar", async () => {
   for (const control of [true, false]) {
     const app = boot("live", control);
     skewed(app, 0);
+    app.fetch.on("POST /tools/answer", { status: 202, text: "" });
     confirm(app);
     const user = userEvent.setup();
     await user.click(within(bar("c1")!).getByRole("button", { name: "Allow" }));
-    await waitFor(() => assert.ok(app.rt.access.state.get().prompt, `control ${control}: asks for the token`));
-    assert.equal(app.fetch.callsTo("POST /tools/answer").length, 0, "nothing is sent without a token");
-    assert.match(app.rt.access.state.get().prompt!.action, /tool|allow/i);
-    act(() => app.rt.access.resolvePrompt(false));
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-    assert.equal(app.fetch.callsTo("POST /tools/answer").length, 0);
-    assert.ok(bar("c1"), "the bar stays: the call will end unconfirmed");
+    await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1, `control ${control}: sent`));
+    assert.equal(app.fetch.callsTo("POST /tools/answer")[0]!.headers.authorization, undefined);
+    assert.equal(app.rt.access.state.get().prompt, null, "no Access dialog on loopback");
     document.body.innerHTML = "";
   }
+  const app = boot("live", true);
+  skewed(app, 0);
+  app.fetch.on("POST /tools/answer", { status: 401, text: "unauthorized" });
+  confirm(app);
+  const user = userEvent.setup();
+  await user.click(within(bar("c1")!).getByRole("button", { name: "Allow" }));
+  await waitFor(() => assert.ok(app.rt.access.state.get().prompt, "asks for the token after the 401"));
+  assert.match(app.rt.access.state.get().prompt!.action, /tool|allow/i);
+  act(() => app.rt.access.resolvePrompt(false));
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1, "the refused try only");
+  assert.ok(bar("c1"), "the bar stays: the call will end unconfirmed");
+  document.body.innerHTML = "";
 });
 
 // @spec DASH-TOOL-005, DASH-TOOL-026

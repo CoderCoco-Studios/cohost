@@ -50,7 +50,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       // @spec DASH-SINK-004
       const VOICE = urls.voice();
       // @spec DASH-CTRL-003, DASH-HOST-007
-      const { control, bind } = setupControl(env, bus, log);
+      const { control, bind, tokenRequired } = setupControl(env, bus, log);
 
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
@@ -76,7 +76,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const models = { store, applied, maxBytes: cfg.dashboard.models.max_bytes };
       // @spec DASH-AVR-001, DASH-AVR-011, DASH-AVR-021
       const relay = createAvatarRelay({ bus, applied, clock: deps.clock ?? systemClock, log });
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), tokenRequired, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
       const redacted = new WeakSet(); // sockets that arrived beyond loopback (DASH-FEED-011)
@@ -91,7 +91,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       if (!listeners) relay.stop(); // a listener that could not bind leaves nothing running
       if (listeners) {
         heartbeat.ready(); // only once both listeners are listening
-        if (control) log.info("stack controls are enabled: the token is CONTROL_TOKEN in .env (paste it into the page when it asks)");
+        if (control) log.info(tokenRequired ? "stack controls are enabled: from another machine the page asks for CONTROL_TOKEN from .env" : "stack controls are enabled: no token is needed on this machine; CONTROL_TOKEN in .env is for other machines");
         stack.start();
       }
     },

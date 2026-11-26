@@ -106,7 +106,7 @@ test("a row with needs shows needs <service> (<state>) beside its own unchanged 
 
 // @spec MOD-PAUSE-003
 test("a unit shows as paused exactly while its heartbeat detail is paused; another detail shows in its place", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
   assert.ok(within(rowOf("salience")).getByText("Paused", { selector: ".tag" }) !== null);
   push(app, { type: "services", services: [svc("salience", { heartbeat: beat({ detail: "degraded: scorer down" }) })] });
   assert.ok(within(rowOf("salience")).queryByText("Paused") === null);
@@ -173,7 +173,7 @@ test("a service id or detail holding markup renders as text, never as elements",
 
 // @spec DASH-UI-029
 test("with control off a note names CONTROL_ENABLED=1 and cohostctl and no lifecycle, pause or stack buttons show", async () => {
-  await mountServices({ control: { enabled: false }, services: [svc("salience"), svc("chat")], stack: stackMsg() });
+  await mountServices({ control: { enabled: false, tokenRequired: false }, services: [svc("salience"), svc("chat")], stack: stackMsg() });
   const note = screen.getByRole("status", { name: "Service control is off" });
   assert.match(note.textContent ?? "", /CONTROL_ENABLED=1/);
   assert.match(note.textContent ?? "", /cohostctl/);
@@ -182,7 +182,7 @@ test("with control off a note names CONTROL_ENABLED=1 and cohostctl and no lifec
 
 // @spec DASH-UI-008, DASH-UI-021
 test("Start, Restart, Stop and Test show on manifest unit rows only, named for their service; none on the dashboard row or an unlisted service", async () => {
-  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("chat"), svc("redis"), svc("dashboard"), svc("mystery"), svc("ears", { state: "down" }), svc("eyes", { state: "unknown", heartbeat: undefined, lastSeenAgeMs: undefined }), svc("voice", { state: "crash-looping", restarts: 4 })] });
+  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("chat"), svc("redis"), svc("dashboard"), svc("mystery"), svc("ears", { state: "down" }), svc("eyes", { state: "unknown", heartbeat: undefined, lastSeenAgeMs: undefined }), svc("voice", { state: "crash-looping", restarts: 4 })] });
   for (const unit of ["chat", "redis", "voice"]) {
     const r = rowOf(unit);
     for (const verb of ["Restart", "Stop"]) assert.ok(btn(r, `${verb} ${unit}`) !== null, `${verb} ${unit}`);
@@ -200,7 +200,7 @@ test("Start, Restart, Stop and Test show on manifest unit rows only, named for t
 
 // @spec MOD-PAUSE-001
 test("a unit whose manifest pause is true shows the one control for its current state, Pause or Resume, and no other row shows either", async () => {
-  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: UNITS.map((u) => svc(u.id)) });
+  await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: UNITS.map((u) => svc(u.id)) });
   for (const u of UNITS) {
     const r = rowOf(u.id);
     assert.equal(btn(r, `Pause ${u.id}`) !== null, u.pause, `${u.id} Pause`);
@@ -211,7 +211,7 @@ test("a unit whose manifest pause is true shows the one control for its current 
 
 // @spec MOD-PAUSE-001
 test("while a unit's heartbeat says paused its row shows Resume and no Pause, and Pause returns when it resumes", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("salience", { heartbeat: beat({ detail: "paused" }) })] });
   assert.ok(btn(rowOf("salience"), "Resume salience") !== null);
   assert.ok(btn(rowOf("salience"), "Pause salience") === null, "no Pause while paused");
   push(app, { type: "services", services: [svc("salience")] });
@@ -221,13 +221,13 @@ test("while a unit's heartbeat says paused its row shows Resume and no Pause, an
 
 // @spec MOD-PAUSE-001
 test("with control disabled no Pause or Resume shows", async () => {
-  await mountServices({ control: { enabled: false }, services: [svc("salience")] });
+  await mountServices({ control: { enabled: false, tokenRequired: false }, services: [svc("salience")] });
   assert.equal(screen.queryAllByRole("button", { name: /^(Pause|Resume)/ }).length, 0);
 });
 
 // @spec MOD-PAUSE-002, DASH-UI-015
 test("Pause and Resume post /control with the command and the unit as target, and report only after the answer", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("salience")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("salience")] });
   app.fetch.on("POST /control", { status: 204 });
   const user = userEvent.setup();
   await user.click(btn(rowOf("salience"), "Pause salience")!);
@@ -240,7 +240,7 @@ test("Pause and Resume post /control with the command and the unit as target, an
 
 // @spec MOD-PAUSE-002, DASH-UI-015
 test("a failed pause shows the status and detail in an alert that stays until dismissed", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("salience")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("salience")] });
   app.fetch.on("POST /control", { status: 500, json: { detail: "publish failed" } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("salience"), "Pause salience")!);
@@ -252,7 +252,7 @@ test("a failed pause shows the status and detail in an alert that stays until di
 
 // @spec DASH-UI-008
 test("Restart opens a dialog titled for the service with a backlog choice and an isolated switch, and posts the chosen options on confirm", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice")] });
   app.fetch.on("POST /services/voice/restart", { json: { ok: true, detail: "restarted" } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Restart voice")!);
@@ -272,7 +272,7 @@ test("Restart opens a dialog titled for the service with a backlog choice and an
 
 // @spec DASH-UI-008
 test("Start opens its own dialog, and with the defaults it sends an empty body", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice", { state: "down" })] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice", { state: "down" })] });
   app.fetch.on("POST /services/voice/start", { json: { ok: true } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Start voice")!);
@@ -285,7 +285,7 @@ test("Start opens its own dialog, and with the defaults it sends an empty body",
 
 // @spec DASH-UI-008
 test("Stop opens a plain yes or no dialog and sends nothing when cancelled", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice")] });
   app.fetch.on("POST /services/voice/stop", { json: { ok: true } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Stop voice")!);
@@ -300,7 +300,7 @@ test("Stop opens a plain yes or no dialog and sends nothing when cancelled", asy
 
 // @spec DASH-UI-008, DASH-UI-015
 test("while a lifecycle request is in flight the row shows its progress and disables its buttons; others stay usable", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice"), svc("chat")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice"), svc("chat")] });
   let release!: () => void;
   app.fetch.on("POST /services/voice/restart", () => new Promise((res) => { release = () => res({ json: { ok: true } }); }));
   const user = userEvent.setup();
@@ -315,7 +315,7 @@ test("while a lifecycle request is in flight the row shows its progress and disa
 
 // @spec DASH-UI-008
 test("the confirm button is disabled with the reason while a stack action runs or Docker is unavailable, and the open dialog follows the stack", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice")], stack: stackMsg() });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice")], stack: stackMsg() });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Restart voice")!);
   const confirm = () => within(screen.getByRole("dialog")).getByRole("button", { name: "Restart voice" }) as HTMLButtonElement;
@@ -332,7 +332,7 @@ test("the confirm button is disabled with the reason while a stack action runs o
 
 // @spec DASH-UI-008, DASH-UI-015
 test("a refused request shows its status and detail inside the dialog, which stays open; after Cancel the row keeps the alert", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice")] });
   app.fetch.on("POST /services/voice/restart", { status: 409, json: { ok: false, detail: "busy: launch held by dashboard (pid 1)" } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Restart voice")!);
@@ -347,7 +347,7 @@ test("a refused request shows its status and detail inside the dialog, which sta
 
 // @spec DASH-UI-008
 test("a 200 whose body says ok false is a failure, not a success", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false }, services: [svc("voice")] });
+  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, services: [svc("voice")] });
   app.fetch.on("POST /services/voice/restart", { json: { ok: false, detail: "controller refused" } });
   const user = userEvent.setup();
   await user.click(btn(rowOf("voice"), "Restart voice")!);
@@ -369,7 +369,7 @@ test("a unit whose container runs with isolation overrides is marked as running 
 // @spec DASH-UI-031
 test("when the manifest cannot be read the list is replaced by an error with Retry, and Retry loads it", async () => {
   const app = makeApp();
-  await mountServices({ app, control: { enabled: true, runtime: "compose", advanced: false }, manifest: "fail", services: [svc("chat")] });
+  await mountServices({ app, control: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false }, manifest: "fail", services: [svc("chat")] });
   const alert = await screen.findByRole("alert");
   assert.match(alert.textContent ?? "", /manifest unreadable|Could not load/);
   assert.ok(screen.queryByRole("table") === null, "no list without buttons");

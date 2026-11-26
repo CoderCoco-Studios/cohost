@@ -120,18 +120,15 @@ test("a second 401 after the retry is the result; the page does not loop", async
   assert.equal(access.state.get().prompt, null);
 });
 
-// @spec DASH-UI-006, DASH-SET-028
-test("requireToken asks before sending when no token is held (the secret write always needs one)", async () => {
+// @spec DASH-UI-006, DASH-SET-028, DASH-CTRL-011
+test("a gated request with no token held is sent without one, and the Access dialog does not open unless the server answers 401", async () => {
   const { f, api, access } = setup();
   f.on("PUT /secrets/llm.openai.api_key", { json: { ok: true, set: true, restart: [] } });
-  const p = api.put("/secrets/llm.openai.api_key", { value: "k" }, { auth: "control", requireToken: true, action: "Save the API key" });
-  await tick();
-  assert.equal(f.calls.length, 0);
-  assert.equal(access.state.get().prompt?.action, "Save the API key");
-  access.setToken("control", "t", "tab"); access.resolvePrompt(true);
-  const r = await p;
+  const r = await api.put("/secrets/llm.openai.api_key", { value: "k" }, { auth: "control", action: "Save the API key" });
   assert.equal(r.ok, true);
-  assert.equal(f.calls[0]!.headers.authorization, "Bearer t");
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0]!.headers.authorization, undefined);
+  assert.equal(access.state.get().prompt, null, "on loopback the server needs no token, so nothing asks for one");
 });
 
 test("the viewers token is separate from the control token", async () => {

@@ -18,7 +18,8 @@ const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8"
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 const TOKEN = "tok-123";
 
-type Mode = "control" | "token-only" | "no-token";
+/** `remote`: beyond loopback with control and a token; `local`: on loopback with control and a token; `remote-no-token`: beyond loopback with no token configured. */
+type Mode = "remote" | "local" | "remote-no-token";
 
 async function boot(mode: Mode) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-sensitive-"));
@@ -28,16 +29,16 @@ async function boot(mode: Mode) {
   const rec = recordingLog();
   const writes: string[] = [];
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [] };
-  const handler = createDashboardHandler({
+  const handler = createDashboardHandler({ tokenRequired: mode !== "local",
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => file, secretsFile: () => file.replace(/config\.yaml$/, "secrets.yaml"),
     configWrite: (f, text) => { writes.push(f); writeFileSync(f, text); },
-    ...(mode !== "no-token" ? { controlToken: TOKEN } : {}),
-    ...(mode === "control" ? { control: { token: TOKEN, runtime: "compose", advanced: false, controller: {} as never } } : {}),
+    ...(mode !== "remote-no-token" ? { controlToken: TOKEN } : {}),
+    ...(mode !== "remote-no-token" ? { control: { token: TOKEN, runtime: "compose", advanced: false, controller: {} as never } } : {}),
   });
-  const server = http.createServer(guardFullSurface(handler, { loopback: true, controlEnabled: mode === "control" }));
+  const server = http.createServer(guardFullSurface(handler, { loopback: true, controlEnabled: mode !== "remote-no-token" }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const port = (server.address() as { port: number }).port;
@@ -60,31 +61,39 @@ test("the presentation table marks the keys these tests rely on sensitive", () =
   assert.equal(PRESENTATION.keys["llm.temperature"]?.sensitive, undefined);
 });
 
-// @spec DASH-CTRL-009, MOD-CFG-007
-test("a save that changes a sensitive key needs the control token in both control modes: 401 with www-authenticate and {ok:false, detail, sensitive}, nothing written", async () => {
-  for (const mode of ["control", "token-only"] as const) {
-    const t = await boot(mode);
-    const before = t.text();
-    for (const token of [undefined, "wrong"]) {
-      const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } }, token);
-      assert.equal(r.status, 401, `${mode} ${String(token)}`);
-      assert.equal(r.headers.get("www-authenticate"), "Bearer");
-      const j = (await r.json()) as Refusal;
-      assert.equal(j.ok, false);
-      assert.equal(typeof j.detail, "string");
-      assert.deepEqual(j.sensitive, [BASE]);
-    }
-    assert.equal(t.text(), before);
-    assert.deepEqual(t.writes, []);
-    const ok = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } }, TOKEN);
-    assert.equal(ok.status, 200, mode);
-    assert.match(t.text(), /base_url: "https:\/\/evil\.example\/v1"/);
+// @spec DASH-CTRL-009, DASH-CTRL-004, MOD-CFG-007
+test("beyond loopback a save that changes a sensitive key without the token is 401 with www-authenticate and {ok:false, detail, sensitive}, nothing written", async () => {
+  const t = await boot("remote");
+  const before = t.text();
+  for (const token of [undefined, "wrong"]) {
+    const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } }, token);
+    assert.equal(r.status, 401, String(token));
+    assert.equal(r.headers.get("www-authenticate"), "Bearer");
+    const j = (await r.json()) as Refusal;
+    assert.equal(j.ok, false);
+    assert.equal(typeof j.detail, "string");
+    assert.deepEqual(j.sensitive, [BASE]);
   }
+  assert.equal(t.text(), before);
+  assert.deepEqual(t.writes, []);
+  const ok = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } }, TOKEN);
+  assert.equal(ok.status, 200);
+  assert.match(t.text(), /base_url: "https:\/\/evil\.example\/v1"/);
+});
+
+// @spec DASH-CTRL-009, DASH-CTRL-011
+test("on loopback a save that changes a sensitive key needs no token, with control on, and a stray header is ignored", async () => {
+  const t = await boot("local");
+  const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://other.example/v1" } }, "wrong");
+  assert.equal(r.status, 200, await r.clone().text());
+  assert.match(t.text(), /base_url: "https:\/\/other\.example\/v1"/);
+  const hosts = await t.put("/config/dashboard", { etag: t.etag(), values: { allowed_hosts: ["streampc"] } });
+  assert.equal(hosts.status, 200, await hosts.clone().text());
 });
 
 // @spec DASH-CTRL-010
-test("with no control token configured a sensitive change is 403 {ok:false, detail, sensitive} naming CONTROL_TOKEN and CONTROL_ENABLED, nothing written", async () => {
-  const t = await boot("no-token");
+test("where the token is required and none is configured, a sensitive change is 403 {ok:false, detail, sensitive} naming CONTROL_TOKEN and CONTROL_ENABLED, nothing written", async () => {
+  const t = await boot("remote-no-token");
   const before = t.text();
   for (const token of [undefined, TOKEN]) {
     const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } }, token);
@@ -100,38 +109,31 @@ test("with no control token configured a sensitive change is 403 {ok:false, deta
 });
 
 // @spec DASH-CTRL-009
-test("only keys whose value differs are named: an unchanged sensitive key resubmitted with the rest of the section does not demand the token", async () => {
-  const t = await boot("no-token");
-  // the file's value, as a string; the file's number, as a number and as text; a key left to its default
-  const r = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "host.docker.internal", "obs.port": 4455, temperature: 0.3 } });
-  assert.equal(r.status, 200, await r.clone().text());
-  assert.match(t.text(), /temperature: 0\.3/);
-  // a port sent as text is not the number the file holds and the editor does not coerce it (it would answer 400), so it is a
-  // change by type: the token is asked for, and nothing is written
-  const before = t.text();
-  const again = await t.put("/config/vision", { etag: t.etag(), values: { "obs.port": "4455", "obs.host": "host.docker.internal", width: 640 } });
-  assert.equal(again.status, 403, "no token is configured in this mode");
-  assert.equal(t.text(), before);
-  const noPort = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "host.docker.internal", width: 640 } });
-  assert.ok(noPort.status !== 401 && noPort.status !== 403, `unchanged sensitive keys alone do not ask for the token: ${noPort.status}`);
-  const dflt = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://api.openai.com/v1", temperature: 0.5 } });
-  assert.equal(dflt.status, 200);
+test("only keys whose value differs are named: an unchanged sensitive key resubmitted with the rest of the section gets the plain refusal", async () => {
+  const t = await boot("remote");
+  const plain = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "host.docker.internal", "obs.port": 4455, temperature: 0.3 } });
+  assert.equal(plain.status, 401);
+  assert.equal(await plain.text(), "unauthorized", "no sensitive key changes: the plain 401 of DASH-CTRL-004");
+  // a port sent as text is not the number the file holds, so it is a change by type
+  const typed = await t.put("/config/vision", { etag: t.etag(), values: { "obs.port": "4455", "obs.host": "host.docker.internal", width: 640 } });
+  assert.deepEqual(((await typed.json()) as Refusal).sensitive, ["vision.obs.port"]);
+  assert.equal(t.text(), EXAMPLE);
 });
 
 // @spec DASH-CTRL-009
 test("a sensitive key left at its schema default, resubmitted at that default, is unchanged; a different value is changed", async () => {
-  const t = await boot("token-only");
+  const t = await boot("remote");
   // remove the key from the file so it is only a default
   writeFileSync(t.file, t.text().replace(/^\s*base_url: .*$/m, ""));
   const same = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://api.openai.com/v1", temperature: 0.4 } });
-  assert.equal(same.status, 200, await same.clone().text());
+  assert.equal(await same.text(), "unauthorized");
   const diff = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "http://other/v1" } });
-  assert.equal(diff.status, 401);
+  assert.deepEqual(((await diff.json()) as Refusal).sensitive, [BASE]);
 });
 
 // @spec DASH-CTRL-009
 test("the list names exactly the changed sensitive keys, among unchanged ones and non-sensitive edits", async () => {
-  const t = await boot("token-only");
+  const t = await boot("remote");
   const r = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "10.0.0.9", "obs.port": 4455, "obs.source": "Other", width: 640 } });
   assert.equal(r.status, 401);
   assert.deepEqual(((await r.json()) as Refusal).sensitive, ["vision.obs.host"]);
@@ -140,40 +142,27 @@ test("the list names exactly the changed sensitive keys, among unchanged ones an
   assert.equal(t.text(), EXAMPLE);
 });
 
+// @spec DASH-CTRL-009, DASH-CTRL-004, MOD-CFG-013
+test("a dry run writes nothing; beyond loopback it gets the plain refusal without the token, and on loopback it is open", async () => {
+  const local = await boot("local");
+  const r = await local.put("/config/llm?dryRun=1", { etag: local.etag(), values: { "openai.base_url": "https://evil.example/v1" } });
+  assert.equal(r.status, 200);
+  assert.equal(((await r.json()) as { dryRun: boolean }).dryRun, true);
+  assert.equal(local.text(), EXAMPLE);
+  assert.deepEqual(local.writes, []);
+  const remote = await boot("remote");
+  const refused = await remote.put("/config/llm?dryRun=1", { etag: remote.etag(), values: { "openai.base_url": "http://x/v1" } });
+  assert.equal(refused.status, 401);
+  assert.equal(await refused.text(), "unauthorized");
+  assert.equal((await remote.put("/config/llm?dryRun=1", { etag: remote.etag(), values: { "openai.base_url": "http://x/v1" } }, TOKEN)).status, 200);
+  assert.deepEqual(remote.writes, []);
+});
+
 // @spec DASH-CTRL-009, DASH-CTRL-004
-test("a save that touches no sensitive key keeps today's gating: open with control off, token-gated with it on", async () => {
-  const open = await boot("no-token");
-  assert.equal((await open.put("/config/llm", { etag: open.etag(), values: { temperature: 0.5 } })).status, 200);
-  const tokenOnly = await boot("token-only");
-  assert.equal((await tokenOnly.put("/config/llm", { etag: tokenOnly.etag(), values: { temperature: 0.5 } })).status, 200, "a configured token does not gate a non-sensitive save while control is off");
-  const ctl = await boot("control");
-  assert.equal((await ctl.put("/config/llm", { etag: ctl.etag(), values: { temperature: 0.5 } })).status, 401);
-  assert.equal((await ctl.put("/config/llm", { etag: ctl.etag(), values: { temperature: 0.5 } }, TOKEN)).status, 200);
-});
-
-// @spec DASH-CTRL-009, MOD-CFG-013
-test("a dry run writes nothing and is never gated by the sensitive rule; in control mode it keeps its ordinary gating", async () => {
-  for (const mode of ["no-token", "token-only"] as const) {
-    const t = await boot(mode);
-    const r = await t.put("/config/llm?dryRun=1", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } });
-    assert.equal(r.status, 200, mode);
-    assert.equal(((await r.json()) as { dryRun: boolean }).dryRun, true);
-    assert.equal(t.text(), EXAMPLE);
-    assert.deepEqual(t.writes, []);
-  }
-  const ctl = await boot("control");
-  assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } })).status, 401);
-  assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } }, TOKEN)).status, 200);
-  assert.deepEqual(ctl.writes, []);
-});
-
-// @spec DASH-CTRL-009
-test("the check runs after the body's size and shape and before the etag and any validation", async () => {
-  const t = await boot("token-only");
-  assert.equal((await t.put("/config/llm", "not json")).status, 400);
-  assert.equal((await t.put("/config/llm", { values: { "openai.base_url": "http://x/v1" } })).status, 400, "no etag: shape first");
-  assert.equal((await t.put("/config/llm", { etag: "x", values: [] })).status, 400);
-  assert.equal((await t.put("/config/llm", JSON.stringify({ etag: "x", values: { "openai.base_url": "y".repeat(70 * 1024) } }))).status, 413, "size first");
+test("the refusal comes before the etag and any validation; a body that is not a save gets the plain refusal", async () => {
+  const t = await boot("remote");
+  assert.equal(await (await t.put("/config/llm", "not json")).text(), "unauthorized");
+  assert.equal((await t.put("/config/llm", JSON.stringify({ etag: "x", values: { "openai.base_url": "y".repeat(70 * 1024) } }))).status, 401, "an oversized body is a plain refusal");
   const stale = await t.put("/config/llm", { etag: "stale", values: { "openai.base_url": "http://x/v1" } });
   assert.equal(stale.status, 401, "a stale etag does not outrank the token check");
   const invalid = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": 12, temperature: "hot" } });
@@ -184,23 +173,25 @@ test("the check runs after the body's size and shape and before the etag and any
 });
 
 // @spec DASH-CTRL-009, DASH-HOST-005
-test("the Host and Origin checks answer first: a foreign Origin is 403 even with the token", async () => {
-  const t = await boot("token-only");
-  const body = JSON.stringify({ etag: t.etag(), values: { "openai.base_url": "http://x/v1" } });
-  assert.equal(await t.raw("/config/llm", { host: "127.0.0.1", origin: "http://evil.example", authorization: `Bearer ${TOKEN}` }, body), 403);
-  assert.equal(t.text(), EXAMPLE);
+test("the Host and Origin checks answer first: a foreign Origin is 403 even with the token, and on loopback too", async () => {
+  for (const mode of ["remote", "local"] as const) {
+    const t = await boot(mode);
+    const body = JSON.stringify({ etag: t.etag(), values: { "openai.base_url": "http://x/v1" } });
+    assert.equal(await t.raw("/config/llm", { host: "127.0.0.1", origin: "http://evil.example", authorization: `Bearer ${TOKEN}` }, body), 403, mode);
+    assert.equal(t.text(), EXAMPLE);
+  }
 });
 
 // @spec DASH-CTRL-009
 test("a key unknown to the section is not a sensitive change and gets the ordinary refusal", async () => {
-  const t = await boot("no-token");
+  const t = await boot("local");
   const r = await t.put("/config/llm", { etag: t.etag(), values: { "no.such.key": "x" } });
   assert.equal(r.status, 400);
 });
 
 // @spec DASH-CTRL-009
 test("the token is compared as a bearer and the refusal never echoes the submitted value", async () => {
-  const t = await boot("token-only");
+  const t = await boot("remote");
   const r = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://SUBMITTED-VALUE.example/v1" } }, "wrong");
   assert.ok(!(await r.text()).includes("SUBMITTED-VALUE"));
 });
@@ -239,18 +230,14 @@ test("changedSensitiveKeys decides unchanged from what the write would store: th
 });
 
 // @spec DASH-CTRL-009
-test("a PUT /config/dashboard that changes allowed_hosts is refused without a token with the sensitive body; resubmitting it unchanged is not", async () => {
-  for (const mode of ["control", "token-only"] as const) {
-    const t = await boot(mode);
-    const before = t.text();
-    const r = await t.put("/config/dashboard", { etag: t.etag(), values: { allowed_hosts: ["streampc"] } });
-    assert.equal(r.status, 401, mode);
-    assert.deepEqual(((await r.json()) as Refusal).sensitive, ["dashboard.allowed_hosts"]);
-    assert.equal(t.text(), before);
-    assert.deepEqual(t.writes, []);
-  }
-  // control mode off: an ordinary save is open, so only a changed allowed_hosts asks for the token
-  const open = await boot("no-token");
-  const same = await open.put("/config/dashboard", { etag: open.etag(), values: { allowed_hosts: [], "inject.max_image_bytes": 4096 } });
-  assert.equal(same.status, 200, await same.clone().text());
+test("a PUT /config/dashboard that changes allowed_hosts is refused beyond loopback without a token with the sensitive body; resubmitting it unchanged is the plain refusal", async () => {
+  const t = await boot("remote");
+  const before = t.text();
+  const r = await t.put("/config/dashboard", { etag: t.etag(), values: { allowed_hosts: ["streampc"] } });
+  assert.equal(r.status, 401);
+  assert.deepEqual(((await r.json()) as Refusal).sensitive, ["dashboard.allowed_hosts"]);
+  const same = await t.put("/config/dashboard", { etag: t.etag(), values: { allowed_hosts: [], "inject.max_image_bytes": 4096 } });
+  assert.equal(await same.text(), "unauthorized");
+  assert.equal(t.text(), before);
+  assert.deepEqual(t.writes, []);
 });

@@ -37,7 +37,7 @@ export interface MountOptions {
 /** Renders the screen, opens the socket and sends the snapshots; resolves once the control and manifest reads have landed. */
 export async function mountServices(o: MountOptions = {}) {
   const app = o.app ?? makeApp();
-  const control = o.control ?? { enabled: false };
+  const control = o.control ?? { enabled: false, tokenRequired: false };
   if (control === "fail") app.fetch.on("GET /services/control", { status: 500, text: "boom" });
   else app.fetch.on("GET /services/control", { json: control });
   const manifest = o.manifest ?? UNITS;

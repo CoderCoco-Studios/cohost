@@ -36,11 +36,11 @@ By the end of this page you will have the real stack running: a language model a
 
    | Where | What it is | When to change it |
    | --- | --- | --- |
-   | `CONTROL_TOKEN` in `.env` | The password the dashboard asks for. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`. |
+   | `CONTROL_TOKEN` in `.env` | The password the dashboard asks for when you open it from another machine; on this PC nothing asks for it. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`. |
    | `llm.model`, `llm.embed_model`, `vision.model` in `config/config.yaml` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
    | `ears.stt_model` in `config/config.yaml` | The speech-to-text model name | Rarely. |
    | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` in `config/config.yaml` | Your accounts and apps | Fill each in on its own page under Connect. |
-   | `secrets/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages, or set each credential from the **Settings** screen: its masked field shows **Set** or **Not set**, never the value, and saving needs your control token. |
+   | `secrets/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages, or set each credential from the **Settings** screen: its masked field shows **Set** or **Not set**, never the value; saving from another machine needs your control token. |
    | `COHOST_DOCKER_BIN` in `.env` | The Docker program to run | On [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration, set it to `docker.exe`. |
 
    A restart of the service that reads a key applies an edit to either file. The [environment and ports](../../advanced/reference/env.md) page lists everything `.env` holds.
@@ -62,7 +62,7 @@ By the end of this page you will have the real stack running: a language model a
    mise run dashboard
    ```
 
-6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
+6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), and press **Launch**. On this PC nothing asks for a token; from another machine, enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
 
 7. Press **Audio off** in the header (it then reads **Audio on**) so your browser may play sound.
 

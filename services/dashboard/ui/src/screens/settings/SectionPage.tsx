@@ -70,7 +70,7 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
       {note ? <p className="help" id={ids.note}>{note}</p> : null}
       {egressNotes.map((n, i) => <p className="help egress-note" key={i}>{n}</p>)}
-      {km.sensitive ? <p className="help" id={ids.sens}>Changing this needs the control token.</p> : null}
+      {km.sensitive ? <p className="help" id={ids.sens}>Changing this from another machine needs the control token.</p> : null}
       {overriders.length > 0 ? (
         <div className="note note-warn small" id={ids.iso}>
           {`${overriders.join(", ")} ${overriders.length === 1 ? "runs" : "run"} isolated: its ${info!.isolation!.name} override is set, and a restart keeps it. Your saved value applies again once it is started without isolation.`}

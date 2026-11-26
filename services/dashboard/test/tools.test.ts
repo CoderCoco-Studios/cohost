@@ -20,6 +20,8 @@ interface Opts {
   control?: boolean;
   /** CONTROL_TOKEN configured without control mode; `null` is none at all. */
   token?: string | null;
+  /** The full surface is bound beyond loopback, so the token is required (DASH-CTRL-011); default: with `control`. */
+  remote?: boolean;
   states?: Record<string, HealthState>;
 }
 
@@ -29,7 +31,7 @@ async function boot(o: Opts = {}) {
   const setup = setupControl(o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {}, bus, rec.log);
   const token = o.control ? TOKEN : o.token === undefined ? undefined : o.token ?? undefined;
   const services = () => health("up").map((s) => (o.states?.[s.service] ? { ...s, state: o.states[s.service]! } : s));
-  const handler = createDashboardHandler({
+  const handler = createDashboardHandler({ tokenRequired: o.remote ?? !!setup.control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services,
     control: setup.control, ...(token ? { controlToken: token } : {}),
@@ -112,19 +114,24 @@ test("control mode on: no or a wrong token is 401 with www-authenticate and publ
   assert.equal(t.bus.published.length, 0);
 });
 
-// @spec DASH-TOOL-002, DASH-CTRL-001
-test("control mode OFF with CONTROL_TOKEN configured: the route is still gated (an Allow lets an action run), unlike /control and /personality", async () => {
-  const t = await boot({ token: TOKEN });
+// @spec DASH-TOOL-002, DASH-CTRL-011
+test("on loopback the route needs no token in either control mode, a stray header ignored; beyond loopback it is gated", async () => {
+  for (const o of [{ control: true, remote: false }, { token: TOKEN }, { token: null }]) {
+    const local = await boot(o);
+    assert.equal((await local.answer({ id: "a", allow: true }, {})).status, 202, JSON.stringify(o));
+    assert.equal((await local.answer({ id: "b", allow: false }, local.bearer("wrong"))).status, 202);
+  }
+  const t = await boot({ token: TOKEN, remote: true });
   assert.equal((await t.answer({ id: "a", allow: true }, {})).status, 401);
   assert.equal((await t.answer({ id: "a", allow: true }, t.bearer("wrong"))).status, 401);
   assert.equal(t.bus.published.length, 0);
-  assert.equal((await t.answer({ id: "a", allow: true })).status, 202, "the right token works in this mode too");
+  assert.equal((await t.answer({ id: "a", allow: true })).status, 202, "the right token works");
   assert.deepEqual(t.bus.of("tool.answer"), [{ id: "a", allow: true }]);
 });
 
-// @spec DASH-TOOL-002, DASH-CTRL-001
-test("no control token configured: 403 naming CONTROL_TOKEN and CONTROL_ENABLED, whatever the request carries, and nothing is published", async () => {
-  const t = await boot({ token: null });
+// @spec DASH-TOOL-002, DASH-CTRL-010
+test("where the token is required and none is configured: 403 naming CONTROL_TOKEN and CONTROL_ENABLED, whatever the request carries, and nothing is published", async () => {
+  const t = await boot({ token: null, remote: true });
   for (const headers of [{}, t.bearer("anything"), t.bearer("")]) {
     const r = await t.answer({ id: "a", allow: true }, headers);
     assert.equal(r.status, 403);
@@ -209,7 +216,7 @@ test("as: tool never remembers and never carries chat metadata: remember true, u
 });
 
 // @spec DASH-INJ-011, DASH-CTRL-001
-test("as: tool is gated in both control modes: 401 with www-authenticate without the token, 403 when no token is configured, and the chat injection beside it stays open with control off", async () => {
+test("as: tool is gated beyond loopback: 401 with www-authenticate without the token, 403 when no token is configured; on loopback it is open", async () => {
   const on = await boot({ control: true });
   const r = await on.text(tool, {});
   assert.equal(r.status, 401);
@@ -217,22 +224,25 @@ test("as: tool is gated in both control modes: 401 with www-authenticate without
   assert.equal((await on.text(tool, on.bearer("wrong"))).status, 401);
   assert.equal(on.bus.published.length, 0);
 
-  const off = await boot({ token: TOKEN });
-  assert.equal((await off.text(tool, {})).status, 401, "control off, token configured");
+  const off = await boot({ token: TOKEN, remote: true });
+  assert.equal((await off.text(tool, {})).status, 401, "token configured, beyond loopback");
   assert.equal((await off.text(tool, off.bearer("wrong"))).status, 401);
   assert.equal(off.bus.published.length, 0);
-  assert.equal((await off.text({ level: "service", text: "hi" }, {})).status, 202, "chat-level service injection is not gated with control off");
+  assert.equal((await off.text({ level: "service", text: "hi" }, {})).status, 401, "beyond loopback every injection is gated");
+  assert.equal((await off.text({ level: "service", text: "hi" })).status, 202, "with the token");
   assert.equal((await off.text(tool)).status, 202, "the right token works with control off");
   assert.deepEqual(off.bus.of("inject.request").map((e) => e.target), ["chat", "tools"]);
 
-  const none = await boot({ token: null });
+  const local = await boot({ control: true, remote: false });
+  assert.equal((await local.text(tool, {})).status, 202, "on loopback with control on");
+
+  const none = await boot({ token: null, remote: true });
   for (const headers of [{}, none.bearer("x")]) {
     const x = await none.text(tool, headers);
     assert.equal(x.status, 403);
     assert.match(x.text, /CONTROL_TOKEN/);
   }
-  assert.equal((await none.text({ level: "service", text: "hi" }, {})).status, 202);
-  assert.deepEqual(none.bus.of("inject.request").map((e) => e.target), ["chat"], "only the chat one went out");
+  assert.equal(none.bus.published.length, 0);
 });
 
 // @spec DASH-INJ-011, DASH-HOST-005
@@ -254,11 +264,11 @@ test("as: tool is for the tools unit alone: refused 409 while tools is down, and
   assert.equal((await chatDown.text(tool)).status, 202);
 });
 
-// @spec DASH-CTRL-001
-test("with control off the token-required list includes POST /tools/answer and as: tool, while the chat and bus injections and /control stay open", async () => {
+// @spec DASH-CTRL-001, DASH-CTRL-011
+test("with control off the full surface is on loopback and nothing asks for the token: POST /tools/answer, as: tool, the chat and bus injections", async () => {
   const t = await boot({ token: TOKEN });
-  assert.equal((await t.answer({ id: "a", allow: true }, {})).status, 401);
-  assert.equal((await t.text(tool, {})).status, 401);
+  assert.equal((await t.answer({ id: "a", allow: true }, {})).status, 202);
+  assert.equal((await t.text(tool, {})).status, 202);
   assert.equal((await t.text({ level: "bus", text: "hi" }, {})).status, 202);
   assert.equal((await t.text({ level: "service", text: "hi" }, {})).status, 202);
 });

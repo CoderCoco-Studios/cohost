@@ -23,6 +23,8 @@ const BR_SECRET = "llm.bedrock.secret_access_key";
 interface Opts {
   /** CONTROL_ENABLED=1 (the handler gets `control`). */
   control?: boolean;
+  /** The full surface is bound beyond loopback, so the token is required (DASH-CTRL-011); default: with `control`. */
+  remote?: boolean;
   /** CONTROL_TOKEN configured; default is the token when `control`, none otherwise. */
   token?: string | null;
   secrets?: string;
@@ -44,7 +46,7 @@ async function boot(o: Opts = {}) {
   const token = o.token === undefined ? (o.control ? TOKEN : undefined) : o.token ?? undefined;
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...o.stack };
   let configReads = 0;
-  const handler = createDashboardHandler({
+  const handler = createDashboardHandler({ tokenRequired: o.remote ?? !!o.control,
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
@@ -159,22 +161,26 @@ test("a clear empties the value, keeps the key and every other secret, and every
   assert.doesNotMatch(t.secretsText(), /sk-old/);
 });
 
-// @spec DASH-SECRET-003, DASH-SECRET-004
-test("the control token is always required, in both modes: missing or wrong is 401 with www-authenticate and nothing is written", async () => {
-  for (const control of [true, false]) {
-    const t = await boot({ control, token: TOKEN });
-    for (const tok of [undefined, "wrong", ""]) {
-      const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, tok);
-      assert.equal(r.status, 401, `control=${control} token=${String(tok)}`);
-      assert.equal(r.headers.get("www-authenticate"), "Bearer");
-      assert.equal(t.secretsText(), "");
-    }
+// @spec DASH-SECRET-003, DASH-CTRL-011
+test("beyond loopback the control token is required: missing or wrong is 401 with www-authenticate and nothing is written; on loopback it is not, in either control mode", async () => {
+  const t = await boot({ control: true, remote: true, token: TOKEN });
+  for (const tok of [undefined, "wrong", ""]) {
+    const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, tok);
+    assert.equal(r.status, 401, `token=${String(tok)}`);
+    assert.equal(r.headers.get("www-authenticate"), "Bearer");
+    assert.equal(t.secretsText(), "");
+  }
+  for (const [control, token] of [[true, TOKEN], [false, TOKEN], [false, null]] as const) {
+    const local = await boot({ control, remote: false, token });
+    const r = await local.put(`/secrets/${OPENAI}`, { value: "sk-local" }, "wrong");
+    assert.equal(r.status, 200, `control=${control} token=${String(token)}`);
+    assert.deepEqual(local.values(), { [OPENAI]: "sk-local" });
   }
 });
 
-// @spec DASH-SECRET-004
-test("with no control token configured the route is 403 naming CONTROL_TOKEN and CONTROL_ENABLED, whatever the request carries", async () => {
-  const t = await boot({ control: false, token: null });
+// @spec DASH-SECRET-004, DASH-CTRL-010
+test("where the token is required and none is configured the route is 403 naming CONTROL_TOKEN and CONTROL_ENABLED, whatever the request carries", async () => {
+  const t = await boot({ control: false, remote: true, token: null });
   for (const tok of [undefined, "anything"]) {
     const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, tok);
     assert.equal(r.status, 403);
@@ -188,21 +194,22 @@ test("with no control token configured the route is 403 naming CONTROL_TOKEN and
 });
 
 // @spec DASH-SECRET-003, DASH-SECRET-005, DASH-ACC-004
-test("the token is checked before the path: an unknown path is 401 for a wrong token and 404 for the right one, writing nothing", async () => {
-  for (const control of [true, false]) {
-    const t = await boot({ control, token: TOKEN });
-    assert.equal((await t.put("/secrets/access-check", { value: null }, "wrong")).status, 401);
-    assert.equal((await t.put("/secrets/access-check", { value: null })).status, 401);
-    const ok = await t.put("/secrets/access-check", { value: null }, TOKEN);
-    assert.equal(ok.status, 404);
-    assert.deepEqual(await ok.json(), { ok: false, detail: "unknown secret" });
-    assert.equal(t.secretsText(), "");
-  }
+test("the token is checked before the path: beyond loopback an unknown path is 401 for a wrong token and 404 for the right one; on loopback 404 for any; nothing written", async () => {
+  const t = await boot({ control: true, remote: true, token: TOKEN });
+  assert.equal((await t.put("/secrets/access-check", { value: null }, "wrong")).status, 401);
+  assert.equal((await t.put("/secrets/access-check", { value: null })).status, 401);
+  const ok = await t.put("/secrets/access-check", { value: null }, TOKEN);
+  assert.equal(ok.status, 404);
+  assert.deepEqual(await ok.json(), { ok: false, detail: "unknown secret" });
+  const local = await boot({ control: true, remote: false, token: TOKEN });
+  for (const tok of [undefined, "wrong", TOKEN]) assert.equal((await local.put("/secrets/access-check", { value: null }, tok)).status, 404);
+  assert.equal(t.secretsText(), "");
+  assert.equal(local.secretsText(), "");
 });
 
 // @spec DASH-SECRET-003, DASH-SECRET-006
 test("refusal order after the token: 413 body size, then 404 path, then 400 body", async () => {
-  const t = await boot({ control: false, token: TOKEN });
+  const t = await boot({ control: true, remote: true, token: TOKEN });
   const huge = JSON.stringify({ value: "x".repeat(70 * 1024) });
   assert.equal((await t.put(`/secrets/${OPENAI}`, huge, "wrong")).status, 401, "token before size");
   assert.equal((await t.put(`/secrets/${OPENAI}`, huge, TOKEN)).status, 413);
@@ -387,9 +394,9 @@ test("PUT /secrets sets and clears several paths in one atomic write and answers
 
 // @spec DASH-SECRET-011, DASH-SECRET-003
 test("PUT /secrets is gated like the single form: 403 with no token configured, 401 for a wrong token, before the body is judged", async () => {
-  const none = await boot({ control: false, token: null });
+  const none = await boot({ control: false, remote: true, token: null });
   assert.equal((await none.put("/secrets", { values: { [OPENAI]: "x" } }, TOKEN)).status, 403);
-  const t = await boot({ control: false, token: TOKEN });
+  const t = await boot({ control: true, remote: true, token: TOKEN });
   assert.equal((await t.put("/secrets", "not json", "wrong")).status, 401);
   assert.equal((await t.put("/secrets", { values: { [OPENAI]: "x" } })).status, 401);
   assert.equal((await t.put("/secrets", "not json", TOKEN)).status, 400);

@@ -6,12 +6,12 @@ import {
   parseConfigText, placeholderFallback, rawSection, resetConfigKey, resetPathOf, secretPathOf, secretRepair, secretsPath, setConfigKey, updateSecrets,
   writeFileAtomic, type Config, type ConfigIssue, type ConfigProblem, type Logger,
 } from "@cohost/config";
-import { LifecycleLock, StackController, bearerOk, configRefusal, isLoopback, type LockResult, type StackResult } from "@cohost/control";
+import { LifecycleLock, StackController, configRefusal, type LockResult, type StackResult } from "@cohost/control";
 import { BodyTooLarge, readBody, readText } from "./body.js";
 import { fullSurfaceBind } from "./control.js";
 import { guardFullSurface } from "./host.js";
-import { controlTokenFromEnv } from "./secrets.js";
-import { noTokenDetail } from "./sensitive.js";
+import { controlTokenFromEnv, refuseSecretToken } from "./secrets.js";
+import { NO_TOKEN_DETAIL, tokenRefusal, type TokenGate } from "./access.js";
 import { handleUi, locateUiDir } from "./static.js";
 
 /** What the recovery screen offers for one problem. */
@@ -132,12 +132,17 @@ export function recoveryAddress(text: string | undefined): { port: number; allow
 export interface RecoveryHandlerDeps {
   log: Pick<Logger, "info" | "error">;
   files: RecoveryFiles;
-  /** `CONTROL_ENABLED=1`: every recovery write needs the token, and the stack routes answer 409 instead of 404. */
+  /** `CONTROL_ENABLED=1`: the stack routes answer 409 instead of 404, and `POST /stack/stop` runs. */
   controlEnabled: boolean;
   /** `CONTROL_ADVANCED`, reported by `GET /services/control` as in normal mode. */
   advanced?: boolean;
   /** The control token whenever one is configured, in either control mode. */
   controlToken?: string;
+  /**
+   * True when the full surface is bound to a non-loopback address: every recovery write, the raw read and the Stop then need the
+   * control token. False on a loopback bind, where no route asks for it (DASH-RCV-003, DASH-CTRL-011).
+   */
+  tokenRequired: boolean;
   /**
    * Replaces `config.yaml` atomically, with `mode` as the new file's permission bits when given; `writeFileAtomic` by default.
    * `secrets.yaml` is never written through it: `updateSecrets` and the raw editor write it with `writeFileAtomic` at mode 0600.
@@ -164,20 +169,22 @@ const json = (res: http.ServerResponse, status: number, value: unknown, headers:
 
 const STACK_POST = /^\/stack\/[^/]+$/;
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
-const RECOVERY_POST = /^\/recovery\/(set|reset|reset-all|raw)$/;
+const RECOVERY_POST = /^\/recovery\/(set|reset|reset-all|fallback|raw)$/;
 const RECOVERY_DETAIL = "the dashboard is in config recovery mode: fix the config on its recovery screen first";
 
 /**
- * The full surface in config recovery mode: the UI, `/health`, `GET /services/control`, the problem list, its three writes, the
- * raw editor of a file that does not parse and, with control on, the Stop; the other stack and lifecycle routes are refused,
- * everything else is a 503. The Host and Origin checks wrap it at the listener.
+ * The full surface in config recovery mode: the UI, `/health`, `GET /services/control`, the Access dialog's token check, the
+ * problem list, its four writes, the raw editor of a file that does not parse and, with control on, the Stop; the other stack
+ * and lifecycle routes are refused, everything else is a 503. The Host and Origin checks wrap it at the listener, and the
+ * control token is asked for only where the full surface is bound beyond loopback (DASH-CTRL-011).
  */
 // @spec DASH-RCV-003, DASH-RCV-004, DASH-RCV-005, DASH-RCV-006, DASH-RCV-007, DASH-RCV-009, DASH-RCV-010, DASH-RCV-012, DASH-RCV-015
-// @spec DASH-RCV-011, DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019
+// @spec DASH-RCV-011, DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019, DASH-RCV-022, DASH-RCV-023, DASH-CTRL-011
 export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListener {
   const write = d.write ?? writeFileAtomic;
   const uiDir = d.uiDir ?? locateUiDir();
   const { configFile, secretsFile } = d.files;
+  const gate: TokenGate = { required: d.tokenRequired, token: d.controlToken };
   const check = (configText?: string): ConfigProblem[] => checkConfig({ configFile, secretsFile, ...(configText !== undefined ? { configText } : {}) });
   let left = false;
   let fired = false;
@@ -223,10 +230,14 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     json(res, 200, { ok: true, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()), valid, ...(valid ? moved(text) : {}), ...extra });
   };
 
-  /** The refusal of a `secrets.yaml` change without the control token (DASH-SECRET-003): 403 when none is configured, else 401. */
-  const refuseSecrets = (res: http.ServerResponse, paths: string[]): void => {
-    if (d.controlToken === undefined) { json(res, 403, { ok: false, detail: `changing secrets.yaml (${paths.join(", ")}) needs the control token, and none is configured: set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard`, secrets: paths }); return; }
-    json(res, 401, { ok: false, detail: `changing secrets.yaml (${paths.join(", ")}) needs the control token (Authorization: Bearer)`, secrets: paths }, { "www-authenticate": "Bearer" });
+  /** The control-token gate of every recovery write, the raw read and the Stop (DASH-RCV-003): true, with the refusal sent, when refused. */
+  const refused = (req: http.IncomingMessage, res: http.ServerResponse): boolean => {
+    const refusal = tokenRefusal(gate, req.headers.authorization);
+    if (!refusal) return false;
+    req.resume();
+    if (refusal === "none") json(res, 403, { ok: false, detail: NO_TOKEN_DETAIL });
+    else json(res, 401, { ok: false, detail: "this needs the control token (Authorization: Bearer)" }, { "www-authenticate": "Bearer" });
+    return true;
   };
 
   const refuse = (res: http.ServerResponse, issues: ConfigIssue[]): void => json(res, 400, { ok: false, issues });
@@ -238,33 +249,10 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   const rawProblem = (file: RawFile): RecoveryProblem | undefined =>
     recoveryProblems(check(), readFileSync(configFile, "utf8"), readSecrets()).find((p) => p.file === file && p.raw === true);
 
-  /**
-   * Whether the caller may read (`write` false) or replace `file` as text (DASH-RCV-018), answering the refusal when not:
-   * `secrets.yaml` only with the token, in both control modes; `config.yaml` with the token whenever one is configured (a raw
-   * write may change any key, and the text can hold a credential typed at a secret path), open only with control off and no token.
-   */
-  const rawAccess = (res: http.ServerResponse, file: RawFile, write: boolean, tokenOk: boolean): boolean => {
-    if (tokenOk) return true;
-    if (file === "secrets") {
-      if (d.controlToken === undefined) {
-        json(res, 403, { ok: false, detail: "secrets.yaml as text needs the control token, and none is configured: set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard" });
-      } else {
-        json(res, 401, { ok: false, detail: "secrets.yaml as text needs the control token (Authorization: Bearer)" }, { "www-authenticate": "Bearer" });
-      }
-      return false;
-    }
-    if (d.controlEnabled || d.controlToken !== undefined) {
-      json(res, 401, { ok: false, detail: `${write ? "changing" : "reading"} config.yaml as text needs the control token (Authorization: Bearer)` }, { "www-authenticate": "Bearer" });
-      return false;
-    }
-    return true;
-  };
-
   /** `GET /recovery/raw?file=`: the whole text of a file that does not parse, with its etag and position (DASH-RCV-016). */
-  const getRaw = (res: http.ServerResponse, url: URL, tokenOk: boolean): void => {
+  const getRaw = (res: http.ServerResponse, url: URL): void => {
     const file = url.searchParams.get("file");
     if (!isRawFile(file)) { json(res, 400, { ok: false, detail: "file must be config or secrets" }); return; }
-    if (!rawAccess(res, file, false, tokenOk)) return;
     const p = rawProblem(file);
     if (!p) { json(res, 409, { ok: false, detail: `${RAW_FILES[file]} parses as a mapping: fix it with the rows of the recovery screen` }); return; }
     const text = readRaw(file);
@@ -275,7 +263,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
    * `POST /recovery/raw`: replaces a file that does not parse with the text sent, when its etag is current (DASH-RCV-017). The
    * write follows a symbolic link, keeps `config.yaml`'s permission bits and writes `secrets.yaml` 0600. The text is never logged.
    */
-  const postRaw = async (req: http.IncomingMessage, res: http.ServerResponse, tokenOk: boolean): Promise<void> => {
+  const postRaw = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const { data, tooLarge } = await readBody(req, RAW_LIMIT);
     if (tooLarge) throw new BodyTooLarge();
     let body: { file?: unknown; etag?: unknown; text?: unknown };
@@ -285,7 +273,6 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       return;
     }
     const file = body.file;
-    if (!rawAccess(res, file, true, tokenOk)) return;
     // From here to the write nothing is awaited, so no other request can change the file in between.
     const current = etagOf(readRaw(file));
     if (body.etag !== current) { json(res, 409, { ok: false, etag: current }); return; }
@@ -329,7 +316,15 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (handleUi(uiDir, "cohost", req, res, url)) return;
     if (url.pathname === "/health") { res.writeHead(200); res.end("ok"); return; }
     if (method === "GET" && url.pathname === "/services/control") {
-      json(res, 200, d.controlEnabled ? { enabled: true, runtime: "compose", advanced: !!d.advanced } : { enabled: false });
+      json(res, 200, d.controlEnabled ? { enabled: true, runtime: "compose", advanced: !!d.advanced, tokenRequired: d.tokenRequired } : { enabled: false, tokenRequired: d.tokenRequired });
+      return;
+    }
+    // The Access dialog's token check (DASH-RCV-022): the secret route's token order, then "unknown secret" for every path. It
+    // reads no body and no file, and writes nothing; a secret is set on the Settings screen once the dashboard is back.
+    if (method === "PUT" && url.pathname.startsWith("/secrets/")) {
+      req.resume();
+      if (refuseSecretToken(res, tokenRefusal(gate, req.headers.authorization))) return;
+      json(res, 404, { ok: false, detail: "unknown secret" });
       return;
     }
     if (method === "GET" && url.pathname === "/recovery") {
@@ -339,11 +334,10 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       json(res, 200, { active: true, file: configFile, secretsFile, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()) });
       return;
     }
-    const tokenOk = d.controlToken !== undefined && bearerOk(req.headers.authorization, d.controlToken);
-    if (method === "GET" && url.pathname === "/recovery/raw") { getRaw(res, url, tokenOk); return; }
+    if (method === "GET" && url.pathname === "/recovery/raw") { if (!refused(req, res)) getRaw(res, url); return; }
     if (method === "POST" && url.pathname === "/stack/stop" && d.controlEnabled) {
+      if (refused(req, res)) return;
       req.resume();
-      if (!tokenOk) { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
       await stop(res);
       return;
     }
@@ -356,8 +350,8 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const op = method === "POST" ? RECOVERY_POST.exec(url.pathname)?.[1] : undefined;
     if (!op) { req.resume(); json(res, 503, { ok: false, detail: RECOVERY_DETAIL }); return; }
 
-    if (d.controlEnabled && !tokenOk) { req.resume(); res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
-    if (op === "raw") { await postRaw(req, res, tokenOk); return; }
+    if (refused(req, res)) return;
+    if (op === "raw") { await postRaw(req, res); return; }
     let body: { etag?: unknown; path?: unknown; value?: unknown };
     try { body = JSON.parse(await readText(req)) as typeof body; } catch (e) {
       if (e instanceof BodyTooLarge) throw e;
@@ -375,13 +369,6 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const path = body.path as string;
 
     if (op === "set") {
-      if (isSensitive(path) && !tokenOk) {
-        const key = resetPathOf(path);
-        const sensitive = [key];
-        if (d.controlToken === undefined) { json(res, 403, { ok: false, detail: noTokenDetail(key), sensitive }); return; }
-        json(res, 401, { ok: false, detail: `changing ${key} needs the control token (Authorization: Bearer)`, sensitive }, { "www-authenticate": "Bearer" });
-        return;
-      }
       if (secretPathOf(resetPathOf(path)) !== undefined) { refuse(res, [{ path, message: "a credential: it belongs in secrets.yaml, set through its masked field on the Settings screen once the dashboard is back" }]); return; }
       const value = typeof body.value === "string" ? inputValue(path, body.value) : body.value;
       const edit = setConfigKey(text, path, value);
@@ -393,11 +380,20 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
 
     const secretsText = readSecrets();
     const problems = recoveryProblems(check(), text, secretsText);
+    // @spec DASH-RCV-023
+    if (op === "fallback") {
+      const p = problems.find((x) => x.file === "config" && x.actions.fallback && x.path === path);
+      if (!p) { refuse(res, [{ path, message: "no failing key at this path has a placeholder fallback to use" }]); return; }
+      const edit = setConfigKey(text, p.path, p.fallback);
+      if (!edit.ok) { refuse(res, edit.issues); return; }
+      write(configFile, edit.text);
+      written(res, `fallback ${p.path}`);
+      return;
+    }
     if (op === "reset") {
       const p = problems.find((x) => x.actions.reset && (x.path === path || x.resetPath === path));
       if (!p) { refuse(res, [{ path, message: "no failing key at this path can be reset" }]); return; }
       if (p.file === "secrets") {
-        if (!tokenOk) { refuseSecrets(res, [p.path]); return; }
         updateSecrets(secretsFile, { [p.path]: secretRepair(secretsText, p.path).value });
       } else {
         const edit = resetConfigKey(text, p.resetPath!);
@@ -409,18 +405,16 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     }
 
     // reset-all: rounds on the text in memory, then one write per file.
-    // A secrets.yaml change needs the control token in both modes (DASH-SECRET-003): without it only config.yaml is repaired, and
-    // the secrets paths are reported as waiting for the token.
     let next = text;
     const repairs = new Map<string, string | null>();
-    const tokenNeeded: string[] = [];
     let edits = 0;
     for (let round = 0; round < 10; round++) {
       let changed = false;
       for (const p of recoveryProblems(check(next), next, secretsText)) {
         if (p.file === "secrets") {
-          if (!p.actions.reset || repairs.has(p.path) || tokenNeeded.includes(p.path)) continue;
-          if (tokenOk) { repairs.set(p.path, secretRepair(secretsText, p.path).value); edits++; } else tokenNeeded.push(p.path);
+          if (!p.actions.reset || repairs.has(p.path)) continue;
+          repairs.set(p.path, secretRepair(secretsText, p.path).value);
+          edits++;
           continue;
         }
         if (p.actions.fallback) {
@@ -436,7 +430,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     }
     if (next !== text) write(configFile, next);
     if (repairs.size) updateSecrets(secretsFile, Object.fromEntries(repairs));
-    written(res, `reset all (${edits} key${edits === 1 ? "" : "s"})`, tokenNeeded.length ? { tokenNeeded } : {});
+    written(res, `reset all (${edits} key${edits === 1 ? "" : "s"})`);
   };
 
   return (req, res) => {
@@ -469,17 +463,17 @@ export interface RecoveryOptions {
 export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const files = o.files ?? { configFile: ensureFromExample("config.yaml", "config.example.yaml"), secretsFile: secretsPath() };
-  const { bind, cfg } = fullSurfaceBind(o.env);
+  const { bind, cfg, tokenRequired } = fullSurfaceBind(o.env);
   let text: string | undefined;
   try { text = readFileSync(files.configFile, "utf8"); } catch { text = undefined; }
   const { port, allowedHosts, fromFile } = recoveryAddress(text);
   let resolveValid: () => void = () => {};
   const valid = new Promise<void>((r) => { resolveValid = r; });
   const handler = createRecoveryHandler({
-    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken: controlTokenFromEnv(o.env), boundPort: port, env: o.env,
+    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken: controlTokenFromEnv(o.env), tokenRequired, boundPort: port, env: o.env,
     ...(o.uiDir ? { uiDir: o.uiDir } : {}), onValid: () => resolveValid(),
   });
-  const server = http.createServer(guardFullSurface(handler, { loopback: isLoopback(bind), controlEnabled: cfg.enabled, allowedHosts }));
+  const server = http.createServer(guardFullSurface(handler, { loopback: !tokenRequired, controlEnabled: cfg.enabled, allowedHosts }));
   const listening = await new Promise<boolean>((resolve) => {
     server.once("error", (err: NodeJS.ErrnoException) => {
       // A broken dashboard section leaves nothing but the default port: say so, so the operator knows what to free or fix.

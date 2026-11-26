@@ -79,7 +79,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       return r;
     }, (d) => `Sent text (id ${d.id}), waiting for its result…`);
   };
-  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. The route is token-gated whether or not control mode is on, so the token is asked for before anything is sent.
+  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. It is gated like every mutation: the token only from another machine, asked for on a 401.
   // @spec MOD-MAN-010, MOD-TEST-005, DASH-INJ-011
   const sendTool = () => {
     const tool = toolRef.current?.value.trim() ?? "";
@@ -89,7 +89,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
     try { args = raw === "" ? {} : JSON.parse(raw); } catch (e) { void act.run(async () => fail(`Arguments are not valid JSON: ${e instanceof Error ? e.message : String(e)}`), ""); return; }
     if (typeof args !== "object" || args === null || Array.isArray(args)) { void act.run(async () => fail("Arguments must be a JSON object."), ""); return; }
     void act.run(async () => {
-      const r = await api.post<{ id: string }>("/inject/text", { level: "service", as: "tool", text: JSON.stringify({ tool, arguments: args }) }, { ...gate, requireToken: true, action: "Send a test tool call" });
+      const r = await api.post<{ id: string }>("/inject/text", { level: "service", as: "tool", text: JSON.stringify({ tool, arguments: args }) }, { ...gate, action: "Send a test tool call" });
       if (r.ok) track(r.data.id);
       return r;
     }, (d) => `Sent tool call (id ${d.id}), waiting for its result…`);

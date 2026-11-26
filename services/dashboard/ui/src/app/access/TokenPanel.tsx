@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
 import { useAccess, useApi } from "../../state/hooks";
 import { SetupSteps } from "./SetupSteps";
@@ -12,7 +12,7 @@ function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSe
   return "Locked";
 }
 
-function TokenRow({ kind }: { kind: TokenKind }) {
+function TokenRow({ kind, local }: { kind: TokenKind; /** The dashboard says no control token is needed from this machine. */ local?: boolean }) {
   const { state, access } = useAccess();
   const api = useApi();
   const [changing, setChanging] = useState(false);
@@ -22,6 +22,7 @@ function TokenRow({ kind }: { kind: TokenKind }) {
     <div role="group" aria-label={label} className="token-row">
       <div className="row"><strong>{label}</strong><span className={`tag ${t.present && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
+      {local ? <p className="help">No control token is needed from this machine: the dashboard listens on loopback only. The token is for other machines, once DASHBOARD_HOST opens the dashboard to them.</p> : null}
       {kind === "viewers" && t.notSetUp && !changing ? (
         <>
           <p className="help">{SETUP_WHY}</p>
@@ -44,14 +45,22 @@ function TokenRow({ kind }: { kind: TokenKind }) {
 
 /**
  * The Access panel: both tokens with their state (Unlocked with its storage scope, Locked, or Not set up on the server),
- * what each unlocks, and Change token and Lock (DASH-ACC-008).
+ * what each unlocks, and Change token and Lock (DASH-ACC-008); when `GET /services/control` says the token is not required
+ * (a loopback bind, DASH-CTRL-011), the control token's entry says no token is needed from this machine.
  */
 // @spec DASH-ACC-008, DASH-ACC-007
 export function TokenPanel() {
   const { state } = useAccess();
+  const api = useApi();
+  const [local, setLocal] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void api.controlInfo().then((r) => { if (live && r.ok) setLocal(!r.data.tokenRequired); });
+    return () => { live = false; };
+  }, [api]);
   return (
     <div className="token-panel">
-      <TokenRow kind="control" />
+      <TokenRow kind="control" local={local} />
       <TokenRow kind="viewers" />
       {state.memoryOnly ? <p className="help">Storage is blocked in this browser, so tokens are kept in memory and you will be asked again after a reload.</p> : null}
     </div>

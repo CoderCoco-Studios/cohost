@@ -44,7 +44,7 @@ export function SecretRow({ section, km, info }: { section: SectionModel; km: Ke
       <div className="embedded">
         <SecretField label={km.label} isSet={!!info?.set} busy={busy} help={km.help} error={error} onSave={(v) => write(v)} onClear={() => write(null)} />
       </div>
-      {km.sensitive ? <p className="help">Changing this needs the control token.</p> : null}
+      {km.sensitive ? <p className="help">Changing this from another machine needs the control token.</p> : null}
     </RowShell>
   );
 }

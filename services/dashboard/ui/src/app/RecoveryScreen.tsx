@@ -27,7 +27,7 @@ export interface RecoveryProblem {
 /** `GET /recovery` in recovery mode. */
 export interface RecoveryState { active: true; file: string; secretsFile: string; etag: string; problems: RecoveryProblem[] }
 
-type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; tokenNeeded?: string[]; rawEtag?: string };
+type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; rawEtag?: string };
 
 /** `GET /recovery/raw`: a file that does not parse, as text (DASH-RCV-016). */
 interface RawText { ok: true; file: RecoveryProblem["file"]; path: string; text: string; etag: string; message: string; line?: number; col?: number }
@@ -83,7 +83,7 @@ function failure(r: Extract<ApiResult<unknown>, { ok: false }>): string {
  * The screen config recovery mode shows in place of the shell: every failing key of `config.yaml` and `secrets.yaml` with its
  * actions, Reset all, Check again, and, once the files validate, a wait for the normal dashboard and a reload.
  */
-// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015, DASH-RCV-020, DASH-RCV-021
+// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015, DASH-RCV-020, DASH-RCV-021, DASH-RCV-023
 export function RecoveryScreen({ initial, reload = defaultReload, navigate = defaultNavigate, probe = defaultProbe, here = location, pollMs = 1000 }: {
   initial: RecoveryState;
   reload?: () => void;
@@ -97,7 +97,6 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [tokenNeeded, setTokenNeeded] = useState<string[]>([]);
   // Set once the files are valid: the port the normal dashboard moves to, when the server says it moves (else it comes up here).
   const [valid, setValid] = useState<{ port?: number } | null>(null);
   const [misses, setMisses] = useState(0);
@@ -144,14 +143,13 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     setErrors({});
   };
 
-  const send = async (key: string, op: "set" | "reset" | "reset-all", body: Record<string, unknown>, action: string): Promise<void> => {
+  const send = async (key: string, op: "set" | "reset" | "reset-all" | "fallback", body: Record<string, unknown>, action: string): Promise<void> => {
     setBusy(key);
     const r = await api.post<WriteResult>(`/recovery/${op}`, { etag: state.etag, ...body }, { auth: "control", action });
     setBusy(null);
     if (r.ok) {
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
-      setTokenNeeded(r.data.tokenNeeded ?? []);
       if (r.data.valid) setValid(movedTo(r.data));
       return;
     }
@@ -183,7 +181,6 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     if (r.ok) {
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
-      setTokenNeeded(r.data.tokenNeeded ?? []);
       const still = r.data.problems.find((p) => p.file === edit.file && p.raw);
       setRaw(still ? { ...edit, etag: r.data.rawEtag ?? edit.etag, message: still.message } : null);
       if (r.data.valid) setValid(movedTo(r.data));
@@ -231,7 +228,6 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
         {errors.all ? <Banner tone="bad">{errors.all}</Banner> : null}
         {errors.stop ? <Banner tone="bad">{errors.stop}</Banner> : null}
         {stopped ? <Banner tone="ok">The stack is stopped.</Banner> : null}
-        {tokenNeeded.length ? <Banner tone="warn">The keys in config.yaml are fixed. {tokenNeeded.join(", ")} in secrets.yaml need the control token: use the button on {tokenNeeded.length === 1 ? "its row" : "their rows"} and enter the token when the page asks.</Banner> : null}
         <ul className="recovery-list" aria-label="Failing keys">
           {state.problems.map((p, i) => {
             const key = `${p.file}:${p.path}:${i}`;
@@ -272,7 +268,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
                     </form>
                   ) : null}
                   <div className="row">
-                    {p.actions.fallback ? <Button disabled={busy !== null} onClick={() => void send(key, "set", { path: p.path, value: p.fallback }, `Set ${p.path}`)}>Use {shown(p.fallback)}</Button> : null}
+                    {p.actions.fallback ? <Button disabled={busy !== null} onClick={() => void send(key, "fallback", { path: p.path }, `Use the fallback of ${p.path}`)}>Use {shown(p.fallback)}</Button> : null}
                     {p.actions.reset ? <Button disabled={busy !== null} onClick={() => void send(key, "reset", { path: p.path }, `Reset ${p.path}`)}>{resetLabel(p)}</Button> : null}
                   </div>
                   {errors[key] ? <Banner tone="bad">{errors[key]}</Banner> : null}

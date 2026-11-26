@@ -173,6 +173,8 @@ async function freePort(): Promise<number> {
 export interface RigOpts {
   /** CONTROL_ENABLED=1 with CONTROL_TOKEN=tok. */
   control?: boolean;
+  /** With `control`: the full surface bound to `0.0.0.0`, beyond loopback, so the token is required (DASH-CTRL-011). */
+  remote?: boolean;
   /** `renderer.*` of the loaded config and of config.yaml. */
   renderer?: { model?: string; zoom?: number; offset_y?: number; turn?: number };
   /** `dashboard.models.max_bytes`. */
@@ -231,7 +233,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const bus = o.bus ?? new DashBus();
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
-  const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
+  const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN, ...(o.remote ? { DASHBOARD_HOST: "0.0.0.0" } : {}) } : {};
   // The write seam: the first chunk of each upload's file handle marks that its temporary file exists (see Rig.tempOpened).
   const writeAll = o.writeChunk ?? (async (fh: FileHandle, c: Buffer): Promise<void> => {
     let off = 0;

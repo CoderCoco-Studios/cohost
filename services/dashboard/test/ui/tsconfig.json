@@ -1,0 +1,6 @@
+{
+  // Type information for the type-aware lint (`mise run lint:ts`): ui/tsconfig.json type-checks these tests but is not their
+  // nearest tsconfig.json, which is what tsgolint reads, so this one gives it the same options (DEPLOY-LINT-004).
+  "extends": "../../ui/tsconfig.json",
+  "include": ["../../ui/src", "../../ui/index.d.ts", "."]
+}

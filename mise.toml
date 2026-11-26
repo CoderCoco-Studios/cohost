@@ -88,9 +88,9 @@ depends = ["install"]
 run = ["tsc -b", "tsc -p services/dashboard/ui --noEmit"]
 
 [tasks."lint:ts"]
-description = "Lint TypeScript (oxlint, type-aware) after the type check"
+description = "Lint TypeScript (oxlint, type-aware, rules in .oxlintrc.json) after the type check"
 depends = ["typecheck"]
-run = "oxlint --type-aware"
+run = "oxlint --type-aware --deny-warnings"
 
 [tasks."lint:rust"]
 description = "Check Rust formatting and run Clippy with warnings denied"

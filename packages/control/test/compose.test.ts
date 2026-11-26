@@ -41,14 +41,15 @@ test("every x-ts-service application service runs the heartbeat healthcheck on t
   assert.ok(appServices.length >= 10);
 });
 
-const IN_NETWORK = ["COHOST_SECRETS_FILE", "CONFIG_DIR", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
+const IN_NETWORK = ["COHOST_DATA_DIR", "COHOST_SECRETS_FILE", "CONFIG_DIR", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
 
 // @spec CTRL-RUNTIME-009, DEPLOY-COMPOSE-017
 test("the shared environment is the in-network addresses plus the one pass-through COHOST_ISOLATION: ${COHOST_ISOLATION:-}", () => {
   const env = base["x-ts-service"]!.environment!;
   assert.equal(env.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
   assert.equal(env.COHOST_SECRETS_FILE, "", "pinned empty so .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)");
-  assert.deepEqual(Object.keys(env).sort(), ["COHOST_ISOLATION", ...IN_NETWORK]);
+  assert.equal(env.COHOST_DATA_DIR, "/app/data", "pinned so each program's log file lands in the ./data/logs mount (DEPLOY-COMPOSE-003)");
+  assert.deepEqual(Object.keys(env).sort(), ["COHOST_ISOLATION", ...IN_NETWORK].sort());
   for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(env[name], undefined, `${name} has no entry`);
   for (const [name, s] of appServices) {
     for (const v of Object.keys(ISOLATION_OVERRIDES)) assert.equal(s.environment?.[v], undefined, `${name} ${v}`);

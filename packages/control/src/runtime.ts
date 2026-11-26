@@ -3,6 +3,7 @@ import { ISOLATION_ENV, encodeIsolation } from "@cohost/config";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import { projectManifestSecrets, projectionRoot } from "./secrets.js";
+import { ensureLogsDir, stderrWarn } from "./logs-dir.js";
 
 export interface RuntimeResult {
   ok: boolean;
@@ -51,6 +52,8 @@ export interface ComposeRuntimeOptions {
   env?: NodeJS.ProcessEnv;
   /** PATH lookup used to find the docker binary (injectable for tests). */
   onPath?: (name: string, env: NodeJS.ProcessEnv) => boolean;
+  /** Where a warning goes (the `data/logs` directory could not be created); standard error by default. */
+  warn?: (msg: string) => void;
 }
 
 /** The detail of a failed exec: trimmed stderr, else the error message, cut to 500 characters. */
@@ -79,7 +82,7 @@ export class ComposeRuntime implements Runtime {
     return dockerEnv(bin, base, { [ISOLATION_ENV]: preset ? encodeIsolation(preset) : "" });
   }
 
-  // @spec CTRL-RUNTIME-014, CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-RUNTIME-013, CTRL-STACK-012
+  // @spec CTRL-RUNTIME-014, CTRL-RUNTIME-016, CTRL-RUNTIME-003, CTRL-RUNTIME-004, CTRL-RUNTIME-009, CTRL-RUNTIME-013, CTRL-STACK-012
   private async run(id: string, verb: string[], preset?: Readonly<Record<string, string>>): Promise<RuntimeResult> {
     const def = findService(id, this.manifest);
     if (!def) return unknown(id);
@@ -90,6 +93,7 @@ export class ComposeRuntime implements Runtime {
     if (verb[0] !== "stop") {
       const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
       if (failed) return { ok: false, detail: failed.detail };
+      ensureLogsDir(projectionRoot(this.o.cwd), this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     }
     try {
       await this.exec(docker.bin, ["compose", ...verb, def.composeName], { env: this.composeEnv(docker.bin, base, preset), cwd: this.o.cwd });
@@ -124,6 +128,7 @@ export class ComposeRuntime implements Runtime {
     if (!docker.ok) return { ok: false, detail: docker.detail };
     const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
     if (failed) return { ok: false, detail: failed.detail };
+    ensureLogsDir(projectionRoot(this.o.cwd), this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     try {
       const { stdout } = await this.exec(docker.bin, ["compose", "run", "--rm", "-T", job], { env: this.composeEnv(docker.bin, base), cwd: this.o.cwd, timeoutMs: CONSOLIDATE_TIMEOUT_MS });
       const last = lastLine(stdout);

@@ -8,10 +8,10 @@ interface Svc { ports?: unknown; volumes?: string[]; build?: { args?: { SERVICE?
 const compose = parse(readFileSync(fileURLToPath(new URL("../../../docker-compose.yml", import.meta.url)), "utf8"), { merge: true }) as { services: Record<string, Svc>; volumes?: Record<string, unknown> };
 
 // @spec DEPLOY-COMPOSE-028
-test("the avatar service publishes no port and mounts only the shared ./config bind", () => {
+test("the avatar service publishes no port and mounts only the shared ./config and ./data/logs binds", () => {
   const avatar = compose.services.avatar!;
   assert.equal(avatar.build?.args?.SERVICE, "avatar");
   assert.equal(avatar.ports, undefined, "no published port");
-  assert.deepEqual(avatar.volumes, ["./config:/app/config"], "no data volume, no model directory");
+  assert.deepEqual(avatar.volumes, ["./config:/app/config", "./data/logs:/app/data/logs"], "no data volume, no model directory");
   assert.equal(Object.keys(compose.volumes ?? {}).some((v) => /avatar|model/i.test(v)), false, "no named avatar or model volume");
 });

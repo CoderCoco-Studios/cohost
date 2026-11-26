@@ -33,7 +33,7 @@ test("config sections are the declared ones and each is a path of ConfigSchema",
     voice: ["voice", "network"], mouth: ["mouth"], avatar: ["avatar"], "connector-discord": ["connections"],
     tools: ["tools", "cohost", "chat", "viewer_text", "network"],
   };
-  for (const [id, config] of Object.entries(want)) assert.deepEqual(findService(id)!.config, config, id);
+  for (const [id, config] of Object.entries(want)) assert.deepEqual(findService(id)!.config, [...config, "logging"], id);
   for (const s of units) for (const sec of s.config) assert.ok(schemaAt(sec), `${s.id}: ${sec} is not a config path`);
 });
 

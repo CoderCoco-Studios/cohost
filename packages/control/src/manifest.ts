@@ -64,63 +64,63 @@ const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName"
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
-    config: ["chat", "viewer_text", "cohost"],
+    config: ["chat", "viewer_text", "cohost", "logging"],
     secrets: ["chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
     groups: ["salience"], defaultMode: "fresh",
-    config: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], secrets: LLM_SECRETS, uses: ["affect", "cortex"], pause: true,
+    config: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools", "logging"], secrets: LLM_SECRETS, uses: ["affect", "cortex"], pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary"], observe: ["attention.focus", "brain.say"] },
   }),
   svc("affect", {
     groups: ["affect"], defaultMode: "fresh",
-    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm"], secrets: LLM_SECRETS, pause: true,
+    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm", "logging"], secrets: LLM_SECRETS, pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary", "brain.say"], observe: ["affect.state"] },
   }),
   svc("memory", {
     groups: ["memory", "memory-recall", "memory-notes"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
-    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm"], secrets: LLM_SECRETS,
+    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm", "logging"], secrets: LLM_SECRETS,
     test: { inputs: ["chat.message", "memory.recall.request"], observe: ["memory.recall.reply", "memory.viewer"] },
   }),
   svc("cortex", {
     requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" },
-    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools"], secrets: LLM_SECRETS, uses: ["salience", "affect", "memory", "tools"], pause: true,
+    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools", "logging"], secrets: LLM_SECRETS, uses: ["salience", "affect", "memory", "tools"], pause: true,
     test: { inputs: ["attention.focus"], observe: ["brain.status", "brain.say"] },
   }),
   // The tool-calling unit (services/tools, TOOL-SVC-*): it answers a tool call from cortex over the bus and reads no
   // model server. Its isolated start uses canned results (TOOLS_MODE=mock) and brings up no other unit.
   svc("tools", {
     groups: ["tools"], defaultMode: "fresh", isolatedEnv: { TOOLS_MODE: "mock" },
-    config: ["tools", "cohost", "chat", "viewer_text", "network"], uses: ["memory"],
+    config: ["tools", "cohost", "chat", "viewer_text", "network", "logging"], uses: ["memory"],
     // The MCP tokens and the stream-info credentials; it reads the chat section but uses no chat user token (TOOL-SVC-010).
     secrets: ["tools.servers.*.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.youtube.api_key"],
     test: { inputs: ["text"], observe: ["tool.result", "inject.result"] },
   }),
   svc("voice", {
     groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" },
-    config: ["voice", "network"], secrets: ["voice.openai.api_key"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
+    config: ["voice", "network", "logging"], secrets: ["voice.openai.api_key"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
   }),
   svc("avatar", {
     groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" },
-    config: ["avatar"], uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
+    config: ["avatar", "logging"], uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
   }),
   svc("eyes", {
     groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
-    config: ["vision", "llm", "network"], secrets: ["vision.obs.password", ...LLM_SECRETS], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
+    config: ["vision", "llm", "network", "logging"], secrets: ["vision.obs.password", ...LLM_SECRETS], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears", "network"], secrets: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    config: ["ears", "network", "logging"], secrets: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
-    config: ["mouth"], uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
+    config: ["mouth", "logging"], uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
   }),
   // The Discord connector (CONN-*): it subscribes to `inject.request` only, for its test input (CONN-INJ-001), so its one
   // group is that subscription's. Its unit id is the process name; the platform name `discord` is its connector id, tags and
   // config section. The injected clip is answered with Discord off, so the isolation preset keeps the input working.
   svc("connector-discord", {
-    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections"], secrets: ["connections.discord.token"],
+    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections", "logging"], secrets: ["connections.discord.token"],
     test: { inputs: ["audio"], observe: ["inject.result"] },
   }),
   compose("redis", { infra: true }),

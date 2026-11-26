@@ -15,6 +15,22 @@ docker compose logs --tail 50 cortex
 
 Swap `cortex` for the service you are chasing. The images for every service build and start, so a service that will not run almost always has a setting or an outside dependency to fix, and its log says which.
 
+### Where the logs are
+
+Each line in the terminal and in `docker compose logs` reads `14:03:22.517 ERROR cortex: message`: the time, the level, the program and the message. A message of several lines, such as the list of problems in an invalid `config.yaml`, prints as indented lines below it, and details such as an error's stack print indented underneath.
+
+Every program also writes its full log to `data/logs/<program>.log` in the checkout: `dashboard.log`, `chat.log`, `cortex.log`, `consolidate.log` and so on. Each line there is one JSON entry with every detail, including the exact time. A file that grows past 10 MiB is moved aside as `<program>.1.log` (then `.2.log`, `.3.log`) and the oldest beyond three is deleted; `logging` in `config/config.yaml` changes the level, the terminal format and those limits (see [Configuration](../advanced/reference/config.md#logging)). The `tools` service writes no file: read it with `docker compose logs tools`.
+
+### `data/logs` or its files belong to root
+
+- **Cause:** the containers run as root, so the log files they write are root's (mode 0644: you can read them, and only root can delete them). The dashboard, `cohostctl` and the installer create `data/logs` as you before any container starts; a `docker compose up` run by hand on a checkout with no `data/logs` lets Docker create the folder as root, and programs you then run on your PC cannot write their log there. They warn once in the terminal and carry on without a file.
+- **Fix:** `sudo chown -R "$USER" data/logs` gives the folder back to you. To remove container-written files, use `sudo rm data/logs/<file>`.
+
+### Removing chat text from the logs
+
+- **Cause:** the logs hold what passes through the co-host: chat messages, what it heard and what it said. A viewer's forget request removes their notes and memories, not log lines.
+- **Fix:** delete the files under `data/logs/` (with `sudo` for the ones containers wrote). Rotation also deletes old files on its own as new ones fill.
+
 ## Installing and starting the dashboard
 
 ### `@cohost/bus cannot load the native addon`

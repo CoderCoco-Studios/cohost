@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resetLoggingForTest } from "@cohost/config";
 import { FakeSource, SERVER_URL, def, hang, on, resultOf, search, startTools, text, waitFor, ToolsFakeBus } from "./helpers.js";
 
 const live = (over: Record<string, unknown> = {}) => ({ servers: { search }, allow: { search__web: on("web") }, timeout_ms: 5000, ...over });
@@ -176,4 +180,22 @@ test("an inject-driven acting call asks for confirmation even when its confirm m
   await waitFor(() => s.bus.of("tool.confirm").length === 1, "tool.confirm");
   assert.equal(src.calls.length, 0, "not run before the owner allows it");
   await s.stop();
+});
+
+test("without an injected logger it logs as tools through a sink with no file, whatever logging.file.enabled holds", async () => { // @spec TOOL-SVC-012
+  const root = mkdtempSync(join(tmpdir(), "cohost-tools-log-"));
+  writeFileSync(join(root, "config.yaml"), "logging:\n  file: { enabled: true }\n");
+  const saved = { CONFIG_DIR: process.env.CONFIG_DIR, COHOST_DATA_DIR: process.env.COHOST_DATA_DIR, COHOST_ENV_FILE: process.env.COHOST_ENV_FILE };
+  Object.assign(process.env, { CONFIG_DIR: root, COHOST_DATA_DIR: join(root, "data"), COHOST_ENV_FILE: join(root, "none.env") });
+  const chunks: string[] = [];
+  resetLoggingForTest({ write: (t) => { chunks.push(t); }, isTTY: false });
+  try {
+    const s = await startTools(live(), [new FakeSource("search", [def("web")])], {}, undefined, undefined, { log: undefined });
+    await waitFor(() => chunks.join("").includes("tools: tools online"), "the online line on the terminal");
+    await s.stop();
+    assert.equal(existsSync(join(root, "data", "logs")), false, "no log file");
+  } finally {
+    resetLoggingForTest();
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
 });

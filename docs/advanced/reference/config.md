@@ -445,6 +445,22 @@ The machines that count as your own network, for the egress rule: which destinat
 
 Private addresses, `localhost`, `host.docker.internal`, dotless names and `.local` names are on the LAN without an entry.
 
+## `logging`
+
+How each program logs. Every program's logger reads this section on its own before the rest of the file loads, so a change applies at each program's next start; when the file is missing or the section is invalid the defaults apply until the loader reports the fault. A save on the Settings screen offers to restart every running service.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `logging` | map | The optional logging section |
+| `logging.level` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`. One level for the terminal and the file. Blank means `info` |
+| `logging.terminal` | `pretty` | `pretty` prints one readable line per entry (`14:03:22.517 INFO  chat: message key=value`), with a message's further lines and any object, array or error indented below; colour only on a terminal, never with `NO_COLOR` set. `json` prints the raw JSON line, for a tool that reads JSON. Blank means `pretty` |
+| `logging.file` | map | The per-program log file |
+| `logging.file.enabled` | `true` | Write `data/logs/<program>.log` (under `COHOST_DATA_DIR`), one JSON line per entry with every field, whatever `terminal` says. `tools` never writes one |
+| `logging.file.max_size_mb` | `10` | A file about to grow past this many MiB is moved aside as `<program>.1.log` (older ones shift up) and a new one starts. 1 to 1024 |
+| `logging.file.max_files` | `3` | How many moved-aside files are kept per program; the oldest beyond it is deleted. 1 to 50 |
+
+Values named `token`, `authorization`, `password`, `api_key`, `apikey`, `secret` or `cookie` (any capitals, at any depth) are written as `[Redacted]` in both outputs. The logs do hold chat text; see [Troubleshooting](../../guide/troubleshooting.md#removing-chat-text-from-the-logs).
+
 ## `tools`
 
 The MCP servers the co-host may call and the tools it may use. Nothing is enabled by absence: a tool runs only when `tools.allow` names it with `enabled: true`, and a server is called only for such a tool. Every server's token lives in `secrets.yaml` (`tools.servers.<name>.token`), never here.

@@ -98,6 +98,8 @@ The infrastructure runs in containers; the services run on your host and are reb
 
    This is one `mise watch --restart` over every `dev:<service>` task, each of which runs its service's built `dist/index.js`. A saved change under a service's `src/` or any package's `src/` rebuilds what changed (`build:ts`, and `build:native` after a Rust change) and restarts the services.
 
+   mise puts each task's name in front of its lines, so a log line reads `[dev:chat] 14:03:22.519 INFO  chat: joined channel channel=cocostream`, and the indented lines below an entry (the rest of a long message, an error's stack) carry the same prefix. Each service also writes its full log, one JSON line per entry, to `data/logs/<service>.log` in the checkout (`$COHOST_DATA_DIR/logs` when you set that variable). `logging.level: debug` in `config/config.yaml` shows more; `logging.terminal: json` prints the raw JSON lines instead.
+
 4. Run the dashboard on the host in a second terminal:
 
    ```bash

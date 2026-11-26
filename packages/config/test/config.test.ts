@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, cop
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, createLogger, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
+import { ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
 
 /** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
 const initialEnv = { ...process.env };
@@ -728,19 +728,6 @@ test("dashboard.port and lan_port are ports 1 to 65535 defaulting to 3000 and 30
   assert.match(same.error.issues[0]!.message, /differ/);
   assert.equal(dash({ port: 3001 }).success, false, "port equal to the default lan_port");
   assert.equal(dash({ port: 3001, lan_port: 3000 }).success, true);
-});
-
-// @spec CFG-URL-004
-test("createLogger returns a pino logger named for the service at LOG_LEVEL, info by default and when blank", () => {
-  delete process.env.LOG_LEVEL;
-  const def = createLogger("svc-a");
-  assert.equal(def.bindings().name, "svc-a");
-  assert.equal(def.level, "info");
-  process.env.LOG_LEVEL = "debug";
-  assert.equal(createLogger("svc-b").level, "debug");
-  assert.equal(createLogger("svc-b").bindings().name, "svc-b");
-  process.env.LOG_LEVEL = "";
-  assert.equal(createLogger("svc-c").level, "info");
 });
 
 // @spec CFG-ISO-002

@@ -143,6 +143,7 @@ test("a finding fails the lint, a warning included, and CI's lint step may not c
   writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({ options: { reportUnusedDisableDirectives: "error" }, plugins: ["eslint"], categories: {}, rules: { "eslint/no-debugger": "error" } }));
   writeFileSync(join(dir, "unused.ts"), `// ${DISABLE}-next-line eslint/no-debugger -- nothing to suppress\nexport const y = 2;\n`);
   assert.notEqual(run("unused.ts").status, 0, "a disable comment that suppresses nothing fails");
+  assert.equal(run("clean.ts").status, 0, "a clean file passes under the same config, so the failure is the unused directive");
 
   const wf = parseYaml(readRepo(".github/workflows/test.yml")) as { jobs: Record<string, { steps: { run?: string; "continue-on-error"?: unknown }[]; "continue-on-error"?: unknown }> };
   const lintJobs = Object.values(wf.jobs).filter((j) => j.steps.some((s) => s.run === "mise run lint"));

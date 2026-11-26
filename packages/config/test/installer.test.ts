@@ -108,6 +108,21 @@ test("only the missing files are seeded, and an existing secrets directory keeps
   assert.equal(mode(join(dir, "secrets")), 0o750, "an existing directory is not re-moded");
 });
 
+// @spec DEPLOY-INST-017
+test("seeding creates data/logs as the user running it, without sudo, and leaves an existing one alone", () => {
+  const dir = checkout();
+  const r = runBlock("seed-files", "seed_files", { cwd: dir });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(statSync(join(dir, "data", "logs")).isDirectory());
+  assert.equal(statSync(join(dir, "data", "logs")).uid, process.getuid!(), "owned by the user running the installer");
+  writeFileSync(join(dir, "data", "logs", "chat.log"), "{}\n");
+  assert.equal(runBlock("seed-files", "seed_files", { cwd: dir }).status, 0);
+  assert.equal(readFileSync(join(dir, "data", "logs", "chat.log"), "utf8"), "{}\n");
+  const block = readFileSync(join(repo, "scripts", "install.sh"), "utf8").split("# begin seed-files")[1]!.split("# end seed-files")[0]!;
+  assert.match(block, /^\s*mkdir -p data\/logs\b/m);
+  assert.doesNotMatch(block, /sudo/);
+});
+
 /** The repository's own loader reads `dashboard.port` from a config directory of the given text, run as the installer runs it. */
 const nextSteps = (configYaml: string | undefined, extraEnv: Record<string, string> = {}) => {
   const root = mkdtempSync(join(tmpdir(), "cohost-next-"));

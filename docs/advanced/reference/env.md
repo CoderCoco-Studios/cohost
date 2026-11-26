@@ -47,7 +47,7 @@ Needed before configuration can be read.
 | `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `personality.md` and `expressions.yaml` (credentials are in `secrets/secrets.yaml`, which it does not move). Compose sets `/app/config` |
 | `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run on the host |
 | `COHOST_SECRETS_FILE` | `secrets/secrets.yaml` at the workspace root | A test seam: the tests point it at a credentials file in a temporary folder. Do not set it in `.env`; Compose pins it empty in the containers, so each reads its own copy of its credentials |
-| `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache |
+| `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache, and where each program writes its log file (`logs/<program>.log`). Compose pins it to `/app/data` in every container except `tools`, so the containers' log files land in the checkout's `data/logs/` |
 | `COHOST_DOCKER_BIN` | `docker` | The [Docker](../../start/glossary.md#docker) executable the dashboard and `cohostctl` run. Set it to `docker.exe` on [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration |
 
 ## Infrastructure addresses
@@ -69,7 +69,14 @@ Where a service finds the other pieces before it can open the bus. Compose pins 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services screen and the Compose health checks derive staleness from it |
-| `LOG_LEVEL` | `info` | The logger's level for every service. `debug` for more. The logger exists before configuration is loaded |
+
+The log level, the terminal format and the log files are the `logging` section of `config.yaml` (see [Configuration](config.md#logging)), not variables. Each program's logger reads that section itself before the rest of the configuration loads.
+
+## Platform
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `NO_COLOR` | unset | When set to anything non-empty, log lines in a terminal carry no colour ([no-color.org](https://no-color.org)). Colour is only ever used when the output is a terminal, never under `docker compose logs` or a redirect |
 
 ## Set by the build
 

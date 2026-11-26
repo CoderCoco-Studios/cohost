@@ -187,7 +187,7 @@ export async function toolsMain(
 export function runTools(env: ToolsEnv = {}): Promise<void> {
   const { createSources, mcp, builtin, ...boot } = env;
   const exit = boot.exit ?? ((code: number) => process.exit(code));
-  const log = boot.log ?? createLogger("tools");
+  const log = boot.log ?? createLogger("tools", { file: false }); // no log file: the container mounts no ./data (TOOL-SVC-012)
   const health: HealthRef = { deps: () => ({}) };
   return runService<ToolsBus>({
     service: "tools",

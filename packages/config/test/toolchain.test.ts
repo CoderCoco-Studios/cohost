@@ -297,13 +297,13 @@ test("lint:ts runs oxlint --type-aware --deny-warnings after typecheck, with oxl
 // @spec DEPLOY-TOOL-012
 test("test:rust runs the Rust tests and the Windows check; test and test:only run the TypeScript suite with the test tsconfig", () => {
   assert.deepEqual(task("test:rust").run, ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]);
-  const suite = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
+  const suite = 'scripts/test-env.sh node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
   for (const name of ["test", "test:only"]) {
     assert.deepEqual(task(name).run, [suite], name);
     assert.match(JSON.stringify(task(name).env), /TSX_TSCONFIG_PATH\W+tsconfig\.test\.json/, name);
   }
   assert.deepEqual(task("test:only").depends, []);
-  assert.deepEqual(task("test:file").run, ["node --import tsx --test"], "the files given after the task name are its arguments");
+  assert.deepEqual(task("test:file").run, ["scripts/test-env.sh node --import tsx --test"], "the files given after the task name are its arguments");
   assert.match(JSON.stringify(task("test:file").env), /TSX_TSCONFIG_PATH\W+tsconfig\.test\.json/);
 });
 
@@ -671,4 +671,27 @@ test("the Dockerfile's stages: toolchain from debian with mise, native with Rust
   assert.match(runtime, /^FROM node:\S+-trixie-slim AS runtime$/m);
   assert.match(runtime, /COPY --from=build \/app \/app/);
   assert.doesNotMatch(runtime, /mise|cargo|zig/i);
+});
+
+// @spec DEPLOY-TOOL-022
+test("the test tasks run through test-env.sh, which gives the run temporary data and config directories and removes them", () => {
+  for (const name of ["test", "test:only", "test:file", "test:launch"]) {
+    for (const line of task(name).run) assert.match(line, /^scripts\/test-env\.sh node /, `${name}: ${line}`);
+  }
+  const script = join(repoRoot, "scripts", "test-env.sh");
+  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_SECRETS_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
+  const r = spawnSync(script, ["bash", "-c", probe], { encoding: "utf8", cwd: repoRoot, env: { PATH: process.env.PATH!, COHOST_DATA_DIR: "/owner/data", CONFIG_DIR: "/owner/config" } });
+  assert.equal(r.status, 3, `the command's status is the run's status: ${r.stderr}`);
+  const vars = Object.fromEntries(r.stdout.split("\n").filter((l) => l.includes("=")).map((l) => l.split("=") as [string, string]));
+  const data = vars.COHOST_DATA_DIR!;
+  const conf = vars.CONFIG_DIR!;
+  assert.ok(data && conf && data !== conf, r.stdout);
+  for (const dir of [data, conf]) assert.ok(dir.startsWith(tmpdir()) || dir.startsWith("/tmp"), `${dir} is a temporary directory`);
+  assert.ok(!data.startsWith(repoRoot) && !conf.startsWith(repoRoot));
+  assert.equal(vars.COHOST_ENV_FILE, join(conf, ".env"));
+  assert.equal(vars.COHOST_SECRETS_FILE, join(conf, "secrets", "secrets.yaml"));
+  const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).sort();
+  for (const f of examples) assert.ok(r.stdout.split("\n").includes(f), `${f} copied`);
+  assert.equal(existsSync(data), false, "the data directory is removed");
+  assert.equal(existsSync(conf), false, "the config directory is removed");
 });

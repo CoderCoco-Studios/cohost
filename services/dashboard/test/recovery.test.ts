@@ -143,7 +143,7 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
     const body = await res.json() as { valid: boolean; problems: unknown[]; port?: number };
     assert.equal(body.valid, true);
     assert.deepEqual(body.problems, []);
-    assert.equal((body as { port?: number }).port, 3000, "the valid answer names the normal dashboard's port");
+    assert.equal((body as { moved?: boolean }).moved, undefined, "no bound port given: nothing moves");
     const text = readFileSync(r.configFile, "utf8");
     assert.doesNotMatch(text, /LLM_API_KEY|pasted from the old/);
     assert.match(text, /^ {2}claude: .*\n {4}effort: low/m, "the rest of the mapping stays");
@@ -248,7 +248,7 @@ test("GET /recovery on a file fixed by hand answers inactive and leaves recovery
   const r = await rig(STALE);
   try {
     writeFileSync(r.configFile, EXAMPLE);
-    assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false, port: 3000 });
+    assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false });
     await new Promise((d) => setTimeout(d, 20));
     assert.equal(r.valid(), 1);
   } finally { await r.close(); }
@@ -352,4 +352,53 @@ test("recovery mode is left once when the client of the answer that found the fi
     assert.equal(valid, 1);
     done();
   }));
+});
+
+// @spec DASH-RCV-003
+test("an entry of a sensitive list is as sensitive as the list: setting it needs the control token in both modes", async () => {
+  const text = EXAMPLE
+    .replace("allowed_hosts: []", 'allowed_hosts: ["${HOST}"]')
+    .replace(/^ {2}lan: \[\]/m, '  lan: ["${LAN}"]');
+  for (const path of ["dashboard.allowed_hosts[0]", "network.lan[0]"]) {
+    const key = path.replace("[0]", "");
+    const none = await rig(text);
+    try {
+      const s = await state(none);
+      assert.ok(s.problems.some((p) => p.path === path && p.sensitive), JSON.stringify(s.problems));
+      const res = await post(none, "set", { etag: s.etag, path, value: "streampc" });
+      assert.equal(res.status, 403, path);
+      assert.deepEqual(((await res.json()) as { sensitive: string[] }).sensitive, [key]);
+      assert.equal(readFileSync(none.configFile, "utf8"), text);
+    } finally { await none.close(); }
+    const tok = await rig(text, { controlToken: "tok" });
+    try {
+      const s = await state(tok);
+      const res = await post(tok, "set", { etag: s.etag, path, value: "streampc" });
+      assert.equal(res.status, 401, path);
+      assert.equal(readFileSync(tok.configFile, "utf8"), text);
+      assert.equal((await post(tok, "set", { etag: s.etag, path, value: "streampc" }, { authorization: "Bearer tok" })).status, 200, path);
+    } finally { await tok.close(); }
+  }
+});
+
+// @spec DASH-RCV-009, DASH-RCV-011
+test("the valid answer says moved, with the port, only when dashboard.port is not the bound recovery port", async () => {
+  const same = await rig(STALE.replace('"${LLM_MODEL}"', '"m"').replace('"${COHOST_NAME:-Mika}"', '"Coco"'), { boundPort: 3000 });
+  try {
+    const s = await state(same);
+    const body = await (await post(same, "reset", { etag: s.etag, path: "llm.claude.api_key" })).json() as Record<string, unknown>;
+    assert.equal(body.valid, true);
+    assert.equal(body.moved, undefined);
+    assert.equal(body.port, undefined);
+  } finally { await same.close(); }
+  const moved = await rig(STALE.replace('"${LLM_MODEL}"', '"m"').replace('"${COHOST_NAME:-Mika}"', '"Coco"'), { boundPort: 3000 });
+  try {
+    let s = await state(moved);
+    await post(moved, "set", { etag: s.etag, path: "dashboard.port", value: "3100" });
+    s = await state(moved);
+    const body = await (await post(moved, "reset", { etag: s.etag, path: "llm.claude.api_key" })).json() as Record<string, unknown>;
+    assert.equal(body.valid, true);
+    assert.equal(body.moved, true);
+    assert.equal(body.port, 3100);
+  } finally { await moved.close(); }
 });

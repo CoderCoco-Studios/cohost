@@ -25,7 +25,10 @@ export interface RecoveryProblem {
 /** `GET /recovery` in recovery mode. */
 export interface RecoveryState { active: true; file: string; secretsFile: string; etag: string; problems: RecoveryProblem[] }
 
-type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; port?: number; tokenNeeded?: string[] };
+type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; tokenNeeded?: string[] };
+
+/** The port the normal dashboard moves to, when the server says it moves; otherwise it comes up where the page is. */
+const movedTo = (r: { moved?: true; port?: number }): { port?: number } => (r.moved && r.port !== undefined ? { port: r.port } : {});
 
 /** Where the page is: the parts the wait for the normal dashboard compares and builds addresses from. */
 export interface PageLocation { protocol: string; hostname: string; port: string }
@@ -85,13 +88,12 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [tokenNeeded, setTokenNeeded] = useState<string[]>([]);
-  // Set once the files are valid: the port the normal dashboard comes up on (undefined: this page's own).
+  // Set once the files are valid: the port the normal dashboard moves to, when the server says it moves (else it comes up here).
   const [valid, setValid] = useState<{ port?: number } | null>(null);
   const [misses, setMisses] = useState(0);
 
-  const ownPort = here.port || (here.protocol === "https:" ? "443" : "80");
-  const moved = valid?.port !== undefined && String(valid.port) !== ownPort;
-  const target = moved ? `${here.protocol}//${here.hostname}:${valid.port}/` : undefined;
+  const target = valid?.port !== undefined ? `${here.protocol}//${here.hostname}:${valid.port}/` : undefined;
+  const ownAddress = `${here.protocol}//${here.hostname}${here.port ? `:${here.port}` : ""}/`;
 
   // The wait for the normal dashboard: on this origin, until GET /recovery answers inactive, then a reload; on a new port,
   // until anything answers there, then a move to it.
@@ -114,9 +116,9 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
   }, [valid, target, api, reload, navigate, probe, pollMs]);
 
   const refresh = async (): Promise<void> => {
-    const r = await api.get<RecoveryState | { active: false; port?: number }>("/recovery");
+    const r = await api.get<RecoveryState | { active: false; moved?: true; port?: number }>("/recovery");
     if (!r.ok) { setErrors({ all: failure(r) }); return; }
-    if (!r.data.active) { setValid({ ...(r.data.port !== undefined ? { port: r.data.port } : {}) }); return; }
+    if (!r.data.active) { setValid(movedTo(r.data)); return; }
     setState(r.data);
     setErrors({});
   };
@@ -129,7 +131,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
       setTokenNeeded(r.data.tokenNeeded ?? []);
-      if (r.data.valid) setValid({ ...(r.data.port !== undefined ? { port: r.data.port } : {}) });
+      if (r.data.valid) setValid(movedTo(r.data));
       return;
     }
     if (r.status === 409 && typeof (r.data as { etag?: unknown } | undefined)?.etag === "string") {
@@ -146,9 +148,11 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
       <main id="main" className="page" tabIndex={-1}>
         <PageHeading>Config recovery</PageHeading>
         <Banner tone="ok" title="The config is valid. Starting the dashboard…">
-          {target ? `The dashboard moves to ${target}; the page goes there as soon as it is up.` : "The page reloads as soon as the dashboard is up."}
+          {target ? (
+            <span>The saved settings move the dashboard to a new address: <a href={target}>{target}</a>. This page goes there as soon as it answers; the link works too once it is up.</span>
+          ) : "The page reloads as soon as the dashboard is up."}
         </Banner>
-        {misses >= WAIT_NOTICE_AFTER ? <Banner tone="warn">Still waiting for the dashboard at {target ?? `${here.protocol}//${here.hostname}:${ownPort}/`}. Check the terminal it runs in; you can open that address yourself once it is up.</Banner> : null}
+        {misses >= WAIT_NOTICE_AFTER ? <Banner tone="warn">Still waiting for the dashboard at {target ?? ownAddress}. Check the terminal it runs in; you can open that address yourself once it is up.</Banner> : null}
       </main>
     );
   }

@@ -41,6 +41,15 @@ export interface RecoveryProblem {
 /** The files recovery mode reads and writes. */
 export interface RecoveryFiles { configFile: string; secretsFile: string }
 
+/**
+ * Whether the presentation table marks the key a path names `sensitive`: the key itself, or, for an entry `key[i]`, its list
+ * (`dashboard.allowed_hosts[0]` is as sensitive as `dashboard.allowed_hosts`). Only the table's own entries count.
+ */
+const isSensitive = (path: string): boolean => {
+  const key = resetPathOf(path);
+  return Object.hasOwn(PRESENTATION.keys, key) && PRESENTATION.keys[key]!.sensitive === true;
+};
+
 /** The settings section a dotted path belongs to: the longest declared section path it lies under. */
 function sectionOf(path: string): { path: string; title: string } | undefined {
   const key = resetPathOf(path);
@@ -69,7 +78,7 @@ export function recoveryProblems(problems: readonly ConfigProblem[], text: strin
     const fb = !secret && p.kind === "placeholder" ? placeholderFallback(text, p.path) : undefined;
     const fallbackOk = fb !== undefined && setConfigKey(text, p.path, fb.value).ok;
     return {
-      ...base, secret, sensitive: PRESENTATION.keys[resetPath]?.sensitive === true, ...(section ? { section } : {}),
+      ...base, secret, sensitive: isSensitive(p.path), ...(section ? { section } : {}),
       ...(fallbackOk ? { fallback: fb.value } : {}), resetPath,
       actions: { set: !secret && canSetKey(p.path), reset: held, fallback: fallbackOk },
     };
@@ -102,6 +111,8 @@ export interface RecoveryHandlerDeps {
   write?: (file: string, text: string) => void;
   /** The built UI; defaults to the one beside the server. */
   uiDir?: string;
+  /** The port the recovery listener is bound to; a valid answer says `moved` when the normal dashboard will listen elsewhere. */
+  boundPort?: number;
   /** Called once a response that found the files valid has been sent, or its client has gone. */
   onValid: () => void;
 }
@@ -142,8 +153,14 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     res.once("close", go);
   };
   const readSecrets = (): string => { try { return readFileSync(secretsFile, "utf8"); } catch { return ""; } };
-  /** The port the normal dashboard binds once the file is valid: the validated `dashboard.port`. */
-  const nextPort = (text: string): number => recoveryAddress(text).port;
+  /**
+   * Where the normal dashboard listens once the file is valid, said only when it is not the recovery listener's port: then
+   * `{moved: true, port}`, else nothing, and the page reloads where it is (which also holds behind a tunnel or a proxy).
+   */
+  const moved = (text: string): { moved?: true; port?: number } => {
+    const port = recoveryAddress(text).port;
+    return d.boundPort !== undefined && port !== d.boundPort ? { moved: true, port } : {};
+  };
 
   /** Answers a write that has been carried out: the fresh problem list, and leaving recovery mode when it is empty. */
   const written = (res: http.ServerResponse, what: string, extra: Record<string, unknown> = {}): void => {
@@ -153,7 +170,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (problems.length) d.log.info(`config recovery: ${problems.length} problem${problems.length === 1 ? "" : "s"} remain${problems.length === 1 ? "s" : ""}`);
     else leave(res);
     const valid = problems.length === 0;
-    json(res, 200, { ok: true, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()), valid, ...(valid ? { port: nextPort(text) } : {}), ...extra });
+    json(res, 200, { ok: true, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()), valid, ...(valid ? moved(text) : {}), ...extra });
   };
 
   /** The refusal of a `secrets.yaml` change without the control token (DASH-SECRET-003): 403 when none is configured, else 401. */
@@ -176,7 +193,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (method === "GET" && url.pathname === "/recovery") {
       const text = readFileSync(configFile, "utf8");
       const problems = check();
-      if (problems.length === 0) { leave(res); json(res, 200, { active: false, port: nextPort(text) }); return; }
+      if (problems.length === 0) { leave(res); json(res, 200, { active: false, ...moved(text) }); return; }
       json(res, 200, { active: true, file: configFile, secretsFile, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()) });
       return;
     }
@@ -208,10 +225,11 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const path = body.path as string;
 
     if (op === "set") {
-      if (PRESENTATION.keys[path]?.sensitive && !tokenOk) {
-        const sensitive = [path];
-        if (d.controlToken === undefined) { json(res, 403, { ok: false, detail: noTokenDetail(path), sensitive }); return; }
-        json(res, 401, { ok: false, detail: `changing ${path} needs the control token (Authorization: Bearer)`, sensitive }, { "www-authenticate": "Bearer" });
+      if (isSensitive(path) && !tokenOk) {
+        const key = resetPathOf(path);
+        const sensitive = [key];
+        if (d.controlToken === undefined) { json(res, 403, { ok: false, detail: noTokenDetail(key), sensitive }); return; }
+        json(res, 401, { ok: false, detail: `changing ${key} needs the control token (Authorization: Bearer)`, sensitive }, { "www-authenticate": "Bearer" });
         return;
       }
       if (secretPathOf(resetPathOf(path)) !== undefined) { refuse(res, [{ path, message: "a credential: it belongs in secrets.yaml, set through its masked field on the Settings screen once the dashboard is back" }]); return; }
@@ -308,7 +326,7 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   let resolveValid: () => void = () => {};
   const valid = new Promise<void>((r) => { resolveValid = r; });
   const handler = createRecoveryHandler({
-    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken: controlTokenFromEnv(o.env),
+    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken: controlTokenFromEnv(o.env), boundPort: port,
     ...(o.uiDir ? { uiDir: o.uiDir } : {}), onValid: () => resolveValid(),
   });
   const server = http.createServer(guardFullSurface(handler, { loopback: isLoopback(bind), controlEnabled: cfg.enabled, allowedHosts }));

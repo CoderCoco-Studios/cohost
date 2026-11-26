@@ -116,20 +116,36 @@ test("when the valid answer names another port the page waits for the dashboard 
   let up = false;
   const probed: string[] = [];
   const b = open(STATE, () => assert.fail("no reload on a new port"), { navigate: (u) => went.push(u), probe: async (u) => { probed.push(u); if (!up) throw new TypeError("down"); } });
-  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true, port: 3100 } });
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true, moved: true, port: 3100 } });
   await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
-  await screen.findByText(/The dashboard moves to http:\/\/localhost:3100\//);
+  const link = await screen.findByRole("link", { name: "http://localhost:3100/" });
+  assert.equal(link.getAttribute("href"), "http://localhost:3100/");
   await screen.findByText(/Still waiting for the dashboard at http:\/\/localhost:3100\//);
   assert.ok(probed.length >= 10 && probed.every((u) => u === "http://localhost:3100/health"));
   assert.deepEqual(went, []);
   up = true;
   await waitFor(() => assert.deepEqual(went, ["http://localhost:3100/"]));
+  assert.ok(screen.getByRole("link", { name: "http://localhost:3100/" }), "the link stays");
+});
+
+// @spec DASH-RCV-015
+test("a valid answer that does not say moved reloads in place, even when the page's port is not the dashboard's (a tunnel or a proxy)", async () => {
+  let reloads = 0;
+  const app = makeApp();
+  const probed: string[] = [];
+  renderApp(<RecoveryScreen initial={STATE} reload={() => { reloads++; }} navigate={() => assert.fail("no move")} probe={async (u) => { probed.push(u); }} here={{ protocol: "http:", hostname: "localhost", port: "13000" }} pollMs={5} />, app);
+  app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true } });
+  app.fetch.on("GET /recovery", { json: { active: false } });
+  await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
+  await waitFor(() => assert.equal(reloads, 1));
+  assert.deepEqual(probed, []);
+  assert.equal(screen.queryByRole("link"), null);
 });
 
 // @spec DASH-RCV-015
 test("on its own port the page names the address it waits for after ten unanswered polls", async () => {
   const b = open(STATE);
-  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true, port: 3000 } });
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true } });
   b.app.fetch.fail("GET /recovery");
   b.app.fetch.on("GET /recovery", { status: 503, text: "starting" });
   await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));

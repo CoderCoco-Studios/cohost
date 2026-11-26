@@ -99,10 +99,12 @@ test("DASHBOARD_HOST beyond loopback with control off stops the start with exit 
 });
 
 // @spec DASH-RCV-002
-test("a taken default port, used because the dashboard section could not be read, is named as such in the fatal line", async () => {
+test("a taken default port, used because the dashboard section could not be read, is named as such in the fatal line", { timeout: 20_000 }, async (t) => {
   const busy = net.createServer();
-  // Port 3000 is the default; when something else already holds it, the start fails the same way.
-  await new Promise<void>((r) => { busy.once("error", () => r()); busy.listen(3000, "127.0.0.1", () => r()); });
+  // Port 3000 is the default. When something else holds it, that holder may let go at any moment and the recovery listener
+  // would then bind and wait for a valid file, so the case is skipped rather than run against a port it does not own.
+  const held = await new Promise<boolean>((r) => { busy.once("error", () => r(false)); busy.listen(3000, "127.0.0.1", () => r(true)); });
+  if (!held) { t.skip("port 3000 is in use"); return; }
   try {
     const dir = mkdtempSync(join(tmpdir(), "cohost-rcvl-"));
     writeFileSync(join(dir, "config.yaml"), "dashboard: [x\n");

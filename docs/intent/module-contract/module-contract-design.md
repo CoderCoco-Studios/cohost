@@ -49,7 +49,7 @@ Each application unit in `SERVICE_MANIFEST` carries, beside its existing fields 
 
 | Field | Meaning |
 |---|---|
-| `config` | Dotted schema paths of the sections the service reads (`voice`, `brain.salience`, `llm`) |
+| `config` | Dotted schema paths of the sections the service reads (`voice`, `brain.salience`, `llm`); every application unit lists `logging`, which every cohost program's logger reads |
 | `secrets` | The secret paths the service reads (paths of `SECRET_PATHS`, the wildcard `tools.servers.*.token` included), each inside a section its `config` names; the control plane projects exactly these into the unit's container and no other credential reaches it ([deployment](../deployment/deployment-design.md) Secret scoping). Empty when the unit reads none |
 | `uses` | Services whose absence degrades one of this service's features (cortex uses salience, affect, memory, tools; tools uses memory; mouth uses voice); `requires` stays the subset an isolated start brings up, and must be a subset |
 | `pause` | Whether the service honours `pause` (salience, cortex, affect) |

@@ -33,7 +33,7 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 - docs/intent/ears/ears-design.md
 
 ### EARS
-- docs/intent/ears/ears-specs.md (195 specs: 189 `[x]`, 4 `[ ]`, 2 `[D]`; the gaps are the desktop helper's hardware-only parts, EARS-SRC-014, 018, 019 and 022; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
+- docs/intent/ears/ears-specs.md (195 specs: 188 `[x]`, 5 `[ ]`, 2 `[D]`; the gaps are the desktop helper's hardware-only parts, EARS-SRC-014, 018, 019 and 022, and EARS-SRC-023, the pure-Rust PulseAudio client with no system library of deployment #344; the Silero loader runs `onnxruntime-node` over the Silero VAD v5.1.2 model committed under `services/ears/models/`, pinned by `services/ears/test/silero.test.ts`)
 
 ### Spec Coverage
 
@@ -102,4 +102,4 @@ None.
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
-The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the hardware checks under #231 (also listed on the manual live-check issue #330); EARS-SRC-016 follows when the helper writes frames.
+The desktop capture helper's capture back ends (the pure-Rust PulseAudio client, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the hardware checks under #231 (also listed on the manual live-check issue #330); EARS-SRC-016 follows when the helper writes frames.

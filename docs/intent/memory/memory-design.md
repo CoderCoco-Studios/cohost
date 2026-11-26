@@ -372,7 +372,7 @@ processed it. A pass is triggered:
   state from `brain.status`; `muted` counts as idle, and so does no status seen
   since memory started (no cortex running means nothing to compete with).
 - **Once after the owner shuts the AI down**, by a separate one-shot command,
-  `consolidate` (`pnpm consolidate`, `node services/memory/dist/consolidate.js`),
+  `consolidate` (`mise run consolidate`, `node services/memory/dist/consolidate.js`),
   started once the services are down. It processes every dirty note, ignores the
   threshold and does not wait for idle (`MEM-CONSOL-012`). The memory service has already created the
   tables, so the one-shot opens the store with `connect()` (tables exist, no DDL, no embedding-size probe;
@@ -592,7 +592,7 @@ after the `(ts, id)` cursor in `(ts, id)` order with a default limit of 400, and
 ## Re-embedding (`reembed.ts`, `reembed-run.ts`)
 
 After the owner changes the embedder to one with another vector size, `init` refuses the
-existing tables (`MEM-STORE-002`). The `reembed` one-shot (`pnpm reembed`,
+existing tables (`MEM-STORE-002`). The `reembed` one-shot (`mise run reembed`,
 `node services/memory/dist/reembed.js`, the Compose `reembed` job in the `maintenance` profile, or
 `cohostctl reembed`) is the way forward; run it with the memory service stopped.
 
@@ -662,7 +662,7 @@ Before closing the store, memory records that a shutdown consolidation run is ow
 
 ## Reflection pass (`reflect.ts`, `learned.ts`)
 
-A CLI run between streams (`pnpm reflect` which is `tsx src/reflect.ts`, or
+A CLI run between streams (`mise run reflect`, which runs `tsx src/reflect.ts` in `services/memory`, or
 `node services/memory/dist/reflect.js`). It is not a bus region. It takes the
 consolidation advisory lock (`withConsolidationLock`, the one the service's note
 passes and the `consolidate` one-shot share), so it never overlaps them.

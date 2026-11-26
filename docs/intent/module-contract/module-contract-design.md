@@ -41,7 +41,7 @@ The docs site's Add a TypeScript service page teaches the four obligations with 
 - **Reports its own dependency.** `deps.file` is `down` while the file cannot be read, so the Services screen shows the service `degraded` with the reason, the way a real service reports a missing account.
 - **Becomes a module in the page's later steps.** As an example it has no manifest entry and no Compose service, so it meets obligation 4 and not 1 to 3. The page walks the rest, naming each file: a folder under `services/`, its `package.json` and `tsconfig.json`, an entry in `packages/control/src/manifest.ts` (config sections, uses, `pause`, a test input), its Compose service, and the root `tsconfig.json` reference. Those edits are prose on the page, because the files they touch belong to control-plane, deployment and the build.
 
-The file is in the examples TypeScript project, which `tsc -p examples/tsconfig.json` checks during `pnpm test` (docs-site DOCS-GUIDE-025); `packages/testing/test/example-service.test.ts` runs it.
+The file is in the examples TypeScript project, which `tsc -p examples/tsconfig.json` checks during `mise run test` (docs-site DOCS-GUIDE-025); `packages/testing/test/example-service.test.ts` runs it.
 
 ## Service descriptor (manifest)
 

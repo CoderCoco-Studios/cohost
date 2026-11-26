@@ -26,13 +26,13 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/region-hooks/region-hooks-design.md
 
 ### EARS
-- docs/intent/region-hooks/region-hooks-specs.md (60 specs, prefix HOOK: 60 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/region-hooks/region-hooks-specs.md (60 specs, prefix HOOK: 58 `[x]`, 2 `[ ]`, 0 `[D]`; HOOK-SCHEMA-003 and HOOK-EX-013 follow the mise tasks of deployment #344)
 
 ### Tests
 - packages/modules/test/module.test.ts (kinds, fallback, warnings, cool-off, health; fake HTTP servers for the `http` and OpenAI-compatible `llm` paths)
 - packages/modules/test/hooks.test.ts
 - packages/modules/test/schemas.test.ts (reply schemas against the region validators)
-- packages/modules/test/example-server.test.ts (fixture responses through the real region validators; the live `server.py` when `python3` is installed)
+- packages/modules/test/example-server.test.ts (fixture responses through the real region validators; the live `server.py`, on the Python `mise.toml` pins)
 - examples/modules/fixtures/contracts.json (recorded request/response pairs for the three endpoints)
 - services/affect/test/{affect.region,affect.dispositions,appraiser,main}.test.ts, services/salience/test/main.test.ts (files carrying `@spec HOOK-`)
 - Consumer-side coverage lives in `services/salience/test`, `services/affect/test`, `services/cortex/test`, `services/memory/test` (not in this segment)
@@ -77,7 +77,7 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 | Reference HTTP servers and example hook | HOOK-EX-001 to HOOK-EX-019 | 19 | 0 | 0 |
 | Reply schemas | HOOK-SCHEMA-001 to HOOK-SCHEMA-003 | 3 | 0 | 0 |
 
-**Summary:** 60 specs: 60 implemented, 0 deferred, 0 gaps (HOOK-EX-011 to HOOK-EX-019 added after the audit and not covered by it).
+**Summary:** 60 specs: 58 implemented, 0 deferred, 2 gaps (HOOK-SCHEMA-003, HOOK-EX-013: the mise tasks of deployment #344) (HOOK-EX-011 to HOOK-EX-019 added after the audit and not covered by it).
 
 ## Key Findings
 
@@ -87,7 +87,7 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 4. **Fallbacks are visible as throttled warnings**: one per 30 s per instance, error truncated to 120 chars, carrying the suppressed count (HOOK-WARN-003, S21).
 5. **`impl.rules` is unguarded**, so "the show goes on" depends on region rules never throwing (HOOK-FALLBACK-005, S19: regions guarantee it); the precondition is written on `ModuleImpl.rules` and pinned by `module.test.ts`.
 6. **`ModuleConfig` has one definition** in `@cohost/config`, re-exported by `@cohost/modules` (HOOK-CFG-001).
-7. **Contracts are hand-duplicated** across `validate` functions in three services, the docs site's Brain hooks page (`docs/advanced/extend/hooks.md`), `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures when `python3` is installed. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
+7. **Contracts are hand-duplicated** across `validate` functions in three services, the docs site's Brain hooks page (`docs/advanced/extend/hooks.md`), `server.py` and the JSON Schemas; `example-server.test.ts` and `schemas.test.ts` link them: fixture responses go through the real validators, schemas are checked against the validators, and the live server is checked against the fixtures, on the Python `mise.toml` pins. The example-server test imports the services' `createScorer`/`createAppraiser`/`createCritic` from their sources, a package-to-service dependency that exists only in test code.
 8. **Annotation placement** - `@spec` comments in `src/` are trailing comments on the entry-point line.
 
 ## Work Required

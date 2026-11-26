@@ -78,7 +78,7 @@ when the stack is down.
 
 ### Where it runs: a host process (chosen)
 
-The owner starts the dashboard on the host (`pnpm dashboard`).
+The owner starts the dashboard on the host (`mise run dashboard`).
 It uses the owner's own `docker` CLI access, so it needs no privilege of its
 own, and it is up before anything else. Compose drops its `dashboard` service.
 Consequences: the dashboard reaches Redis on the loopback port Compose already

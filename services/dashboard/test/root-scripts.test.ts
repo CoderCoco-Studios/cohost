@@ -24,7 +24,7 @@ test("build runs the UI build, which runs vite in the dashboard package", () => 
   assert.deepEqual(ui.run, ["node_modules/.bin/vite build --config ui/vite.config.ts"]);
   assert.equal(ui.dir, dashboardDir);
   assert.deepEqual(ui.outputs, [`${dashboardDir}/dist-ui/index.html`]);
-  assert.deepEqual(ui.sources.map(rel), ["services/dashboard/ui/**"]);
+  assert.deepEqual(ui.sources.map(rel), ["services/dashboard/ui/**", "packages/shared/src/**"]);
 });
 
 // @spec DEPLOY-REPO-002, DASH-BUILD-008

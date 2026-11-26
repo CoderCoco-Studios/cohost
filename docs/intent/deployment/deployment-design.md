@@ -241,7 +241,7 @@ The task graph is the reason for the design. `depends` makes each task run what 
 | `install` | `pnpm install --frozen-lockfile`, then `touch node_modules/.modules.yaml` (pnpm leaves that file untouched when nothing needs installing, so without the touch a manifest edit that changes no dependency would keep the task, and every task after it, from ever being up to date) | — | `pnpm-lock.yaml`, `pnpm-workspace.yaml`, every `package.json` → `node_modules/.modules.yaml` |
 | `build:native` | `cargo build --release -p cohost-bus-node`, then copy `target/release/libcohost_bus_node.so` to `packages/bus/native/cohost-bus.linux-x64-gnu.node` | — | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `crates/**` → the addon |
 | `build:ts` | `tsc -b` (every package and service, into each `dist/`) | `install` | — (`tsc -b` is incremental) |
-| `build:ui` | `node_modules/.bin/vite build --config ui/vite.config.ts`, `dir` = `services/dashboard` | `build:ts` (its `vite.config.ts` imports `@cohost/config` from `dist/`) | `services/dashboard/ui/**` → `services/dashboard/dist-ui/index.html` |
+| `build:ui` | `node_modules/.bin/vite build --config ui/vite.config.ts`, `dir` = `services/dashboard` | `build:ts` (the UI's `ui/src/avatar/pose.ts` imports `@cohost/shared/head-rotation`, which resolves to `packages/shared/dist/`) | `services/dashboard/ui/**`, `packages/shared/src/**` → `services/dashboard/dist-ui/index.html` |
 | `build` | nothing of its own | `build:native`, `build:ts`, `build:ui` | — |
 | `typecheck` | `tsc -b`, then `tsc -p services/dashboard/ui --noEmit` | `install` | — |
 | `lint:ts` | `oxlint --type-aware` (oxlint and oxlint-tsgolint are workspace devDependencies; configuration and rule set are issue #346's) | `typecheck` | — |
@@ -258,7 +258,7 @@ The task graph is the reason for the design. `depends` makes each task run what 
 | `infra:up` | `docker compose up -d redis postgres ollama tts stt` | `doctor:docker` | — |
 | `infra:down` | `docker compose stop redis postgres ollama tts stt` | `doctor:docker` | — |
 | `dashboard` | `mise run docs:build` (failure printed, not fatal), `tsc -b services/dashboard`, `node services/dashboard/dist/index.js` | `build:native`, `build:ui` | — |
-| `dashboard:ui` | `node_modules/.bin/vite --config ui/vite.config.ts` (the dev server), `dir` = `services/dashboard` | `build:ts` (its `vite.config.ts` imports `@cohost/config` from `dist/`) | — |
+| `dashboard:ui` | `node_modules/.bin/vite --config ui/vite.config.ts` (the dev server), `dir` = `services/dashboard` | `build:ts` (the UI imports `@cohost/shared/head-rotation` from `packages/shared/dist/`, and the dev server's proxy loads `@cohost/config` from its `dist/`) | — |
 | `cohostctl` | `tsc -b packages/control`, then `node packages/control/dist/cli.js` with the task's arguments | `build:native`, `install` | — |
 | `secrets:project` | `tsc -b packages/control`, then `node packages/control/dist/project-secrets.js` ([Secret scoping](#secret-scoping)) | `install` | — |
 | `reflect`, `consolidate`, `reembed` | `node dist/<name>.js`, `dir` = `services/memory` | `build:native`, `build:ts` | — |

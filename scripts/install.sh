@@ -81,7 +81,10 @@ command -v curl >/dev/null 2>&1 || need_apt+=(curl)
 command -v gpg >/dev/null 2>&1 || need_apt+=(gnupg)
 [[ -f /etc/ssl/certs/ca-certificates.crt ]] || need_apt+=(ca-certificates)
 # The official Node binary mise installs links libatomic.so.1 dynamically, and mise cannot provide a system library.
-{ /sbin/ldconfig -p 2>/dev/null || ldconfig -p 2>/dev/null; } | grep -q 'libatomic\.so\.1 ' || need_apt+=(libatomic1)
+# grep reads the cache through a process substitution, not a pipe: under pipefail, grep -q stopping at the first
+# match would end a long ldconfig listing with SIGPIPE (141) and libatomic would read as missing.
+ldcache() { /sbin/ldconfig -p 2>/dev/null || ldconfig -p 2>/dev/null; }
+grep -q 'libatomic\.so\.1 ' < <(ldcache) || need_apt+=(libatomic1)
 if [[ ${#need_apt[@]} -gt 0 ]]; then
   log "Installing ${need_apt[*]}"
   sudo apt-get update -qq

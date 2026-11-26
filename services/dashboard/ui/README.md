@@ -17,9 +17,9 @@ React 19 + TypeScript + Vite. Design and specs: `docs/intent/dashboard/dashboard
 
 ```sh
 # Node comes from mise.toml; run these in a shell where mise is active.
-# one test file, capped on real memory and time (from services/dashboard):
-systemd-run --user --scope --quiet -p MemoryMax=4G -p MemorySwapMax=0 -- env TSX_TSCONFIG_PATH=../../tsconfig.test.json \
-  timeout 120 node --import tsx --test --test-timeout=30000 --test-concurrency=2 test/ui/<name>.test.tsx
+# one test file, capped on real memory and time (from the repo root; test:file builds first and sets the test tsconfig):
+systemd-run --user --scope --quiet -p MemoryMax=4G -p MemorySwapMax=0 -- \
+  timeout 300 mise run test:file -- --test-timeout=30000 --test-concurrency=2 services/dashboard/test/ui/<name>.test.tsx
 node_modules/.bin/tsc -p services/dashboard/ui --noEmit   # from the repo root: typechecks src and test/ui
 mise run build:ui                                         # writes services/dashboard/dist-ui
 mise run dashboard:ui                                     # dev server with the proxy (loopback only)

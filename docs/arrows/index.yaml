@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 188 [x], 5 [ ], 2 [D]; EARS-SRC-023 moves the desktop helper to the pure-Rust PulseAudio client with no system library (#344), [ ] until implemented (the echo gate EARS-ECHO-001 to 009 is [x], including the audible-sink rule of EARS-ECHO-002; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
+    next: "195 specs: 189 [x], 4 [ ], 2 [D]; EARS-SRC-023 is [x]: the desktop helper's Linux back end uses the pure-Rust pulseaudio client, with no system library (#344) (the echo gate EARS-ECHO-001 to 009 is [x], including the audible-sink rule of EARS-ECHO-002; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
     drift: null
 
   salience:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "150 specs: 145 [x], 5 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). Open: DEPLOY-CI-001 and -012, held until the desktop audio helper moves to the pure-Rust PulseAudio client (EARS-SRC-023) and test.yml drops its libpulse-dev step; DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "150 specs: 147 [x], 3 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

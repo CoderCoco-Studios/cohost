@@ -27,7 +27,7 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 | `install` | `pnpm install --frozen-lockfile`; skipped while `pnpm-lock.yaml` and the `package.json` files are unchanged |
 | `build:native` | Builds `crates/cohost-bus-node` with `cargo build --release` and copies the library to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. `@cohost/bus` cannot be imported without it, so every task that starts a host program depends on it. Skipped while no Rust source changed |
 | `build:ts` | `install`, then `tsc -b`: every package and service, incrementally |
-| `build:ui` | `build:ts` (the UI's Vite config loads `@cohost/config`), then the dashboard's web UI into `services/dashboard/dist-ui/`; skipped while `services/dashboard/ui` is unchanged |
+| `build:ui` | `build:ts` (the UI imports `@cohost/shared/head-rotation`, which resolves to the built `packages/shared/dist/`), then the dashboard's web UI into `services/dashboard/dist-ui/`; skipped while `services/dashboard/ui` and `packages/shared/src` are unchanged |
 | `build` | `build:native`, `build:ts` and `build:ui` |
 | `clean` | Removes every `dist/` and `services/dashboard/dist-ui` |
 

@@ -40,8 +40,6 @@ export COHOST_ISOLATION
 
 if [ "$DOWN" = 1 ]; then docker compose down; exit 0; fi
 
-[ -d node_modules ] || pnpm install --frozen-lockfile
-
 echo "== starting stack (first run pulls images and models: can take a long while)"
 docker compose up -d --build
 docker compose wait models >/dev/null 2>&1 || { echo "model pull failed: docker compose logs models" >&2; exit 1; }

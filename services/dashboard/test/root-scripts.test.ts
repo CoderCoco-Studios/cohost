@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { rel, repoRoot, task } from "../../../packages/config/test/helpers/mise.js";
 
 const root = (f: string) => readFileSync(new URL(`../../../${f}`, import.meta.url), "utf8");
-const TEST_RUN = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
+const TEST_RUN = 'scripts/test-env.sh node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
 const dashboardDir = `${repoRoot}services/dashboard`;
 
 // @spec DEPLOY-REPO-002, DASH-BUILD-006

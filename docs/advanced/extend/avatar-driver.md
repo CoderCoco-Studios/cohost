@@ -12,7 +12,7 @@ You will have a small avatar driver, `UdpJsonDriver`, that sends each movement o
 ## What you need
 
 - A checkout of cohost, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
-- The workspace built once with `pnpm build`, because the type check at the end reads the built packages.
+- mise, which brings the checkout's toolchains. The tasks below build the workspace before they run, because the checks at the end read the built packages.
 - A program that listens on a UDP port and reads JSON. The driver's side of the conversation is only a sender, so nothing here needs that program to exist yet.
 
 ## How a driver fits
@@ -71,16 +71,16 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 
 ## How you know it worked
 
-- This runs the driver against a real UDP socket on your machine and prints one line for each check, ending in `pass 5`:
+- The test suite runs the driver against a real UDP socket on your machine. `services/avatar/test/example-driver.test.ts` holds its five checks, and they pass in the suite's output:
 
   ```sh
-  node --import tsx --test services/avatar/test/example-driver.test.ts
+  mise run test
   ```
 
 - This type-checks every example against the real interfaces. It prints nothing when it is happy:
 
   ```sh
-  pnpm exec tsc -p examples/tsconfig.json
+  mise run example:typecheck
   ```
 
 - After step 4, your receiving program gets a `params` packet 30 times a second (the default `avatar.fps`), and an `expression` packet when the co-host's mood changes.

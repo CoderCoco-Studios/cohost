@@ -1,6 +1,6 @@
 ---
 title: One service on its own
-description: Isolation overrides, the mock backends, and how to start a single service from the dashboard, cohostctl or source with only Redis running.
+description: Isolation overrides, the mock backends, and how to start a single service from the dashboard, cohostctl or its mise task with only Redis running.
 track: advanced
 verified: f126b94
 ---
@@ -11,7 +11,7 @@ Every service can run with only [Redis](../../start/glossary.md#redis) beside it
 
 ## What you need
 
-- A built workspace and Redis on `127.0.0.1:6379`. See [Developer setup](../dev-setup.md) and run `docker compose up -d redis`.
+- A built workspace and Redis on `127.0.0.1:6379`. See [Developer setup](../dev-setup.md): `mise run build`, then `docker compose up -d redis`, or `mise run infra:up` for all the infrastructure.
 - A `config/config.yaml`, which the first service you start copies from `config/config.example.yaml` when it is missing. Every key is a literal value with a default, so the example file is fine for local runs.
 
 ## The overrides
@@ -46,20 +46,20 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 **From `cohostctl`.** The same control path from a shell. It runs services through [Docker](../../start/glossary.md#docker) [Compose](../../start/glossary.md#docker-compose):
 
 ```bash
-pnpm cohostctl start cortex --isolated
-pnpm cohostctl restart cortex --mode fresh
+mise run cohostctl -- start cortex --isolated
+mise run cohostctl -- restart cortex --mode fresh
 ```
 
 `--mode fresh` resets the service's [consumer groups](../../start/glossary.md#consumer-group) so it ignores [events](../../start/glossary.md#event) published while it was away; `--mode resume` keeps its place. Application services default to `fresh`, except `memory`, which resumes.
 
-**From source.** Run the service on the host, from the workspace root so `config/` and `.env` are found. Choose a stand-in either by the real config key (for example `llm.provider: mock` in `config/config.yaml`) or by `COHOST_ISOLATION` in the shell:
+**From its task.** Run the service on the host with its `dev:<service>` task, which builds what changed and starts the service's built `dist/index.js`; `config/` and `.env` are found from the workspace root whatever the directory. Choose a stand-in either by the real config key (for example `llm.provider: mock` in `config/config.yaml`) or by `COHOST_ISOLATION` in the shell:
 
 ```bash
-node --import tsx services/salience/src/index.ts
-COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' node --import tsx services/cortex/src/index.ts
+mise run dev:salience
+COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' mise run dev:cortex
 ```
 
-`pnpm --filter @cohost/salience dev` does the same with file watching. Set `LOG_LEVEL=debug` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
+`mise watch --restart dev:salience` does the same and rebuilds and restarts the service on every saved change. Set `LOG_LEVEL=debug` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
 
 ## Scripting the mock's replies
 
@@ -94,21 +94,21 @@ Each was started with only Redis available:
 
 ## Stand-in servers
 
-Two scripts in `scripts/dev/` impersonate the servers that need a model, for runs where you want the real service code but not the real model.
+Two tasks, each running a script in `scripts/dev/`, impersonate the servers that need a model, for runs where you want the real service code but not the real model.
 
-| Script | Stands in for | Listens on | Behaviour |
+| Task | Stands in for | Listens on | Behaviour |
 | --- | --- | --- | --- |
-| `scripts/dev/stub-tts.ts` | The [Kokoro](../../start/glossary.md#kokoro) TTS server | `STUB_TTS_PORT`, default 8880 | Answers `POST /v1/audio/speech` with a pulsing-tone WAV of about 65 ms per character, so the lip-sync envelope moves |
-| `scripts/dev/stub-llm.ts` | Ollama's chat API | `STUB_LLM_PORT`, default 11434 | Serves `GET /api/tags` and `POST /api/chat`; replies `Stub brain here. You said: ...`. It has no `/api/embed`, so use the `memory` override above instead |
+| `stub:tts` (`scripts/dev/stub-tts.ts`) | The [Kokoro](../../start/glossary.md#kokoro) TTS server | `STUB_TTS_PORT`, default 8880 | Answers `POST /v1/audio/speech` with a pulsing-tone WAV of about 65 ms per character, so the lip-sync envelope moves |
+| `stub:llm` (`scripts/dev/stub-llm.ts`) | Ollama's chat API | `STUB_LLM_PORT`, default 11434 | Serves `GET /api/tags` and `POST /api/chat`; replies `Stub brain here. You said: ...`. It has no `/api/embed`, so use the `memory` override above instead |
 
 ```bash
-node --import tsx scripts/dev/stub-tts.ts &
-node --import tsx scripts/dev/stub-llm.ts &
+mise run stub:tts &
+mise run stub:llm &
 ```
 
 `voice` outside Compose defaults `VOICE_URL` to `http://127.0.0.1:8700`, the address it publishes in `voice.utterance`; Compose sets `http://voice:8700` for [containers](../../start/glossary.md#container).
 
-When you are done, stop background `node --import tsx ...` jobs with `pkill -f "scripts/dev/"` and `pkill -f "services/.*/src/index.ts"`, each typed on its own, and check `ss -ltn`. A plain `kill $!` can leave the `tsx` child holding the port.
+When you are done, stop the background jobs with `pkill -f "scripts/dev/"` and `pkill -f "node dist/index.js"`, each typed on its own, and check `ss -ltn`. A plain `kill $!` stops the `mise` process and can leave the program it started holding the port.
 
 ## A smoke run
 
@@ -116,13 +116,12 @@ When you are done, stop background `node --import tsx ...` jobs with `pkill -f "
 
 ```bash
 docker compose up -d redis
-pnpm install && pnpm build
+mise run build
 export REDIS_URL=redis://localhost:6379
-COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' pnpm --filter @cohost/cortex exec tsx src/index.ts &
-pnpm --filter @cohost/salience exec tsx src/index.ts &
-pnpm --filter @cohost/affect exec tsx src/index.ts &
-COHOST_ISOLATION='{"CHAT_SOURCES":"[fake]"}' pnpm --filter @cohost/chat exec tsx src/index.ts &
-COHOST_ISOLATION='{"VOICE_ENGINE":"stub"}' pnpm --filter @cohost/voice exec tsx src/index.ts &
+COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' mise run dev:cortex &
+mise run --jobs 2 dev:salience ::: dev:affect &
+COHOST_ISOLATION='{"CHAT_SOURCES":"[fake]"}' mise run dev:chat &
+COHOST_ISOLATION='{"VOICE_ENGINE":"stub"}' mise run dev:voice &
 ```
 
 Watch the Services screen (or `GET /services`) for `mock` modes, and `brain.say` and `voice.utterance` on the event feed. In-memory data is gone when a process exits. The next page, [Fake inputs](inject.md), shows how to put your own events in.

@@ -84,19 +84,19 @@ A hook running on the pretend provider makes its service report mode `mock`.
 `cohostctl`, the command-line twin of the dashboard, prints the same verdicts:
 
 ```bash
-pnpm cohostctl status
+mise run cohostctl status
 ```
 
 Each line is a service, its state, its mode (`-` when the service has not reported one) and how long ago it was last heard from, or `never`. Your own output will list every service; this example shows just the layout:
 
 ```console
-$ pnpm cohostctl status
+$ mise run cohostctl status
 cortex     up            live  3s ago
 memory     degraded      live  2s ago
 eyes       down          -     never
 ```
 
-To look at one service, add its name, as in `pnpm cohostctl status cortex`. An unknown name is an error. This command only reads, so it is safe to run at any time, including while the dashboard is busy.
+To look at one service, add its name, as in `mise run cohostctl status cortex`. An unknown name is an error. This command only reads, so it is safe to run at any time, including while the dashboard is busy.
 
 ## The stack status
 

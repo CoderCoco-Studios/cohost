@@ -1,6 +1,6 @@
 name: compose-smoke
 
-# @spec DEPLOY-CI-002
+# @spec DEPLOY-CI-002, DEPLOY-CI-012
 on:
   pull_request:
   push:
@@ -16,28 +16,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      - run: scripts/compose-smoke.sh
-      # The launch end-to-end test (CTRL-STACK-015): StackController.launch and stopAll on a real Compose project.
-      # @spec DEPLOY-CI-007
-      # pnpm version comes from "packageManager" in package.json.
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v7.1.0
+      - uses: jdx/mise-action@v5.3.0
         with:
-          node-version: 26
-          cache: pnpm
-      # pnpm build runs build:native (BUS-NAT-BLD-002), which needs the toolchain.
-      - name: Install the pinned Rust toolchain
-        # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.
-        run: rustup show active-toolchain || rustup toolchain install
+          version: 2026.11.14
+      - run: mise run smoke
+      # The launch end-to-end test (CTRL-STACK-015): StackController.launch and stopAll on a real Compose project.
+      # test:launch builds through build, the bus addon included (BUS-NAT-BLD-002).
+      # @spec DEPLOY-CI-007
       - uses: actions/cache@v6.1.0
         with:
           path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
+            ~/.local/share/mise/cargo/registry/index
+            ~/.local/share/mise/cargo/registry/cache
+            ~/.local/share/mise/cargo/git/db
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'mise.lock') }}
           restore-keys: cargo-${{ runner.os }}-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: node --import tsx --test packages/control/test/launch.e2e.test.ts
+      - run: mise run test:launch

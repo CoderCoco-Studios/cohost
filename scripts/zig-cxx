@@ -1,0 +1,3 @@
+#!/bin/sh
+# `zig c++` with zig-cc's argument mapping.  @spec DEPLOY-TOOL-019
+ZIG_CC_LANG=c++ exec "$(dirname "$0")/zig-cc" "$@"

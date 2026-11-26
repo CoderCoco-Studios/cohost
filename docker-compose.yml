@@ -1,7 +1,7 @@
 # Base stack. CPU-only by default; GPU is layered on via docker-compose.gpu.yml
 # (install.sh writes COMPOSE_FILE into .env so plain `docker compose up` picks both).
 #
-#   The dashboard is not a Compose service: it runs on the host (`pnpm dashboard`) and its Launch button
+#   The dashboard is not a Compose service: it runs on the host (`mise run dashboard`) and its Launch button
 #   runs `docker compose up -d` for the stack. By hand:
 #   docker compose up -d                 # everything
 #   docker compose up -d --build         # everything, rebuilding the service images first (cohostctl rebuild)
@@ -71,7 +71,7 @@ services:  # @spec DEPLOY-COMPOSE-001
     networks: [default, tools-redis]   # @spec DEPLOY-NET-002: the one service on both networks
     command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
     volumes: [redis-data:/data]
-    ports: ["127.0.0.1:6379:6379"]   # for `pnpm dev` outside docker
+    ports: ["127.0.0.1:6379:6379"]   # for `mise run dev` outside docker
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

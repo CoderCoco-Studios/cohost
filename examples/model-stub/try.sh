@@ -1,6 +1,6 @@
 #!/bin/sh
 # Sends cohost's two requests to an OpenAI-compatible server and prints each reply on one line.
-#   sh examples/model-stub/try.sh [base-url]      (default http://127.0.0.1:8901/v1)
+#   mise run example:model-try -- [base-url]      (default http://127.0.0.1:8901/v1)
 base="${1:-http://127.0.0.1:8901/v1}"
 
 # region requests

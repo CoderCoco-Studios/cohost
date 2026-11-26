@@ -34,6 +34,25 @@ fn bld_001_workspace_and_exact_toolchain_pin() {
         "an exact stable version, got {version}"
     );
     assert!(tc.contains("rustfmt") && tc.contains("clippy"));
+    // the one source of the Rust version: mise reads rust-toolchain.toml and names none of its own (DEPLOY-TOOL-001)
+    let mise = read("mise.toml");
+    let idiomatic = mise
+        .lines()
+        .find(|l| {
+            l.trim_start()
+                .starts_with("idiomatic_version_file_enable_tools")
+        })
+        .expect("idiomatic_version_file_enable_tools in mise.toml");
+    assert!(
+        idiomatic.contains("\"rust\""),
+        "mise takes Rust from rust-toolchain.toml"
+    );
+    assert!(
+        !mise
+            .lines()
+            .any(|l| l.trim_start().starts_with("rust ") || l.trim_start().starts_with("rust=")),
+        "mise.toml names no Rust version"
+    );
 }
 
 // @spec BUS-NAT-BLD-003
@@ -86,13 +105,17 @@ fn bld_009_node_crate_is_a_cdylib_with_test_panic_feature_off_by_default() {
             && !attrs[gate..].contains("\npub fn "),
         "the cfg attribute belongs to the testPanic item"
     );
-    let pkg = read("package.json");
-    let script = pkg
-        .lines()
-        .find(|l| l.contains("\"build:native\""))
-        .expect("build:native script");
+    let mise = read("mise.toml");
+    let task = mise
+        .split("\n[")
+        .find(|t| t.starts_with("tasks.\"build:native\"]"))
+        .expect("the build:native task in mise.toml");
     assert!(
-        !script.contains("test-panic"),
+        task.contains("cargo build --release -p cohost-bus-node"),
+        "build:native builds the addon"
+    );
+    assert!(
+        !task.contains("test-panic"),
         "build:native must not enable test-panic"
     );
     assert!(

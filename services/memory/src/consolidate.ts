@@ -1,5 +1,5 @@
 /**
- * consolidate — run once after the AI is shut down (`pnpm consolidate`, or
+ * consolidate — run once after the AI is shut down (`mise run consolidate`, or
  * `node services/memory/dist/consolidate.js`; `docker compose run --rm consolidate`, or `cohostctl consolidate`).
  *
  * Tidies every viewer note that has not been looked at yet: fades and promotes

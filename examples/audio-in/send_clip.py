@@ -1,6 +1,8 @@
 """Send one audio clip to cohost's ears `http` source. Standard library only.
 
-    python3 examples/audio-in/send_clip.py <file> [--url <url>] [--speaker <name>] [--source <tag>]
+    mise run example:audio-send:py -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+
+A copy outside the checkout runs as `python3 send_clip.py <file> ...`.
 """
 import os
 import sys

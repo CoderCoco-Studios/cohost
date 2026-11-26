@@ -1,5 +1,5 @@
 /**
- * reembed — run once after changing the embedder (`pnpm reembed`, or `node services/memory/dist/reembed.js`;
+ * reembed — run once after changing the embedder (`mise run reembed`, or `node services/memory/dist/reembed.js`;
  * `docker compose run --rm reembed`, or `cohostctl reembed`) with the memory service stopped.
  *
  * Re-embeds every stored memory, viewer note and deletion record with the configured embedder and moves the vector

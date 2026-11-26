@@ -2,7 +2,9 @@
 //!
 //! Standard library plus `serde_json`, nothing else:
 //!
-//!     cargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server [port]
+//!     mise run example:hook-server:rust -- [port]
+//!
+//! A copy of this package outside the checkout runs with `cargo run -- [port]` in its folder.
 //!
 //! It listens on :8900 (or the port you give; 0 picks a free one) and answers exactly as
 //! examples/modules/server.py does: the same three routes, the same toy judgements, a 404 for

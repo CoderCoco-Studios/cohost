@@ -12,12 +12,14 @@ critic) over HTTP, all with the same toy judgements on port 8900.
 | `fixtures/` | `contracts.json`, sample requests and replies for the three endpoints |
 | `schemas/` | JSON Schema of each reply: `schemas/salience.json`, `schemas/affect.json`, `schemas/critic.json` |
 
-Run one from the repository root, then `sh examples/modules/try.sh` in another terminal:
+From the checkout, run one with `mise run example:hook-server:py`, `:ts` or
+`:rust`, then `mise run example:hook-try` in another terminal. A copy kept
+outside the checkout runs with its own tool, from the copy's folder:
 
 ```shell
-python3 examples/modules/server.py
-node examples/modules/server.ts
-cargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server
+python3 server.py
+node server.ts
+cargo run -p cohost-example-hook-server
 ```
 
 The contracts, every hook kind and a guide for each language are on the

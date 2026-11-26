@@ -126,16 +126,6 @@ test("Rust and Cargo.toml @spec citations are read and target/ is skipped", () =
   assert.equal(skipped.code, 0, skipped.err);
 });
 
-// @spec DEPLOY-IMG-001
-test("a Dockerfile rust: tag that differs from rust-toolchain.toml fails; a match passes", () => {
-  const toolchain = '[toolchain]\nchannel = "1.99.1"\n';
-  const ok = run({ "rust-toolchain.toml": toolchain, Dockerfile: "FROM rust:1.99.1-slim-bookworm AS native\n" });
-  assert.equal(ok.code, 0, ok.err);
-  const bad = run({ "rust-toolchain.toml": toolchain, Dockerfile: "FROM rust:1.98.0-slim-bookworm AS native\n" });
-  assert.equal(bad.code, 1);
-  assert.match(bad.err, /Dockerfile:1: rust:1\.98\.0 does not match the 1\.99\.1 channel/);
-});
-
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
 // @spec DEPLOY-CI-010
@@ -235,4 +225,47 @@ test("a FROM pinned by a sha256 digest passes without a tag; a digest that is no
   const short = run(dockerfile("FROM ubuntu@sha256:abc"));
   assert.equal(short.code, 1, "a short digest is not a pin");
   assert.match(short.err, /docker\/x\/Dockerfile:1: /);
+});
+
+const workflow = (...steps: string[]) => `name: w\non: [push]\njobs:\n  j:\n    runs-on: ubuntu-latest\n    steps:\n${steps.join("\n")}\n`;
+
+// @spec DEPLOY-CI-012
+test("a workflow step that is an action or one mise run passes", () => {
+  const ok = run({
+    [WF]: workflow(
+      "      - uses: actions/checkout@v7.0.1",
+      "      - uses: jdx/mise-action@v5.3.0\n        with:\n          version: 2026.11.14\n          install_args: node",
+      "      - run: mise run lint",
+      "      - name: docs\n        run: MISE_TASK_RUN_AUTO_INSTALL=false mise run docs:build",
+      "      - run: mise run --force test:rust-example",
+      "      # a comment\n      - id: x\n        run: mise run bus:bench -- --runs 3",
+    ),
+  });
+  assert.equal(ok.code, 0, ok.err);
+});
+
+// @spec DEPLOY-CI-012
+test("a workflow step that runs anything else fails, naming the file and line", () => {
+  const cases: [string, number][] = [
+    ["      - run: pnpm install --frozen-lockfile", 7],
+    ["      - uses: actions/checkout@v7.0.1\n      - run: cargo test --workspace", 8],
+    ["      - run: mise run lint && mise run test", 7],
+    ["      - run: mise run lint; echo done", 7],
+    ["      - name: two\n        run: |\n          mise run lint\n          mise run test", 7],
+    ["      - run: sudo apt-get install -y libpulse-dev", 7],
+    ["      - name: nothing", 7],
+  ];
+  for (const [step, line] of cases) {
+    const r = run({ [WF]: workflow(step) });
+    assert.equal(r.code, 1, step);
+    assert.match(r.err, new RegExp(`w\\.yml:${line}: a workflow step must be a uses: action or a run: of exactly one mise run`), step);
+  }
+});
+
+// @spec DEPLOY-CI-012
+test("the one held step (the desktop helper's libpulse, until EARS-SRC-023) passes only in the test workflow, with that exact command", () => {
+  const held = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
+  assert.equal(run({ ".github/workflows/test.yml": workflow(held) }).code, 0);
+  assert.equal(run({ ".github/workflows/other.yml": workflow(held) }).code, 1, "not in another workflow");
+  assert.equal(run({ ".github/workflows/test.yml": workflow(`${held} cmake`) }).code, 1, "not with another package");
 });

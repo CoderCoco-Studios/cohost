@@ -1,0 +1,3 @@
+#!/bin/sh
+# `zig ar` with the caller's arguments unchanged.  @spec DEPLOY-TOOL-019
+exec zig ar "$@"

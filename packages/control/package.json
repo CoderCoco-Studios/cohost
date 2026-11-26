@@ -6,9 +6,6 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": {
-    "build": "tsc -b"
-  },
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*"

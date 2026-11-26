@@ -26,7 +26,7 @@ Owner decisions of 2026-11-01 on the audit questions (P product, B bug, R robust
 - docs/intent/region-hooks/region-hooks-design.md
 
 ### EARS
-- docs/intent/region-hooks/region-hooks-specs.md (60 specs, prefix HOOK: 58 `[x]`, 2 `[ ]`, 0 `[D]`; HOOK-SCHEMA-003 and HOOK-EX-013 follow the mise tasks of deployment #344)
+- docs/intent/region-hooks/region-hooks-specs.md (60 specs, prefix HOOK: 60 `[x]`, 0 `[ ]`, 0 `[D]`; HOOK-SCHEMA-003 and HOOK-EX-013 follow the mise tasks of deployment #344)
 
 ### Tests
 - packages/modules/test/module.test.ts (kinds, fallback, warnings, cool-off, health; fake HTTP servers for the `http` and OpenAI-compatible `llm` paths)
@@ -77,7 +77,7 @@ Consumers: `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`
 | Reference HTTP servers and example hook | HOOK-EX-001 to HOOK-EX-019 | 19 | 0 | 0 |
 | Reply schemas | HOOK-SCHEMA-001 to HOOK-SCHEMA-003 | 3 | 0 | 0 |
 
-**Summary:** 60 specs: 58 implemented, 0 deferred, 2 gaps (HOOK-SCHEMA-003, HOOK-EX-013: the mise tasks of deployment #344) (HOOK-EX-011 to HOOK-EX-019 added after the audit and not covered by it).
+**Summary:** 60 specs: 60 implemented, 0 deferred, 0 gaps (HOOK-EX-011 to HOOK-EX-019 added after the audit and not covered by it).
 
 ## Key Findings
 

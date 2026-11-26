@@ -10,9 +10,6 @@
     "dist",
     "native"
   ],
-  "scripts": {
-    "build": "tsc -b"
-  },
   "dependencies": {
     "@cohost/config": "workspace:*",
     "ioredis": "^6.0.0",

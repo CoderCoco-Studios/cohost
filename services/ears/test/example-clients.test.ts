@@ -56,7 +56,7 @@ function run(cmd: string, args: string[], env: Record<string, string | undefined
 
 interface Client { name: string; skip: string | false; cmd: string; script: string; flags: boolean }
 const clients: Client[] = [
-  { name: "send_clip.py", skip: !has("python3") && "python3 not installed", cmd: "python3", script: "send_clip.py", flags: true },
+  { name: "send_clip.py", skip: false, cmd: "python3", script: "send_clip.py", flags: true },
   { name: "send-clip.ts", skip: !nodeOk && "needs Node 22.18 or later", cmd: process.execPath, script: "send-clip.ts", flags: true },
   { name: "send.sh", skip: !has("curl") && "curl not installed", cmd: "sh", script: "send.sh", flags: false },
 ];

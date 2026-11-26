@@ -1,7 +1,8 @@
 # Examples
 
 Runnable material that goes with the docs. Start at the
-[docs site](https://codercoco-studios.github.io/cohost/).
+[docs site](https://codercoco-studios.github.io/cohost/). From the checkout,
+each program runs through a `mise run example:*` task (`mise tasks` lists them).
 
 - [`modules/`](modules/) is a runnable server for the three brain hooks
   (salience, affect, the cortex critic) with sample requests and JSON Schemas.

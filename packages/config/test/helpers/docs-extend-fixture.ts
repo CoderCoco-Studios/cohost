@@ -30,7 +30,7 @@ export function guide(title: string, body = "", extraFm: Record<string, string> 
 export const TS_SERVICE = guide("Add a TypeScript service", "<<< @/../examples/service/now-playing.ts#main\n");
 export const RUST_BUS = guide(
   "Rust bus client",
-  "`crates/cohost-bus` has no shared runtime. A Rust service publishes `service.heartbeat` itself and answers `control` and `inject.request` only if it implements them.\n\n```sh\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-bus\n```\n\n<<< @/../examples/rust-bus/Cargo.toml\n\n<<< @/../examples/rust-bus/src/lib.rs\n",
+  "`crates/cohost-bus` has no shared runtime. A Rust service publishes `service.heartbeat` itself and answers `control` and `inject.request` only if it implements them.\n\n```sh\nmise run example:rust-bus\n```\n\n<<< @/../examples/rust-bus/Cargo.toml\n\n<<< @/../examples/rust-bus/src/lib.rs\n",
 );
 
 export const INDEX = page(

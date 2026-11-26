@@ -257,7 +257,7 @@ test("a symlink whose target is outside the docs directory is never followed: fi
 });
 
 // @spec DASH-DOCS-009
-test("while index.html is not a regular file every docs request is a 503 page naming pnpm docs:build, loading nothing", async () => {
+test("while index.html is not a regular file every docs request is a 503 page naming mise run docs:build, loading nothing", async () => {
   const u = await serve(unbuilt);
   for (const [p, m] of [["/cohost/", "GET"], ["/cohost", "GET"], ["/cohost/anything", "GET"], ["/cohost/%00", "GET"], ["/cohost/..%2fx", "GET"], ["/cohost/", "HEAD"]] as const) {
     const r = await raw(u.port, p, {}, m);
@@ -267,9 +267,9 @@ test("while index.html is not a regular file every docs request is a 503 page na
     if (m === "GET") {
       assert.match(r.body, /<title>Docs not built<\/title>/);
       assert.match(r.body, /not been built/);
-      assert.match(r.body, /pnpm docs:build/);
-      assert.match(r.body, /pnpm dashboard/);
-      assert.match(r.body, /each time it starts/);
+      assert.match(r.body, /mise run docs:build/);
+      assert.match(r.body, /mise run dashboard/);
+      assert.match(r.body, /mise run dashboard<\/code> builds them when it starts/);
       assert.doesNotMatch(r.body, /<script|<link|<img|src=|href=|@import|url\(/i);
     }
   }

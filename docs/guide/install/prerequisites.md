@@ -1,6 +1,6 @@
 ---
 title: What you need
-description: The computer, operating system, tools and optional accounts cohost needs, and what the installer puts on your machine for you.
+description: The computer, operating system, system prerequisites and optional accounts cohost needs, and what the installer puts on your machine for you.
 track: simple
 ---
 
@@ -25,18 +25,18 @@ On WSL2 the GPU comes from the normal NVIDIA Windows driver, which exposes it to
 
 ## The tools
 
-The installer on the next pages can put all of these on an Ubuntu or Debian machine, so you do not need to install them first. You do need to know they exist.
+Your machine needs only a few things of its own, the system prerequisites. Everything else comes from the project.
 
 | Tool | Why cohost needs it |
 | --- | --- |
+| [mise](https://mise.jdx.dev/) | The tool manager and task runner. It installs the exact versions of Node, pnpm, Rust, Zig and Python that `mise.toml` names, for this project only, with `mise install`, and every cohost command is a mise task: `mise run <task>`. The installer installs it for you. |
 | [Docker](../../start/glossary.md#docker) with the Compose plugin | Almost every cohost service runs in a [container](../../start/glossary.md#container). Docker runs them and [Docker Compose](../../start/glossary.md#docker-compose) starts the whole set. On WSL2 you can use Docker Desktop for Windows with its WSL integration turned on for your distribution, or Docker installed inside the distribution. |
-| NVIDIA container toolkit | Only if you have an NVIDIA GPU: it lets containers use the card. |
-| Node 26 or newer | The dashboard and the command line tools run on your machine directly, as Node programs. |
-| pnpm 12 | The package manager the project uses. The installer installs corepack with npm and enables pnpm through it. |
-| The Rust toolchain | cohost's connection to the shared message channel (the [bus](../../start/glossary.md#bus)) is a small compiled program. The project pins the exact Rust version in `rust-toolchain.toml` and the installer installs that one through rustup, along with a C compiler (`build-essential`). |
-| Python 3 (optional) | Only for the example server in the brain-hooks guide (a [hook](../../start/glossary.md#hook) is a spot where you can swap in your own server). |
+| The NVIDIA driver and container toolkit | Only if you have an NVIDIA GPU: the driver runs the card and the toolkit lets containers use it. |
+| `git` and `curl` | To get the code and to download mise. |
 
-Rust is required before any program that runs on your machine will start, that is the dashboard, `cohostctl` and the development loop. Those programs load the compiled bus connection and have no fallback if it is missing. The command that builds it is `pnpm build:native`; the next pages tell you exactly when to run it.
+Node, pnpm, Rust, Zig and Python come from `mise.toml` through `mise install`; `mise run doctor` checks the rest and prints the command that fixes anything missing. Install no Node, pnpm, Rust or C toolchain of your own: the project's versions live in their own directory and never touch, or depend on, any you already have.
+
+cohost's connection to the shared message channel (the [bus](../../start/glossary.md#bus)) is a small compiled program. You never build it as a separate step: every task that starts a program on your machine (the dashboard, `cohostctl`, the development loop) builds it first when it is missing or out of date.
 
 ## What the installer does
 
@@ -45,10 +45,10 @@ Rust is required before any program that runs on your machine will start, that i
 1. Detects WSL2 and whether you have an NVIDIA GPU.
 2. Installs Docker if it is missing. If it had to install Docker, it stops and asks you to log out and back in, then run it again.
 3. Installs the NVIDIA container toolkit when it finds a GPU.
-4. Installs Node 26 if Node is missing or older, and enables pnpm.
-5. Creates `.env` from `.env.example`, creates your personal files in `config/` (`config.yaml`, `personality.md` and `expressions.yaml`) and your credentials file `secrets/secrets.yaml`, switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
-6. Installs a C compiler if there is none, then rustup and the pinned Rust toolchain.
-7. Runs `pnpm install --frozen-lockfile`, then `pnpm build:native`, then a type check, then copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`.
+4. Installs `curl`, `gnupg` and the CA certificates if any is missing, then mise itself, to `~/.local/bin/mise`, checking its signature and checksum.
+5. Runs `mise install`, which installs the project's Node, pnpm, Rust, Zig and Python, and adds the mise activate line to your shell's startup file so a new terminal has them.
+6. Creates `.env` from `.env.example`, creates your personal files in `config/` (`config.yaml`, `personality.md` and `expressions.yaml`) and your credentials file `secrets/secrets.yaml`, switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
+7. Runs `mise run build` (the packages, the bus connection, the code and the dashboard page), then `mise run secrets:project`, which copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`, then `mise run docs:build`, which builds this documentation for the dashboard to serve.
 8. Unless you pass `--no-pull`, downloads the container images and the models.
 9. Starts [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.md#postgres) and checks they answer.
 10. Prints what to do next.

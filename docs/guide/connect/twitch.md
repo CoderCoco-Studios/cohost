@@ -31,7 +31,7 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 
    ```bash
-   pnpm cohostctl restart chat
+   mise run cohostctl restart chat
    ```
 
 4. Say something in your channel's chat from another account or browser tab.

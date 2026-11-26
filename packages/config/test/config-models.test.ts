@@ -83,7 +83,7 @@ function run(dir: string, ollama: string): Promise<{ code: number | null; stdout
 
 // @spec CFG-MODEL-002
 test("pull-models waits for ollama, pulls the required models then the optional ones, one after another, and exits 0", async () => {
-  assert.ok(existsSync(script), "run `pnpm build` first");
+  assert.ok(existsSync(script), "run `mise run build` first");
   const fake = await fakeOllama(() => "ok");
   try {
     const r = await run(shippedSandbox(), fake.url);

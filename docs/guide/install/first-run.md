@@ -17,7 +17,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
 - A machine that meets [What you need](prerequisites.md).
 - About half an hour the first time. The first start downloads the infrastructure images and the models, which is several gigabytes even in mock mode.
-- The Rust toolchain that `rust-toolchain.toml` pins. The installer installs it; if you skip the installer, install that exact version yourself, because the programs that run on your machine cannot start without the compiled bus connection.
+- [mise](https://mise.jdx.dev/) and the system prerequisites: Docker with [Compose](../../start/glossary.md#docker-compose), the NVIDIA driver and [container](../../start/glossary.md#container) toolkit if you have an NVIDIA [GPU](../../start/glossary.md#gpu), `git` and `curl`. The installer sets these up. Node, pnpm, Rust, Zig and Python come from `mise.toml` through `mise install`, and `mise run doctor` checks the rest. Install no Node, pnpm, Rust or C toolchain of your own.
 - A browser on the same machine. On [WSL2](../../start/glossary.md#wsl2), a browser on the Windows side works, because WSL forwards `localhost`. The [Single-PC checklist](../../advanced/testing/single-pc.md) walks the whole run on one WSL2 machine.
 
 ## Steps
@@ -29,20 +29,21 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    cd cohost
    ```
 
-2. Run the installer. It installs what is missing (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the connection to the [bus](../../start/glossary.md#bus) and writes your `.env`, `config/config.yaml` and `secrets/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
+2. Run the installer. It installs what is missing, including mise and the project's toolchains (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the code and the connection to the [bus](../../start/glossary.md#bus), and writes your `.env`, `config/config.yaml` and `secrets/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
 
    ```bash
    ./scripts/install.sh --no-pull
    ```
 
    <details>
-   <summary>Already have Docker, Node 26, pnpm 12 and Rust?</summary>
+   <summary>Already have Docker and mise?</summary>
 
-   You can skip the installer. Build the bus connection yourself before any program on your machine starts, because those programs cannot run without it:
+   You can skip the installer. Check the system prerequisites, install the project's toolchains and create your files from their examples:
 
    ```bash
-   pnpm install
-   pnpm build:native
+   mise run doctor
+   mise trust
+   mise install
    cp .env.example .env
    cp config/config.example.yaml config/config.yaml
    mkdir -m 700 secrets
@@ -50,13 +51,13 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    chmod 600 secrets/secrets.yaml
    ```
 
-   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one.
+   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
    </details>
 
 3. Start the dashboard.
 
    ```bash
-   pnpm dashboard
+   mise run dashboard
    ```
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on.
@@ -81,7 +82,7 @@ Optional pieces (`eyes`, `ears`, `mouth` and the Discord [connector](../../start
 ## If it didn't
 
 - **The installer stopped after installing Docker.** That is expected: it needs you to log out and back in so your user is in the `docker` group. Run it again.
-- **`pnpm dashboard` fails to find the bus addon.** The bus connection was not built. Run `pnpm build:native`, then start the dashboard again.
+- **`mise run dashboard` says a tool is missing or `mise` is not found.** Open a new terminal so the mise activate line the installer added takes effect, or run `mise install` in the cohost folder. `mise run doctor` lists any system prerequisite that is missing and how to fix it.
 - **The dashboard says `docker` is not found on WSL2.** Docker Desktop's WSL integration is probably off for your distribution. Either turn it on in Docker Desktop (Settings, Resources, WSL integration) or put `COHOST_DOCKER_BIN=docker.exe` in `.env` so cohost runs every Docker command through the Windows program.
 - **A service stays `degraded` or `down`.** Open the Services screen, read its note, and see [service health](../operate/health.md).
 - **The first Launch seems stuck.** It is probably downloading models. That can take a long time on a slow connection.

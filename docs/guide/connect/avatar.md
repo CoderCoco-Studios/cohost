@@ -45,7 +45,7 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
 3. Restart the `avatar` service from the Services screen, or from a terminal:
 
    ```bash
-   pnpm cohostctl restart avatar
+   mise run cohostctl restart avatar
    ```
 
 4. VTube Studio pops up an **Allow plugin** request. Click **Allow**. cohost saves the answer in `config/.vts-token`, so you will only be asked once.
@@ -71,7 +71,7 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
 3. Restart the `avatar` service from the Services screen, or:
 
    ```bash
-   pnpm cohostctl restart avatar
+   mise run cohostctl restart avatar
    ```
 
 4. Open `config/expressions.yaml` and, under `vmc`, set each emotion to the name of the VRM expression (blendshape) it should use. The defaults use the standard VRM presets, such as `Joy`, `Angry`, `Sorrow` and `Surprised`.

@@ -21,8 +21,8 @@ The pattern: run the services from [One service on its own](isolated.md) with ev
 
 | Service | Outside dependency | GPU | Substitute while testing |
 | --- | --- | --- | --- |
-| `voice` | The [Kokoro](../../start/glossary.md#kokoro) [TTS](../../start/glossary.md#tts) container (`tts`) | Optional; a CPU image exists | `scripts/dev/stub-tts.ts`, or an isolated start (`voice.engine: stub`) |
-| `cortex`, the `salience` and `affect` `llm` [hooks](../../start/glossary.md#hook), `memory` reflection | [Ollama](../../start/glossary.md#ollama), an OpenAI-compatible server or Claude | Yes for Ollama | `scripts/dev/stub-llm.ts`, an isolated start of `cortex` (`llm.provider: mock`), or `llm.provider: openai` pointed at any local server |
+| `voice` | The [Kokoro](../../start/glossary.md#kokoro) [TTS](../../start/glossary.md#tts) container (`tts`) | Optional; a CPU image exists | `mise run stub:tts`, or an isolated start (`voice.engine: stub`) |
+| `cortex`, the `salience` and `affect` `llm` [hooks](../../start/glossary.md#hook), `memory` reflection | [Ollama](../../start/glossary.md#ollama), an OpenAI-compatible server or Claude | Yes for Ollama | `mise run stub:llm`, an isolated start of `cortex` (`llm.provider: mock`), or `llm.provider: openai` pointed at any local server |
 | `memory` | Ollama's `nomic-embed-text` and [Postgres](../../start/glossary.md#postgres) with [pgvector](../../start/glossary.md#pgvector) | [Embeddings](../../start/glossary.md#embedding) are light | An isolated start of `memory` (`brain.memory.store: memory`, `brain.memory.embedder: hash`), or the real containers below |
 | `eyes` | [OBS](../../start/glossary.md#obs) over [obs-websocket](../../start/glossary.md#obs-websocket) and a vision model | Yes | An isolated start of `eyes` (`vision.provider: stub`) with an image injected from the dashboard, or a hand-published `vision.summary`. Leave `vision.enabled: false` unless OBS is up |
 | `ears` | The Discord [connector](../../start/glossary.md#connector) and an [STT](../../start/glossary.md#stt) container ([faster-whisper](../../start/glossary.md#whisper)) | STT is GPU-friendly | An isolated start of `ears` (`ears.stt_engine: stub`) with audio injected from the dashboard, or a hand-published `speech.heard`; the `http` and `dir` sources need no account |
@@ -38,7 +38,7 @@ To test the service itself, rely on its unit tests; the network and hardware edg
 About 1 GB of images plus two small models. The base [compose](../../start/glossary.md#docker-compose) file has CPU images.
 
 ```bash
-docker compose up -d redis postgres ollama tts stt
+mise run infra:up
 docker compose ps
 curl -s localhost:11434/api/pull -d '{"name":"nomic-embed-text"}'
 curl -s localhost:11434/api/pull -d '{"name":"qwen2.5:0.5b-instruct"}'
@@ -53,7 +53,7 @@ Then run the services on the host against them. Set `llm.model: "qwen2.5:0.5b-in
 
 ```bash
 export VOICE_URL=http://127.0.0.1:8700
-for s in salience affect memory cortex voice avatar; do node --import tsx services/$s/src/index.ts & done
+mise run --jobs 6 dev:salience ::: dev:affect ::: dev:memory ::: dev:cortex ::: dev:voice ::: dev:avatar
 ```
 
 `memory` logs `memory ready` with `dims: 768` and creates its tables (`memories`, `viewers`, `viewer_notes`, `viewer_note_deletions`, `viewer_links` and `meta`) in Postgres. Publish the chat message from [Recipe B](inject.md#recipe-b-the-full-talking-loop-no-gpu-no-accounts) and you get a real reply, real Kokoro audio in `voice.utterance`, a `memory.viewer` for the new user and an on-time, empty `memory.recall.reply`. Afterwards the exchange is in the database:
@@ -64,7 +64,7 @@ docker compose exec postgres psql -U cohost -c 'select kind, who, text from memo
 
 It shows the chat line (kind `chat`) and the reply (kind `self`).
 
-Stop everything with `docker compose down`; add `-v` to drop the Postgres and model volumes too. Stop the host jobs as described on [One service on its own](isolated.md#stand-in-servers).
+Stop the services with ctrl-c, then everything else with `docker compose down`; add `-v` to drop the Postgres and model volumes too.
 
 ### Speech to text with real audio
 
@@ -90,23 +90,23 @@ docker compose exec ollama ollama ps
 
 ### The services as containers
 
-`docker compose build` builds every service image, and `scripts/compose-smoke.sh` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy, then starts `tools` and checks from inside it that `redis` resolves and `salience` does not. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
+`docker compose build` builds every service image, and `mise run smoke` (run in CI) checks that `salience`, `affect` and `avatar` come up healthy, then starts `tools` and checks from inside it that `redis` resolves and `salience` does not. The Dockerfile deliberately does not run `pnpm prune --prod`. To run the talking path in containers:
 
 ```bash
-node packages/control/dist/project-secrets.js
+mise run secrets:project
 docker compose up -d redis postgres ollama tts stt salience affect memory cortex voice avatar
 ```
 
 The first line copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`, which a hand-run `docker compose up` does not do; the dashboard and `cohostctl` do it before every start.
 
-Publish a chat message with `bus-pub` and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `pnpm dashboard`, and `http://localhost:<dashboard.port>/audio/<id>-<seq>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
+Publish a chat message with `mise run bus:pub` ([Fake inputs](inject.md)) and it should travel `salience`, `cortex`, Ollama, Kokoro and `voice.done`. The dashboard is not a Compose service: start it on the host with `mise run dashboard`, and `http://localhost:<dashboard.port>/audio/<id>-<seq>.wav` returns the WAV through the voice service on `127.0.0.1:8700`. Compose sets `VOICE_URL=http://voice:8700` for the containers itself. Leave `chat` out unless you set `chat.twitch.channel` or list `fake` in `chat.sources`.
 
 ## Twitch
 
 Reading a channel needs only its name, with no login. Set `chat.twitch.channel: "somechannel"` in `config/config.yaml`, then run:
 
 ```bash
-node --import tsx services/chat/src/index.ts
+mise run dev:chat
 ```
 
 `chat` logs `connected to twitch chat` with `authenticated: false` and publishes `chat.message` [events](../../start/glossary.md#event) as people talk, so pick a busy channel. With `chat.twitch.channel` empty it idles `degraded` instead of exiting. Posting back and the authenticated path need the `chat.twitch` credentials in `secrets/secrets.yaml`; see [Twitch chat](../../guide/connect/twitch.md).
@@ -116,7 +116,7 @@ node --import tsx services/chat/src/index.ts
 Point the `vmc` driver at a UDP listener to see its packets without an avatar app. Set `avatar.driver: vmc` and `avatar.vmc.host: "127.0.0.1"` in `config/config.yaml`, then run:
 
 ```bash
-node --import tsx services/avatar/src/index.ts
+mise run dev:avatar
 ```
 
 With a listener on UDP port 39539, a `brain.say` produces `/VMC/Ext/Blend/Val`, `/VMC/Ext/Blend/Apply`, `/VMC/Ext/Bone/Pos` and `/VMC/Ext/OK` messages. It is fire-and-forget UDP over [OSC](../../start/glossary.md#osc), so the driver never reports "connected". For a real 3D avatar, enable a receiver in the app; see [Avatar](../../guide/connect/avatar.md).

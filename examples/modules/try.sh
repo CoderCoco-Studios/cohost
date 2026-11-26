@@ -1,8 +1,8 @@
 #!/bin/sh
 # Ask a hook server the three questions cohost asks it, and print each reply on its own line.
 #
-#   sh examples/modules/try.sh                          # a server on this machine, port 8900
-#   sh examples/modules/try.sh http://127.0.0.1:9000    # a server somewhere else
+#   mise run example:hook-try                             # a server on this machine, port 8900
+#   mise run example:hook-try -- http://127.0.0.1:9000    # a server somewhere else
 #
 # A server in any language is right when this prints the lines of try.expected.txt
 # (the same JSON; spacing and 1.0 versus 1 do not matter).

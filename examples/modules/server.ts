@@ -3,7 +3,9 @@
  *
  * Node's built-in modules only, so there is nothing to install:
  *
- *     node examples/modules/server.ts [port]       # listens on :8900, or the port you give (0 = any free port)
+ *     mise run example:hook-server:ts -- [port]    # listens on :8900, or the port you give (0 = any free port)
+ *
+ * A copy outside the checkout runs as `node server.ts [port]`.
  *
  * It needs Node 22.18 or later, which runs a `.ts` file by stripping its types. Keep to
  * type annotations, `type` and `interface`; syntax that generates code (enums, parameter

@@ -11,7 +11,7 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 
 ## What you need
 
-- A checkout of cohost with its packages installed and built. [Developer setup](../dev-setup.md) covers it.
+- A checkout of cohost with mise, which brings its toolchains. [Developer setup](../dev-setup.md) covers it.
 - A region that has a question to put behind a hook. Here the question is made up, so nothing in a region changes until you choose to wire it in.
 - Some comfort with TypeScript.
 
@@ -33,11 +33,10 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 
    <<< @/../examples/new-hook/shout.ts#create
 
-5. Run the test that tries it with each kind: the `rules` directly, `http` against a stub server that sends good and bad replies, and `llm` through a fake chat provider. Build the packages first, because the example imports them from their built folders.
+5. Run the test that tries it with each kind: the `rules` directly, `http` against a stub server that sends good and bad replies, and `llm` through a fake chat provider. It is `packages/modules/test/example-hook.test.ts`, part of the suite. The `test` task builds the packages first, because the example imports them from their built folders.
 
    ```sh
-   pnpm build
-   node --import tsx --test packages/modules/test/example-hook.test.ts
+   mise run test
    ```
 
 6. Wire the hook into a region. These edits change files outside the example, so they are described here, not shown:
@@ -47,7 +46,7 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
    - In the region's service, build the module once at start (`createShoutHook` becomes a `createX` function beside the region's other code, as `services/affect/src/appraise.ts` shows) and call `run` where the judgement used to be written inline.
    - Pass the module to `hookHealth` from `@cohost/modules` with the service's other hooks, and merge what its `deps()` returns into the service's [heartbeat](../../start/glossary.md#heartbeat) dependencies, as `services/affect/src/main.ts` does. A hook whose `kind` is `http` or `llm` then reports a `hook.<name>` dependency, where `<name>` is the name the module was given. A hook on `rules` reports none.
 
-   After the edits, run `pnpm test` to build everything and run every test.
+   After the edits, run `mise run test` again to build everything and run every test.
 
 ## How you know it worked
 
@@ -57,7 +56,7 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 
 ## If it didn't
 
-- **The test cannot find the packages.** The example imports `packages/modules` and `packages/config` from their `dist` folders. Run `pnpm build` first.
+- **The test cannot find the packages.** The example imports `packages/modules` and `packages/config` from their `dist` folders. Run it through `mise run test`, which builds them first, or run `mise run build`.
 - **`rules` throws for some input.** It must not: the module calls it with no guard, as the answer and as the fallback. Make the function total, then add that input to the test.
 - **An `llm` or `http` reply is ignored.** The validator returned `undefined`, so the rules answered. The region log says `module returned something unusable; using rules`. Compare the reply with what the validator accepts.
 - **The config refuses to load after the schema edit.** The error names the key and the problem. For a hook, `kind` must be `rules`, `llm` or `http`, and an `llm.provider` needs an `llm.model` beside it.

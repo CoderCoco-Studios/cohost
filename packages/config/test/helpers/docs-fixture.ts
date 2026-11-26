@@ -140,6 +140,44 @@ ${THEME_CONFIG_EXTRA}});
 
 export const MODULES_README = "# Modules\n\nFiles: `server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`.\n\n```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n";
 
+/** The tasks the fixture repository defines; a page's `mise run` and `mise watch` commands must name one (DOCS-FACT-001). */
+export const MISE_TOML = `[tools]
+node = "26.0.0"
+
+[tasks.install]
+run = "pnpm install --frozen-lockfile"
+
+[tasks."build:native"]
+run = "x"
+
+[tasks.build]
+run = "x"
+
+[tasks.test]
+run = "x"
+
+[tasks.dashboard] # the dashboard
+run = "x"
+
+[tasks.cohostctl]
+run = "x"
+
+[tasks."dev:chat"]
+run = "x"
+
+[tasks."dev:cortex"]
+run = "x"
+
+[tasks."docs:build"]
+run = "x"
+
+[tasks."example:hook-server:py"]
+run = "x"
+
+[tasks."example:rust-bus"]
+run = "x"
+`;
+
 const stepPage = (title: string) =>
   page(fmOf(title, "simple"), `# ${title}\n\nYou will have it working.\n\n## What you need\n\nA PC.\n\n1. Do it.\n\n## How you know it worked\n\nYou see it.\n\n## If it didn't\n\nSee [troubleshooting](../troubleshooting.md).`);
 
@@ -156,7 +194,8 @@ export function baseFiles(): Record<string, string> {
     "CHAT_SOURCES", "6379", "11434", "3000", "3001",
   ];
   return {
-    "package.json": JSON.stringify({ scripts: { dashboard: "x", build: "x", test: "x" }, devDependencies: { "beautiful-mermaid": "1.1.3", vitepress: "1.6.4" } }),
+    "package.json": JSON.stringify({ devDependencies: { "beautiful-mermaid": "1.1.3", vitepress: "1.6.4" } }),
+    "mise.toml": MISE_TOML,
     ".env.example": [
       "DASHBOARD_PORT=3000", "DASHBOARD_LAN_PORT=3001", "# COMPOSE_PROFILES=discord", "LLM_PROVIDER=ollama", "MEMORY_STORE=postgres",
       "MEMORY_EMBEDDER=ollama", "VOICE_ENGINE=kokoro", "CHAT_SOURCES=[twitch]", "# a prose comment, not a variable", "",
@@ -207,7 +246,7 @@ A co-host.
 git clone https://github.com/CoderCoco-Studios/cohost.git
 cd cohost
 scripts/install.sh
-pnpm dashboard
+mise run dashboard
 \`\`\`
 
 Open the dashboard, tick isolated on the Services screen and press Start on chat, memory, cortex and voice; edit no file and append nothing to .env. For real accounts see [Install for real](https://codercoco-studios.github.io/cohost/guide/install/real-install).

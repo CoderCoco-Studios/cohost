@@ -1,4 +1,4 @@
-// Build and load contract of the native addon (BUS-NAT-BLD-*): reads package.json and `native.ts`, and imports a copy of
+// Build and load contract of the native addon (BUS-NAT-BLD-*): reads mise.toml's tasks and `native.ts`, and imports a copy of
 // the built `dist/native.js` where the addon is missing. Needs no Redis.
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
@@ -7,24 +7,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
+import { dependencyClosure, miseTasks, task } from "../../config/test/helpers/mise.js";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const nativeSrc = readFileSync(join(root, "packages/bus/src/native.ts"), "utf8");
 const code = nativeSrc.split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n"); // without comments
 
 // @spec BUS-NAT-BLD-002
-test("pnpm build and pnpm test run build:native, which builds the addon crate and copies the library, before tsc -b", () => {
-  const { scripts } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { scripts: Record<string, string> };
-  assert.equal(
-    scripts["build:native"],
-    "cargo build --release -p cohost-bus-node && mkdir -p packages/bus/native && cp target/release/libcohost_bus_node.so packages/bus/native/cohost-bus.linux-x64-gnu.node",
-  );
-  for (const name of ["build", "test"]) {
-    const steps = scripts[name]!.split("&&").map((s) => s.trim());
-    const native = steps.indexOf("pnpm build:native");
-    const tsc = steps.indexOf("tsc -b");
-    assert.equal(native, 0, `${name} starts with pnpm build:native`);
-    assert.ok(tsc > native, `${name} runs tsc -b after build:native`);
+test("build:native builds the addon crate and copies the library, and every task that starts a program importing @cohost/bus runs it first", () => {
+  const native = task("build:native");
+  assert.deepEqual(native.run, [
+    "cargo build --release -p cohost-bus-node",
+    "mkdir -p packages/bus/native",
+    "cp target/release/libcohost_bus_node.so packages/bus/native/cohost-bus.linux-x64-gnu.node",
+  ]);
+  assert.deepEqual(native.outputs, ["packages/bus/native/cohost-bus.linux-x64-gnu.node"], "skipped while the addon is newer than its sources");
+  assert.deepEqual(native.sources, ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "crates/**"]);
+  const devTasks = [...miseTasks().keys()].filter((n) => n.startsWith("dev:"));
+  assert.ok(devTasks.length > 0);
+  for (const name of ["build", "test", "test:launch", "dashboard", "cohostctl", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:connector", "perf:baseline", ...devTasks]) {
+    assert.ok(dependencyClosure(name).has("build:native"), `${name} runs build:native first`);
   }
 });
 
@@ -43,7 +45,7 @@ test("native.ts loads the addon from one fixed relative path through createRequi
 });
 
 // @spec BUS-NAT-BLD-005, BUS-NAT-BLD-006
-test("importing the built native.js where the addon file is missing throws an error naming platform, arch, path and pnpm build:native", () => {
+test("importing the built native.js where the addon file is missing throws an error naming platform, arch, path and mise run build:native", () => {
   const dir = mkdtempSync(join(tmpdir(), "native-missing-"));
   mkdirSync(join(dir, "dist"));
   cpSync(join(root, "packages/bus/dist/native.js"), join(dir, "dist/native.js")); // no ../native next to it
@@ -56,7 +58,7 @@ test("importing the built native.js where the addon file is missing throws an er
   assert.ok(res.message.includes(`platform ${process.platform}`), res.message);
   assert.ok(res.message.includes(`arch ${process.arch}`), res.message);
   assert.ok(res.message.includes(join(dir, "native", `cohost-bus.${process.platform}-${process.arch}-gnu.node`)), res.message);
-  assert.ok(res.message.includes("`pnpm build:native`"), res.message);
+  assert.ok(res.message.includes("`mise run build:native`"), res.message);
   // the only target is linux-x64-gnu: on this host the looked-for file is exactly that one
   if (process.platform === "linux" && process.arch === "x64") assert.ok(res.message.includes("cohost-bus.linux-x64-gnu.node"));
 });

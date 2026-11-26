@@ -11,23 +11,23 @@ You will have a small Rust server that answers the three brain [hooks](../../sta
 
 ## What you need
 
-- Rust and `cargo`, from [rustup](https://rustup.rs/). The first build downloads one crate, `serde_json`, so it needs a network connection once.
+- Rust and `cargo`, which come from the checkout's `mise.toml` through `mise install`. The first build downloads one crate, `serde_json`, so it needs a network connection once.
 - `curl` and a shell, for the try-it script.
-- A checkout of cohost, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
+- A checkout of cohost with mise, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
 - For pointing the co-host at it: [Docker](../../start/glossary.md#docker), if the services run in [containers](../../start/glossary.md#container).
 
 ## Steps
 
-1. Build and start the server. It listens on port 8900 and prints `listening on 8900`. The package belongs to the examples workspace, `examples/Cargo.toml`, which is separate from the one the services use. Give another port after `--`, or `0` for any free port.
+1. Build and start the server. It listens on port 8900 and prints `listening on 8900`. The package belongs to the examples workspace, `examples/Cargo.toml`, which is separate from the one the services use. Give another port after `--` (`mise run example:hook-server:rust -- 8910`), or `0` for any free port.
 
    ```sh
-   cargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server
+   mise run example:hook-server:rust
    ```
 
 2. In a second terminal, ask it the three questions cohost asks, with the try-it script (it is the same script for every language).
 
    ```sh
-   sh examples/modules/try.sh
+   mise run example:hook-try
    ```
 
    The script is these three requests:
@@ -71,11 +71,11 @@ Replace the body of one function and leave the plumbing alone. Each handler take
 
 To run a model in Rust, add its crate to this package's `Cargo.toml` and load it once in `main`, not inside the handler, because a handler runs for every decision and the region gives up on a call after `timeout_ms`. A late reply is dropped and the rules answer instead.
 
-A handler that returns an error does no harm. The server answers 500 with the message, and the region uses its rules for that call. Run `sh examples/modules/try.sh` again after each change to see that the replies still have the right shape.
+A handler that returns an error does no harm. The server answers 500 with the message, and the region uses its rules for that call. Run `mise run example:hook-try` again after each change to see that the replies still have the right shape.
 
 ## How you know it worked
 
-- `sh examples/modules/try.sh` prints the three lines above.
+- `mise run example:hook-try` prints the three lines above.
 - The Services screen shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
 - Stop the server: the co-host keeps talking with the rules answers, and the region logs one warning, not one for each call.
 

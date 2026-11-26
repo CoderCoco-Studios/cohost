@@ -3,7 +3,7 @@
  * with no GPU and no model pulled. Replies with a canned one-liner that
  * echoes the last user line.
  *
- *   node --import tsx scripts/dev/stub-llm.ts            # listens on :11434
+ *   mise run stub:llm            # listens on :11434
  *
  * Serves GET /api/tags (the readiness probe) and POST /api/chat. Embeddings
  * (/api/embed) are not stubbed: `memory` also needs Postgres, so leave it out.

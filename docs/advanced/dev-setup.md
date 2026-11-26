@@ -1,33 +1,41 @@
 ---
 title: Developer setup
-description: The workspace layout, the build (native bus addon first, then tsc), and the Docker-free loop for working on one service at a time.
+description: What a host needs (mise and the system prerequisites), the workspace layout, the build, and the Docker-free loop for working on one service at a time.
 track: advanced
 verified: f126b94
 ---
 
 # Developer setup
 
-This page gets a checkout to the point where you can change a service and watch it run. You will build the workspace, start the infrastructure in [containers](../start/glossary.md#container), and run the TypeScript services straight from source with file watching.
+This page gets a checkout to the point where you can change a service and watch it run. You will install the toolchains, build the workspace, start the infrastructure in [containers](../start/glossary.md#container), and run the TypeScript services on your host, rebuilt and restarted on every saved change.
 
 If you only want to run the co-host, you do not need this page: the [simple track](../guide/install/prerequisites.md) installs everything with one script.
 
 ## What you need
 
-| Need | Version | Why |
-| --- | --- | --- |
-| Node | 26 or newer (`engines` in `package.json`) | Runs every service and the built-in `node:test` runner |
-| pnpm | 12 (`packageManager` in `package.json` pins it; Node 26 does not bundle corepack, so `npm install -g corepack@0.36.0 && corepack enable` fetches it) | Installs the workspace |
-| Rust toolchain | The exact version `rust-toolchain.toml` pins, with `rustfmt` and `clippy` | Builds the native [bus](../start/glossary.md#bus) addon |
-| A C compiler | Any (`build-essential` on Debian and Ubuntu) | The Rust linker calls it |
-| [Docker](../start/glossary.md#docker) | Any recent version | Runs [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), [Ollama](../start/glossary.md#ollama) and the speech servers |
+A host needs [mise](https://mise.jdx.dev/) and these system prerequisites, nothing more:
+
+| Need | Why |
+| --- | --- |
+| mise | Installs the project's toolchains and runs every command as a task |
+| [Docker](../start/glossary.md#docker) with the Compose plugin (Docker Desktop on WSL2) | Runs [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), [Ollama](../start/glossary.md#ollama) and the speech servers |
+| The NVIDIA driver and the NVIDIA container toolkit | Only for a [GPU](../start/glossary.md#gpu), which the containers reach through them |
+| `git` and `curl` | Fetch the repository and the downloads |
+
+Node, pnpm, Rust, Zig and Python come from the checkout's `mise.toml` through `mise install`, into mise's own data directory, so they never change a Node or Rust you installed yourself. Install no Node, pnpm, Rust or C toolchain of your own for cohost: Zig from `mise.toml` compiles and links the native code. `mise run doctor` checks the system prerequisites and prints one line per check, with the command that fixes each one that fails.
+
+```bash
+mise install
+mise run doctor
+```
 
 Linux x64 is the only native target: the bus addon is built for `linux-x64-gnu`, and importing `@cohost/bus` on anything else fails with an error that names the platform it looked for. On a Windows PC, work inside [WSL2](../start/glossary.md#wsl2).
 
-`scripts/install.sh` installs all of the above on Ubuntu and Debian, including the pinned Rust toolchain through `rustup`. See [Install for real](../guide/install/real-install.md).
+`scripts/install.sh` installs mise and the system prerequisites on Ubuntu and Debian. See [Install for real](../guide/install/real-install.md).
 
 ## The workspace
 
-cohost is a pnpm workspace (`pnpm-workspace.yaml` lists `packages/*` and `services/*`) beside a Cargo workspace (`crates/*`).
+cohost is a pnpm workspace (`pnpm-workspace.yaml` lists `packages/*` and `services/*`) beside a Cargo workspace (`crates/*`). Every command is a task in the root `mise.toml`, run as `mise run <task>`; the [Commands](reference/commands.md) page lists them all. Adding or removing a dependency is the one exception: run `pnpm add` or `pnpm remove` for a workspace package, and `cargo add` or `cargo remove` for a crate.
 
 | Path | Holds |
 | --- | --- |
@@ -38,40 +46,41 @@ cohost is a pnpm workspace (`pnpm-workspace.yaml` lists `packages/*` and `servic
 | `packages/shared` | `@cohost/shared`: service start-up, shutdown, [heartbeats](../start/glossary.md#heartbeat), retry, the idle plan and the `control` and `inject.request` handlers every service shares |
 | `packages/llm`, `modules`, `working-memory` | The model backends, the [hook](../start/glossary.md#hook) runner and the rolling prompt window |
 | `packages/testing` | `@cohost/testing`: the test helpers, see [Unit-test helpers](testing/helpers.md) |
-| `crates/cohost-bus`, `crates/cohost-bus-node` | The bus client in Rust, and the thin napi wrapper that Node loads |
+| `crates/cohost-bus`, `crates/cohost-bus-node` | The [bus](../start/glossary.md#bus) client in Rust, and the thin napi wrapper that Node loads |
 | `config/` | `config.example.yaml`, `personality.example.md`, `expressions.example.yaml`; your own copies are git-ignored |
-| `scripts/` | The installer, the dev helpers in `scripts/dev/` and the checks CI runs |
-| `examples/` | Runnable examples, such as the hook server in `examples/modules/` |
+| `scripts/` | The installer, the programs behind the developer tasks in `scripts/dev/` and the checks CI runs |
+| `examples/` | Runnable examples, such as the hook server in `examples/modules/`, each run through an `example:*` task |
+| `mise.toml` | The toolchains and every task |
 
 ## Build
 
 ```bash
-pnpm install
-pnpm build
+mise run build
 ```
 
-`pnpm build` runs two steps in order. First `pnpm build:native` compiles `crates/cohost-bus-node` with `cargo build --release` and copies the result to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. Then `tsc -b` compiles every package and service.
+`mise run build` runs three tasks. `build:native` compiles `crates/cohost-bus-node` with `cargo build --release` and copies the result to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. `build:ts` installs the workspace's dependencies (the `install` task) and compiles every package and service with `tsc -b`. `build:ui` builds the dashboard's web UI.
 
-The order matters. `@cohost/bus` loads that `.node` file when it is imported and has no fallback, so any host program started before the addon exists (`pnpm dashboard`, `pnpm cohostctl`, `pnpm dev`, a test) fails at import time with a message that says to run `pnpm build:native`. The first build compiles Rust from scratch and takes a few minutes; later builds are incremental.
+You never run a separate addon build before a host program. `@cohost/bus` loads that `.node` file when it is imported and has no fallback, so every task that starts a host program (`dashboard`, `cohostctl`, `dev` and each `dev:<service>`, the memory passes, the `bus:*` tools and `test`) depends on `build:native` and builds the addon first. `build:native` is skipped while no Rust source changed, so it costs one cargo build after a Rust change and nothing otherwise. The first build compiles Rust from scratch and takes a few minutes.
 
 | Command | What it does |
 | --- | --- |
-| `pnpm build` | The native addon, then `tsc -b` |
-| `pnpm typecheck` | `tsc -b`, which type-checks every project and writes the build output; `pnpm lint` runs the same check |
-| `pnpm clean` | Removes every `dist/` |
-| `cargo test --workspace` | The Rust tests (CI also runs `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings`) |
+| `mise run build` | The native addon, the TypeScript workspace and the dashboard UI |
+| `mise run typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check |
+| `mise run lint` | The type check and oxlint, then `cargo fmt --check` and Clippy with warnings denied |
+| `mise run test:rust` | The Rust tests |
+| `mise run clean` | Removes every `dist/` |
 
 ## The Docker-free dev loop
 
-The infrastructure still runs in containers; the services run on your host from source.
+The infrastructure runs in containers; the services run on your host and are rebuilt and restarted when you save a change.
 
 1. Start the infrastructure only:
 
    ```bash
-   docker compose up -d redis postgres ollama tts stt
+   mise run infra:up
    ```
 
-   Compose publishes these on `127.0.0.1` at the ports the services default to: Redis on 6379, Postgres on 5432, Ollama on 11434, the [TTS](../start/glossary.md#tts) server on 8880 and the [STT](../start/glossary.md#stt) server on 8000. The [Environment and ports](reference/env.md) page lists them all.
+   This runs `docker compose up -d redis postgres ollama tts stt`, which starts the containers `redis`, `postgres`, `ollama`, `tts` and `stt`. Compose publishes them on `127.0.0.1` at the ports the services default to: Redis on 6379, Postgres on 5432, Ollama on 11434, the [TTS](../start/glossary.md#tts) server on 8880 and the [STT](../start/glossary.md#stt) server on 8000. The [Environment and ports](reference/env.md) page lists them all. `mise run infra:down` stops them.
 
 2. Create your `.env` and let the first run seed `config/`:
 
@@ -81,32 +90,32 @@ The infrastructure still runs in containers; the services run on your host from 
 
    The services read `.env` from the workspace root themselves, without overriding variables already set in your shell. The first service you start copies `config/config.example.yaml`, `personality.example.md` and `expressions.example.yaml` to `config.yaml`, `personality.md` and `expressions.yaml` (all git-ignored). Operator settings are literal keys in `config.yaml`. Credentials go only in `secrets/secrets.yaml`, which you copy from `config/secrets.example.yaml` (`./scripts/install.sh` does that for you); it is git-ignored too. Services you run on your machine read the whole `secrets/secrets.yaml`. Config is read from the `config/` and `secrets/` folders at the workspace root, found by walking up to `pnpm-workspace.yaml`, so it does not depend on the directory you start from. `CONFIG_DIR` moves `config/`, `COHOST_ENV_FILE` moves `.env` and `COHOST_SECRETS_FILE` moves `secrets/secrets.yaml`.
 
-3. Run every service with file watching:
+3. Run every service:
 
    ```bash
-   pnpm dev
+   mise run dev
    ```
 
-   This runs `pnpm -r --parallel --filter './services/*' dev`, which is `tsx watch src/index.ts` in each service folder. A saved change restarts that service.
+   This is one `mise watch --restart` over every `dev:<service>` task, each of which runs its service's built `dist/index.js`. A saved change under a service's `src/` or any package's `src/` rebuilds what changed (`build:ts`, and `build:native` after a Rust change) and restarts the services.
 
 4. Run the dashboard on the host in a second terminal:
 
    ```bash
-   pnpm dashboard
+   mise run dashboard
    ```
 
    The [dashboard](../guide/operate/dashboard.md) is a host process. It builds itself, then prints the URL it listens on. Open <http://localhost:3000> (the port is `dashboard.port` in `config.yaml`).
 
-To work on one service, start only that one, from the workspace root:
+To work on one service, start only that one:
 
 ```bash
-pnpm --filter @cohost/salience dev
+mise watch --restart dev:salience
 ```
 
-A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with `llm.provider: mock`, `brain.memory.store: memory` and `brain.memory.embedder: hash` in your `config/config.yaml` (or `COHOST_ISOLATION='{"LLM_PROVIDER":"mock","MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}'` in the shell) you can work on the brain with no model server and no database.
+`mise run dev:salience` starts it once, without watching. A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with `llm.provider: mock`, `brain.memory.store: memory` and `brain.memory.embedder: hash` in your `config/config.yaml` (or `COHOST_ISOLATION='{"LLM_PROVIDER":"mock","MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}'` in the shell) you can work on the brain with no model server and no database.
 
 ::: aside
-`pnpm dev` starts everything at once, including services you have no account for. They sulk in "degraded" and the rest carry on, which is more than I can say for most group projects.
+`mise run dev` starts everything at once, including services you have no account for. They sulk in "degraded" and the rest carry on, which is more than I can say for most group projects.
 :::
 
 ## Adding or changing a service
@@ -117,8 +126,9 @@ Every service meets the same four obligations (the [module contract](https://git
 
 | Command | What it checks |
 | --- | --- |
-| `pnpm test` | Builds, then runs every test; see [Running the tests](testing/index.md) |
-| `node scripts/lid-check.mjs` | Every `@spec` ID in code and tests exists and is defined once |
-| `pnpm docs:build` | The documentation site, including its link and fact checks |
+| `mise run test` | The Rust tests, the build, then every TypeScript test; see [Running the tests](testing/index.md) |
+| `mise run lint` | The type check, oxlint, `cargo fmt --check` and Clippy |
+| `mise run lid-check` | Every `@spec` ID in code and tests exists and is defined once |
+| `mise run docs:build` | The documentation site, including its link and fact checks |
 
 Changes flow through the specs first: [How specs work](../project/spec-driven.md) explains the order.

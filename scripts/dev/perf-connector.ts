@@ -3,7 +3,7 @@
  * with the bus registrar (as every real connector does), writes a WAV clip onto `audio.in.<tag>` as 16 kHz mono frames
  * of 20 ms paced at real time, then silence, and deletes the registration on exit.
  *
- *   node --import tsx scripts/dev/perf-connector.ts <clip.wav> [--tag perf]
+ *   mise run perf:connector -- <clip.wav> [--tag perf]
  *
  * REDIS_URL defaults to redis://127.0.0.1:6379. ears must have `perf` in ears.sources (the script sets it through
  * COHOST_ISOLATION), and the stack must be up before this runs: a frame written before ears reads the stream is lost.

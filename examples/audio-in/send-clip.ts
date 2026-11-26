@@ -1,5 +1,6 @@
 // Send one audio clip to cohost's ears `http` source. Node built-ins only.
-//   node examples/audio-in/send-clip.ts <file> [--url <url>] [--speaker <name>] [--source <tag>]
+//   mise run example:audio-send:ts -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+// A copy outside the checkout runs as `node send-clip.ts <file> ...`.
 // Runs with `node` on Node 22.18 or later, which strips the types.
 import { readFile } from "node:fs/promises";
 

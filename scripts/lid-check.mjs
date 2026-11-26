@@ -5,12 +5,12 @@
  *   - a `@spec` ID cited outside the spec files that no `*-specs.md` file defines;
  *   - an ID defined twice;
  *   - an ID a spec file mentions that no spec file defines, unless the mentioning line says it is retired, moved or superseded;
- *   - a `Dockerfile` `FROM rust:<version>-...` that differs from the channel `rust-toolchain.toml` pins (DEPLOY-IMG-001);
  *   - a workflow `uses:` ref that is not an exact `vX.Y.Z` tag or a full commit SHA, one action pinned to two different refs
  *     across workflows, or a workflow or Compose `image:` whose tag is missing, `latest` or not an exact `x.y.z` version (DEPLOY-CI-009);
  *   - a Compose `build:` context that is a Git URL whose ref after `#` is not a full commit SHA (DEPLOY-CI-010);
  *   - under `docker/`, a `cargo install` without an exact `=x.y.z` version or without `--locked`, a `FROM` whose tag is
  *     missing, `latest` or not an exact version, and a `git clone` or an `ADD` of a Git URL not pinned to a full commit SHA (DEPLOY-CI-011);
+ *   - a workflow step that is neither a `uses:` action nor a `run:` of exactly one `mise run <task>` (DEPLOY-CI-012);
  * Exits 1 when there is any offence, 0 otherwise. Needs only Node.
  */
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const ID = /\b[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)+-\d{3}\b/g;
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", "worktrees", "graphify-out", ".vitepress", "target"]);
-const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html|rs)$|(?:^|\/)(?:Dockerfile|Cargo\.toml)$/;
+const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html|rs|toml)$|(?:^|\/)Dockerfile$|^scripts\/[^/.]+$/;
 
 /** Every file under `root`, as repo-relative POSIX paths, in sorted order. */
 function walk(root, dir = root, out = []) {
@@ -83,17 +83,77 @@ export function checkPins(root, files) {
   return problems;
 }
 
-// @spec DEPLOY-IMG-001
-export function checkToolchain(root, files) {
-  if (!files.includes("rust-toolchain.toml") || !files.includes("Dockerfile")) return [];
-  const pinned = /^\s*channel\s*=\s*"([^"]+)"/m.exec(readFileSync(join(root, "rust-toolchain.toml"), "utf8"))?.[1];
-  const problems = [];
-  readFileSync(join(root, "Dockerfile"), "utf8").split("\n").forEach((text, i) => {
-    const from = /^\s*FROM\s+rust:([^\s-]+)/i.exec(text);
-    if (from && from[1] !== pinned) {
-      problems.push(`Dockerfile:${i + 1}: rust:${from[1]} does not match the ${pinned ?? "missing"} channel pinned in rust-toolchain.toml`);
+const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
+/** One `mise run <task>` command: optional leading NAME=value assignments, `mise run`, its flags, one task, the task's arguments. */
+const ONE_MISE_RUN = /^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*mise\s+run\s+(?:-\S+\s+)*[A-Za-z0-9][\w:.-]*(?:\s+[^\s;&|<>`$()]+)*$/;
+/**
+ * Steps held until another spec lands, each named by its file and exact `run:` text with the spec that removes it.
+ * The desktop audio helper's Linux back end links libpulse through pkg-config until it moves to the pure-Rust
+ * pulseaudio client (ears EARS-SRC-023); the test workflow installs both until then.
+ */
+const HELD_STEPS = [
+  { file: ".github/workflows/test.yml", run: "sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config", until: "EARS-SRC-023" },
+];
+
+/** The steps of every `steps:` list in a workflow: their keys and the line each starts on. Reads YAML as text (no install). */
+function workflowSteps(text) {
+  const lines = text.split("\n");
+  const steps = [];
+  for (let i = 0; i < lines.length; i++) {
+    const head = /^(\s*)steps:\s*$/.exec(lines[i]);
+    if (!head) continue;
+    const base = head[1].length;
+    let item = -1;
+    let step = null;
+    for (let j = i + 1; j < lines.length; j++) {
+      const raw = lines[j];
+      if (!raw.trim() || raw.trimStart().startsWith("#")) continue;
+      const indent = raw.length - raw.trimStart().length;
+      if (indent <= base) break;
+      const dash = /^(\s*)-\s+(.*)$/.exec(raw);
+      if (dash && (item < 0 || dash[1].length === item)) {
+        item = dash[1].length;
+        step = { line: j + 1, keys: {} };
+        steps.push(step);
+        const kv = /^([\w-]+):\s*(.*)$/.exec(dash[2]);
+        if (kv) step.keys[kv[1]] = blockValue(lines, j, item + 2, kv[2]);
+        continue;
+      }
+      if (!step) continue;
+      const kv = new RegExp(`^\\s{${item + 2}}([\\w-]+):\\s*(.*)$`).exec(raw);
+      if (kv) step.keys[kv[1]] = blockValue(lines, j, item + 2, kv[2]);
     }
-  });
+  }
+  return steps;
+}
+
+/** A key's value; for a `|` or `>` block scalar, its lines (indented deeper than the key) joined with newlines. */
+function blockValue(lines, at, keyIndent, inline) {
+  const v = inline.replace(/\s+#.*$/, "").trim();
+  if (!/^[|>][-+]?$/.test(v)) return v.replace(/^(["'])(.*)\1$/, "$2");
+  const out = [];
+  for (let k = at + 1; k < lines.length; k++) {
+    const raw = lines[k];
+    if (raw.trim() && raw.length - raw.trimStart().length <= keyIndent) break;
+    out.push(raw.trim());
+  }
+  return out.filter(Boolean).join("\n");
+}
+
+// @spec DEPLOY-CI-012
+export function checkWorkflowSteps(root, files) {
+  const problems = [];
+  for (const f of files.filter((x) => WORKFLOW.test(x))) {
+    for (const step of workflowSteps(readFileSync(join(root, f), "utf8"))) {
+      const { uses, run } = step.keys;
+      if (uses !== undefined && run === undefined) continue;
+      if (run !== undefined && uses === undefined) {
+        if (!run.includes("\n") && ONE_MISE_RUN.test(run)) continue;
+        if (HELD_STEPS.some((h) => h.file === f && h.run === run)) continue;
+      }
+      problems.push(`${f}:${step.line}: a workflow step must be a uses: action or a run: of exactly one mise run <task>`);
+    }
+  }
   return problems;
 }
 
@@ -206,7 +266,7 @@ export function check(root) {
       }
     });
   }
-  problems.push(...checkPins(root, files), ...checkToolchain(root, files), ...checkBuildContexts(root, files), ...checkDockerfiles(root, files));
+  problems.push(...checkPins(root, files), ...checkWorkflowSteps(root, files), ...checkBuildContexts(root, files), ...checkDockerfiles(root, files));
   return { problems, defined: defined.size };
 }
 

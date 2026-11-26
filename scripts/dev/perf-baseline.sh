@@ -6,7 +6,7 @@
 # streams the clip onto audio.in.perf at real time, then silence, so ears closes the utterance itself and the samples
 # carry an `endpoint` row (scripts/dev/perf-connector.ts, CTRL-LAT-030). Which source ears listens to is set through
 # COHOST_ISOLATION, because a plain EARS_SOURCES variable has no effect (CFG-ISO-009).
-# Usage: scripts/dev/perf-baseline.sh [--mode connector|http] [--runs N] [--down]
+# Usage: mise run perf:baseline -- [--mode connector|http] [--runs N] [--down]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -59,7 +59,7 @@ for _ in $(seq 1 40); do curl -sf localhost:8880/v1/audio/speech -H 'content-typ
 if [ "$MODE" = http ]; then docker compose cp "$CLIP" ears:/tmp/clip.wav >/dev/null; fi
 send() {
   if [ "$MODE" = connector ]; then
-    node --import tsx scripts/dev/perf-connector.ts "$CLIP"
+    mise run -q perf:connector "$CLIP"
     return
   fi
   docker compose exec -T ears node -e '
@@ -70,9 +70,9 @@ send() {
 
 echo "== cold run (models loading), mode $MODE"
 send; sleep 40
-echo; echo "######## COLD (1 sample)"; pnpm -s cohostctl latency --count 5000 || true
+echo; echo "######## COLD (1 sample)"; mise run -q cohostctl latency --count 5000 || true
 
 echo; echo "== $RUNS warm runs"
 for i in $(seq 1 "$RUNS"); do send; sleep 15; done
-echo; echo "######## ALL ($((RUNS + 1)) samples; first is cold)"; pnpm -s cohostctl latency --count 5000
+echo; echo "######## ALL ($((RUNS + 1)) samples; first is cold)"; mise run -q cohostctl latency --count 5000
 echo; echo "Stack still up. Stop it: scripts/dev/perf-baseline.sh --down"

@@ -2,7 +2,7 @@
 /**
  * Bus throughput/latency micro-benchmark at audio-stream rate (dev-only measurement).
  *
- *   node --import tsx scripts/dev/bus-bench.ts [--sources N] [--seconds S] [--runs R] [--json] [--redis URL]
+ *   mise run bus:bench -- [--sources N] [--seconds S] [--runs R] [--json] [--redis URL]
  *
  * --runs R repeats the whole measurement R times (default 1) and prints each run's table plus per-row medians of
  * cpu% and p99ms; --json writes one JSON document (every run's rows and the medians) to stdout instead of tables.

@@ -46,7 +46,7 @@ test("a mention makes salience publish attention.focus", async () => {
 });
 ```
 
-Run it from the repository root:
+Run it from the repository root, after `mise run build` and in a shell where mise is active ([Running the tests](index.md#run-one-package-one-service-or-one-test) says why):
 
 ```bash
 node --import tsx --test services/salience/test/<file>.test.ts
@@ -59,4 +59,4 @@ The existing `services/*/test/*.region.test.ts` files are the best templates for
 - Build the config with `testConfig({ ... })` and pass only the keys the test is about.
 - Drive time with an injected clock where a service accepts one (`now` in `Salience`), not with sleeps.
 - Mark a test that needs Redis or a database so it skips when the dependency is missing, as `packages/bus/test/bus.test.ts` does, and say so in its title. [Running the tests](index.md) lists the tests that skip themselves.
-- Annotate a test with the spec it exercises, for example `// @spec SAL-DECIDE-008`, so `node scripts/lid-check.mjs` can follow it. [How specs work](../../project/spec-driven.md) explains the convention.
+- Annotate a test with the spec it exercises, for example `// @spec SAL-DECIDE-008`, so `mise run lid-check` can follow it. [How specs work](../../project/spec-driven.md) explains the convention.

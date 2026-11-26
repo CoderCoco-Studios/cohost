@@ -2,12 +2,11 @@
 
 `shout.ts` is a complete brain hook, "is this line shouting?", written the way
 the region hooks are: built-in rules, a model call and an HTTP server behind one
-`Module`. It is tested by `packages/modules/test/example-hook.test.ts`, which you
-run from the repository root:
+`Module`. It is tested by `packages/modules/test/example-hook.test.ts`, part of
+the test suite, which builds the packages and runs from the checkout:
 
 ```shell
-pnpm build
-node --import tsx --test packages/modules/test/example-hook.test.ts
+mise run test
 ```
 
 The walk-through, including the edits that wire a hook into a brain region, is

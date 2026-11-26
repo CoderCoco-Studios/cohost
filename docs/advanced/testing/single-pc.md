@@ -12,7 +12,7 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 ## What you need
 
 - Docker Desktop with the WSL2 backend, and WSL integration switched on for your distro (Settings, Resources, WSL integration). Without the integration, `docker` is not on the distro's path; step 1 covers that.
-- The workspace built inside the distro, with the pinned Rust toolchain. See [Developer setup](../dev-setup.md) and [What you need](../../guide/install/prerequisites.md).
+- mise inside the distro, with the toolchains from `mise install`; `mise run dashboard` builds the workspace itself. See [Developer setup](../dev-setup.md) and [What you need](../../guide/install/prerequisites.md).
 - For the real Discord and OBS steps, a Discord bot and OBS on the same PC. Do those after the mock path below is healthy.
 
 ## The checklist
@@ -21,7 +21,7 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
    ```bash
    ./scripts/install.sh --no-pull
-   pnpm dashboard
+   mise run dashboard
    ```
 
    If `docker` is not on the distro's path, set `COHOST_DOCKER_BIN=docker.exe` in `.env` first. The dashboard and `cohostctl` then run every [Compose](../../start/glossary.md#docker-compose) command through it.

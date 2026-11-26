@@ -1,40 +1,50 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { rel, repoRoot, task } from "../../../packages/config/test/helpers/mise.js";
 
 const root = (f: string) => readFileSync(new URL(`../../../${f}`, import.meta.url), "utf8");
-const scripts = (JSON.parse(root("package.json")) as { scripts: Record<string, string> }).scripts;
-const globs = '"packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
-const UI_BUILD = "pnpm --filter @cohost/dashboard build:ui";
+const TEST_RUN = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"';
+const dashboardDir = `${repoRoot}services/dashboard`;
 
 // @spec DEPLOY-REPO-002, DASH-BUILD-006
-test("test and test:only run the UI tests; test builds the UI first, test:only builds nothing", () => {
-  assert.equal(scripts.test, `pnpm build:native && tsc -b && ${UI_BUILD} && TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test ${globs}`);
-  assert.equal(scripts["test:only"], `TSX_TSCONFIG_PATH=tsconfig.test.json node --import tsx --test ${globs}`);
+test("test and test:only run the UI tests; test builds everything (the UI included) first, test:only builds nothing", () => {
+  for (const name of ["test", "test:only"]) {
+    assert.deepEqual(task(name).run, [TEST_RUN], name);
+    assert.match(JSON.stringify(task(name).env), /TSX_TSCONFIG_PATH.*tsconfig\.test\.json/, `${name} sets TSX_TSCONFIG_PATH`);
+  }
+  assert.ok(task("test").depends.includes("build"));
+  assert.deepEqual(task("test:only").depends, []);
 });
 
 // @spec DEPLOY-REPO-002, DASH-BUILD-001
-test("build runs the UI build after tsc -b", () => {
-  assert.equal(scripts.build, `pnpm build:native && tsc -b && ${UI_BUILD}`);
+test("build runs the UI build, which runs vite in the dashboard package", () => {
+  assert.ok(task("build").depends.includes("build:ui"));
+  const ui = task("build:ui");
+  assert.deepEqual(ui.run, ["node_modules/.bin/vite build --config ui/vite.config.ts"]);
+  assert.equal(ui.dir, dashboardDir);
+  assert.deepEqual(ui.outputs, [`${dashboardDir}/dist-ui/index.html`]);
+  assert.deepEqual(ui.sources.map(rel), ["services/dashboard/ui/**"]);
 });
 
 // @spec DEPLOY-REPO-002, DASH-BUILD-008
-test("typecheck and lint also type-check the UI and its tests without emitting", () => {
-  assert.equal(scripts.typecheck, "tsc -b && tsc -p services/dashboard/ui --noEmit");
-  assert.equal(scripts.lint, scripts.typecheck);
+test("typecheck also type-checks the UI and its tests without emitting, and lint:ts runs after it", () => {
+  assert.deepEqual(task("typecheck").run, ["tsc -b", "tsc -p services/dashboard/ui --noEmit"]);
+  assert.ok(task("lint:ts").depends.includes("typecheck"));
 });
 
 // @spec DEPLOY-REPO-002
 test("clean removes the UI bundle too", () => {
-  assert.equal(scripts.clean, "rm -rf packages/*/dist services/*/dist services/dashboard/dist-ui");
+  assert.deepEqual(task("clean").run, ["rm -rf packages/*/dist services/*/dist services/dashboard/dist-ui"]);
 });
 
 // @spec DASH-BUILD-007
 test("dashboard:ui runs the Vite dev server of the dashboard package", () => {
-  assert.equal(scripts["dashboard:ui"], "pnpm --filter @cohost/dashboard dev:ui");
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
-  assert.match(pkg.scripts["build:ui"]!, /^vite build /);
-  assert.match(pkg.scripts["dev:ui"]!, /^vite /);
+  const ui = task("dashboard:ui");
+  assert.deepEqual(ui.run, ["node_modules/.bin/vite --config ui/vite.config.ts"]);
+  assert.equal(ui.dir, dashboardDir);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { devDependencies?: Record<string, string> };
+  assert.ok(pkg.devDependencies?.vite, "the dashboard package declares vite");
 });
 
 // @spec DEPLOY-REPO-003

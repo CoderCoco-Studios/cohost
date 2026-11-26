@@ -156,7 +156,7 @@ The note rules are checked by the memory service whatever your server says, so a
 
 ### JSON Schemas
 
-The replies of salience, affect and the critic are published as JSON Schema in [`examples/modules/schemas/`](https://github.com/CoderCoco-Studios/cohost/tree/main/examples/modules/schemas) (`salience.json`, `affect.json` and `critic.json`). They are generated from `packages/modules/src/schemas.ts` with `node scripts/gen-hook-schemas.mjs`, and a test checks them against each region's validator. A schema cannot say "one score per event"; the region enforces that.
+The replies of salience, affect and the critic are published as JSON Schema in [`examples/modules/schemas/`](https://github.com/CoderCoco-Studios/cohost/tree/main/examples/modules/schemas) (`salience.json`, `affect.json` and `critic.json`). They are generated from `packages/modules/src/schemas.ts` with `mise run hooks:schemas`, and a test checks them against each region's validator. A schema cannot say "one score per event"; the region enforces that.
 
 ## Check a server with `curl`
 
@@ -164,10 +164,10 @@ The replies of salience, affect and the critic are published as JSON Schema in [
 
 <<< @/../examples/modules/try.sh#requests
 
-Start your server, then run the script from the repository root. It asks `http://127.0.0.1:8900` unless you give another address as its first argument.
+Start your server, then run the script through its task from the checkout. It asks `http://127.0.0.1:8900` unless you give another address after `--`, as in `mise run example:hook-try -- http://127.0.0.1:8910`. A copy of the script kept outside the checkout runs with `sh try.sh` and the same argument.
 
 ```sh
-sh examples/modules/try.sh
+mise run example:hook-try
 ```
 
 The replies, one per line:
@@ -186,12 +186,12 @@ Once your server passes, set a hook to `kind: http` as above and restart the ser
 
 - The region's log has no `module failed` warnings, and your server's log shows a request per decision.
 - The Services screen shows `hook.<name>` as `ok` under the service's dependencies. It shows `down` while the hook is being skipped.
-- `sh examples/modules/try.sh` prints the three replies of `examples/modules/try.expected.txt`.
+- `mise run example:hook-try` prints the three replies of `examples/modules/try.expected.txt`.
 - Stop your server: the co-host keeps talking with the rules answers, and the region logs one warning, not one per call.
 
 ## If it didn't
 
-- **`module returned something unusable; using rules`.** The reply failed the checks above: a wrong score count, a missing field, a delta of the wrong type. Compare it with the contract and with `examples/modules/fixtures/contracts.json`, and run `sh examples/modules/try.sh` against your server.
+- **`module returned something unusable; using rules`.** The reply failed the checks above: a wrong score count, a missing field, a delta of the wrong type. Compare it with the contract and with `examples/modules/fixtures/contracts.json`, and run `mise run example:hook-try` against your server.
 - **Connection refused from a container.** Use `host.docker.internal`, not `localhost`, in `url`, and bind your server to `0.0.0.0` as the example does.
 - **The hook is `down` after a few failures.** Five failures in a row start a one-minute skip. Fix the server; the next try after the minute restores it.
 - **The service stops at start with `module.kind is http but module.url is empty`.** `kind: http` needs a non-empty `url`.

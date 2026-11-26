@@ -1,6 +1,8 @@
 """The smallest server cohost's OpenAI-compatible provider accepts. Standard library only.
 
-    python3 examples/model-stub/stub.py [port]      (default 8901, 0 = any free port)
+    mise run example:model-stub:py -- [port]      (default 8901, 0 = any free port)
+
+A copy outside the checkout runs as `python3 stub.py [port]`.
 """
 import json
 import sys

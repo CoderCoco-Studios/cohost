@@ -11,8 +11,8 @@ You will have a [language model](../../start/glossary.md#llm) server that cohost
 
 ## What you need
 
-- A working checkout of cohost, or at least its `config/config.yaml`. [Developer setup](../dev-setup.md) covers it.
-- Python 3 for `stub.py`, or Node 22.18 or later for `stub.ts`. The TypeScript file runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
+- A working checkout of cohost with mise, or at least its `config/config.yaml`. [Developer setup](../dev-setup.md) covers it.
+- Python 3 for `stub.py`, or Node 22.18 or later for `stub.ts`, both of which the checkout's `mise.toml` provides through `mise install`. The TypeScript file runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
 - `curl`, which `try.sh` uses.
 - For a real server: its own documentation. cohost only needs its address, so this page gives no launch commands for third-party servers. See the documentation of [vLLM](https://docs.vllm.ai/), [llama.cpp's server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) or [OpenRouter](https://openrouter.ai/docs) for theirs.
 
@@ -49,22 +49,22 @@ The reply is in the `[emotion] text` form, so a whole co-host pointed at the stu
 
 <<< @/../examples/model-stub/stub.ts#reply
 
-1. Start one stub. It listens on port 8901, a port nothing else in the stack uses, and prints `listening on 8901`. Pass another port as the first argument, or `0` for any free port.
+1. Start one stub. It listens on port 8901, a port nothing else in the stack uses, and prints `listening on 8901`. Pass another port after `--` (`mise run example:model-stub:py -- 8911`), or `0` for any free port.
 
    ```sh
-   python3 examples/model-stub/stub.py
+   mise run example:model-stub:py
    ```
 
    Or, with Node:
 
    ```sh
-   node examples/model-stub/stub.ts
+   mise run example:model-stub:ts
    ```
 
 2. In a second terminal, run the try-it script. It sends the two requests cohost sends:
 
    ```sh
-   sh examples/model-stub/try.sh
+   mise run example:model-try
    ```
 
    <<< @/../examples/model-stub/try.sh#requests
@@ -76,7 +76,7 @@ The reply is in the `[emotion] text` form, so a whole co-host pointed at the stu
 4. Run the same script against your real server by giving it the base URL, the one you would put in `llm.openai.base_url`:
 
    ```sh
-   sh examples/model-stub/try.sh http://my-gpu-box:8000/v1
+   mise run example:model-try -- http://my-gpu-box:8000/v1
    ```
 
    The second reply will differ, since a real model writes its own words. What matters is the shape: a `choices` list whose first entry holds `message` with a `content` string.
@@ -97,10 +97,10 @@ llm:
 
 ## How you know it worked
 
-- `sh examples/model-stub/try.sh` prints two lines that match the expected file.
+- `mise run example:model-try` prints two lines that match the expected file.
 - The dashboard's Services screen shows `cortex` as `up`, and its `llm` dependency as `ok`. The [service health page](../../guide/operate/health.md) explains the columns.
 - A line sent with **Test inputs** on the Live screen is answered with `Hello from the stub model server.` and the emotion `happy`, as the [bus](../../start/glossary.md#bus) feed on the Live screen shows.
-- `pnpm test` runs this example against cohost's own client, so the stub keeps working as the provider changes.
+- `mise run test` runs this example against cohost's own client, so the stub keeps working as the provider changes.
 
 ## If it didn't
 

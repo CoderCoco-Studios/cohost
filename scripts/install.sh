@@ -73,38 +73,72 @@ if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
   if [[ $IS_WSL -eq 1 ]]; then sudo service docker restart || true; else sudo systemctl restart docker; fi
 fi
 
-# ---------------------------------------------------------------- node + pnpm (for local dev)  @spec DEPLOY-INST-004, DEPLOY-INST-009
-# begin node-version
-# The Node this repository needs is the "engines.node" minimum of package.json (a `>=MAJOR[.MINOR[.PATCH]]` range), compared
-# whole: major, then minor, then patch. The range is read as text, so a missing or old node is no obstacle to reading it.
-# @spec DEPLOY-INST-009
-node_min() { sed -n 's/^[[:space:]]*"node":[[:space:]]*">=\([0-9][0-9.]*\)".*/\1/p' package.json | head -n 1; }
-node_min_major() { local m; m=$(node_min); echo "${m%%.*}"; }
-# version_ge <have> <min>: true when dotted version <have> is at least <min>; a missing part counts as 0.
-version_ge() {
-  local -a have min; IFS=. read -r -a have <<<"$1"; IFS=. read -r -a min <<<"$2"
-  local i a b
-  for i in 0 1 2; do
-    a=${have[i]:-0}; b=${min[i]:-0}
-    (( 10#$a > 10#$b )) && return 0
-    (( 10#$a < 10#$b )) && return 1
-  done
-  return 0
-}
-node_is_recent() { command -v node >/dev/null 2>&1 && version_ge "$(node -p process.versions.node 2>/dev/null || true)" "$(node_min)"; }
-# end node-version
-NODE_MAJOR=$(node_min_major)
-[[ -n "$NODE_MAJOR" ]] || die "cannot read engines.node from package.json"
-if ! node_is_recent; then
-  log "Installing Node $NODE_MAJOR (package.json engines.node is >=$(node_min))"
-  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash - >/dev/null
-  sudo apt-get install -y -qq nodejs
+# ---------------------------------------------------------------- system prerequisites  @spec DEPLOY-TOOL-004
+# curl and ca-certificates fetch mise; gnupg verifies its signed checksums. Nothing else is installed system-wide
+# for the project's toolchains: those come from mise.toml, per project.
+need_apt=()
+command -v curl >/dev/null 2>&1 || need_apt+=(curl)
+command -v gpg >/dev/null 2>&1 || need_apt+=(gnupg)
+[[ -f /etc/ssl/certs/ca-certificates.crt ]] || need_apt+=(ca-certificates)
+if [[ ${#need_apt[@]} -gt 0 ]]; then
+  log "Installing ${need_apt[*]}"
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq "${need_apt[@]}"
 fi
-# begin pnpm-version
-# The pnpm version is the "packageManager" field of package.json (the Dockerfile reads it too).  @spec DEPLOY-IMG-006
-pnpm_spec() { node -p "require('./package.json').packageManager"; }
-# end pnpm-version
-command -v pnpm >/dev/null 2>&1 || { log "Enabling pnpm via corepack"; sudo npm install -g corepack@0.36.0; sudo corepack enable; corepack prepare "$(pnpm_spec)" --activate; }
+
+# ---------------------------------------------------------------- mise and the toolchains  @spec DEPLOY-INST-004, DEPLOY-INST-009, DEPLOY-INST-014
+# mise is one per-user binary, ~/.local/bin/mise, at the release mise.toml's min_version names, and is always run
+# by its full path, so an older mise elsewhere on the path is never used. It installs Node, pnpm, Rust (from
+# rust-toolchain.toml), Zig, Python and watchexec per project from mise.lock; no version of any of them is named here.
+# begin mise-setup
+MISE="$HOME/.local/bin/mise"
+# The release mise.toml's min_version names, read as text (mise may not exist yet).
+mise_min_version() { sed -n 's/^min_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' mise.toml | head -n 1; }
+# ensure_mise: unless ~/.local/bin/mise is that release, fetch and verify it (scripts/fetch-mise.sh, DEPLOY-TOOL-020).
+ensure_mise() {
+  local want have
+  want=$(mise_min_version)
+  [[ -n "$want" ]] || die "cannot read min_version from mise.toml"
+  have=$("$MISE" --version 2>/dev/null | awk '{ print $1 }' || true)
+  if [[ "$have" == "$want" ]]; then
+    log "mise $want is installed ($MISE)"
+    return 0
+  fi
+  log "Installing mise $want to $MISE (signature and checksum verified)"
+  "$ROOT/scripts/fetch-mise.sh" "$want" "$MISE" || die "installing mise $want failed (see the message above)"
+}
+# end mise-setup
+ensure_mise
+"$MISE" trust "$ROOT/mise.toml" || die "mise trust failed for $ROOT/mise.toml"
+log "Installing the project's toolchains (mise install --locked)"
+"$MISE" install --locked || die "mise install --locked failed (see the error above)"
+# From here on, node, pnpm and cargo are the ones mise.toml selects, whatever the host has on its path.
+eval "$("$MISE" activate bash --shims)"
+
+# begin shell-activate
+# Add the mise activate line to the login shell's rc file, so a new shell gets the project's tools and tasks.
+# @spec DEPLOY-INST-016
+activate_shell() {
+  local shell_name rc line
+  shell_name=$(basename "${SHELL:-}")
+  case "$shell_name" in
+    zsh) rc="$HOME/.zshrc" ;;
+    bash) rc="$HOME/.bashrc" ;;
+    *)
+      log "Add this line to your shell's startup file so it activates mise (replace <shell> with your shell's name):"
+      echo "  eval \"\$(~/.local/bin/mise activate <shell>)\""
+      return 0
+      ;;
+  esac
+  line="eval \"\$(~/.local/bin/mise activate $shell_name)\""
+  if [[ -f "$rc" ]] && grep -q 'mise activate' "$rc"; then
+    return 0
+  fi
+  printf '\n# mise: per-project toolchains and tasks (added by cohost scripts/install.sh)\n%s\n' "$line" >>"$rc"
+  log "Added the mise activate line to $rc (open a new shell for it to apply)"
+}
+# end shell-activate
+activate_shell
 
 # ---------------------------------------------------------------- .env and config files  @spec DEPLOY-INST-005, DEPLOY-INST-006
 # begin seed-files
@@ -153,34 +187,20 @@ fill_control_token() {
 # end control-token
 fill_control_token
 
-# ---------------------------------------------------------------- rust toolchain  @spec DEPLOY-INST-014
-# The bus addon is built on the host. The version is whatever rust-toolchain.toml pins; none is named here.
-if ! command -v cc >/dev/null 2>&1; then
-  log "Installing build-essential (C compiler for the Rust linker)"
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq build-essential
-fi
-if ! command -v rustup >/dev/null 2>&1 && [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
-  log "Installing rustup (no default toolchain)"
-  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none --profile minimal
-fi
-[[ -f "$HOME/.cargo/env" ]] && . "$HOME/.cargo/env"
-command -v rustup >/dev/null 2>&1 || die "rustup is not on PATH after install"
-log "Installing the Rust toolchain pinned by rust-toolchain.toml"
-rustup toolchain install   # reads rust-toolchain.toml: version, rustfmt, clippy
-
-# ---------------------------------------------------------------- deps + build  @spec DEPLOY-INST-012, DEPLOY-INST-007
-log "Installing workspace dependencies"
-# Frozen only, like CI and the Dockerfile: a lockfile mismatch stops here with pnpm's own error
-# instead of silently rewriting pnpm-lock.yaml.
-pnpm install --frozen-lockfile || die "pnpm install --frozen-lockfile failed (see the error above); fix pnpm-lock.yaml and re-run."
-log "Building the bus addon"
-pnpm build:native || die "pnpm build:native failed (see the error above)."
-log "Typechecking"
-pnpm typecheck
-# One file per service under secrets/units/, so every directory Compose mounts exists before any `docker compose` command (DEPLOY-SECRET-006).
+# ---------------------------------------------------------------- build  @spec DEPLOY-INST-007, DEPLOY-INST-012, DEPLOY-INST-014
+# One task builds everything: its install dependency runs pnpm install --frozen-lockfile (a lockfile mismatch
+# stops here with pnpm's own error, never a non-frozen install, like CI and the Dockerfile), then the bus addon
+# (Rust linked through Zig, both from mise.toml), tsc -b and the dashboard UI.
+log "Building the workspace (mise run build)"
+"$MISE" run build || die "mise run build failed (see the error above); a pnpm-lock.yaml mismatch is fixed in the repository, never by a non-frozen install."
+# One file per service under secrets/units/, so every directory Compose mounts exists before any `docker compose` command.
+# @spec DEPLOY-SECRET-006
 log "Projecting secrets/secrets.yaml into one file per service"
-node packages/control/dist/project-secrets.js || die "the secrets projection failed (see the message above); fix secrets/secrets.yaml and re-run."
+"$MISE" run secrets:project || die "the secrets projection failed (see the message above); fix secrets/secrets.yaml and re-run."
+# The docs the dashboard serves. A failure is a warning: the dashboard still starts and shows a not-built page.
+# @spec DEPLOY-INST-015
+log "Building the docs site (mise run docs:build)"
+"$MISE" run docs:build || warn "mise run docs:build failed (see above); the dashboard serves a 'docs not built' page until it succeeds. Continuing."
 
 # ---------------------------------------------------------------- pull
 if [[ $PULL -eq 1 ]]; then
@@ -241,9 +261,10 @@ print_next_steps() {
   cat <<EOF
 
 Done. Next:
+  0. Open a new shell, so the mise activate line applies and the project's tools and tasks are on its path.
   1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and secrets/secrets.yaml (API keys,
      tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
-  2. pnpm dashboard                    # start the dashboard on this machine (it brings up the stack)
+  2. mise run dashboard                # start the dashboard on this machine (it brings up the stack)
   3. open ${url}     # enter CONTROL_TOKEN from .env when asked, press Launch
 ${port_note:+${port_note}
 }     (the dashboard's startup log shows the URL it actually listens on; it differs when DASHBOARD_HOST is set)
@@ -252,14 +273,18 @@ ${port_note:+${port_note}
      # the one Discord bot is connections.discord.token in secrets/secrets.yaml, used by the Discord connector;
      # ears and mouth need no token
      # a hand-run docker compose up skips the secrets projection: after editing secrets/secrets.yaml, run
-     # node packages/control/dist/project-secrets.js first, or start and restart through the dashboard or cohostctl
+     # mise run secrets:project first, or start and restart through the dashboard or cohostctl
   5. optional speech engines: to use the pocket TTS (voice.engine: pocket) or a streaming STT server (ears.stt_engine:
      nemotron or kyutai), add pocket, nemotron or kyutai to COMPOSE_PROFILES in .env (for example COMPOSE_PROFILES=pocket,nemotron),
      select it in config/config.yaml, then press Launch again. The first build of an enabled profile takes minutes; later launches reuse it.
 
 Dev loop without Docker for the TS services:
-  docker compose up -d redis postgres ollama tts stt   # infra only
-  pnpm dev                                             # all services with tsx watch
+  mise run infra:up                       # the infrastructure containers: redis postgres ollama tts stt
+  mise run dev                            # every service, rebuilt and restarted when its code changes
+  mise watch --restart dev:<service>      # or one service, e.g. dev:cortex
+
+Check this machine's system prerequisites (Docker, the GPU runtime, git, curl, glibc) at any time:
+  mise run doctor
 EOF
 }
 # end next-steps

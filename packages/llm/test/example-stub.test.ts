@@ -16,7 +16,6 @@ const dir = path.join(root, "examples/model-stub");
 const REPLY = "[happy] Hello from the stub model server.";
 
 const has = (cmd: string, arg = "--version"): boolean => spawnSync(cmd, [arg]).status === 0;
-const hasPython = has("python3");
 const nodeOk = (() => {
   const [maj = 0, min = 0] = process.versions.node.split(".").map(Number);
   return maj > 22 || (maj === 22 && min >= 18);
@@ -24,7 +23,7 @@ const nodeOk = (() => {
 
 interface Stub { name: string; skip: string | false; cmd: string; args: string[] }
 const stubs: Stub[] = [
-  { name: "stub.py", skip: !hasPython && "python3 not installed", cmd: "python3", args: ["-I", "-B", path.join(dir, "stub.py")] },
+  { name: "stub.py", skip: false, cmd: "python3", args: ["-I", "-B", path.join(dir, "stub.py")] },
   { name: "stub.ts", skip: !nodeOk && "needs Node 22.18 or later", cmd: process.execPath, args: [path.join(dir, "stub.ts")] },
 ];
 

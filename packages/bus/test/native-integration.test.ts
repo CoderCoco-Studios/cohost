@@ -1,5 +1,5 @@
 // The native transport (events path) against a real Redis, on streams of its own (BUS-NAT-CI-002 for the TS side). Needs the
-// built addon (`pnpm build:native`); tests that need Redis skip when none answers. The frames path is in frames.test.ts.
+// built addon (`mise run build:native`); tests that need Redis skip when none answers. The frames path is in frames.test.ts.
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";

@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "150 specs: 147 [x], 3 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "157 specs: 154 [x], 3 [ ]. TypeScript linting is built (#346: oxlint type-aware, `.oxlintrc.json`, DEPLOY-LINT-001..007). Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

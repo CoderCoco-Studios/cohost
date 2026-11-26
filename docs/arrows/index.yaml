@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "150 specs: 144 [x], 6 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). Open: DEPLOY-CI-001 and -012, held until the desktop audio helper moves to the pure-Rust PulseAudio client (EARS-SRC-023) and test.yml drops its libpulse-dev step; DEPLOY-IMG-001, the native stage copies mise.toml and mise.lock before installing Rust and Zig (an owner question); DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "150 specs: 145 [x], 5 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). Open: DEPLOY-CI-001 and -012, held until the desktop audio helper moves to the pure-Rust PulseAudio client (EARS-SRC-023) and test.yml drops its libpulse-dev step; DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

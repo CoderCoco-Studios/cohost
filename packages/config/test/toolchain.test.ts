@@ -266,7 +266,7 @@ test("docs:build declares the docs, the docs check, the examples and the README 
 // @spec DEPLOY-TOOL-009
 test("the task dependencies are exactly the specified graph", () => {
   const want: Record<string, string[]> = {
-    "build:ts": ["install"], "build:ui": ["install"], typecheck: ["install"], "dashboard:ui": ["install"], "secrets:project": ["install"],
+    "build:ts": ["install"], "build:ui": ["build:ts"], typecheck: ["install"], "dashboard:ui": ["build:ts"], "secrets:project": ["install"],
     "stub:llm": ["install"], "stub:tts": ["install"], "docs:build": ["install"], "docs:dev": ["install"], "docs:preview": ["install"],
     build: ["build:native", "build:ts", "build:ui"], "lint:ts": ["typecheck"], lint: ["lint:rust", "lint:ts"], test: ["build", "test:rust"],
     "test:launch": ["build", "doctor:docker"], reflect: ["build:native", "build:ts"], consolidate: ["build:native", "build:ts"], reembed: ["build:native", "build:ts"],

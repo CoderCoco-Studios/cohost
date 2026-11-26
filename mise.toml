@@ -64,7 +64,8 @@ run = "tsc -b"
 
 [tasks."build:ui"]
 description = "Build the dashboard's web UI into services/dashboard/dist-ui/"
-depends = ["install"]
+# ui/vite.config.ts imports @cohost/config, which resolves to its built dist/.
+depends = ["build:ts"]
 dir = "{{config_root}}/services/dashboard"
 run = "node_modules/.bin/vite build --config ui/vite.config.ts"
 sources = ["{{config_root}}/services/dashboard/ui/**"]
@@ -157,7 +158,7 @@ run = [
 
 [tasks."dashboard:ui"]
 description = "Run the dashboard UI's Vite dev server"
-depends = ["install"]
+depends = ["build:ts"]
 dir = "{{config_root}}/services/dashboard"
 run = "node_modules/.bin/vite --config ui/vite.config.ts"
 

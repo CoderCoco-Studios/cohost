@@ -35,7 +35,7 @@ export interface ClipRoutes {
 
 const canonical = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(canonical)
-    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, canonical(x)]))
+    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).toSorted(([a], [b]) => (a < b ? -1 : 1)).map(([k, x]) => [k, canonical(x)]))
       : v;
 
 export interface FingerprintInputs {

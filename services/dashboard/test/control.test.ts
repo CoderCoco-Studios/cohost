@@ -285,7 +285,7 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   // The known exception to DEPLOY-TOOL-022: this test is about the workspace root itself, and setupControl builds its
   // ComposeRuntime there with no seam for another directory, so the restart creates data/logs in the checkout
   // (CTRL-RUNTIME-016). It writes no file there, and removes the directories it created.
-  const created = ["data", join("data", "logs")].map((d) => join(root, d)).filter((d) => !existsSync(d)).reverse();
+  const created = ["data", join("data", "logs")].map((d) => join(root, d)).filter((d) => !existsSync(d)).toReversed();
   process.env.COHOST_DOCKER_BIN = bin;
   process.chdir(join(root, "services", "dashboard")); // as a task whose working directory is the package starts it
   try {

@@ -43,7 +43,7 @@ test("the bootstrap loads config, creates the bus under the service name, starts
   assert.deepEqual(r.order.filter((o) => o !== "onShutdown"), ["loadConfig", "createBus", "health", "main"]);
   assert.deepEqual(r.created, ["svc"]);
   assert.deepEqual(r.published, ["starting"], "the heartbeat started in `starting`");
-  assert.deepEqual(Object.keys(ctx!).sort(), ["bus", "cfg", "heartbeat", "log", "onStop"]);
+  assert.deepEqual(Object.keys(ctx!).toSorted(), ["bus", "cfg", "heartbeat", "log", "onStop"]);
   assert.equal(ctx!.cfg, r.cfg);
   assert.equal(ctx!.bus, r.bus);
   assert.deepEqual(r.exits, []);

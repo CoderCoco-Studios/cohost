@@ -79,7 +79,7 @@ test("a timer started in live mode is stored under its id as JSON with exactly i
   assert.equal(s.bus.timers.size, 1);
   const [[field, json]] = [...s.bus.timers];
   const body = JSON.parse(json!) as Record<string, unknown>;
-  assert.deepEqual(Object.keys(body).sort(), ["dueAt", "id", "note", "setAt"]);
+  assert.deepEqual(Object.keys(body).toSorted(), ["dueAt", "id", "note", "setAt"]);
   assert.equal(body.id, field, "the field is the timer's id");
   assert.equal(body.note, "check the oven");
   assert.equal(body.setAt, NOW);
@@ -168,7 +168,7 @@ test("no tool cancels or lists timers", async () => { // @spec TOOL-TIMER-008
   await waitFor(() => s.catalogs().length > 0, "catalog");
   const names = s.catalogs().at(-1)!.tools.map((t) => t.name);
   assert.deepEqual(names.filter((n) => /cancel|list|clear|delete|remove/.test(n)), []);
-  assert.deepEqual(Object.keys(s.entry("timer").parameters.properties ?? {}).sort(), ["minutes", "note"], "no action argument either");
+  assert.deepEqual(Object.keys(s.entry("timer").parameters.properties ?? {}).toSorted(), ["minutes", "note"], "no action argument either");
   await s.stop();
 });
 

@@ -25,7 +25,7 @@ interface Svc {
   healthcheck?: { test?: string[]; interval?: string };
 }
 const compose = parse(readFileSync(root("docker-compose.yml"), "utf8"), { merge: true }) as { services: Record<string, Svc> };
-const names = Object.keys(compose.services).sort();
+const names = Object.keys(compose.services).toSorted();
 
 // @spec DEPLOY-COMPOSE-001
 test("compose defines infra, one-shots and one app service per services/ directory except dashboard, and no dashboard", () => {
@@ -49,7 +49,7 @@ test("app services get no DASHBOARD_URL (uploads reach eyes and ears over Redis)
 const appServices = readdirSync(root("services"), { withFileTypes: true })
   .filter((d) => d.isDirectory() && d.name !== "dashboard")
   .map((d) => d.name)
-  .sort();
+  .toSorted();
 /** The in-network literals of every application service except `tools`, which gets only the bus and config ones (DEPLOY-COMPOSE-026). */
 const IN_NETWORK = {
   REDIS_URL: "redis://redis:6379",
@@ -111,7 +111,7 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
   const all = Object.entries(compose.services).flatMap(([n, s]) => (s.ports ?? []).map((p) => [n, p] as const));
   for (const [n, p] of all) assert.match(p, /^127\.0\.0\.1:/, `${n} publishes ${p}`);
   assert.deepEqual(compose.services.voice!.ports, ["127.0.0.1:8700:8700"]);
-  assert.deepEqual(all.map(([n]) => n).sort(), ["ollama", "postgres", "redis", "stt", "stt-kyutai", "stt-nemotron", "tts", "tts-pocket", "voice"]); // the engine servers publish on loopback too (DEPLOY-ENG-008)
+  assert.deepEqual(all.map(([n]) => n).toSorted(), ["ollama", "postgres", "redis", "stt", "stt-kyutai", "stt-nemotron", "tts", "tts-pocket", "voice"]); // the engine servers publish on loopback too (DEPLOY-ENG-008)
 });
 
 // @spec DEPLOY-HOST-002
@@ -163,7 +163,7 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
   assert.equal(tools.build?.dockerfile, undefined, "the single root Dockerfile");
   assert.equal(tools.build?.args.SERVICE, "tools");
   assert.equal(tools.env_file, undefined, "least privilege: no env_file");
-  assert.deepEqual(Object.keys(tools.environment ?? {}).sort(), TOOLS_ENVIRONMENT, "least privilege: the bus URL, the config directory and the isolation pass-through only");
+  assert.deepEqual(Object.keys(tools.environment ?? {}).toSorted(), TOOLS_ENVIRONMENT, "least privilege: the bus URL, the config directory and the isolation pass-through only");
   assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
   assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
   assert.equal(tools.ports, undefined);
@@ -189,7 +189,7 @@ test("tools gets no more host access than the other application services: no pri
 test("the Compose file names no profile `tools`, so the service named tools and a profile of that name never both exist", () => {
   assert.ok(compose.services.tools, "the tools service exists");
   const profiles = new Set(Object.values(compose.services).flatMap((s) => s.profiles ?? []));
-  assert.ok(!profiles.has("tools"), `profiles in use: ${[...profiles].sort().join(", ")}`);
+  assert.ok(!profiles.has("tools"), `profiles in use: ${[...profiles].toSorted().join(", ")}`);
 });
 
 // @spec DEPLOY-REPO-001
@@ -202,7 +202,7 @@ test("the root tsconfig.json is a solution file referencing the 8 packages, the 
   assert.equal(packages.length, 8, packages.join(","));
   assert.equal(services.length, 13, services.join(","));
   assert.ok(services.includes("services/tools"));
-  assert.deepEqual([...paths].sort(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].sort());
+  assert.deepEqual([...paths].toSorted(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].toSorted());
 });
 
 /**

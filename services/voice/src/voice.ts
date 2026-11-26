@@ -568,9 +568,9 @@ export class Voice {
     }
     const byseq = (a: [number, string], b: [number, string]) => a[0] - b[0];
     return {
-      before: before.sort(byseq).map(([, t]) => t),
+      before: before.toSorted(byseq).map(([, t]) => t),
       playing: playing ? line.clauses.get(cut) : undefined,
-      after: after.sort(byseq).map(([, t]) => t),
+      after: after.toSorted(byseq).map(([, t]) => t),
     };
   }
 

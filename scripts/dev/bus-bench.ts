@@ -98,7 +98,7 @@ try {
   r.disconnect();
 }
 const f = (n: number) => n.toFixed(2);
-const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+const median = (a: number[]) => { const s = [...a].toSorted((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
 const medians = runs[0]!.map((_, i) => ({
   path: runs[0]![i]!.phase.split(" ")[0]!, sources: runs[0]![i]!.target / RATE, "cpu%": median(runs.map((x) => x[i]!.cpu)), p99ms: median(runs.map((x) => x[i]!.p99)),
 }));

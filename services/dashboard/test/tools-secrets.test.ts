@@ -31,7 +31,7 @@ async function boot(config: string | undefined = WITH_WEATHER, secrets?: string)
   // every unit that reads the tools section is running; only those that declare the MCP token path are restarted
   const sectionReaders = SERVICE_MANIFEST.filter((s) => s.config.includes("tools")).map((s) => s.id);
   const readers = SERVICE_MANIFEST.filter((s) => (s.secrets ?? []).includes("tools.servers.*.token")).map((s) => s.id);
-  const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [...sectionReaders].reverse().concat(["voice"]).map((service) => ({ service, status: "running" })) as never };
+  const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [...sectionReaders].toReversed().concat(["voice"]).map((service) => ({ service, status: "running" })) as never };
   const handler = createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],

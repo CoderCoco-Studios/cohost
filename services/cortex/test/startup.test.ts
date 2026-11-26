@@ -26,7 +26,7 @@ test("startup: idle, then the cortex group exists (resetGroup), then subscribe a
   assert.equal(o.group, "cortex");
   assert.equal(o.start, "latest");
   assert.equal("fromNow" in o, false);
-  assert.deepEqual([...(o.types as string[])].sort(), [
+  assert.deepEqual([...(o.types as string[])].toSorted(), [
     "affect.state", "attention.focus", "attention.resolve", "brain.clause", "brain.say", "chat.message", "chat.removed", "control",
     "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "tool.catalog", "tool.result", "vision.summary", "voice.done", "voice.failed", "voice.playing", "voice.stop", "voice.utterance",
   ]);

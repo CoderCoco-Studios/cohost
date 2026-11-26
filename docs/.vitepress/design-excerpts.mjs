@@ -189,7 +189,7 @@ function listMd(repoRoot, relDir) {
   return readdirSync(abs, { withFileTypes: true })
     .filter((d) => d.isFile() && d.name.endsWith('.md'))
     .map((d) => `${relDir}/${d.name}`)
-    .sort();
+    .toSorted();
 }
 
 /**
@@ -220,7 +220,7 @@ export function loadDesign(repoRoot) {
     ? readdirSync(intentDir, { withFileTypes: true })
         .filter((d) => d.isDirectory() && existsSync(join(intentDir, d.name, `${d.name}-design.md`)) && existsSync(join(intentDir, d.name, `${d.name}-specs.md`)))
         .map((d) => d.name)
-        .sort()
+        .toSorted()
     : [];
   const tableNames = table.map((r) => r.segment);
   for (const n of leaves) if (!tableNames.includes(n)) throw new Error(`${HLD_PATH}: the Segments table does not list the leaf LLD "${n}" (docs/intent/${n}/${n}-design.md)`);
@@ -274,7 +274,7 @@ export function loadDesign(repoRoot) {
         content: pageContent({ title, description, source: doc.rel, body: rewriteLinks(doc.body, doc.rel, root) }),
       };
     })
-    .sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+    .toSorted((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 
   return { design, segments, decisions, pages: [...design, ...segments, ...decisions] };
 }

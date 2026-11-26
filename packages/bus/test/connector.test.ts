@@ -57,7 +57,7 @@ test("a registration is JSON under <prefix>:connector:<id> with a lease of three
   assert.equal(reg.v, 1);
   assert.equal(reg.id, "discord");
   assert.equal(reg.capabilities[0].transport, "stream");
-  assert.deepEqual(Object.keys(reg).sort(), ["capabilities", "detail", "id", "instance", "intervalMs", "kind", "pid", "startedAt", "state", "v", "version"]);
+  assert.deepEqual(Object.keys(reg).toSorted(), ["capabilities", "detail", "id", "instance", "intervalMs", "kind", "pid", "startedAt", "state", "v", "version"]);
   assert.equal(fake.of("append").length, 0, "not a stream entry");
   await bus.stop();
 });

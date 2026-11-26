@@ -11,7 +11,7 @@ test("a request is answered by exactly one tool.result with its id, including on
   const ids = [await s.request(), await s.request({ tool: "nothing" }), await s.request({ origin: "idle" })];
   for (const id of ids) await resultOf(s, id);
   await settle();
-  assert.deepEqual(s.results().map((r) => r.id).sort(), [...ids].sort(), "one result per request");
+  assert.deepEqual(s.results().map((r) => r.id).toSorted(), [...ids].toSorted(), "one result per request");
   await s.stop();
 });
 
@@ -273,7 +273,7 @@ test("a tool.result carries id, tool, status, content and durationMs from the mo
   const s = await startTools(base(), [src]);
   const id = await s.request();
   const r = await resultOf(s, id);
-  assert.deepEqual(Object.keys(r).sort(), ["content", "durationMs", "id", "status", "tool"]);
+  assert.deepEqual(Object.keys(r).toSorted(), ["content", "durationMs", "id", "status", "tool"]);
   assert.equal(r.id, id);
   assert.ok(Number.isInteger(r.durationMs) && r.durationMs >= 45, `durationMs ${r.durationMs}`);
   await s.stop();

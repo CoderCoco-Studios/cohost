@@ -49,7 +49,7 @@ test("a hook's llm.provider override requires a model; a model alone is fine", (
 test("unknownKeys names settings the schema dropped (pre-split brain.* keys)", () => {
   const raw = { brain: { tick_ms: 900, cooldown_ms: 1, salience: { tick_ms: 1500, typo_key: 1 }, memory: { recall_k: 3 } } };
   const parsed = { brain: { salience: { tick_ms: 1500 }, memory: { recall_k: 3 } } };
-  assert.deepEqual(unknownKeys(raw, parsed).sort(), ["brain.cooldown_ms", "brain.salience.typo_key", "brain.tick_ms"]);
+  assert.deepEqual(unknownKeys(raw, parsed).toSorted(), ["brain.cooldown_ms", "brain.salience.typo_key", "brain.tick_ms"]);
   assert.deepEqual(unknownKeys({ a: 1 }, { a: 1 }), []);
 });
 

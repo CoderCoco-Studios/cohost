@@ -82,7 +82,7 @@ test("a read returns only the id and the four envelope fields; a missing field s
     const got = (await reader.read("events", "0", 10, 200))!;
     reader.close();
     assert.equal(got.length, 1);
-    assert.deepEqual(Object.keys(got[0]!).sort(), ["data", "id", "type"]);
+    assert.deepEqual(Object.keys(got[0]!).toSorted(), ["data", "id", "type"]);
     assert.equal(got[0]!.ts, undefined);
   });
 });

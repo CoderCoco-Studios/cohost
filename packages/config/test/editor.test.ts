@@ -64,17 +64,17 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 
 // @spec MOD-CFG-002
 test("exactly the marked keys are secret: SECRET_PATHS (the seventeen and the tools wildcard), each section's secrets and the schema marks agree", () => {
-  assert.deepEqual([...SECRET_PATHS].sort(), [
+  assert.deepEqual([...SECRET_PATHS].toSorted(), [
     "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
     "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key",
     "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "tools.servers.*.token",
     "vision.obs.password", "voice.openai.api_key", "voice.pocket.hf_token",
   ]);
-  assert.deepEqual(sectionSecrets("ears").sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
-  assert.deepEqual(sectionSecrets("llm").sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
-  assert.deepEqual(sectionSecrets("chat").sort(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
+  assert.deepEqual(sectionSecrets("ears").toSorted(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
+  assert.deepEqual(sectionSecrets("llm").toSorted(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
+  assert.deepEqual(sectionSecrets("chat").toSorted(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
   assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
-  assert.deepEqual(sectionSecrets("voice").sort(), ["openai.api_key", "pocket.hf_token"]);
+  assert.deepEqual(sectionSecrets("voice").toSorted(), ["openai.api_key", "pocket.hf_token"]);
   assert.deepEqual(sectionSecrets("tools"), ["servers.*.token"]);
   const marked: string[] = [];
   const walk = (s: any, path: string[]) => {
@@ -84,7 +84,7 @@ test("exactly the marked keys are secret: SECRET_PATHS (the seventeen and the to
     if (s.additionalProperties && typeof s.additionalProperties === "object") walk(s.additionalProperties, [...path, "*"]);
   };
   for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard", "tools"]) walk(sectionJsonSchema(sec), [sec]);
-  assert.deepEqual(marked.sort(), [...SECRET_PATHS].sort());
+  assert.deepEqual(marked.toSorted(), [...SECRET_PATHS].toSorted());
 });
 
 // @spec MOD-CFG-004
@@ -129,7 +129,7 @@ test("a secret key reports only secret: true and whether secrets.yaml holds it, 
   const set = readSection(FIXTURE, "llm", ["llm.openai.api_key"]);
   assert.deepEqual(set.keys["openai.api_key"], { editable: false, secret: true, set: true });
   assert.deepEqual(set.keys["claude.api_key"], { editable: false, secret: true, set: false });
-  assert.deepEqual(Object.keys(readSection(FIXTURE, "chat", ["chat.twitch.client_id"]).keys).filter((k) => k.startsWith("twitch.")).sort(), ["twitch.access_token", "twitch.channel", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
+  assert.deepEqual(Object.keys(readSection(FIXTURE, "chat", ["chat.twitch.client_id"]).keys).filter((k) => k.startsWith("twitch.")).toSorted(), ["twitch.access_token", "twitch.channel", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
   // a value pasted into config.yaml at a secret path is never used and does not make the key set; it is not shown either
   const pasted = readSection(FIXTURE.replace('embed_model: "e"', 'embed_model: "e"\n  openai:\n    api_key: sk-in-file'), "llm");
   assert.doesNotMatch(JSON.stringify(pasted), /sk-in-file/);
@@ -157,7 +157,7 @@ test("the settings editor never touches the filesystem or the environment: it re
 // @spec MOD-CFG-006
 test("unknown lists the dotted paths under the section that the schema does not define, even when the file is invalid", () => {
   const text = FIXTURE.replace("cooldown_ms: 6000", "cooldown_ms: 6000\n    bogus: 1").replace('match: "hello"', 'match: "hello"\n        cooldwn_ms: 5').replace("name: \"Coco\"", "name: \"\"");
-  assert.deepEqual(readSection(text, "brain.salience").unknown.sort(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
+  assert.deepEqual(readSection(text, "brain.salience").unknown.toSorted(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
   assert.deepEqual(readSection(text, "voice").unknown, []);
 });
 
@@ -165,7 +165,7 @@ test("unknown lists the dotted paths under the section that the schema does not 
 test("a value for an unknown or secret key is refused naming each key, and nothing is edited", () => {
   const r = applySection(FIXTURE, "llm", { nope: 1, "openai.api_key": "x", embed_model: "y" });
   assert.equal(r.ok, false);
-  assert.deepEqual((r as any).issues.map((i: any) => i.path).sort(), ["nope", "openai.api_key"]);
+  assert.deepEqual((r as any).issues.map((i: any) => i.path).toSorted(), ["nope", "openai.api_key"]);
 });
 
 // @spec MOD-CFG-010

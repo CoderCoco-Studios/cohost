@@ -15,7 +15,7 @@ const TOP_LEVEL = Object.keys(ConfigSchema.shape);
 
 /** The JSON Schema node of a dotted key path from the config root. */
 function nodeOf(path: string): any {
-  const section = SECTION_LIST.filter((s) => path === s || path.startsWith(`${s}.`)).sort((a, b) => b.length - a.length)[0]!;
+  const section = SECTION_LIST.filter((s) => path === s || path.startsWith(`${s}.`)).toSorted((a, b) => b.length - a.length)[0]!;
   let node: any = sectionJsonSchema(section);
   for (const seg of path.slice(section.length).split(".").filter(Boolean)) node = node.properties[seg];
   return node;
@@ -24,13 +24,13 @@ function nodeOf(path: string): any {
 // @spec CFG-PRES-001
 test("PRESENTATION holds sections and keys maps, GROUPS is the ordered five, and the declared sections are the schema's", () => {
   assert.deepEqual([...GROUPS], ["Identity", "Brain", "Senses", "Voice and body", "System"]);
-  assert.deepEqual(Object.keys(PRESENTATION.sections).sort(), [...SECTION_LIST].sort());
+  assert.deepEqual(Object.keys(PRESENTATION.sections).toSorted(), [...SECTION_LIST].toSorted());
   assert.deepEqual(
-    [...SECTION_LIST].sort(),
+    [...SECTION_LIST].toSorted(),
     [
       ...TOP_LEVEL.filter((k) => k !== "brain"),
       "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "brain.salience", "brain.affect", "brain.memory", "brain.cortex",
-    ].sort(),
+    ].toSorted(),
   );
   assert.ok(TOP_LEVEL.includes("viewer_text"), "viewer_text is a top-level section");
   assert.ok(Object.keys(PRESENTATION.keys).length > 0);
@@ -83,7 +83,7 @@ test("the declared sections are the sections the control plane's manifest declar
   const declared = new Set<string>(["dashboard", "renderer", ...SERVICE_MANIFEST.flatMap((s) => s.config)]);
   // the manifest's `tools` unit (and its `tools` section) arrives with #208; until then the presentation table alone declares it
   declared.add("tools");
-  assert.deepEqual([...declared].sort(), [...SECTION_LIST].sort());
+  assert.deepEqual([...declared].toSorted(), [...SECTION_LIST].toSorted());
 });
 
 // @spec CFG-PRES-012
@@ -96,8 +96,8 @@ test("the own-lines, input-limits and viewer-text sections are in group Brain, a
   assert.equal(s["viewer_text"]?.group, "Brain");
   assert.equal(s["viewer_text"]?.page, undefined);
   assert.deepEqual(sectionKeyPaths("brain.working_memory_own_lines"), ["brain.working_memory_own_lines"]);
-  assert.deepEqual(sectionKeyPaths("brain.input_limits").sort(), ["brain.input_limits.speech_max_chars", "brain.input_limits.vision_max_chars"]);
-  assert.deepEqual(sectionKeyPaths("viewer_text").sort(), ["viewer_text.max_chars", "viewer_text.max_name_chars"]);
+  assert.deepEqual(sectionKeyPaths("brain.input_limits").toSorted(), ["brain.input_limits.speech_max_chars", "brain.input_limits.vision_max_chars"]);
+  assert.deepEqual(sectionKeyPaths("viewer_text").toSorted(), ["viewer_text.max_chars", "viewer_text.max_name_chars"]);
 });
 
 // @spec CFG-PRES-013
@@ -146,7 +146,7 @@ test("the widget assignments are fixed: timezone, voice, textarea, sources, lang
   for (const k of ["ears.sources", "ears.echo_suppress_sources", "brain.salience.barge_in_sources"]) assert.deepEqual(w(k), { type: "sources" });
   const lang = w("voice.lang_code") as { type: string; options: { value: string; label: string }[] };
   assert.equal(lang.type, "options");
-  assert.deepEqual(lang.options.map((o) => o.value).sort(), ["a", "b", "e", "f", "h", "i", "j", "p", "z"]);
+  assert.deepEqual(lang.options.map((o) => o.value).toSorted(), ["a", "b", "e", "f", "h", "i", "j", "p", "z"]);
   // Every model-name key carries a model widget of the right kind.
   const expected = (k: string): string | undefined => {
     if (k === "llm.model" || k === "brain.memory.notes.consolidator.llm.model") return "chat";
@@ -161,7 +161,7 @@ test("the widget assignments are fixed: timezone, voice, textarea, sources, lang
   assert.equal(modelKeys.length, 9);
   for (const k of modelKeys) assert.deepEqual(w(k), { type: "model", kind: expected(k) }, k);
   // And nothing else is a model widget.
-  assert.deepEqual(Object.entries(PRESENTATION.keys).filter(([, e]) => e.widget?.type === "model").map(([k]) => k).sort(), [...modelKeys].sort());
+  assert.deepEqual(Object.entries(PRESENTATION.keys).filter(([, e]) => e.widget?.type === "model").map(([k]) => k).toSorted(), [...modelKeys].toSorted());
 });
 
 // @spec CFG-PRES-008, CFG-PRES-009
@@ -185,7 +185,7 @@ test("each key's help is its JSON Schema description, and so is each property of
   for (const k of arrays) {
     const e = PRESENTATION.keys[k]!;
     const props = Object.keys(nodeOf(k).items.properties);
-    assert.deepEqual(Object.keys(e.items ?? {}).sort(), [...props].sort(), `${k}: items cover every property`);
+    assert.deepEqual(Object.keys(e.items ?? {}).toSorted(), [...props].toSorted(), `${k}: items cover every property`);
     for (const p of props) {
       const it = e.items![p]!;
       assert.ok(oneLine(it.help), `${k}.${p}: help`);
@@ -206,7 +206,7 @@ test("sensitive marks exactly the trust-boundary keys of CFG-PRES-011 (tools.ser
     "ears.kyutai.url", "tools.servers", "tools.allow",
   ];
   const marked = Object.entries(PRESENTATION.keys).filter(([, e]) => e.sensitive !== undefined);
-  assert.deepEqual(marked.map(([k]) => k).sort(), [...SENSITIVE].sort());
+  assert.deepEqual(marked.map(([k]) => k).toSorted(), [...SENSITIVE].toSorted());
   for (const [, e] of marked) assert.equal(e.sensitive, true);
   for (const k of SENSITIVE) assert.equal(nodeOf(k)["x-sensitive"], true, `${k}: x-sensitive`);
   for (const k of ALL_KEYS.filter((x) => !SENSITIVE.includes(x))) assert.equal(nodeOf(k)["x-sensitive"], undefined, `${k}: not sensitive`);
@@ -243,13 +243,13 @@ test("schema.ts carries no .describe() call: the table is the one source of help
 // @spec MOD-CFG-019, MOD-CFG-020, MOD-CFG-021
 test("sectionPresentation joins a section's title, group, about, page and per-key presentation by relative key name", () => {
   const voice = sectionPresentation("voice");
-  assert.deepEqual(Object.keys(voice).sort(), ["about", "group", "keys", "title"]);
+  assert.deepEqual(Object.keys(voice).toSorted(), ["about", "group", "keys", "title"]);
   assert.equal(voice.title, PRESENTATION.sections.voice!.title);
   assert.equal(voice.group, "Voice and body");
   assert.deepEqual(voice.keys["voice"], { help: PRESENTATION.keys["voice.voice"]!.help, widget: { type: "voice" } });
   assert.deepEqual(voice.keys["lang_code"]!.widget, PRESENTATION.keys["voice.lang_code"]!.widget);
   assert.equal(voice.keys["fallback.lines"]!.help, PRESENTATION.keys["voice.fallback.lines"]!.help);
-  assert.deepEqual(Object.keys(voice.keys).sort(), sectionKeyPaths("voice").map((p) => p.slice("voice.".length)).sort());
+  assert.deepEqual(Object.keys(voice.keys).toSorted(), sectionKeyPaths("voice").map((p) => p.slice("voice.".length)).toSorted());
 
   const wm = sectionPresentation("brain.working_memory_events");
   assert.equal(wm.page, "brain.memory");
@@ -262,7 +262,7 @@ test("sectionPresentation joins a section's title, group, about, page and per-ke
   assert.equal(llm.keys["temperature"]!.sensitive, undefined);
 
   const sal = sectionPresentation("brain.salience");
-  assert.deepEqual(Object.keys(sal.keys["reflexes"]!.items!).sort(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
+  assert.deepEqual(Object.keys(sal.keys["reflexes"]!.items!).toSorted(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
   assert.equal(sal.keys["reflexes"]!.items!["cooldown_ms"]!.unit, "ms");
   assert.throws(() => sectionPresentation("nope"), /no such config section/);
 });
@@ -307,7 +307,7 @@ test("the network section entry stays in group System with a title, an about sen
   assert.equal(e?.group, "System");
   assert.ok(oneLine(e?.title) && oneLine(e?.about));
   assert.ok(oneLine(PRESENTATION.keys["network.lan"]?.help));
-  const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.id).sort();
+  const declaring = SERVICE_MANIFEST.filter((s) => s.config.includes("network")).map((s) => s.id).toSorted();
   assert.deepEqual(declaring, ["ears", "eyes", "tools", "voice"]);
 });
 
@@ -320,7 +320,7 @@ test("the renderer section is in group Voice and body, titled Avatar renderer, s
   assert.equal(e.page, "avatar");
   assert.equal(e.live, true);
   assert.ok(oneLine(e.about));
-  assert.deepEqual(sectionKeyPaths("renderer").sort(), ["renderer.model", "renderer.offset_y", "renderer.turn", "renderer.zoom"]);
+  assert.deepEqual(sectionKeyPaths("renderer").toSorted(), ["renderer.model", "renderer.offset_y", "renderer.turn", "renderer.zoom"]);
   for (const k of sectionKeyPaths("renderer")) assert.ok(oneLine(PRESENTATION.keys[k]?.help), `${k}: help`);
   assert.equal(PRESENTATION.keys["renderer.turn"]!.unit, "deg");
   assert.ok(oneLine(PRESENTATION.keys["dashboard.models.max_bytes"]?.help), "max_bytes help");

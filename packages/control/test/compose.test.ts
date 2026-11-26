@@ -49,7 +49,7 @@ test("the shared environment is the in-network addresses plus the one pass-throu
   assert.equal(env.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
   assert.equal(env.COHOST_SECRETS_FILE, "", "pinned empty so .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)");
   assert.equal(env.COHOST_DATA_DIR, "/app/data", "pinned so each program's log file lands in the ./data/logs mount (DEPLOY-COMPOSE-003)");
-  assert.deepEqual(Object.keys(env).sort(), ["COHOST_ISOLATION", ...IN_NETWORK].sort());
+  assert.deepEqual(Object.keys(env).toSorted(), ["COHOST_ISOLATION", ...IN_NETWORK].toSorted());
   for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(env[name], undefined, `${name} has no entry`);
   for (const [name, s] of appServices) {
     for (const v of Object.keys(ISOLATION_OVERRIDES)) assert.equal(s.environment?.[v], undefined, `${name} ${v}`);
@@ -191,7 +191,7 @@ test("the base Compose file declares a bridge network tools-redis that is not in
 
 // @spec DEPLOY-NET-002, DEPLOY-COMPOSE-026
 test("redis joins default and tools-redis, tools joins tools-redis alone, and no other service declares a network, so tools-redis holds exactly redis and tools", () => {
-  assert.deepEqual([...joined(compose.services.redis!)].sort(), ["default", "tools-redis"]);
+  assert.deepEqual([...joined(compose.services.redis!)].toSorted(), ["default", "tools-redis"]);
   assert.deepEqual(joined(compose.services.tools!), ["tools-redis"]);
   for (const file of [base, gpu]) {
     for (const [name, s] of Object.entries(file.services as Record<string, WithNets>)) {
@@ -199,7 +199,7 @@ test("redis joins default and tools-redis, tools joins tools-redis alone, and no
       assert.equal(s.networks, undefined, `${name} declares no networks: key`);
     }
   }
-  const onToolsRedis = Object.entries(compose.services).filter(([, s]) => joined(s).includes("tools-redis")).map(([n]) => n).sort();
+  const onToolsRedis = Object.entries(compose.services).filter(([, s]) => joined(s).includes("tools-redis")).map(([n]) => n).toSorted();
   assert.deepEqual(onToolsRedis, ["redis", "tools"]);
   assert.ok(!joined(compose.services.tools!).includes("default"), "tools is not on the default network");
   // the only service tools can name besides itself is redis: every other service shares no network with it

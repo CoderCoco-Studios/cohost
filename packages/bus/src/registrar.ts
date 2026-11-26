@@ -104,7 +104,7 @@ export function watchConnectors(bus: Pick<Bus, "listConnectors">, onChange: (reg
   let prev = "";
   const poll = async (): Promise<void> => {
     try {
-      const regs = (await bus.listConnectors()).sort((a, b) => a.id.localeCompare(b.id));
+      const regs = (await bus.listConnectors()).toSorted((a, b) => a.id.localeCompare(b.id));
       const sig = JSON.stringify(regs.map((r) => [r.id, r.instance, r.state, r.capabilities.map((c) => [c.cap, c.tag, c.ready, c.transport])]));
       if (sig !== prev) { prev = sig; onChange(regs); }
     } catch (err) { onError?.(err); }

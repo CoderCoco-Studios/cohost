@@ -26,7 +26,7 @@ const versionOf = (spec: string) => /^"([^"]+)"|version\s*=\s*"([^"]+)"/.exec(sp
 test("the example's dependencies are cohost-bus by path, tokio and serde_json at the crate's versions, and nothing else", () => { // @spec BUS-NAT-EX-001
   const example = read("examples/rust-bus/Cargo.toml");
   const deps = section(example, "dependencies");
-  assert.deepEqual([...deps.keys()].sort(), ["cohost-bus", "serde_json", "tokio"]);
+  assert.deepEqual([...deps.keys()].toSorted(), ["cohost-bus", "serde_json", "tokio"]);
   assert.match(deps.get("cohost-bus")!, /path\s*=\s*"\.\.\/\.\.\/crates\/cohost-bus"/);
   const crate = section(read("crates/cohost-bus/Cargo.toml"), "dependencies");
   for (const name of ["tokio", "serde_json"]) {

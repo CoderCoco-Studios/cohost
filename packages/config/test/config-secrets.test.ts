@@ -18,7 +18,7 @@ const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>
 
 // @spec CFG-SEC-003, CFG-SCH-039
 test("SECRET_PATHS lists exactly the seventeen wildcard-free credentials and tools.servers.*.token, and each wildcard-free one defaults to the empty string", () => {
-  assert.deepEqual([...SECRET_PATHS].sort(), [...TWELVE, "tools.servers.*.token"].sort());
+  assert.deepEqual([...SECRET_PATHS].toSorted(), [...TWELVE, "tools.servers.*.token"].toSorted());
   const cfg = ConfigSchema.parse({
     cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
     voice: {}, avatar: { vtube_studio: {}, vmc: {} }, ears: {}, dashboard: {}, brain: {},
@@ -189,7 +189,7 @@ test("updateSecrets sets and clears secret paths, keeps other keys and comments,
     assert.equal(cfg.connections.discord.token, "disc");
     updateSecrets(file, { "llm.openai.api_key": null });
     assert.equal(loadConfig(true).llm.openai.api_key, "", "clearing is an explicit null");
-    assert.deepEqual(setSecretPaths(file).sort(), ["connections.discord.token", "llm.claude.api_key"]);
+    assert.deepEqual(setSecretPaths(file).toSorted(), ["connections.discord.token", "llm.claude.api_key"]);
     assert.deepEqual(readdirSync(dir).filter((n) => n.endsWith(".tmp")), [], "no temp file left behind");
   } finally { process.umask(prevUmask); }
 });

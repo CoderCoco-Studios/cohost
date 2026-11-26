@@ -39,7 +39,7 @@ test("the same viewer named twice is listed once; the reply carries no subscribe
   await store.touchViewer("twitch:name:u1", "Alice", { isSub: true });
   const out = await ask(["Alice", "alice"]);
   assert.equal(out.length, 1);
-  assert.deepEqual(Object.keys(out[0]!).sort(), ["msgCount", "notes", "regular", "user"]);
+  assert.deepEqual(Object.keys(out[0]!).toSorted(), ["msgCount", "notes", "regular", "user"]);
 });
 
 // @spec MEM-SURF-001
@@ -132,7 +132,7 @@ test("a sensitive note is included at most once per sensitive_cooldown_hours and
   advance(23 * 3_600_000);
   assert.deepEqual((await ask(["Alice"]))[0]!.notes.map((n) => n.category), ["general"], "inside the cooldown");
   advance(3_600_000);
-  assert.deepEqual((await ask(["Alice"]))[0]!.notes.map((n) => n.category).sort(), ["family", "general"], "cooldown elapsed");
+  assert.deepEqual((await ask(["Alice"]))[0]!.notes.map((n) => n.category).toSorted(), ["family", "general"], "cooldown elapsed");
 });
 
 // @spec MEM-SURF-004

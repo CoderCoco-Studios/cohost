@@ -59,7 +59,7 @@ test("FakeBus implements the timer half of Bus over an in-memory map, and clear(
   await bus.putTimer("a", "{\"n\":1}");
   await bus.putTimer("b", "{\"n\":2}");
   await bus.putTimer("a", "{\"n\":3}");
-  assert.deepEqual((await bus.listTimers()).sort((x, y) => x.id.localeCompare(y.id)), [{ id: "a", json: "{\"n\":3}" }, { id: "b", json: "{\"n\":2}" }]);
+  assert.deepEqual((await bus.listTimers()).toSorted((x, y) => x.id.localeCompare(y.id)), [{ id: "a", json: "{\"n\":3}" }, { id: "b", json: "{\"n\":2}" }]);
   await bus.publish("control", { cmd: "mute" });
   bus.clear();
   assert.equal(bus.published.length, 0);

@@ -33,7 +33,7 @@ test("a recall request is answered the same way whichever service published it, 
   const { id: _a, ...a } = replies[0]!;
   const { id: _b, ...b } = replies[1]!;
   assert.deepEqual(a, b, "the same memories whoever asked");
-  for (const r of replies) assert.deepEqual(Object.keys(r).sort(), ["id", "memories"], "the id and the memories, nothing that names the requester");
+  for (const r of replies) assert.deepEqual(Object.keys(r).toSorted(), ["id", "memories"], "the id and the memories, nothing that names the requester");
 });
 
 // @spec MEM-RECALL-007

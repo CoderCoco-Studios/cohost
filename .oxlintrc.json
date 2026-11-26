@@ -44,10 +44,10 @@
     // Off: about 690 hits under the project's own compiler options, many of them assertions tsc needs (`x as never` passed to
     // a typed parameter, `object as T`); its autofix removes those and breaks the build.
     "typescript/no-unnecessary-type-assertion": "off",
-    // Off: the fix is `toSorted()`/`toReversed()`, ES2023 methods outside the workspace's `lib` (ES2022); sorting a fresh
-    // or owned array in place is intended.
-    "unicorn/no-array-sort": "off",
-    "unicorn/no-array-reverse": "off",
+    // A sort or reverse whose result is used goes through `toSorted()`/`toReversed()` (ES2024 `lib`), so no caller's array
+    // is reordered under it; a statement that sorts an array in place on purpose is not reported.
+    "unicorn/no-array-sort": "error",
+    "unicorn/no-array-reverse": "error",
     // Off: reports deliberate copies: iterating a snapshot of a set its loop body changes (`for (const l of [...listeners])`)
     // and counting code points (`[...text].length`); its fix changes behaviour.
     "unicorn/no-useless-spread": "off",

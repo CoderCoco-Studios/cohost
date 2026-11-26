@@ -49,7 +49,7 @@ const code = (text: string) => text.split("\n").filter((l) => !l.trimStart().sta
 /** Every Dockerfile under docker/, as repo-relative paths. */
 function dockerfiles(dir = "docker"): string[] {
   if (!existsSync(root(dir))) return [];
-  return readdirSync(root(dir)).sort().flatMap((n) => {
+  return readdirSync(root(dir)).toSorted().flatMap((n) => {
     const rel = `${dir}/${n}`;
     if (statSync(root(rel)).isDirectory()) return dockerfiles(rel);
     return n === "Dockerfile" ? [rel] : [];
@@ -189,7 +189,7 @@ test("voice and ears list the engine servers as service_started, required: false
 // @spec DEPLOY-COMPOSE-005
 test("no service outside voice and ears depends on an engine server", () => {
   const edges = Object.entries(base.services).flatMap(([n, s]) => Object.keys(s.depends_on ?? {}).filter((d) => d in ENGINES).map((d) => `${n}>${d}`));
-  assert.deepEqual(edges.sort(), ["ears>stt-kyutai", "ears>stt-nemotron", "voice>tts-pocket"]);
+  assert.deepEqual(edges.toSorted(), ["ears>stt-kyutai", "ears>stt-nemotron", "voice>tts-pocket"]);
 });
 
 // @spec DEPLOY-ENG-014

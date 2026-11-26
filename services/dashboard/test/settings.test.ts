@@ -56,11 +56,11 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.deepEqual(sections.find((s) => s.path === "renderer")!.secrets, []);
   const llm = sections.find((s) => s.path === "llm")!;
   assert.deepEqual(llm.services, SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).map((s) => s.id));
-  assert.deepEqual(llm.secrets.sort(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
+  assert.deepEqual(llm.secrets.toSorted(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
-  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets.slice().sort(), ["openai.api_key", "pocket.hf_token"]); // CFG-SCH-059, CFG-SCH-061
-  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().sort(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
+  assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets.slice().toSorted(), ["openai.api_key", "pocket.hf_token"]); // CFG-SCH-059, CFG-SCH-061
+  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().toSorted(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
   assert.ok(SECRET_PATHS.length >= 2);
 });
 
@@ -85,7 +85,7 @@ test("GET /config/schema carries the groups and each section's title, group, abo
   assert.equal(by("voice").keys["lang_code"].widget.type, "options");
   assert.deepEqual(by("ears").keys["sources"].widget, { type: "sources" });
   const reflexes = by("brain.salience").keys["reflexes"];
-  assert.deepEqual(Object.keys(reflexes.items).sort(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
+  assert.deepEqual(Object.keys(reflexes.items).toSorted(), ["cooldown_ms", "emotion", "gesture", "match", "on", "say"]);
   assert.equal(by("brain.salience").schema.properties.reflexes.items.properties.match.description, reflexes.items.match.help);
 });
 
@@ -180,7 +180,7 @@ test("a key outside the schema or not editable is a 400 naming each, and nothing
   assert.equal(r.status, 400);
   const j = (await r.json()) as { ok: boolean; issues: { path: string }[] };
   assert.equal(j.ok, false);
-  assert.deepEqual(j.issues.map((i) => i.path).sort(), ["nope", "openai.api_key"]);
+  assert.deepEqual(j.issues.map((i) => i.path).toSorted(), ["nope", "openai.api_key"]);
   assert.equal(t.text(), EXAMPLE);
 });
 
@@ -355,7 +355,7 @@ test("the settings routes read and write config.yaml only: no .env, no secrets.y
   assert.equal((await t.put("/config/llm", { etag: sha(t.text()), values: { "openai.api_key": "pasted" } })).status, 400, "a secret key in a PUT is refused");
   assert.equal((await t.put("/config/voice", { etag: sha(t.text()), values: { speed: 1.1 } })).status, 200);
   assert.equal(readFileSync(join(t.dir, "secrets.yaml"), "utf8"), before);
-  assert.deepEqual(readdirSync(t.dir).sort(), ["config.yaml", "secrets.yaml"]);
+  assert.deepEqual(readdirSync(t.dir).toSorted(), ["config.yaml", "secrets.yaml"]);
   assert.deepEqual(t.calls, []);
   const src = readFileSync(join(repo, "services", "dashboard", "src", "settings.ts"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("//") && !l.trimStart().startsWith("*")).join("\n");
   assert.doesNotMatch(src, /\.env\b|process\.env|\benv\b/, "settings.ts takes no environment");

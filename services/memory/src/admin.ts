@@ -60,12 +60,12 @@ async function run(store: ViewersAdminStore, notes: NotesConfig, req: ViewersReq
       if (!v) return notFound(`no viewer ${req.key}`);
       const [stored, deletions, links] = await Promise.all([store.listNotes(v.key), store.listDeletions(v.key), store.listLinks(v.key)]);
       const strongestFirst = (a: NoteRow, b: NoteRow) => effectiveStrength(b, now, notes) - effectiveStrength(a, now, notes) || a.id - b.id;
-      const sorted = [...stored].sort(strongestFirst);
+      const sorted = [...stored].toSorted(strongestFirst);
       return {
         viewer: viewerData({ ...v, noteCount: stored.length }),
         core: sorted.filter((n) => n.layer === "core").map((n) => noteData(n, now, notes)),
         recent: sorted.filter((n) => n.layer === "recent").map((n) => noteData(n, now, notes)),
-        deletions: deletions.map(deletionData).reverse(), // newest first
+        deletions: deletions.map(deletionData).toReversed(), // newest first
         ...(links.length ? { links } : {}),
       };
     }

@@ -100,7 +100,7 @@ function section(samples: Sample[], path: Path, count: number): string[] {
   }
   const lines = [pad("stage", "n", "p50", "p95")];
   for (const s of stages) {
-    const sorted = durations.get(s)!.sort((a, b) => a - b);
+    const sorted = durations.get(s)!.toSorted((a, b) => a - b);
     lines.push(sorted.length === 0 ? pad(s, "0", "-", "-") : pad(s, String(sorted.length), String(nearestRank(sorted, 0.5)), String(nearestRank(sorted, 0.95))));
   }
   const dropped = stages.filter((s) => (omitted.get(s) ?? 0) > 0).map((s) => `${s} ${omitted.get(s)}`);
@@ -141,7 +141,7 @@ function earlyLines(events: readonly BusEvent[]): string[] {
   const [p, w, r, b, i, l] = counts;
   const lines = [`early transcripts: ${p} published, ${w} retracted, ${r} reused as the final, ${b} replies released from a prepared think, ${i} interjections spoken, ${l} still running at the close`];
   if (early.size > 0) {
-    const sorted = [...early.values()].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).sort((a, b) => a - b);
+    const sorted = [...early.values()].filter((v): v is number => typeof v === "number" && Number.isFinite(v)).toSorted((a, b) => a - b);
     lines.push(sorted.length === 0
       ? pad("early stt", String(early.size), "-", "-")
       : pad("early stt", String(early.size), String(nearestRank(sorted, 0.5)), String(nearestRank(sorted, 0.95))));

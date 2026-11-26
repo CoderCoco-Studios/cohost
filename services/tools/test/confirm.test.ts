@@ -19,7 +19,7 @@ test("a call to an acting tool publishes tool.confirm with id, tool, arguments, 
   const s = await startTools(acting(), [src]);
   const id = await s.request({ tool: "search__post", arguments: { to: "x" } });
   await waitFor(() => confirms(s).length === 1, "tool.confirm");
-  assert.deepEqual(Object.keys(confirms(s)[0]).sort(), ["arguments", "expiresAt", "id", "origin", "tool"]);
+  assert.deepEqual(Object.keys(confirms(s)[0]).toSorted(), ["arguments", "expiresAt", "id", "origin", "tool"]);
   assert.deepEqual({ ...confirms(s)[0], expiresAt: 0 }, { id, tool: "search__post", arguments: { to: "x" }, origin: "speech", expiresAt: 0 });
   await settle();
   assert.equal(src.calls.length, 0, "not sent before the owner allows it");
@@ -35,7 +35,7 @@ test("an injected request is confirmed whatever its confirm mark and listed", as
   const a = await s.request({ tool: "search__post", origin: "speech", listed: true, round: 1, injected: true });
   const b = await s.request({ tool: "search__post", origin: "dashboard", listed: false, round: 1, injected: true });
   await waitFor(() => confirms(s).length === 2, "both injected requests confirm");
-  assert.deepEqual(confirms(s).map((c) => c.id).sort(), [a, b].sort());
+  assert.deepEqual(confirms(s).map((c) => c.id).toSorted(), [a, b].toSorted());
   assert.equal(src.calls.length, 0);
   await s.stop();
 });

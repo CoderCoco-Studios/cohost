@@ -492,7 +492,7 @@ test("llm reply log: elapsed, reason and memory count at info; the raw text only
   const { cortex, rec } = setup();
   await cortex.think(mention());
   const info = rec.lines.find((l) => l.level === "info" && l.msg === "llm reply")!;
-  assert.deepEqual(Object.keys(info.obj as object).sort(), ["memories", "ms", "reason"]);
+  assert.deepEqual(Object.keys(info.obj as object).toSorted(), ["memories", "ms", "reason"]);
   assert.equal((info.obj as { reason: string }).reason, "mentioned");
   const dbg = rec.lines.filter((l) => l.level === "debug");
   assert.ok(dbg.some((l) => (l.obj as { raw?: string }).raw === "[happy] hey chat!"));

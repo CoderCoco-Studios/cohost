@@ -32,7 +32,7 @@ test("file: a streamed line is one file per clause, named with the clause's seq"
     await waitFor(() => bus.of("voice.done").length === 1, "clause 0 done");
     await put(out, "u1", 1);
     await waitFor(() => bus.of("voice.done").length === 2, "clause 1 done");
-    const files = readdirSync(dir).sort();
+    const files = readdirSync(dir).toSorted();
     assert.equal(files.length, 2);
     assert.match(files[0]!, /^\d+-\d+-u1-0\.wav$/);
     assert.match(files[1]!, /^\d+-\d+-u1-1\.wav$/);

@@ -34,7 +34,7 @@ export function createFileOutput({ bus, log, dir, maxFiles, fetchAudio }: FileOu
 
   /** Delete the oldest `.wav` files until at most `maxFiles` remain; names sort oldest first (epoch ms, then sequence). */
   const rotate = () => {
-    const wavs = readdirSync(dir).filter((f) => f.endsWith(".wav")).sort();
+    const wavs = readdirSync(dir).filter((f) => f.endsWith(".wav")).toSorted();
     for (const old of wavs.slice(0, Math.max(0, wavs.length - maxFiles))) {
       try { unlinkSync(join(dir, old)); } catch (err) { log.warn({ err: String(err), file: old }, "file output: could not delete an old file"); }
     }

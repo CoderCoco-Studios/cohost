@@ -116,7 +116,7 @@ test("for every unit with a Compose service, the name its healthcheck is given e
 // @spec MOD-MAN-014
 test("every Compose service of the profiles pocket, nemotron and kyutai has a manifest unit, and each such unit has a Compose service named for its composeName", () => {
   const ENGINE_PROFILES = ["pocket", "nemotron", "kyutai"];
-  const engineServices = Object.entries(composeServices).filter(([, s]) => (s.profiles ?? []).some((p) => ENGINE_PROFILES.includes(p))).map(([n]) => n).sort();
+  const engineServices = Object.entries(composeServices).filter(([, s]) => (s.profiles ?? []).some((p) => ENGINE_PROFILES.includes(p))).map(([n]) => n).toSorted();
   assert.deepEqual(engineServices, ["stt-kyutai", "stt-nemotron", "tts-pocket"], "the three engine servers are the services of those profiles");
   const manifestNames = SERVICE_MANIFEST.map((s) => s.composeName);
   for (const name of engineServices) assert.ok(manifestNames.includes(name), `Compose service ${name} has no unit in SERVICE_MANIFEST`);

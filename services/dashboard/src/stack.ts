@@ -110,7 +110,7 @@ export class StackService {
       last: this.last ? { ...this.last } : null,
       services: (st?.services ?? [])
         .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}), ...(c.overrides ? { overrides: { ...c.overrides } } : {}) }))
-        .sort((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
+        .toSorted((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
     };
   }
 

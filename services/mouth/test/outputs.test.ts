@@ -51,7 +51,7 @@ test("file: keeps only the newest max_files .wav files and touches nothing else"
       await out.playback.enqueue(id, `http://voice/${id}.wav`);
       await waitFor(() => bus.of("voice.done").some((d) => d.id === id), `done ${id}`);
     }
-    const left = readdirSync(dir).sort();
+    const left = readdirSync(dir).toSorted();
     assert.equal(left.filter((f) => f.endsWith(".wav")).length, 2);
     assert.deepEqual(left.filter((f) => f.endsWith(".wav")).map((f) => f.replace(/^\d+-\d+-/, "")), ["c-0.wav", "d-0.wav"], "the oldest were deleted");
     assert.ok(left.includes("notes.txt"));

@@ -50,7 +50,7 @@ test("the loop remembers each utterance id and every voice.playing claim, and ig
 
 // @spec MOUTH-PLAY-001, MOUTH-PLAY-008
 test("the one mouth loop reads voice.utterance, brain.clause, voice.playing, voice.stop and control (set_routing only)", () => {
-  assert.deepEqual([...MOUTH_LOOP_TYPES].sort(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
+  assert.deepEqual([...MOUTH_LOOP_TYPES].toSorted(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
 });
 
 // @spec MOUTH-START-005, MOUTH-PLAY-001

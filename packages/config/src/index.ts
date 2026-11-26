@@ -45,7 +45,7 @@ export const secretsPath = (): string => {
  */
 // @spec CFG-SEC-002, MOD-CFG-005
 export function setSecretPaths(file: string = secretsPath()): string[] {
-  return Object.keys(loadSecrets(file).values).sort();
+  return Object.keys(loadSecrets(file).values).toSorted();
 }
 
 let diagnostics: Pick<Logger, "warn"> | undefined;

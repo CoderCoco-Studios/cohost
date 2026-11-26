@@ -147,7 +147,7 @@ export async function startTools(
     stop: async () => {
       if (stopped) return;
       stopped = true;
-      for (const fn of [...shutdown].reverse()) await fn();
+      for (const fn of [...shutdown].toReversed()) await fn();
     },
   };
   await runTools({

@@ -87,7 +87,7 @@ test("each note of a row is its own block element, so several notes do not run t
 // @spec DASH-UI-037
 test("when GET /egress fails the Services table still renders, with no marks", async () => {
   await servicesWith("fail");
-  assert.deepEqual(within(table()).getAllByRole("rowheader").map((h) => h.textContent).sort(), [...SERVICES].sort());
+  assert.deepEqual(within(table()).getAllByRole("rowheader").map((h) => h.textContent).toSorted(), [...SERVICES].toSorted());
   assert.doesNotMatch(text(table()), /goes to|go to/);
 });
 

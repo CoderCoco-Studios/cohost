@@ -357,7 +357,7 @@ test("unloading while a clip of an open line plays reports that clip's done and 
     { event: "done", id: "L", seq: 0 },
     { event: "done", id: "L", seq: 1, final: true },
   ]);
-  assert.deepEqual([...keep].sort(), [1, 2]);
+  assert.deepEqual([...keep].toSorted(), [1, 2]);
 });
 
 // @spec DASH-UI-045, DASH-UI-044
@@ -406,5 +406,5 @@ test("audio switched off mid-clip, then the page unloads: the playing clip's don
     { event: "done", id: "L", seq: 0 },
     { event: "done", id: "L", seq: 1, final: true },
   ]);
-  assert.deepEqual([...keep].sort(), [1, 2]);
+  assert.deepEqual([...keep].toSorted(), [1, 2]);
 });

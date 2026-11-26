@@ -106,7 +106,7 @@ test("a clean tree exits 0 and a problem line names the file and line and exits 
 // @spec DOCS-BUILD-006
 test("no docs task writes a markdown page", () => {
   const docs = miseTasks().filter((t) => t.name.startsWith("docs:"));
-  assert.deepEqual(docs.map((t) => t.name).sort(), ["docs:build", "docs:dev", "docs:preview"]);
+  assert.deepEqual(docs.map((t) => t.name).toSorted(), ["docs:build", "docs:dev", "docs:preview"]);
   for (const t of docs) {
     for (const step of t.run) assert.match(step.trim(), /^(vitepress (dev|build|preview) docs|node scripts\/docs-check\.mjs( --dist)?)$/, t.name);
     // the one task a docs task depends on installs the packages; it writes nothing under docs/
@@ -723,7 +723,7 @@ test("one decision page per decision document, whole and without frontmatter, su
   const { loadDesign } = await lib();
   await withTree(designTree(), async (dir) => {
     const d = loadDesign(dir);
-    assert.deepEqual(d.decisions.map((p: any) => p.slug).sort(), ["three", "two"]);
+    assert.deepEqual(d.decisions.map((p: any) => p.slug).toSorted(), ["three", "two"]);
     const two = d.decisions.find((p: any) => p.slug === "two");
     assert.equal(two.route, "advanced/architecture/decisions/two");
     assert.match(two.content, /# Decision: two\n\nBody of two\./);

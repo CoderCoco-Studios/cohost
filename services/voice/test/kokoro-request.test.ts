@@ -38,7 +38,7 @@ test("set knobs reach the request as the recorded Kokoro-FastAPI body, unset one
     await synthKokoro(KNOBS)("hi chat");
     assert.deepEqual(body, fixture("kokoro-speech-request.json"));
     await synthKokoro({ normalization: {} })("hi");
-    assert.deepEqual(Object.keys(body as object).sort(), ["input", "model", "response_format", "speed", "voice"]);
+    assert.deepEqual(Object.keys(body as object).toSorted(), ["input", "model", "response_format", "speed", "voice"]);
   } finally {
     server.close();
     if (saved === undefined) delete process.env.TTS_URL; else process.env.TTS_URL = saved;
@@ -51,7 +51,7 @@ test("every field the synthesizer can send exists in the pinned Kokoro-FastAPI r
   for (const k of Object.keys(sent.normalization_options as object)) assert.ok(fields.normalization_options.includes(k), k);
   // every normalization key the config accepts is a real one, and the real ones are all accepted
   const accepted = Object.keys((ConfigSchema.shape.voice.in.shape.normalization as any).def.innerType.shape);
-  assert.deepEqual(accepted.sort(), [...fields.normalization_options].sort());
+  assert.deepEqual(accepted.toSorted(), [...fields.normalization_options].toSorted());
 });
 
 const base = () => ({

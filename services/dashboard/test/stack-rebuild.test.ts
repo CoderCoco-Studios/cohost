@@ -131,7 +131,7 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
   assert.deepEqual(body.units.find((u) => u.id === "cortex")!.requires, ["salience", "affect"]);
   assert.equal(body.units.find((u) => u.id === "redis")!.infra, true);
   assert.deepEqual(body.units, JSON.parse(JSON.stringify(unitDescriptors())), "each unit carries id, config, uses, requires, pause, test, infra and defaultMode");
-  assert.deepEqual(Object.keys(body.units[0]!).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"]);
+  assert.deepEqual(Object.keys(body.units[0]!).toSorted(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"]);
   assert.doesNotMatch(JSON.stringify(body), /pnpm|composeName|isolatedEnv/);
 });
 
@@ -151,8 +151,8 @@ test("GET /services/manifest lists the twenty units in manifest order, the tools
   assert.deepEqual(units.map((u) => u.id), SERVICE_MANIFEST.map((s) => s.id));
   for (const id of ["tools", "connector-discord", "stt-nemotron", "stt-kyutai", "tts-pocket"]) assert.ok(units.some((u) => u.id === id), id);
   for (const u of units) {
-    assert.deepEqual(Object.keys(u).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"], String(u.id));
-    assert.deepEqual(Object.keys(u.test as object).sort(), ["inputs", "observe"], String(u.id));
+    assert.deepEqual(Object.keys(u).toSorted(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"], String(u.id));
+    assert.deepEqual(Object.keys(u.test as object).toSorted(), ["inputs", "observe"], String(u.id));
   }
   const tools = units.find((u) => u.id === "tools")!;
   assert.deepEqual((tools.test as { inputs: string[] }).inputs, ["text"]);

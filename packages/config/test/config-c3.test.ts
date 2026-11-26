@@ -48,7 +48,7 @@ test("a blank plain string key with a default takes the default; a blank require
   const bad = base();
   bad.llm = { model: "", embed_model: "" } as never;
   bad.cohost = { name: "", streamer: "" } as never;
-  assert.deepEqual(issuesOf(ConfigSchema.safeParse(bad)).sort(), ["cohost.name", "cohost.streamer", "llm.embed_model", "llm.model"]);
+  assert.deepEqual(issuesOf(ConfigSchema.safeParse(bad)).toSorted(), ["cohost.name", "cohost.streamer", "llm.embed_model", "llm.model"]);
 });
 
 // @spec CFG-SCH-024
@@ -143,13 +143,13 @@ test("writeFileAtomic replaces through a temp file and a failed write leaves the
   const { dir } = sandbox({ "personality.md": "old\n" });
   savePersonality("new\n");
   assert.equal(loadPersonality(), "new\n");
-  assert.deepEqual(readdirSync(dir).sort(), ["personality.md"]); // no temp file left behind
+  assert.deepEqual(readdirSync(dir).toSorted(), ["personality.md"]); // no temp file left behind
   // rename over a directory fails: the target must be untouched and the temp removed
   const blocked = join(dir, "blocked");
   mkdirSync(blocked);
   assert.throws(() => writeFileAtomic(blocked, "x"));
   assert.ok(existsSync(blocked));
-  assert.deepEqual(readdirSync(dir).sort(), ["blocked", "personality.md"]);
+  assert.deepEqual(readdirSync(dir).toSorted(), ["blocked", "personality.md"]);
   assert.equal(readFileSync(join(dir, "personality.md"), "utf8"), "new\n");
 });
 
@@ -158,7 +158,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
   const text = readFileSync(join(repo, ".env.example"), "utf8");
   const names = [...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
   const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR", "VIEWERS_TOKEN"];
-  assert.deepEqual([...new Set(names)].sort(), [...want].sort());
+  assert.deepEqual([...new Set(names)].toSorted(), [...want].toSorted());
   assert.doesNotMatch(text, /COHOST_ISOLATION/);
   // each variable carries a comment, and a variable with a default is commented out
   const lines = text.split("\n");

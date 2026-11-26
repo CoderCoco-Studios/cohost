@@ -222,7 +222,7 @@ test("onChange fires when the state, a container, the action, last or the bus ch
   f.setStatus(up()); await svc.probe();
   assert.equal(seen.length, 1);
   await svc.probe();
-  f.setStatus({ docker: { ok: true }, services: [...up().services].reverse() }); await svc.probe();
+  f.setStatus({ docker: { ok: true }, services: [...up().services].toReversed() }); await svc.probe();
   assert.equal(seen.length, 1);
   f.setStatus({ docker: { ok: true }, services: [{ service: "redis", status: "running", health: "unhealthy" }, { service: "cortex", status: "running" }] }); await svc.probe();
   assert.equal(seen.length, 2);

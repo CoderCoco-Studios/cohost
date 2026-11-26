@@ -112,7 +112,7 @@ test("the discord plan holds no Discord client, subscribes, feeds every output, 
     await waitFor(() => r.lastHealth().deps.discord === "ok", "discord ready");
     await r.subs[0]!.handler(utterance("u1"));
     await waitFor(() => r.bus.of("voice.done").length === 2, "both outputs played it");
-    assert.deepEqual(r.bus.of("voice.playing").map((p) => p.sink).sort(), ["discord", "dryrun"]);
+    assert.deepEqual(r.bus.of("voice.playing").map((p) => p.sink).toSorted(), ["discord", "dryrun"]);
   } finally {
     await r.stop();
   }
@@ -190,7 +190,7 @@ test("file and http outputs run in the local plan with no Discord: each line is 
     assert.deepEqual(r.lastHealth().deps, { discord: "n/a", dryrun: "n/a", file: "ok", http: "ok" });
     await r.subs[0]!.handler(utterance("u1"));
     await waitFor(() => r.bus.of("voice.done").length === 2, "both outputs released the line");
-    assert.deepEqual(r.bus.of("voice.playing").map((p) => p.sink).sort(), ["file", "http"]);
+    assert.deepEqual(r.bus.of("voice.playing").map((p) => p.sink).toSorted(), ["file", "http"]);
     assert.equal(readdirSync(join(dataDir, "mouth", "outputs")).length, 1);
     assert.deepEqual(posts, ["http://sink.test/in#u1"]);
   } finally {

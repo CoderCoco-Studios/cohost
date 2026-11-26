@@ -99,7 +99,7 @@ test("subscribes in group avatar with start mode latest to the five body events,
   assert.equal(opts.group, "avatar");
   assert.equal(opts.start, "latest");
   assert.equal("fromNow" in opts, false);
-  assert.deepEqual([...(opts.types as string[])].sort(), ["affect.state", "brain.say", "voice.done", "voice.playing", "voice.utterance"]);
+  assert.deepEqual([...(opts.types as string[])].toSorted(), ["affect.state", "brain.say", "voice.done", "voice.playing", "voice.utterance"]);
   await waitFor(() => t.driver.params.length > 0, "engine frames"); // the engine is running
 });
 

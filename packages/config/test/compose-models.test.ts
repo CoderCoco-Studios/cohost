@@ -46,7 +46,7 @@ test("models takes its model names from config.yaml alone: no model-name variabl
   const code = source.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
   assert.doesNotMatch(code, /LLM_MODEL|VISION_MODEL|EMBED_MODEL|NOTES_MODEL|STT_MODEL/);
   assert.equal(models.env_file, undefined, "nothing in .env reaches it");
-  assert.deepEqual(Object.keys(models.environment ?? {}).sort(), ["CONFIG_DIR", "OLLAMA_URL"]);
+  assert.deepEqual(Object.keys(models.environment ?? {}).toSorted(), ["CONFIG_DIR", "OLLAMA_URL"]);
   assert.equal(models.environment!.OLLAMA_URL, "http://ollama:11434");
   assert.equal(models.environment!.CONFIG_DIR, "/app/config");
 });

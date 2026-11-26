@@ -25,7 +25,7 @@ const offLan = (host: string, lan?: string[]): boolean => voiceAt(`http://${host
 // @spec CFG-EGR-001
 test("egressDestinations is a pure function returning entries with service, data, engine, host, hosted and offLan, and the default config has voice, ears, eyes and cortex", () => {
   const list = entries();
-  assert.deepEqual(list.map((e) => `${e.service}:${e.data}`).sort(), ["cortex:text", "ears:audio", "eyes:frames", "voice:text"]);
+  assert.deepEqual(list.map((e) => `${e.service}:${e.data}`).toSorted(), ["cortex:text", "ears:audio", "eyes:frames", "voice:text"]);
   for (const e of list) {
     assert.equal(typeof e.engine, "string");
     assert.equal(typeof e.offLan, "boolean");
@@ -67,9 +67,9 @@ test("ears has an entry of data audio for the selected engine, and for the fallb
   const o = of({ ears: { stt_engine: "openai", stt_fallback_engine: "speaches", ...hosted } }, "ears");
   assert.deepEqual(o.map((e) => [e.engine, e.host]), [["openai", "api.openai.com"]], "no fallback entry while the selected engine is openai");
   const n = of({ ears: { stt_engine: "nemotron", stt_fallback_engine: "openai", ...hosted } }, "ears");
-  assert.deepEqual(n.map((e) => [e.engine, e.host, e.offLan]).sort(), [["nemotron", "stt-nemotron", false], ["openai", "api.openai.com", true]]);
+  assert.deepEqual(n.map((e) => [e.engine, e.host, e.offLan]).toSorted(), [["nemotron", "stt-nemotron", false], ["openai", "api.openai.com", true]]);
   const k = of({ ears: { stt_engine: "kyutai", stt_fallback_engine: "speaches" } }, "ears");
-  assert.deepEqual(k.map((e) => [e.engine, e.host]).sort(), [["kyutai", "stt-kyutai"], ["speaches", "127.0.0.1"]]);
+  assert.deepEqual(k.map((e) => [e.engine, e.host]).toSorted(), [["kyutai", "stt-kyutai"], ["speaches", "127.0.0.1"]]);
   assert.deepEqual(of({ ears: { stt_engine: "kyutai", stt_fallback_engine: "none" } }, "ears").map((e) => e.engine), ["kyutai"]);
   assert.deepEqual(of({ ears: { stt_engine: "openai", openai: { base_url: "" } } }, "ears"), [], "a blank base_url has no entry");
   assert.deepEqual(of({ ears: { stt_engine: "nemotron", stt_fallback_engine: "none", nemotron: { url: "" } } }, "ears"), []);
@@ -200,7 +200,7 @@ test("while tools.mode is live, tools gets one text entry per server, engine mcp
   // network.lan applies like for any host
   assert.equal(toolsOf(mcp({ a: { url: "https://mcp.corp.example/x?y=1" } }, undefined, ["mcp.corp.example"]))[0]!.offLan, false);
   // entries of the other services are unchanged
-  assert.deepEqual(entries(mcp({ a: { url: "http://h/mcp" } })).filter((e) => e.service !== "tools").map((e) => e.service).sort(), ["cortex", "ears", "eyes", "voice"]);
+  assert.deepEqual(entries(mcp({ a: { url: "http://h/mcp" } })).filter((e) => e.service !== "tools").map((e) => e.service).toSorted(), ["cortex", "ears", "eyes", "voice"]);
 });
 
 // @spec CFG-EGR-015

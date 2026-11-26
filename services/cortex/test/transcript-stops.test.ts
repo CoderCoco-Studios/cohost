@@ -61,6 +61,6 @@ test("every other-speaker transcript line starts with a provider stop tag; the c
     const stopsOn = (line: string) => stops.some((s) => `\n${line}`.startsWith(s));
     for (const line of [chat, voice, screen]) assert.ok(stopsOn(line), `${provider}: ${line} begins with a stop tag`);
     assert.equal(stopsOn(own), false, `${provider}: the co-host's own line is not a stop`);
-    assert.deepEqual(transcriptStops.map((s) => s.slice(1)).sort(), [...TRANSCRIPT_TAGS].sort());
+    assert.deepEqual(transcriptStops.map((s) => s.slice(1)).toSorted(), [...TRANSCRIPT_TAGS].toSorted());
   }
 });

@@ -112,7 +112,7 @@ const STATES: ReadonlySet<unknown> = new Set(["loading", "ready", "failed"]);
 export function parseReport(raw: unknown): { state: string; detail: string } | undefined {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
   const o = raw as Record<string, unknown>;
-  const keys = Object.keys(o).sort();
+  const keys = Object.keys(o).toSorted();
   if (keys.length !== REPORT_KEYS.length || keys.some((k, i) => k !== REPORT_KEYS[i])) return undefined;
   if (o["type"] !== "model" || typeof o["version"] !== "string" || typeof o["detail"] !== "string" || !STATES.has(o["state"])) return undefined;
   return { state: o["state"] as string, detail: o["detail"].slice(0, DETAIL_MAX) };

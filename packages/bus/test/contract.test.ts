@@ -12,9 +12,9 @@ import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transp
 const root = new URL("../fixtures/contract/", import.meta.url).pathname;
 const json = (p: string): any => JSON.parse(readFileSync(p, "utf8"));
 const files = (dir: string): string[] => {
-  try { return readdirSync(join(root, dir)).filter((f) => f.endsWith(".json")).sort().map((f) => join(root, dir, f)); } catch { return []; }
+  try { return readdirSync(join(root, dir)).filter((f) => f.endsWith(".json")).toSorted().map((f) => join(root, dir, f)); } catch { return []; }
 };
-const eventTypes = (): string[] => { try { return readdirSync(join(root, "events")).sort(); } catch { return []; } };
+const eventTypes = (): string[] => { try { return readdirSync(join(root, "events")).toSorted(); } catch { return []; } };
 
 /** A frame fixture's value: a string, or `{ "base64": ... }` for binary. */
 const fieldValue = (v: string | { base64: string }): string | Buffer => (typeof v === "string" ? v : Buffer.from(v.base64, "base64"));

@@ -118,7 +118,7 @@ export function buildNotices(packages: readonly BundledPackage[]): Notices {
     if (licences.length === 0) throw new Error(`${id}: no licence file (LICENSE, LICENCE, COPYING or NOTICE) with text`);
     entries.set(id, { ...p, files: licences });
   }
-  const sections = [...entries.keys()].sort().map((id) => {
+  const sections = [...entries.keys()].toSorted().map((id) => {
     const p = entries.get(id)!;
     const files = p.files.map((f) => `--- ${f.name} ---\n${f.text.trimEnd()}\n`).join("\n");
     return `${id}\nLicence: ${p.license}\n\n${files}`;

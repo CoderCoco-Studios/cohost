@@ -26,7 +26,7 @@ function rig(dir: string, outcome: HearOutcome | (() => HearOutcome) = { heard: 
   const cap = createDirCapture({ path: dir, pollMs: 10, log: silentLog, hear, ...over });
   return { cap, calls };
 }
-const names = async (dir: string) => (await readdir(dir)).sort();
+const names = async (dir: string) => (await readdir(dir)).toSorted();
 
 // @spec EARS-CAP-008, EARS-CAP-009
 test("a dropped WAV is processed once, after two polls see the same size, and renamed .done", async () => {
@@ -107,7 +107,7 @@ test("at most INJECT_QUEUE_LIMIT files are taken per poll, in name order, one at
     await cap.pollOnce();
     assert.equal(INJECT_QUEUE_LIMIT, 8);
     assert.equal(order.length, INJECT_QUEUE_LIMIT, "eight taken");
-    assert.deepEqual(order, [...order].sort((a, b) => a - b), "in name order");
+    assert.deepEqual(order, [...order].toSorted((a, b) => a - b), "in name order");
     assert.equal((await names(dir)).filter((n) => n.endsWith(".done")).length, 8);
     await cap.pollOnce();
     assert.equal(order.length, 10);

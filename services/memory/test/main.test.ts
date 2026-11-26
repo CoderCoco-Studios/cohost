@@ -124,7 +124,7 @@ test("both llm hooks are pinged once at startup, and each one that does not answ
     const { log, lines } = recordingLog();
     await runMemory({ ...e, log });
     await waitFor(() => lines.filter((l) => l.level === "warn" && /hook provider unreachable/.test(l.msg ?? "")).length === 2, "one warning per hook");
-    const named = lines.filter((l) => /hook provider unreachable/.test(l.msg ?? "")).map((l) => (l.obj as { module: string }).module).sort();
+    const named = lines.filter((l) => /hook provider unreachable/.test(l.msg ?? "")).map((l) => (l.obj as { module: string }).module).toSorted();
     assert.deepEqual(named, ["memory.capture", "memory.consolidator"]);
     for (const fn of shutdown) await fn();
   } finally { if (saved === undefined) delete process.env.OLLAMA_URL; else process.env.OLLAMA_URL = saved; }

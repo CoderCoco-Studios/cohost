@@ -56,7 +56,7 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Every file under `dir` as paths relative to it (POSIX), sorted; `skip` names directories not to enter. */
 function walk(dir, skip = new Set(['node_modules']), base = dir, out = []) {
   if (!existsSync(dir)) return out;
-  for (const e of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+  for (const e of readdirSync(dir, { withFileTypes: true }).toSorted((a, b) => (a.name < b.name ? -1 : 1))) {
     if (skip.has(e.name)) continue;
     const p = join(dir, e.name);
     if (e.isDirectory()) walk(p, skip, base, out);
@@ -1274,7 +1274,7 @@ export async function runSource(root) {
         add('docker-compose.yml', 0, 'DOCS-FACT-004', `cannot parse: ${String(e.message).split('\n')[0]}`);
       }
     }
-    for (const port of [...ports].sort((a, b) => a - b)) if (!portNamed(envSpans, port)) add(envPage.file, 0, 'DOCS-FACT-004', `does not name host port ${port}`);
+    for (const port of [...ports].toSorted((a, b) => a - b)) if (!portNamed(envSpans, port)) add(envPage.file, 0, 'DOCS-FACT-004', `does not name host port ${port}`);
   }
   const cfgYaml = readIf(join(root, 'config/config.example.yaml'));
   const cfgPage = mustExist(pages.get(CONFIG_PAGE), CONFIG_PAGE, 'DOCS-FACT-005');
@@ -1375,7 +1375,7 @@ export async function runSource(root) {
     if (!analyze(t).links.some((l) => l.href.startsWith(SITE)) && !t.includes(SITE)) add(f, 0, 'DOCS-EX-001', `must link a page of the docs site at ${SITE}...`);
   }
   const exDir = join(root, 'examples');
-  const exDirs = existsSync(exDir) ? readdirSync(exDir, { withFileTypes: true }).filter((d) => d.isDirectory() && !EXAMPLES_SKIP.has(d.name)).map((d) => d.name).sort() : [];
+  const exDirs = existsSync(exDir) ? readdirSync(exDir, { withFileTypes: true }).filter((d) => d.isDirectory() && !EXAMPLES_SKIP.has(d.name)).map((d) => d.name).toSorted() : [];
   const modules = readIf(join(exDir, 'modules/README.md'));
   if (modules === null) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'does not exist');
   else {
@@ -1708,7 +1708,7 @@ function indexCss(files) {
     if (text === null) continue;
     for (const { block, anc } of cssBlocks(parseCss(text))) {
       const sels = block.prelude.startsWith('@') ? [] : selectorsOf(block.prelude);
-      out.push({ file, block, anc, sels, line: block.line, decl: (p) => [...block.decls].reverse().find((d) => d.prop === p) });
+      out.push({ file, block, anc, sels, line: block.line, decl: (p) => [...block.decls].toReversed().find((d) => d.prop === p) });
     }
   }
   return out;
@@ -2553,7 +2553,7 @@ function diagramLabels(markdown, fallbackTitle) {
   return a.fences
     .filter((f) => f.lang === 'mermaid')
     .map((f) => {
-      const h = [...a.headings].reverse().find((x) => x.n < f.line);
+      const h = [...a.headings].toReversed().find((x) => x.n < f.line);
       return `Diagram: ${h ? plainHeading(h.text) : fallbackTitle}`;
     });
 }

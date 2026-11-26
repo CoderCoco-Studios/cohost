@@ -16,7 +16,7 @@ test("Field gives its control a label and points aria-describedby at the help an
   render(<Field label="Port" help="Where it listens." error="Must be a whole number">{(p) => <input {...p} />}</Field>);
   const input = screen.getByLabelText("Port");
   const described = input.getAttribute("aria-describedby")!.split(" ").map((id) => document.getElementById(id)!.textContent);
-  assert.deepEqual(described.sort(), ["Must be a whole number", "Where it listens."].sort());
+  assert.deepEqual(described.toSorted(), ["Must be a whole number", "Where it listens."].toSorted());
   assert.equal(input.getAttribute("aria-invalid"), "true");
 });
 

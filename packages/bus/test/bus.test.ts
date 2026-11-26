@@ -450,8 +450,8 @@ test("the catalogue is exactly the 37 documented event types, exported as EVENT_
     "attention.resolve",
   ];
   assert.equal(EVENT_TYPES.length, 37);
-  assert.deepEqual([...EVENT_TYPES].sort(), [...expected].sort());
-  assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
+  assert.deepEqual([...EVENT_TYPES].toSorted(), [...expected].toSorted());
+  assert.deepEqual([...EVENT_TYPES].toSorted(), Object.keys(EventPayloads).toSorted());
 });
 
 // @spec BUS-EVT-022

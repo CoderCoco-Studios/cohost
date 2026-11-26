@@ -23,7 +23,7 @@ const CODE_EXT = /\.(?:ts|tsx|js|mjs|cjs|sh|yml|yaml|html|rs|toml)$|(?:^|\/)Dock
 
 /** Every file under `root`, as repo-relative POSIX paths, in sorted order. */
 function walk(root, dir = root, out = []) {
-  for (const name of readdirSync(dir).sort()) {
+  for (const name of readdirSync(dir).toSorted()) {
     if (SKIP_DIRS.has(name)) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) walk(root, p, out);

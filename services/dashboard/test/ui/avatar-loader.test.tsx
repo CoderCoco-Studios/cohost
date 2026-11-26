@@ -376,7 +376,7 @@ test("reports carry only the version, a state and a detail of at most 200 charac
   const r = rig();
   r.loader.request(target("v1")); r.fetches[0]!.respond(r.ok("v1")); await flush();
   for (const rep of r.reports) {
-    assert.deepEqual(Object.keys(rep).sort(), ["detail", "state", "version"]);
+    assert.deepEqual(Object.keys(rep).toSorted(), ["detail", "state", "version"]);
     assert.ok(rep.detail.length <= 200);
     assert.ok(JSON.stringify({ type: "model", ...rep }).length < 4096, "within the relay's 4096-byte message cap");
   }

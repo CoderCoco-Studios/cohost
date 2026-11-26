@@ -136,7 +136,7 @@ test("the list names exactly the changed sensitive keys, among unchanged ones an
   assert.equal(r.status, 401);
   assert.deepEqual(((await r.json()) as Refusal).sensitive, ["vision.obs.host"]);
   const two = await t.put("/config/vision", { etag: t.etag(), values: { "obs.host": "10.0.0.9", "obs.port": 4456 } });
-  assert.deepEqual(((await two.json()) as Refusal).sensitive.sort(), ["vision.obs.host", "vision.obs.port"]);
+  assert.deepEqual(((await two.json()) as Refusal).sensitive.toSorted(), ["vision.obs.host", "vision.obs.port"]);
   assert.equal(t.text(), EXAMPLE);
 });
 

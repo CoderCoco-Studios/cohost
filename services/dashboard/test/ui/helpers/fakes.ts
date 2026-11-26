@@ -100,7 +100,7 @@ export class FakeClock {
   tick(ms: number): void {
     const end = this.now + ms;
     for (;;) {
-      const due = this.timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0];
+      const due = this.timers.filter((t) => t.at <= end).toSorted((a, b) => a.at - b.at)[0];
       if (!due) break;
       this.timers = this.timers.filter((t) => t !== due);
       this.now = due.at;

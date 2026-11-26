@@ -15,7 +15,7 @@ test("it runs on runService as `tools` in group tools, start mode latest, subscr
   const sub = s.bus.subscribed[0]!;
   assert.equal(sub.group, "tools");
   assert.equal(sub.start, "latest");
-  assert.deepEqual([...sub.types].sort(), ["inject.request", "memory.recall.reply", "tool.answer", "tool.request"]);
+  assert.deepEqual([...sub.types].toSorted(), ["inject.request", "memory.recall.reply", "tool.answer", "tool.request"]);
   assert.equal(s.bus.health[0]!.service, "tools");
   await s.stop();
 });

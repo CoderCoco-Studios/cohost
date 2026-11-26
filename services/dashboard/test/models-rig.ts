@@ -267,7 +267,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
       const etag = so.etag ?? createHash("sha256").update(readFileSync(cfgFile, "utf8")).digest("hex");
       return send(port, "PUT", `/config/renderer${so.dryRun ? "?dryRun=1" : ""}`, { headers: auth, body: JSON.stringify({ etag, values }) });
     },
-    ls: () => (existsSync(models) ? readdirSync(models).sort() : []),
+    ls: () => (existsSync(models) ? readdirSync(models).toSorted() : []),
     tempOpened,
   };
 }

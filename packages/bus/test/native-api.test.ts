@@ -147,7 +147,7 @@ test("publish and publishHealth validate with zod, stamp ts with Date.now() and 
     assert.equal(health!.args[0], "health");
     for (const c of [events!, health!]) {
       const f = c.args[1] as Record<string, unknown>;
-      assert.deepEqual(Object.keys(f).sort(), ["data", "source", "ts", "type"]);
+      assert.deepEqual(Object.keys(f).toSorted(), ["data", "source", "ts", "type"]);
       assert.ok(Object.values(f).every((v) => typeof v === "string"));
       assert.equal(f.ts, "1234567");
       assert.equal(f.source, "t");

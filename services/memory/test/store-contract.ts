@@ -674,8 +674,8 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await h.store.remember("chat", `a${w}`, `kept other platform ${w}`, { platform: "twitch", userId: `UC${w}` });
     await h.store.remember("chat", `a${w}`, `kept no ids ${w}`);
     await h.store.forgetChat({ platform: "youtube", scope: "user", userId: `UC${w}` });
-    const texts = (await recallAll(h, w)).map((m) => m.text).sort();
-    assert.deepEqual(texts, [`kept no ids ${w}`, `kept other platform ${w}`, `kept other user ${w}`].sort());
+    const texts = (await recallAll(h, w)).map((m) => m.text).toSorted();
+    assert.deepEqual(texts, [`kept no ids ${w}`, `kept other platform ${w}`, `kept other user ${w}`].toSorted());
   });
 
   // @spec MEM-FORGET-004

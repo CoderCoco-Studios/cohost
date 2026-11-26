@@ -299,7 +299,7 @@ function scanSdkEnvNames(): string[] {
     }
   };
   for (const r of roots) walk(r);
-  return [...names].sort();
+  return [...names].toSorted();
 }
 
 // @spec LLM-CLAUDE-019

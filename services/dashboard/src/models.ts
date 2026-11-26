@@ -199,7 +199,7 @@ function strings(v: unknown): string[] {
   return Array.isArray(v) ? v.flatMap((s) => (typeof s === "string" ? [cut(s)] : [])) : [];
 }
 /** Expression names are sorted, de-duplicated and capped at 256 (DASH-MDL-013). */
-const unique = (xs: string[]): string[] => [...new Set(xs)].sort().slice(0, EXPRESSIONS_MAX);
+const unique = (xs: string[]): string[] => [...new Set(xs)].toSorted().slice(0, EXPRESSIONS_MAX);
 
 /** Opened without following a link and without blocking on a FIFO or device (DASH-MDL-002). */
 export const READ_FLAGS = constants.O_RDONLY | NOFOLLOW | (constants.O_NONBLOCK ?? 0);
@@ -266,7 +266,7 @@ export class ModelStore {
       }
       out.push({ name, path, bytes, modified, version, ...(c.meta ? { meta: c.meta } : { error: c.error! }) });
     }
-    return out.sort(byNameIC);
+    return out.toSorted(byNameIC);
   }
 
   /** The stored models a selection may name: those listed without an error. */

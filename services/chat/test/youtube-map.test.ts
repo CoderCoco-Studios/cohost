@@ -47,7 +47,7 @@ test("isMod is the chat moderator or the chat owner and isSub is the chat sponso
 // @spec CHAT-FILT-013
 test("the YouTube sender lists the display name, the bare channel id and youtube:<channelId> as ignore identifiers", () => {
   const { sender } = msg(text("m1", 1, "hi", { displayName: "Some Bot", channelId: "UCabc123" }));
-  assert.deepEqual([...sender.ignoreIdentifiers].sort(), ["Some Bot", "UCabc123", "youtube:UCabc123"].sort());
+  assert.deepEqual([...sender.ignoreIdentifiers].toSorted(), ["Some Bot", "UCabc123", "youtube:UCabc123"].toSorted());
 });
 
 // @spec CHAT-FILT-013
@@ -77,7 +77,7 @@ test("a Super Chat with a comment publishes the comment alone, with no sign of t
   const serialised = JSON.stringify(r);
   for (const leak of ["5000000", "USD", "$5.00", "tier", "amount", "paid"]) assert.ok(!serialised.includes(leak), `${leak} must not appear`);
   const ev = createChatFilter(testConfig(), "youtube")(r.sender, r.text, r.messageId)!;
-  assert.deepEqual(Object.keys(ev).sort(), ["isMod", "isSub", "messageId", "mentionsCohost", "platform", "text", "user", "userId"].sort());
+  assert.deepEqual(Object.keys(ev).toSorted(), ["isMod", "isSub", "messageId", "mentionsCohost", "platform", "text", "user", "userId"].toSorted());
 });
 
 // @spec CHAT-YT-053

@@ -71,12 +71,12 @@ test("the consolidate and reembed one-shots share the profile maintenance (not t
   assert.equal(oneShots, "maintenance", "the one-shot profile is maintenance (it must not share the name of the tools service)");
   assert.equal(compose.services.tools!.profiles, undefined, "the tools service has no profile");
   const profiled = Object.entries(compose.services).filter(([, s]) => s.profiles).map(([n, s]) => [n, s.profiles]);
-  assert.deepEqual(profiled.sort(), [["connector-discord", ["discord"]], ["consolidate", [oneShots]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]], ["reembed", [oneShots]], ["stt-kyutai", ["kyutai"]], ["stt-nemotron", ["nemotron"]], ["tts-pocket", ["pocket"]]]); // DEPLOY-COMPOSE-004: the engine servers (DEPLOY-ENG-001..003)
+  assert.deepEqual(profiled.toSorted(), [["connector-discord", ["discord"]], ["consolidate", [oneShots]], ["ears", ["ears"]], ["eyes", ["eyes"]], ["mouth", ["mouth"]], ["reembed", [oneShots]], ["stt-kyutai", ["kyutai"]], ["stt-nemotron", ["nemotron"]], ["tts-pocket", ["pocket"]]]); // DEPLOY-COMPOSE-004: the engine servers (DEPLOY-ENG-001..003)
 });
 
 // @spec DEPLOY-COMPOSE-015
 test("consolidate, models and reembed are the only services without an unless-stopped restart policy", () => {
-  const other = Object.entries(compose.services).filter(([, s]) => s.restart !== "unless-stopped").map(([n]) => n).sort();
+  const other = Object.entries(compose.services).filter(([, s]) => s.restart !== "unless-stopped").map(([n]) => n).toSorted();
   assert.deepEqual(other, ["consolidate", "models", "reembed"]);
   assert.equal(compose.services.models!.restart, undefined);
 });
@@ -91,7 +91,7 @@ test("reembed builds the memory image, runs the reembed entry point, needs postg
   assert.equal(re.restart, "no");
   assert.deepEqual(re.profiles, svc.profiles, "reembed is in the profile of consolidate");
   assert.deepEqual(re.healthcheck, { disable: true });
-  assert.deepEqual(Object.keys(re.depends_on ?? {}).sort(), ["ollama", "postgres"]);
+  assert.deepEqual(Object.keys(re.depends_on ?? {}).toSorted(), ["ollama", "postgres"]);
   assert.equal(re.depends_on?.postgres?.condition, "service_healthy");
   assert.equal(re.depends_on?.ollama?.condition, "service_started");
 });

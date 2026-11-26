@@ -28,7 +28,7 @@ const notices = (): string[] => readdirSync(join(out, "assets")).filter((f) => /
 // @spec DASH-BUILD-001
 test("the build writes index.html, avatar.html, favicon.svg and assets/ with one script and one stylesheet per entry and no other chunk", () => {
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  assert.deepEqual(readdirSync(out).sort(), ["assets", "avatar.html", "favicon.svg", "index.html"]);
+  assert.deepEqual(readdirSync(out).toSorted(), ["assets", "avatar.html", "favicon.svg", "index.html"]);
   const assets = readdirSync(join(out, "assets"));
   assert.equal(assets.filter((f) => f.endsWith(".js")).length, 2, assets.join());
   assert.equal(assets.filter((f) => f.endsWith(".css")).length, 2, assets.join());

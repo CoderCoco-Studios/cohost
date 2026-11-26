@@ -86,7 +86,7 @@ function refuse(e: Env, match: (type: string, data: unknown) => boolean, opts: {
   };
   return refused;
 }
-const lastSpeech = (e: Env) => [...e.s.ctx.all()].reverse().find((x) => x.kind === "speech" && !x.unfinished);
+const lastSpeech = (e: Env) => [...e.s.ctx.all()].toReversed().find((x) => x.kind === "speech" && !x.unfinished);
 
 // ---- Asking at the retraction -------------------------------------------------------------------------------------------
 

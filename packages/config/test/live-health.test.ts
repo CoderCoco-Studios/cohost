@@ -52,7 +52,7 @@ function rig() {
   const advance = async (ms: number) => {
     const to = now + ms;
     for (;;) {
-      const due = [...timers.entries()].filter(([, t]) => t.at <= to).sort((a, b) => a[1].at - b[1].at)[0];
+      const due = [...timers.entries()].filter(([, t]) => t.at <= to).toSorted((a, b) => a[1].at - b[1].at)[0];
       if (!due) break;
       now = due[1].at;
       timers.delete(due[0]);

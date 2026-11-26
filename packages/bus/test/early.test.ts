@@ -29,8 +29,8 @@ const EXPECTED = [
 // @spec BUS-EVT-001
 test("the catalogue is exactly the 37 payloads of BUS-EVT-001, exported as EVENT_TYPES", () => {
   assert.equal(EXPECTED.length, 37);
-  assert.deepEqual([...EVENT_TYPES].sort(), [...EXPECTED].sort());
-  assert.deepEqual(Object.keys(EventPayloads).sort(), [...EXPECTED].sort());
+  assert.deepEqual([...EVENT_TYPES].toSorted(), [...EXPECTED].toSorted());
+  assert.deepEqual(Object.keys(EventPayloads).toSorted(), [...EXPECTED].toSorted());
 });
 
 // @spec BUS-EVT-052

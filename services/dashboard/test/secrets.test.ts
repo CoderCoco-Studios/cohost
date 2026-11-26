@@ -328,7 +328,7 @@ test("restart lists, in manifest order, the running units whose manifest secrets
   assert.deepEqual(readers, ["salience", "affect", "memory", "cortex", "eyes"]);
   assert.ok(SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).length > readers.length - 1, "units read the llm section; only those declaring the path restart");
   const svc = (service: string, status: string) => ({ service, status });
-  const running = [...readers].reverse().map((id) => svc(id, "running")).concat([svc("voice", "running")]);
+  const running = [...readers].toReversed().map((id) => svc(id, "running")).concat([svc("voice", "running")]);
   const t = await boot({ control: true, stack: { services: running as never } });
   const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN);
   assert.deepEqual(((await r.json()) as { restart: string[] }).restart, readers);

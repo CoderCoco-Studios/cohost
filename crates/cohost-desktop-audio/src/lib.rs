@@ -12,6 +12,7 @@ pub mod deliver;
 pub mod lifecycle;
 pub mod pcm;
 pub mod post;
+pub mod pulse_server;
 pub mod redis_registry;
 pub mod registration;
 pub mod retry;

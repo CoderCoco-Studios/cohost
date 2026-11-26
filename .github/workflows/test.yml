@@ -47,11 +47,6 @@ jobs:
       - uses: jdx/mise-action@v5.3.0
         with:
           version: 2026.11.14
-      # Held until the desktop audio helper moves to the pure-Rust pulseaudio client (ears EARS-SRC-023, the
-      # follow-up to #344): its Linux back end still links libpulse through pkg-config, so lint:rust and test:rust
-      # need these two packages. DEPLOY-CI-001 and DEPLOY-CI-012 stay open until this step is removed.
-      - name: Install the desktop audio helper's Linux build prerequisites (until EARS-SRC-023)
-        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config
       - uses: actions/cache@v6.1.0
         with:
           path: |

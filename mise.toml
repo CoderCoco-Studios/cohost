@@ -64,11 +64,12 @@ run = "tsc -b"
 
 [tasks."build:ui"]
 description = "Build the dashboard's web UI into services/dashboard/dist-ui/"
-# ui/vite.config.ts imports @cohost/config, which resolves to its built dist/.
+# ui/src/avatar/pose.ts imports @cohost/shared/head-rotation, which resolves to packages/shared/dist/; a change to
+# the shared package's sources rebuilds the bundle.
 depends = ["build:ts"]
 dir = "{{config_root}}/services/dashboard"
 run = "node_modules/.bin/vite build --config ui/vite.config.ts"
-sources = ["{{config_root}}/services/dashboard/ui/**"]
+sources = ["{{config_root}}/services/dashboard/ui/**", "{{config_root}}/packages/shared/src/**"]
 outputs = ["{{config_root}}/services/dashboard/dist-ui/index.html"]
 
 [tasks.build]
@@ -158,6 +159,7 @@ run = [
 
 [tasks."dashboard:ui"]
 description = "Run the dashboard UI's Vite dev server"
+# The UI imports @cohost/shared's dist/, and the dev server's proxy loads @cohost/config's dist/.
 depends = ["build:ts"]
 dir = "{{config_root}}/services/dashboard"
 run = "node_modules/.bin/vite --config ui/vite.config.ts"

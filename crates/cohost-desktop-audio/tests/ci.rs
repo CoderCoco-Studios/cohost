@@ -1,4 +1,4 @@
-//! CI builds the helper with its prerequisites and compiles its Windows back end (through mise.toml's test:rust task).
+//! CI builds the helper with no system package and compiles its Windows back end (through mise.toml's test:rust task).
 use std::path::Path;
 
 fn read(rel: &str) -> String {
@@ -18,16 +18,33 @@ fn workflow_lines() -> Vec<String> {
 
 // @spec EARS-SRC-023
 #[test]
-fn the_linux_runner_installs_libpulse_dev_and_pkg_config() {
-    let lines = workflow_lines();
+fn the_linux_runner_installs_no_system_package() {
+    for line in workflow_lines() {
+        for banned in ["apt-get", "apt ", "libpulse", "pkg-config"] {
+            assert!(
+                !line.contains(banned),
+                "test.yml installs a system package: {line}"
+            );
+        }
+    }
+}
+
+// @spec EARS-SRC-023
+#[test]
+fn the_linux_back_end_is_the_pure_rust_pulseaudio_client_with_no_system_binding() {
+    let manifest = read("Cargo.toml");
     assert!(
-        lines.iter().any(|l| l.contains("libpulse-dev")),
-        "test.yml does not install libpulse-dev"
+        manifest.lines().any(|l| l.starts_with("pulseaudio = ")),
+        "Cargo.toml does not depend on the pulseaudio crate"
     );
-    assert!(
-        lines.iter().any(|l| l.contains("pkg-config")),
-        "test.yml does not install pkg-config"
-    );
+    // No crate in the lock links a system audio library or asks pkg-config for one.
+    let lock = read("../../Cargo.lock");
+    for banned in ["libpulse", "pkg-config", "alsa-sys", "pipewire-sys"] {
+        assert!(
+            !lock.contains(&format!("name = \"{banned}")),
+            "Cargo.lock holds {banned}"
+        );
+    }
 }
 
 // @spec EARS-SRC-023

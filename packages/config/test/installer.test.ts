@@ -349,7 +349,23 @@ test("next steps also give the line that activates mise in the current shell", (
 test("the installer installs libatomic1 when the dynamic loader does not find libatomic.so.1, as it does curl and gnupg", () => {
   const line = code.split("\n").find((l) => l.includes("need_apt+=(libatomic1)"));
   assert.ok(line, "libatomic1 joins the apt list");
-  assert.ok(line!.includes("ldconfig -p") && line!.includes("libatomic\\.so\\.1"), "only when the loader lacks it");
+  assert.ok(line!.includes("libatomic\\.so\\.1") && line!.includes("ldcache"), "only when the loader lacks it");
+  assert.ok(code.split("\n").some((l) => l.startsWith("ldcache()") && l.includes("ldconfig -p")), "ldcache lists the loader's cache");
+});
+
+// @spec DEPLOY-TOOL-004
+test("the libatomic check survives pipefail with a long loader cache: found when listed first, missing when absent", () => {
+  const line = code.split("\n").find((l) => l.includes("need_apt+=(libatomic1)"))!;
+  // A cache far larger than a pipe buffer, so a reader that stops at the first match would end the listing with SIGPIPE.
+  const filler = 'for i in $(seq 1 50000); do printf "\\tlibfiller%s.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libfiller%s.so.1\\n" "$i" "$i"; done';
+  const check = (cache: string) =>
+    spawnSync("bash", ["-c", `set -euo pipefail\nneed_apt=()\nldcache() { ${cache}; }\n${line}\necho "need=\${need_apt[*]:-}"`], { encoding: "utf8" });
+  const found = check(`printf "\\tlibatomic.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libatomic.so.1\\n"; ${filler}`);
+  assert.equal(found.status, 0, found.stderr);
+  assert.equal(found.stdout.trim(), "need=", "a listed libatomic is not installed again");
+  const missing = check(filler);
+  assert.equal(missing.status, 0, missing.stderr);
+  assert.equal(missing.stdout.trim(), "need=libatomic1");
 });
 
 // ---------------------------------------------------------------------------------------------- the mise fetch (DEPLOY-TOOL-020)

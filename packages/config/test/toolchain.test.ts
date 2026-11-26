@@ -277,6 +277,8 @@ test("the task dependencies are exactly the specified graph", () => {
   };
   for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts"];
   for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].sort(), [...deps].sort(), name);
+  // The UI bundles @cohost/shared from its dist/, so a change to the shared sources must rebuild it.
+  assert.deepEqual(task("build:ui").sources.map(rel), ["services/dashboard/ui/**", "packages/shared/src/**"]);
 });
 
 // @spec DEPLOY-TOOL-010
@@ -327,7 +329,7 @@ const taskDefined = (names: Set<string>, ref: string): boolean => {
   const ph = /^([^<]*)<[^>]+>$/.exec(ref);
   return ph !== null && [...names].some((n) => n.startsWith(ph[1]!) && n.length > ph[1]!.length);
 };
-/** Unknown task names and direct pnpm/cargo commands in the installer, the workflows, the Dockerfile and the dashboard's sources. */
+/** Unknown task names and direct pnpm/cargo commands in the shell scripts, the workflows, the Dockerfile and the dashboard's sources. */
 function commandProblems(files: [string, string][], names: Set<string>): string[] {
   const out: string[] = [];
   for (const [file, text] of files) {
@@ -341,6 +343,11 @@ function commandProblems(files: [string, string][], names: Set<string>): string[
   }
   return out;
 }
+/** Every `*.sh` under `scripts/`, the installer among them. */
+const shellScripts = (): [string, string][] => {
+  const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  return walk(join(repoRoot, "scripts")).filter((f) => f.endsWith(".sh")).map((f) => [rel(f), readFileSync(f, "utf8")]);
+};
 const dashboardSources = (): [string, string][] => {
   const dir = join(repoRoot, "services/dashboard/src");
   const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
@@ -348,9 +355,11 @@ const dashboardSources = (): [string, string][] => {
 };
 
 // @spec DEPLOY-TOOL-013
-test("every task the installer, the workflows, the Dockerfile and the dashboard name exists, and none runs pnpm or cargo directly", () => {
+test("every task the shell scripts, the workflows, the Dockerfile and the dashboard name exists, and none runs pnpm or cargo directly", () => {
   const names = new Set(miseTasks().keys());
-  const files: [string, string][] = [["scripts/install.sh", readRepo("scripts/install.sh")], ["Dockerfile", readRepo("Dockerfile")], ...Object.entries(workflows), ...dashboardSources()];
+  const scripts = shellScripts();
+  for (const f of ["scripts/install.sh", "scripts/dev/perf-baseline.sh"]) assert.ok(scripts.some(([p]) => p === f), `${f} is scanned`);
+  const files: [string, string][] = [...scripts, ["Dockerfile", readRepo("Dockerfile")], ...Object.entries(workflows), ...dashboardSources()];
   assert.deepEqual(commandProblems(files, names), []);
   assert.deepEqual(taskRefs('"$MISE" run build || die'), ["build"]);
   assert.deepEqual(taskRefs("run: MISE_TASK_RUN_AUTO_INSTALL=false mise run docs:build"), ["docs:build"]);
@@ -645,6 +654,12 @@ test("the Dockerfile's stages: toolchain from debian with mise, native with Rust
   const native = stage("native");
   assert.match(native, /^FROM toolchain AS native$/m);
   assert.match(native, /^RUN mise install --locked rust zig$/m);
+  // mise install reads Zig's version and the locked downloads from mise.toml and mise.lock, so they are copied first.
+  const install = native.search(/^RUN mise install --locked rust zig$/m);
+  for (const f of ["rust-toolchain.toml", "mise.toml", "mise.lock"]) {
+    const copy = native.search(new RegExp(`^COPY [^\\n]*(?<=\\s)${f.replace(/\./g, "\\.")}(?=\\s)[^\\n]*$`, "m"));
+    assert.ok(copy >= 0 && copy < install, `the native stage copies ${f} before mise install --locked rust zig`);
+  }
   assert.match(native, /COPY scripts\/zig-cc scripts\/zig-cxx scripts\/zig-ar/);
   for (const c of ["/root/.local/share/mise/cargo/registry", "/root/.local/share/mise/zig-cache", "/app/target"]) assert.ok(native.includes(`--mount=type=cache,target=${c}`), c);
   assert.doesNotMatch(native, /package\.json|install --locked node|napi/);

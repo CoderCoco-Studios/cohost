@@ -134,6 +134,7 @@ Design: [deployment-design.md](deployment-design.md) § Speech engine servers. V
 - [x] **DEPLOY-LINT-005**: The root `tsconfig.json` shall set `"files": []` and list its projects only as `references`, and no `tsconfig*.json` in the workspace shall set `baseUrl`, as tsgolint requires. <!-- test: packages/config/test/lint.test.ts -->
 - [x] **DEPLOY-LINT-006**: Every inline `oxlint-disable` or `eslint-disable` comment in the repository (oxlint honours both) shall be an `oxlint-disable-next-line` naming exactly one rule and followed by ` -- ` and a reason, and `.oxlintrc.json` shall set `options.reportUnusedDisableDirectives` to `error`, so a disable comment that suppresses nothing fails the lint. <!-- test: packages/config/test/lint.test.ts -->
 - [x] **DEPLOY-LINT-007**: When `oxlint --type-aware --deny-warnings` reports any finding (an unused disable comment included), `mise run lint` shall exit non-zero, and the `test` workflow's `mise run lint` step (DEPLOY-CI-001) shall run without `continue-on-error`, so a finding fails CI. <!-- test: packages/config/test/lint.test.ts -->
+- [x] **DEPLOY-LINT-008**: `tsconfig.base.json` shall set `noImplicitReturns` to `true`, so the type check fails on a function a code path of which ends without the value its return type promises; `.oxlintrc.json` shall leave `typescript/consistent-return` off, its comment naming `noImplicitReturns` as the check. <!-- test: packages/config/test/lint.test.ts -->
 
 ## Image build
 

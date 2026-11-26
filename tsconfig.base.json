@@ -13,6 +13,7 @@
     "sourceMap": true,
     "composite": true,
     "resolveJsonModule": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true
   }
 }

@@ -108,6 +108,25 @@ test("the root tsconfig.json is a solution file, and no tsconfig sets baseUrl", 
   for (const f of tsconfigs) assert.doesNotMatch(readRepo(f), /"baseUrl"/, `${f} sets baseUrl`);
 });
 
+const base = parseJsonc(readRepo("tsconfig.base.json")) as { compilerOptions: Record<string, unknown> };
+
+/** The `//` comment lines directly above `"<rule>":` in `.oxlintrc.json`, joined. */
+const commentAbove = (rule: string): string => {
+  const lines = rcText.split("\n");
+  let i = lines.findIndex((l) => l.trimStart().startsWith(`"${rule}":`));
+  assert.ok(i > 0, `${rule} is in ${RC}`);
+  const out: string[] = [];
+  while (--i >= 0 && lines[i]!.trimStart().startsWith("//")) out.unshift(lines[i]!.trim());
+  return out.join(" ");
+};
+
+// @spec DEPLOY-LINT-008
+test("tsconfig.base.json sets noImplicitReturns, and consistent-return stays off naming it as the check", () => {
+  assert.equal(base.compilerOptions.noImplicitReturns, true);
+  assert.equal(severity(rc.rules!["typescript/consistent-return"]!), "off");
+  assert.match(commentAbove("typescript/consistent-return"), /noImplicitReturns/);
+});
+
 const DISABLE = ["oxlint", "disable"].join("-");
 const ESLINT_DISABLE = ["eslint", "disable"].join("-");
 /** Lines of `text` holding an inline disable comment (oxlint's or eslint's) that is not one next-line rule with a `--` reason. */

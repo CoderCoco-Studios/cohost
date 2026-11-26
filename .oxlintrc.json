@@ -60,9 +60,9 @@
     // Off: block scoping and strict mode make a shadowed name a local choice; no-unused-vars catches the shadowed
     // binding that is never read.
     "eslint/no-shadow": "off",
-    // Off until `noImplicitReturns` is set (it is not; tsc does not check this today): the rule does not see TypeScript's
-    // exhaustiveness (a `switch` over a union that returns in every case) or a React effect that returns a cleanup on one
-    // path only. Turning on `noImplicitReturns` and revisiting this rule is a follow-up.
+    // Off: `noImplicitReturns` (tsconfig.base.json) is the check, and tsc sees exhaustiveness and calls that never return.
+    // What this rule reports beyond it is correct code: a `switch` over a union that returns in every case, a helper ending
+    // in `assert.fail`, a React effect that returns a cleanup on one path only, a hook that returns nothing to mean "unchanged".
     "typescript/consistent-return": "off",
     // Off: the text sanitizers (viewer text, secrets, tool output) match control characters on purpose.
     "eslint/no-control-regex": "off",

@@ -90,7 +90,7 @@ What it obliges downstream:
 - The loader merges `secrets.yaml`, rejects every `${VAR}` placeholder in `config.yaml`, and applies isolation overrides by key path from `COHOST_ISOLATION`, the only environment variable that can change a setting (config). A `config.yaml` that holds a placeholder fails the load of every process, the dashboard included, so the dashboard does not start; the owner fixes the file by hand, and the load error names each key.
 - Credentials reach a client only from `secrets.yaml`: a provider whose secret is not set is not configured, whatever the process environment holds, and no SDK default credential lookup is consulted (model-backends).
 - The settings editor edits every key the same way whatever form it has in the file, reports a key a running isolated unit overrides, and the schema route serves a presentation table, including which keys are sensitive, so the screen names every setting without hard-coding sections (module-contract).
-- A config write that changes where a secret-bearing request goes needs the control token in both control modes, like the secret write (dashboard, config).
+- A config key that changes where a secret-bearing request goes is marked `sensitive`, so the settings editor names it to the owner; a config write, like the secret write, needs the control token from any machine but the owner's (dashboard, config).
 - The `models` puller reads model names from config, not from `.env` (deployment).
 - The dashboard owns the write-only route for secrets and the port and upload-limit keys it reads from config (dashboard).
 

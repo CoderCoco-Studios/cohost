@@ -563,7 +563,7 @@ A reply the co-host speaks clause by clause is one line with one id: the id of i
 
 ## Tests
 
-Tests run from the repo root with `mise run test` (`node:test`; the root script builds first and globs `packages/*/test/*.test.ts`, so fixtures are not picked up directly). Redis integration tests auto-skip when no Redis answers at `REDIS_URL`.
+Tests run from the repo root with `mise run test` (`node:test`; the task builds first and globs `packages/*/test/*.test.ts`, so fixtures are not picked up directly). Redis integration tests auto-skip when no Redis answers at `REDIS_URL`.
 
 - `packages/bus/test/bus.test.ts`: pure schema tests (catalogue and shape checks for the region events, `service.heartbeat`, `service.lifecycle`, `control`, the injection flags, `inject.request`, `inject.result`, `avatar.state`, the playback events, `voice.stop`) and Redis integration tests (round trip, validate-before-write, handler-throw-is-acked, `recent` ordering and undecodable-skip, `tail`, `stop()` interrupting blocked reads, heartbeat routing, `recentHealth` / `tailHealth`, `resetGroup`).
 - Each integration test runs inside `scratch()`, which gives it its own stream pair through `streamPrefix` (BUS-STREAM-008): the test never reads or writes `cohost:events` or `cohost:health`, and the `finally` stops every bus and deletes the streams and their groups whether the body passed, failed or timed out. Waits are on `onReady`, on tails started from id `0`, or on `within`, which fails the test after a timeout, so a failure cannot hang the run.

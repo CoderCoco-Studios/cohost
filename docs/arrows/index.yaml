@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "147 specs: 99 [x], 48 [ ]. Per-project toolchains, Zig as the linker and the mise command surface (#344, design): DEPLOY-TOOL-001..018, DEPLOY-INST-015, -016, DEPLOY-CI-012 new; DEPLOY-IMG-001, -006, DEPLOY-INST-004, -007, -008, -009, -011, -012, -014, DEPLOY-CI-001..004, -006, -007, DEPLOY-SECRET-006, DEPLOY-REPO-002, -006, DEPLOY-HOST-001, -003..006 and DEPLOY-README-006 rewritten, all [ ] until the implementation PR. Still open besides: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "148 specs: 99 [x], 49 [ ]. Per-project toolchains, Zig as the linker and the mise command surface (#344, design): DEPLOY-TOOL-001..019, DEPLOY-INST-015, -016, DEPLOY-CI-012 new; DEPLOY-IMG-001, -006, DEPLOY-INST-004, -007, -008, -009, -011, -012, -014, DEPLOY-CI-001..004, -006, -007, DEPLOY-SECRET-006, DEPLOY-REPO-002, -006, DEPLOY-HOST-001, -003..006 and DEPLOY-README-006 rewritten, all [ ] until the implementation PR. Still open besides: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

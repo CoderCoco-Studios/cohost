@@ -102,4 +102,4 @@ None.
 
 ### Should Fix
 - Audit the example audio clients (EARS-EX-001..007), cited by the docs site's Extend pages.
-The desktop capture helper's capture back ends (libpulse, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the hardware checks under #231 (also listed on the manual live-check issue #330); EARS-SRC-016 follows when the helper writes frames.
+The desktop capture helper's capture back ends (the pure-Rust PulseAudio client, WASAPI loopback) are compiled but not run on hardware, so EARS-SRC-014, 018, 019 and 022 stay open until the hardware checks under #231 (also listed on the manual live-check issue #330); EARS-SRC-016 follows when the helper writes frames.

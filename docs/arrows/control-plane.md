@@ -86,7 +86,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Early-reply latency | CTRL-LAT-018 to CTRL-LAT-033 | 16 | 16 | 0 | 0 |
 | Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-017 | 3 | 3 | 0 | 0 |
 
-**Summary:** 113 specs: 109 implemented, 2 gaps (CTRL-RUNTIME-014, -015), 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 113 specs: 109 implemented, 2 gaps (CTRL-LAT-030, -031: the `perf:baseline` task of deployment #344), 2 deferred. The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

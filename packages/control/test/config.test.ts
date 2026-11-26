@@ -28,9 +28,9 @@ test("CONTROL_ADVANCED is set only by exactly 1; CONTROL_RUNTIME and CONTROL_PRO
 });
 
 // @spec CTRL-CONFIG-002
-test("isLoopback accepts localhost, ::1 and 127.x only", () => {
-  for (const h of ["localhost", "::1", "127.0.0.1", "127.9.9.9"]) assert.equal(isLoopback(h), true, h);
-  for (const h of ["0.0.0.0", "192.168.1.5", "::", "example.com"]) assert.equal(isLoopback(h), false, h);
+test("isLoopback accepts exactly localhost, ::1 and an IPv4 literal in 127.0.0.0/8; a name starting with 127. is not loopback", () => {
+  for (const h of ["localhost", "::1", "127.0.0.1", "127.0.0.2", "127.9.9.9", "127.255.255.255"]) assert.equal(isLoopback(h), true, h);
+  for (const h of ["0.0.0.0", "192.168.1.5", "::", "example.com", "127.example.com", "127.0.0.1.example.com", "127.0.0.256", "127.1", "localhost.example.com", "128.0.0.1"]) assert.equal(isLoopback(h), false, h);
 });
 
 // @spec CTRL-CONFIG-003

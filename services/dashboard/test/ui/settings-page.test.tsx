@@ -533,15 +533,15 @@ test("where control is disabled the banner names the units and the cohostctl com
 });
 
 // @spec DASH-SET-028, DASH-UI-006
-test("a sensitive key carries a note about other machines; on loopback its save goes out with no token and no Access dialog", async () => {
+test("a sensitive key carries a control-token note; with no token held its save goes out without one (an unlocked browser's cookie counts) and no Access dialog opens before a 401", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: [], warnings: [] } } } });
   const user = userEvent.setup();
-  assert.ok(within(row("url")).getByText(/Changing this from another machine needs the control token/));
+  assert.ok(within(row("url")).getByText(/Changing this needs the control token/));
   assert.equal(within(row("name")).queryByText(/needs the control token/), null);
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
   await user.click(bar("Save"));
   await settle();
-  assert.equal(b.app.rt.access.state.get().prompt, null, "no Access dialog on loopback");
+  assert.equal(b.app.rt.access.state.get().prompt, null, "no Access dialog without a 401");
   assert.equal(screen.queryByRole("dialog", { name: /access|token/i }), null);
   const sent = b.app.fetch.callsTo("PUT /config/demo");
   assert.equal(sent.length, 1);
@@ -550,7 +550,7 @@ test("a sensitive key carries a note about other machines; on loopback its save 
 });
 
 // @spec DASH-SET-028, DASH-UI-006
-test("from another machine a sensitive save answered 401 asks for the token naming the change, keeps the edits on Cancel and retries once unlocked", async () => {
+test("a sensitive save answered 401 asks for the token naming the change, keeps the edits on Cancel and retries once unlocked", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { status: 401, json: { ok: false, detail: "changing demo.url needs the control token", sensitive: ["demo.url"] } } } });
   const user = userEvent.setup();
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");

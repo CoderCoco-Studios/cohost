@@ -20,7 +20,7 @@ const OTHER = "tools.servers.ghost.token";
 const WITH_WEATHER = "tools:\n  servers:\n    weather:\n      url: https://api.example.com/mcp\n";
 const NO_SERVERS = "tools:\n  mode: live\n";
 
-async function boot(config: string | undefined = WITH_WEATHER, secrets?: string, tokenRequired = false) {
+async function boot(config: string | undefined = WITH_WEATHER, secrets?: string) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-tools-secrets-"));
   const configFile = join(dir, "config.yaml");
   if (config !== undefined) writeFileSync(configFile, config);
@@ -32,7 +32,7 @@ async function boot(config: string | undefined = WITH_WEATHER, secrets?: string,
   const sectionReaders = SERVICE_MANIFEST.filter((s) => s.config.includes("tools")).map((s) => s.id);
   const readers = SERVICE_MANIFEST.filter((s) => (s.secrets ?? []).includes("tools.servers.*.token")).map((s) => s.id);
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [...sectionReaders].toReversed().concat(["voice"]).map((service) => ({ service, status: "running" })) as never };
-  const handler = createDashboardHandler({ tokenRequired,
+  const handler = createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
@@ -149,8 +149,8 @@ test("a name that is not a server name of config (case, separators, extra segmen
 });
 
 // @spec DASH-SECRET-013, DASH-SECRET-014
-test("the token is gated as every secret write is, before the config is looked at: beyond loopback 401 for none or a wrong token, writing nothing", async () => {
-  const t = await boot(WITH_WEATHER, undefined, true);
+test("the token is gated as every secret write is, before the config is looked at: 401 for none or a wrong token, writing nothing", async () => {
+  const t = await boot();
   assert.equal((await t.put(`/secrets/${WEATHER}`, { value: "x" }, "")).status, 401);
   assert.equal((await t.put(`/secrets/${OTHER}`, { value: null }, "wrong")).status, 401);
   assert.equal(t.secretsText(), "");

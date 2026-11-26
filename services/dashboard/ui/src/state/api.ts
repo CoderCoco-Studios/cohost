@@ -97,8 +97,8 @@ export function createApi(deps: ApiDeps): Api {
     if (opts.token !== undefined) return once<T>(method, path, body, opts, opts.token);
     const kind = opts.auth;
     const action = opts.action ?? `${method} ${path}`;
-    // A request is sent with the token the page holds, or without one: only the server's 401 opens the Access dialog, so on a
-    // dashboard bound to loopback, where no route asks for the control token (DASH-CTRL-011), the dialog never opens.
+    // A request goes out with the token the page holds, or without one: a browser opened through the unlock link carries its
+    // session cookie, which stands in for the control token (DASH-CTRL-011), so only the server's 401 opens the Access dialog.
     const token = kind ? deps.access.getToken(kind) : undefined;
     const first = await once<T>(method, path, body, opts, token);
     if (first.ok || first.status !== 401 || !kind) return first;

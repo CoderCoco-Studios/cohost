@@ -14,7 +14,7 @@ type Screen = "live" | "services" | "viewers" | "settings";
 function boot(view: Screen = "live", control = true) {
   location.hash = view === "live" ? "" : `#${view}`;
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: control ? { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } : { enabled: false, tokenRequired: false } });
+  app.fetch.on("GET /services/control", { json: control ? { enabled: true, runtime: "compose", advanced: false, unlocked: false } : { enabled: false, unlocked: false } });
   app.fetch.on("POST /tools/answer", { status: 202, text: "" });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   renderApp(<App />, app);
@@ -183,7 +183,7 @@ test("Allow posts /tools/answer {id, allow: true} with the control token and Den
 });
 
 // @spec DASH-TOOL-005, DASH-TOOL-002, DASH-UI-006
-test("with no token held the answer is sent without one: on loopback it goes through with no Access dialog; a 401 from another machine asks for the token, and Cancel leaves the bar", async () => {
+test("with no token held the answer is sent without one: when it succeeds no Access dialog opens; a 401 asks for the token, and Cancel leaves the bar", async () => {
   for (const control of [true, false]) {
     const app = boot("live", control);
     skewed(app, 0);
@@ -193,7 +193,7 @@ test("with no token held the answer is sent without one: on loopback it goes thr
     await user.click(within(bar("c1")!).getByRole("button", { name: "Allow" }));
     await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1, `control ${control}: sent`));
     assert.equal(app.fetch.callsTo("POST /tools/answer")[0]!.headers.authorization, undefined);
-    assert.equal(app.rt.access.state.get().prompt, null, "no Access dialog on loopback");
+    assert.equal(app.rt.access.state.get().prompt, null, "no Access dialog without a 401");
     document.body.innerHTML = "";
   }
   const app = boot("live", true);

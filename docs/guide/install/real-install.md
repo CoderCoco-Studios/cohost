@@ -62,7 +62,7 @@ By the end of this page you will have the real stack running: a language model a
    mise run dashboard
    ```
 
-6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
+6. Open the unlock link the terminal prints (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`; it works once, within 10 minutes). It opens `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`) with this browser unlocked, so the dashboard never asks for the token. Or open `http://localhost:3000` yourself and enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks. Press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
 
 7. Press **Audio off** in the header (it then reads **Audio on**) so your browser may play sound.
 

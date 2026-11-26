@@ -5,14 +5,14 @@ import { act, fireEvent, screen, userEvent, waitFor, within } from "./helpers/re
 import { sampleFor } from "../../ui/src/screens/services/samples";
 import { UNITS, mountServices, push, svc } from "./services-fixtures";
 
-const ON = { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } as const;
+const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
 const rowOf = (name: string): HTMLElement => {
   const row = within(screen.getByRole("table", { name: "Services" })).getAllByRole("row").find((r) => within(r).queryByRole("rowheader", { name }) !== null);
   assert.ok(row !== undefined, `no row for ${name}`);
   return row;
 };
 const all = () => UNITS.map((u) => svc(u.id));
-const open = async (unit: string, control: typeof ON | { enabled: false, tokenRequired: false } = { enabled: false, tokenRequired: false }) => {
+const open = async (unit: string, control: typeof ON | { enabled: false, unlocked: false } = { enabled: false, unlocked: false }) => {
   const m = await mountServices({ control, services: all() });
   const opener = within(rowOf(unit)).getByRole("button", { name: `Test ${unit}` });
   await userEvent.setup().click(opener);
@@ -23,7 +23,7 @@ const frame = (type: string, data: Record<string, unknown>, id = `${type}-${Math
 
 // @spec MOD-TEST-001, DASH-UI-032
 test("a Test button shows on each manifest unit that declares test inputs, with control enabled or not, and nowhere else", async () => {
-  for (const control of [ON, { enabled: false, tokenRequired: false } as const]) {
+  for (const control of [ON, { enabled: false, unlocked: false } as const]) {
     const { unmount } = await mountServices({ control, services: [...all(), svc("dashboard"), svc("mystery")] });
     for (const u of UNITS) {
       const has = within(rowOf(u.id)).queryByRole("button", { name: `Test ${u.id}` }) !== null;
@@ -232,7 +232,7 @@ test("a refused isolated start is shown inside its dialog, which stays open; aft
 // @spec MOD-TEST-001, DASH-INJ-010
 test("the Discord connector's row opens a sheet with an audio form that posts to /inject/audio with its own target, and its inject.result shows in the live list", async () => {
   const connector = { ...UNITS[0]!, id: "connector-discord", test: { inputs: ["audio"], observe: ["inject.result"] } };
-  const m = await mountServices({ control: { enabled: false, tokenRequired: false }, manifest: [...UNITS, connector], services: [...all(), svc("connector-discord")] });
+  const m = await mountServices({ control: { enabled: false, unlocked: false }, manifest: [...UNITS, connector], services: [...all(), svc("connector-discord")] });
   const user = userEvent.setup();
   await user.click(within(rowOf("connector-discord")).getByRole("button", { name: "Test connector-discord" }));
   const sheet = screen.getByRole("dialog", { name: "Test connector-discord" });

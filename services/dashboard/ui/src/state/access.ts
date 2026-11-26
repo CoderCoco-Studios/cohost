@@ -29,6 +29,8 @@ export interface AccessState {
   panelOpen: boolean;
   /** Storage threw, so a token lives in memory for the page's life only (DASH-ACC-007). */
   memoryOnly: boolean;
+  /** This browser carries a session cookie from the unlock link, as `GET /services/control` last said (DASH-ACC-001, DASH-ACC-008). */
+  unlocked: boolean;
 }
 
 export interface AccessDeps {
@@ -51,6 +53,8 @@ export interface Access {
   /** Removes the token from both storages and memory. */
   lock(kind: TokenKind): void;
   markNotSetUp(kind: TokenKind, notSetUp: boolean): void;
+  /** Records whether this browser is unlocked by a session cookie (the `unlocked` of `GET /services/control`). */
+  markUnlocked(unlocked: boolean): void;
   /**
    * Asks the operator for a token for a waiting action. Resolves true once it is unlocked, false on Cancel. One prompt is
    * open at a time; requests for the same token share it, requests for the other token wait for it.
@@ -80,7 +84,7 @@ export function createAccess(deps: AccessDeps = {}): Access {
     if (scope) return { present: true, scope };
     return memory[kind] ? { present: true, scope: "tab" } : none();
   };
-  const state = createStore<AccessState>({ control: present("control"), viewers: present("viewers"), prompt: null, panelOpen: false, memoryOnly: false });
+  const state = createStore<AccessState>({ control: present("control"), viewers: present("viewers"), prompt: null, panelOpen: false, memoryOnly: false, unlocked: false });
   const refresh = (kind: TokenKind): void => state.set((s) => {
     const next = present(kind);
     return { ...s, [kind]: { ...next, ...(s[kind].notSetUp !== undefined ? { notSetUp: s[kind].notSetUp } : {}) } };
@@ -113,6 +117,7 @@ export function createAccess(deps: AccessDeps = {}): Access {
       state.set((s) => ({ ...s, [kind]: { ...none(), ...(s[kind].notSetUp !== undefined ? { notSetUp: s[kind].notSetUp } : {}) } }));
     },
     markNotSetUp: (kind, notSetUp) => state.set((s) => ({ ...s, [kind]: { ...s[kind], notSetUp } })),
+    markUnlocked: (unlocked) => state.set((s) => (s.unlocked === unlocked ? s : { ...s, unlocked })),
     ask(kind, action, opts = {}) {
       const shared = open.get(kind);
       if (shared) return shared;

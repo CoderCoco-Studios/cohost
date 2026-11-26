@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { request } from "node:http";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -104,7 +105,7 @@ const portFree = (port: number): Promise<boolean> => new Promise((resolve) => {
 
 /**
  * A config.yaml with a YAML syntax error, control enabled: the recovery screen's Stop runs `docker compose stop` through
- * `COHOST_DOCKER_BIN` (a script that records its argv) without a valid config, the raw editor reads and saves the file with no
+ * `COHOST_DOCKER_BIN` (a script that records its argv) without a valid config, the raw editor reads and saves the file with the
  * token, and the same process comes up normally on the port the saved text names. A file that does not parse names no port,
  * so recovery listens on the default 3000; the case is skipped when that port is taken on this machine.
  */
@@ -143,21 +144,24 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
   child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
   const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
   const base = "http://127.0.0.1:3000";
+  const auth = { authorization: "Bearer tok" };
   try {
     await until("the recovery line", async () => (/config recovery mode: 1 problem; fix them at http:\/\/127\.0\.0\.1:3000/.test(out) ? true : undefined));
     const s = await (await fetch(`${base}/recovery`)).json() as { problems: { kind: string; raw?: boolean }[] };
     assert.deepEqual(s.problems.map((p) => [p.kind, p.raw]), [["syntax", true]]);
 
-    const stop = await fetch(`${base}/stack/stop`, { method: "POST" }); // on loopback no token is asked for (DASH-CTRL-011)
+    assert.equal((await fetch(`${base}/stack/stop`, { method: "POST" })).status, 401);
+    const stop = await fetch(`${base}/stack/stop`, { method: "POST", headers: auth });
     assert.equal(stop.status, 200);
     assert.deepEqual(await stop.json(), { ok: true, action: "stop" });
     assert.equal(readFileSync(calls, "utf8"), "compose stop\n");
     assert.equal(existsSync(join(root, "data", "control.lock")), false, "the lifecycle lock, taken in the temp workspace root, is released");
 
-    const raw = await (await fetch(`${base}/recovery/raw?file=config`)).json() as { text: string; etag: string; message: string; line: number };
+    assert.equal((await fetch(`${base}/recovery/raw?file=config`)).status, 401);
+    const raw = await (await fetch(`${base}/recovery/raw?file=config`, { headers: auth })).json() as { text: string; etag: string; message: string; line: number };
     assert.equal(raw.text, broken);
     assert.match(raw.message, /^not valid YAML at line \d+, column \d+/);
-    const saved = await fetch(`${base}/recovery/raw`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ file: "config", etag: raw.etag, text: valid }) });
+    const saved = await fetch(`${base}/recovery/raw`, { method: "POST", headers: { ...auth, "content-type": "application/json" }, body: JSON.stringify({ file: "config", etag: raw.etag, text: valid }) });
     assert.equal(saved.status, 200);
     const body = await saved.json() as { valid: boolean; moved?: boolean; port?: number };
     assert.deepEqual([body.valid, body.moved, body.port], [true, true, port]);
@@ -178,57 +182,82 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
   }
 });
 
+/** A raw request, so `Cookie` and `Origin` go out as a browser sends them. */
+function raw(port: number, method: string, path: string, headers: Record<string, string> = {}, body?: unknown): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const req = request({ host: "127.0.0.1", port, method, path, headers: { ...(data ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(data)) } : {}), ...headers } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("error", reject);
+    req.end(data);
+  });
+}
+
 /**
- * The owner's case of issue #366: the stale config.yaml with control on and a token, the dashboard on loopback. The Access
- * dialog's token check answers in recovery mode (404 with the token, as on loopback for any value), Reset all fixes every key
- * with no token, and the same process comes up normally.
+ * The owner's case of issue #366: the stale config.yaml with control on and a token. The dashboard prints an unlock link to its
+ * terminal and never to its log file; the link unlocks the browser in recovery mode (the Access dialog's check passes with the
+ * cookie), Reset all fixes config.yaml with no token, the normal dashboard prints a fresh link, `dashboard:unlock` mints another,
+ * and a client with neither token nor cookie is refused.
  */
-// @spec DASH-RCV-022, DASH-RCV-003, DASH-RCV-007, DASH-CTRL-011, DASH-ACC-004
-test("the built dashboard in recovery mode with control on answers the Access dialog's check and fixes everything without a token", async () => {
-  const root = mkdtempSync(join(tmpdir(), "cohost-dash-rcv-ctl-"));
+// @spec DASH-UNL-001, DASH-UNL-003, DASH-UNL-007, DASH-RCV-003, DASH-RCV-022, DASH-CTRL-011
+test("the built dashboard prints an unlock link to the terminal only, and the link, Reset all and dashboard:unlock work without the token", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cohost-dash-unlock-"));
   const config = join(root, "config");
   const data = join(root, "data");
   mkdirSync(config);
   const [port, lanPort] = [await freePort(), await freePort()];
   const stale = readFileSync(join(repo, "services", "dashboard", "test", "fixtures", "stale-config.yaml"), "utf8");
   const configFile = join(config, "config.yaml");
-  const secretsFile = join(root, "secrets.yaml");
   writeFileSync(configFile, stale.replace(/^ {2}port: 3000$/m, `  port: ${port}\n  lan_port: ${lanPort}`));
-  const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], {
-    cwd: repo,
-    env: {
-      PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: secretsFile,
-      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const env = {
+    PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: join(root, "secrets.yaml"),
+    REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
+  };
+  const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
   let out = "";
   child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
   child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
   const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
-  const base = `http://127.0.0.1:${port}`;
-  const check = (token?: string) => fetch(`${base}/secrets/access-check`, {
-    method: "PUT", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ value: null }),
-  });
+  const LINK = new RegExp(`Unlock this browser: http://127\\.0\\.0\\.1:${port}(/unlock\\?n=[A-Za-z0-9_-]{43})`, "g");
+  const links = (): string[] => [...out.matchAll(LINK)].map((m) => m[1]!);
+  const same = { origin: `http://127.0.0.1:${port}` };
   try {
-    await until("the recovery line", async () => (/config recovery mode: \d+ problems/.test(out) ? true : undefined));
-    const control = await (await fetch(`${base}/services/control`)).json() as { enabled: boolean; tokenRequired: boolean };
-    assert.deepEqual([control.enabled, control.tokenRequired], [true, false]);
-    const ok = await check("tok");
-    assert.equal(ok.status, 404, "the Access dialog's check accepts the token in recovery mode");
-    assert.deepEqual(await ok.json(), { ok: false, detail: "unknown secret" });
-    assert.equal((await check()).status, 404, "on loopback no token is required");
+    await until("the recovery unlock line", async () => (links().length >= 1 ? true : undefined));
+    const first = links()[0]!;
+    const opened = await raw(port, "GET", first);
+    assert.equal(opened.status, 303);
+    const cookie = String((opened.headers["set-cookie"] as string[])[0]).split(";")[0]!;
+    assert.equal((await raw(port, "GET", first)).status, 400, "single use");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", { cookie, ...same }, { value: null })).status, 404, "the Access dialog's check passes with the cookie");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", {}, { value: null })).status, 401, "a client with neither token nor cookie is refused");
 
-    const s = await (await fetch(`${base}/recovery`)).json() as { etag: string };
-    const res = await fetch(`${base}/recovery/reset-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ etag: s.etag }) });
-    assert.equal(res.status, 200, "Reset all needs no token on loopback, with control on");
-    const body = await res.json() as { valid: boolean; problems: unknown[] };
-    assert.equal(body.valid, true, JSON.stringify(body.problems));
-    assert.deepEqual(checkConfig({ configFile, secretsFile }), []);
-    await until("the stack route", async () => ((await fetch(`${base}/stack`)).status === 200 ? true : undefined));
+    const s = JSON.parse((await raw(port, "GET", "/recovery")).text) as { etag: string };
+    const res = await raw(port, "POST", "/recovery/reset-all", {}, { etag: s.etag });
+    assert.equal(res.status, 200, "Reset all needs no token on loopback");
+    assert.equal((JSON.parse(res.text) as { valid: boolean }).valid, true);
+
+    await until("the normal dashboard's unlock line", async () => (links().length >= 2 ? true : undefined));
+    assert.equal((await raw(port, "PUT", "/secrets/x", {}, { value: "v" })).status, 401, "normal mode: no token, no cookie, refused");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", { cookie, ...same }, { value: null })).status, 404, "the session holds across the switch to normal mode");
+
+    const cli = spawnSync(process.execPath, [join(repo, "services", "dashboard", "dist", "unlock-link.js")], { cwd: repo, env, encoding: "utf8" });
+    assert.equal(cli.status, 0, cli.stderr);
+    const fresh = /\/unlock\?n=[A-Za-z0-9_-]{43}/.exec(cli.stdout)?.[0];
+    assert.ok(fresh, cli.stdout);
+    assert.equal((await raw(port, "GET", fresh)).status, 303, "dashboard:unlock's link unlocks");
+
+    const logged = readFileSync(join(data, "logs", "dashboard.log"), "utf8");
+    for (const l of [...links(), fresh]) assert.ok(!logged.includes(l.split("n=")[1]!), "no nonce in the log file");
+    assert.doesNotMatch(logged, /Unlock this browser/);
   } finally {
     child.kill("SIGTERM");
     const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 15_000))]);
     if (code === "timeout") child.kill("SIGKILL");
   }
+  const down = spawnSync(process.execPath, [join(repo, "services", "dashboard", "dist", "unlock-link.js")], { cwd: repo, env, encoding: "utf8" });
+  assert.equal(down.status, 1);
+  assert.match(down.stderr, /not running/);
 });

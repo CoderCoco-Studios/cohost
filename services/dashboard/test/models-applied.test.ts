@@ -14,7 +14,7 @@ const served = async (r: Rig): Promise<Buffer | null> => { const x = await r.get
 
 // @spec DASH-MDL-033
 test("DELETE is a 404 on the LAN listener and checks Host, Origin, token, name, applied model in that order, with no slot or size check", async (t) => {
-  const r = await rig(t, { control: true, remote: true, seed: { "Aiko.vrm": model("a"), "Active.vrm": model("act") }, renderer: { model: "Active.vrm" } });
+  const r = await rig(t, { control: true, seed: { "Aiko.vrm": model("a"), "Active.vrm": model("act") }, renderer: { model: "Active.vrm" } });
   assert.equal((await send(r.lanPort, "DELETE", "/avatar/models/Aiko.vrm", { headers: r.auth })).status, 404);
   assert.equal((await send(r.port, "DELETE", "/avatar/models/Aiko.vrm", { headers: { ...r.auth, host: "evil.example", origin: "http://evil.example" } })).status, 403, "Host");
   assert.equal((await send(r.port, "DELETE", "/avatar/models/Aiko.vrm", { headers: { ...r.auth, origin: "http://evil.example" } })).status, 403, "Origin before token");

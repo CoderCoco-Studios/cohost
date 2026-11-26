@@ -50,11 +50,9 @@ test("POST /avatar/models is a 404 on the LAN listener and stores nothing", asyn
   assert.equal((await up(r, "?name=Aiko.vrm", model("a"))).status, 201, "the same request on the full surface is served");
 });
 
-// @spec DASH-MDL-016, DASH-CTRL-011
-test("beyond loopback it needs the bearer token; on a loopback full surface it is open in either control mode; a foreign Origin is refused", async (t) => {
-  const local = await rig(t, { control: true });
-  assert.equal((await send(local.port, "POST", "/avatar/models?name=L.vrm", { headers: { authorization: "Bearer wrong" }, body: model("l") })).status, 201);
-  const on = await rig(t, { control: true, remote: true });
+// @spec DASH-MDL-016
+test("with control on it needs the bearer token; with it off a loopback full surface is open; a foreign Origin is refused", async (t) => {
+  const on = await rig(t, { control: true });
   assert.equal((await send(on.port, "POST", "/avatar/models?name=A.vrm", { body: model("a") })).status, 401);
   assert.equal((await send(on.port, "POST", "/avatar/models?name=A.vrm", { headers: { authorization: "Bearer wrong" }, body: model("a") })).status, 401);
   assert.deepEqual(on.ls(), []);
@@ -71,7 +69,7 @@ test("beyond loopback it needs the bearer token; on a loopback full surface it i
 
 // @spec DASH-MDL-017
 test("the checks run in order, each answering alone and reading no body byte after it: Host, Origin, token, Content-Length, name, slot, collision, limit", async (t) => {
-  const r = await rig(t, { control: true, remote: true, maxBytes: MiB, seed: { "Aiko.vrm": model("a") } });
+  const r = await rig(t, { control: true, maxBytes: MiB, seed: { "Aiko.vrm": model("a") } });
   const answers = async (query: string, headers: Record<string, string>, expected: number, why: string) => {
     const h = open(r.port, "POST", `/avatar/models${query}`, headers);
     h.write(Buffer.alloc(100, 1)); // a body that never finishes: the answer must come without it

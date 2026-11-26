@@ -46,7 +46,7 @@ test("saving a secret sends PUT /secrets/<path> with the control token, never sh
 });
 
 // @spec DASH-SET-009, DASH-SECRET-003, DASH-UI-006
-test("a secret write with no token held is sent without one; on loopback it saves with no Access dialog", async () => {
+test("a secret write with no token held is sent without one (an unlocked browser's cookie counts) and opens no Access dialog when it succeeds", async () => {
   const b = await open("demo", { routes: { "PUT /secrets/demo.api_key": { json: { ok: true, set: true, restart: [] } } } });
   const user = userEvent.setup();
   await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");
@@ -59,7 +59,7 @@ test("a secret write with no token held is sent without one; on loopback it save
 });
 
 // @spec DASH-SET-009, DASH-SECRET-003, DASH-UI-006
-test("from another machine a secret write answered 401 asks for the control token through the Access dialog, and writes nothing more on Cancel", async () => {
+test("a secret write answered 401 asks for the control token through the Access dialog, and writes nothing more on Cancel", async () => {
   const b = await open("demo", { routes: { "PUT /secrets/demo.api_key": { status: 401, json: { ok: false, detail: "unauthorized" } } } });
   const user = userEvent.setup();
   await user.type(within(row("api_key")).getByLabelText("Api key"), "abc");

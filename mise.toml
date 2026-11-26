@@ -159,6 +159,11 @@ run = [
   "node services/dashboard/dist/index.js",
 ]
 
+[tasks."dashboard:unlock"]
+description = "Print a fresh unlock link for the running dashboard (asks it with CONTROL_TOKEN from .env)"
+depends = ["build:native"]
+run = ["tsc -b services/dashboard", "node services/dashboard/dist/unlock-link.js"]
+
 [tasks."dashboard:ui"]
 description = "Run the dashboard UI's Vite dev server"
 # The UI imports @cohost/shared's dist/, and the dev server's proxy loads @cohost/config's dist/.

@@ -89,6 +89,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
       ) : null}
       <p className="help">{UNLOCKS[kind]}</p>
       <p className="help">The value of <code>{env}</code> in the <code>.env</code> file on the machine that runs cohost.</p>
+      {kind === "control" ? <p className="help">Or open the unlock link printed in the terminal running <code>mise run dashboard</code> (a fresh one: <code>mise run dashboard:unlock</code>): it unlocks this browser without the token.</p> : null}
 
       <div>
         <label className="label" htmlFor={`${id}-field`}>{label}</label>

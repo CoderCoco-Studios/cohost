@@ -152,6 +152,14 @@ test("on its own port the page names the address it waits for after ten unanswer
   await screen.findByText(/Still waiting for the dashboard at http:\/\/localhost:3000\//);
 });
 
+// @spec DASH-RCV-013
+test("reset-all without the token says which secrets.yaml keys wait for it", async () => {
+  const b = open();
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e2", problems: PROBLEMS.slice(3), valid: false, tokenNeeded: ["voice.openai.api_key"] } });
+  await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
+  await screen.findByText(/voice\.openai\.api_key in secrets\.yaml need the control token/);
+});
+
 // @spec DASH-RCV-013, DASH-RCV-023
 test("Use <fallback> sends POST /recovery/fallback with the row's path and no value, and the rows follow the answer", async () => {
   const b = open();
@@ -161,7 +169,7 @@ test("Use <fallback> sends POST /recovery/fallback with the row's path and no va
   assert.deepEqual(JSON.parse(b.app.fetch.callsTo("POST /recovery/fallback")[0]!.body!), { etag: "e1", path: "cohost.name" });
   assert.equal(b.app.fetch.callsTo("POST /recovery/set").length, 0);
   assert.equal(b.app.fetch.callsTo("POST /recovery/fallback")[0]!.headers.authorization, undefined, "no token held, none sent");
-  assert.equal(b.app.rt.access.state.get().prompt, null, "no Access dialog on loopback");
+  assert.equal(b.app.rt.access.state.get().prompt, null, "no Access dialog before a 401");
   await waitFor(() => assert.equal(screen.queryByRole("button", { name: "Use Mika" }), null));
 });
 
@@ -238,13 +246,13 @@ test("editing secrets.yaml as text asks for the control token on a 401", async (
 // @spec DASH-RCV-021
 test("Stop the stack is offered only with control enabled, and reports its result", async () => {
   const off = open();
-  off.app.fetch.on("GET /services/control", { json: { enabled: false, tokenRequired: false } });
+  off.app.fetch.on("GET /services/control", { json: { enabled: false, unlocked: false } });
   await waitFor(() => assert.ok(off.app.fetch.callsTo("GET /services/control").length >= 1));
   assert.equal(screen.queryByRole("button", { name: "Stop the stack" }), null);
   off.unmount();
 
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } });
+  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: false } });
   renderApp(<RecoveryScreen initial={STATE} reload={() => {}} navigate={() => {}} probe={async () => {}} here={HERE} pollMs={5} />, app);
   const stop = await screen.findByRole("button", { name: "Stop the stack" });
   app.fetch.on("POST /stack/stop", { status: 502, json: { ok: false, detail: "Cannot connect to the Docker daemon" } });

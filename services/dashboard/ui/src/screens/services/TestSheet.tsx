@@ -79,7 +79,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       return r;
     }, (d) => `Sent text (id ${d.id}), waiting for its result…`);
   };
-  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. It is gated like every mutation: the token only from another machine, asked for on a 401.
+  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. The route is token-gated whether or not control mode is on; the token (or this browser's unlock session) is asked for on a 401.
   // @spec MOD-MAN-010, MOD-TEST-005, DASH-INJ-011
   const sendTool = () => {
     const tool = toolRef.current?.value.trim() ?? "";

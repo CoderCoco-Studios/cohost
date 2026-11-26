@@ -28,7 +28,7 @@ async function rig(text: string, o: Partial<RecoveryHandlerDeps> & { secrets?: s
   let valid = 0;
   const line = (level: string) => (...a: unknown[]) => { logs.push(`${level} ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); };
   const log = { info: line("info"), error: line("error") } as never;
-  const handler = createRecoveryHandler({ log, files: { configFile, secretsFile }, controlEnabled: false, tokenRequired: !!o.controlEnabled, uiDir: join(dir, "no-ui"), onValid: () => { valid++; }, ...o });
+  const handler = createRecoveryHandler({ log, files: { configFile, secretsFile }, controlEnabled: false, uiDir: join(dir, "no-ui"), onValid: () => { valid++; }, ...o });
   const server = http.createServer(handler);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -100,8 +100,8 @@ test("GET /recovery/raw gives config.yaml's text, etag and the parser's position
     assert.ok(typeof body.line === "number" && typeof body.col === "number");
     assert.match(body.message, new RegExp(`line ${body.line}, column ${body.col}`));
     assert.equal((await getRaw(r, "other")).status, 400);
-    const noSyntax = await getRaw(r, "secrets");
-    assert.equal(noSyntax.status, 409, "on loopback no token is asked for; secrets.yaml parses, so there is no text to edit");
+    const noSyntax = await getRaw(r, "secrets", auth);
+    assert.equal(noSyntax.status, 403, "no token configured: the secrets text is refused before anything else");
   } finally { await r.close(); }
   const ok = await rig(EXAMPLE.replace(/^ {2}name: "Coco"/m, '  name: "${NAME}"'));
   try {
@@ -112,30 +112,22 @@ test("GET /recovery/raw gives config.yaml's text, etag and the parser's position
   } finally { await ok.close(); }
 });
 
-// @spec DASH-RCV-018, DASH-RCV-003, DASH-CTRL-011
-test("secrets.yaml text: open on loopback in either control mode; beyond loopback only with the control token, and never in a refusal", async () => {
-  for (const o of [{ controlEnabled: false }, { controlEnabled: false, controlToken: "tok" }, { controlEnabled: true, controlToken: "tok", tokenRequired: false }]) {
-    const local = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, ...o });
+// @spec DASH-RCV-018
+test("secrets.yaml text is read only with the control token, in both control modes, and never appears in a refusal", async () => {
+  for (const controlEnabled of [false, true]) {
+    const none = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, controlEnabled: false });
     try {
-      const res = await getRaw(local, "secrets", { authorization: "Bearer nope" });
-      assert.equal(res.status, 200, JSON.stringify(o));
-      assert.equal(((await res.json()) as Raw).text, BROKEN_SECRETS);
-    } finally { await local.close(); }
-  }
-  const none = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, tokenRequired: true });
-  try {
-    const res = await getRaw(none, "secrets", auth);
-    assert.equal(res.status, 403);
-    const text = await res.text();
-    assert.match(text, /CONTROL_TOKEN/);
-    assert.ok(!text.includes(SECRET));
-  } finally { await none.close(); }
-  {
-    const r = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, controlEnabled: true, controlToken: "tok" });
+      const res = await getRaw(none, "secrets", auth);
+      assert.equal(res.status, 403);
+      const text = await res.text();
+      assert.match(text, /CONTROL_TOKEN/);
+      assert.ok(!text.includes(SECRET));
+    } finally { await none.close(); }
+    const r = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, controlEnabled, controlToken: "tok" });
     try {
       for (const headers of [{}, { authorization: "Bearer nope" }] as Record<string, string>[]) {
         const res = await getRaw(r, "secrets", headers);
-        assert.equal(res.status, 401, JSON.stringify(headers));
+        assert.equal(res.status, 401, `control ${controlEnabled}`);
         assert.equal(res.headers.get("www-authenticate"), "Bearer");
         assert.ok(!(await res.text()).includes(SECRET));
       }
@@ -148,8 +140,8 @@ test("secrets.yaml text: open on loopback in either control mode; beyond loopbac
   }
 });
 
-// @spec DASH-RCV-018, DASH-RCV-003, DASH-CTRL-011
-test("config.yaml raw access: the token beyond loopback, read or write; open on loopback whatever is configured", async () => {
+// @spec DASH-RCV-018
+test("config.yaml raw access: the token whenever one is configured, read or write; open only with control off and no token", async () => {
   const on = await rig(BROKEN, { controlEnabled: true, controlToken: "tok" });
   try {
     assert.equal((await getRaw(on, "config")).status, 401);
@@ -157,13 +149,19 @@ test("config.yaml raw access: the token beyond loopback, read or write; open on 
     assert.equal(readFileSync(on.configFile, "utf8"), BROKEN);
     assert.equal((await getRaw(on, "config", auth)).status, 200);
   } finally { await on.close(); }
-  const local = await rig(BROKEN, { controlEnabled: true, controlToken: "tok", tokenRequired: false });
+  const tokenOff = await rig(BROKEN, { controlToken: "tok" });
   try {
-    const read = await getRaw(local, "config");
-    assert.equal(read.status, 200, "on loopback a configured token gates nothing");
-    assert.equal((await putRaw(local, { file: "config", etag: etagOf(BROKEN), text: EXAMPLE })).status, 200);
-    assert.equal(readFileSync(local.configFile, "utf8"), EXAMPLE);
-  } finally { await local.close(); }
+    const read = await getRaw(tokenOff, "config");
+    assert.equal(read.status, 401, "a configured token gates the read too");
+    assert.equal(read.headers.get("www-authenticate"), "Bearer");
+    assert.ok(!(await read.text()).includes("[Coco"), "no text without the token");
+    assert.equal((await getRaw(tokenOff, "config", auth)).status, 200);
+    const res = await putRaw(tokenOff, { file: "config", etag: etagOf(BROKEN), text: EXAMPLE });
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("www-authenticate"), "Bearer");
+    assert.equal(readFileSync(tokenOff.configFile, "utf8"), BROKEN, "a refused write changes nothing");
+    assert.equal((await putRaw(tokenOff, { file: "config", etag: etagOf(BROKEN), text: EXAMPLE }, auth)).status, 200);
+  } finally { await tokenOff.close(); }
 });
 
 // @spec DASH-RCV-017, DASH-RCV-009, DASH-RCV-011, DASH-RCV-012, DASH-RCV-015
@@ -229,14 +227,14 @@ test("a raw write is refused for a file without a syntax error, for a malformed 
 });
 
 // @spec DASH-RCV-017, DASH-RCV-018, DASH-RCV-015
-test("a raw write of secrets.yaml needs the token beyond loopback, goes through a symbolic link with mode 0600, and never logs the text", async () => {
-  const none = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, tokenRequired: true });
+test("a raw write of secrets.yaml needs the token, goes through a symbolic link with mode 0600, and never logs the text", async () => {
+  const none = await rig(EXAMPLE, { secrets: BROKEN_SECRETS });
   try {
     const res = await putRaw(none, { file: "secrets", etag: etagOf(BROKEN_SECRETS), text: "" });
     assert.equal(res.status, 403);
     assert.equal(readFileSync(none.secretsFile, "utf8"), BROKEN_SECRETS);
   } finally { await none.close(); }
-  const r = await rig(EXAMPLE, { controlEnabled: true, controlToken: "tok" });
+  const r = await rig(EXAMPLE, { controlToken: "tok" });
   try {
     const target = join(r.dir, "real-secrets.yaml");
     writeFileSync(target, BROKEN_SECRETS, { mode: 0o644 });

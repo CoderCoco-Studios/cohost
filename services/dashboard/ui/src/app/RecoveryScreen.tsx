@@ -27,7 +27,7 @@ export interface RecoveryProblem {
 /** `GET /recovery` in recovery mode. */
 export interface RecoveryState { active: true; file: string; secretsFile: string; etag: string; problems: RecoveryProblem[] }
 
-type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; rawEtag?: string };
+type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; tokenNeeded?: string[]; rawEtag?: string };
 
 /** `GET /recovery/raw`: a file that does not parse, as text (DASH-RCV-016). */
 interface RawText { ok: true; file: RecoveryProblem["file"]; path: string; text: string; etag: string; message: string; line?: number; col?: number }
@@ -97,6 +97,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [tokenNeeded, setTokenNeeded] = useState<string[]>([]);
   // Set once the files are valid: the port the normal dashboard moves to, when the server says it moves (else it comes up here).
   const [valid, setValid] = useState<{ port?: number } | null>(null);
   const [misses, setMisses] = useState(0);
@@ -150,6 +151,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     if (r.ok) {
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
+      setTokenNeeded(r.data.tokenNeeded ?? []);
       if (r.data.valid) setValid(movedTo(r.data));
       return;
     }
@@ -181,6 +183,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     if (r.ok) {
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
+      setTokenNeeded(r.data.tokenNeeded ?? []);
       const still = r.data.problems.find((p) => p.file === edit.file && p.raw);
       setRaw(still ? { ...edit, etag: r.data.rawEtag ?? edit.etag, message: still.message } : null);
       if (r.data.valid) setValid(movedTo(r.data));
@@ -228,6 +231,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
         {errors.all ? <Banner tone="bad">{errors.all}</Banner> : null}
         {errors.stop ? <Banner tone="bad">{errors.stop}</Banner> : null}
         {stopped ? <Banner tone="ok">The stack is stopped.</Banner> : null}
+        {tokenNeeded.length ? <Banner tone="warn">The keys in config.yaml are fixed. {tokenNeeded.join(", ")} in secrets.yaml need the control token: use the button on {tokenNeeded.length === 1 ? "its row" : "their rows"} and enter the token when the page asks.</Banner> : null}
         <ul className="recovery-list" aria-label="Failing keys">
           {state.problems.map((p, i) => {
             const key = `${p.file}:${p.path}:${i}`;

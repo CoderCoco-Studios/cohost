@@ -9,7 +9,7 @@ import { StackService } from "../src/stack.js";
 function start(control?: DashboardDeps["control"]) {
   const bus = new FakeBus();
   const rec = recordingLog();
-  const server = http.createServer(createDashboardHandler({ tokenRequired: !!control,
+  const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "", savePersonality: () => {}, services: () => new HealthTracker().snapshot(),
     stack: new StackService({ log: rec.log, bus: () => "connected" }), control,

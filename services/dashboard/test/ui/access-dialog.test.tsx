@@ -361,19 +361,27 @@ test("the Access panel lists both tokens with their state and what they unlock, 
 });
 
 // @spec DASH-ACC-008, DASH-CTRL-007
-test("the control token's entry says no token is needed from this machine when the dashboard needs none, and says nothing of it otherwise", async () => {
-  const local = makeApp();
-  local.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } });
-  const a = mount(local);
-  act(() => local.rt.access.openPanel());
-  await within(within(dlg()).getByRole("group", { name: "Control token" })).findByText(/No control token is needed from this machine/);
+test("a browser unlocked by the unlock link shows the control token as Unlocked (this browser); without the session it is Locked", async () => {
+  const unlocked = makeApp();
+  unlocked.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  const a = mount(unlocked);
+  act(() => unlocked.rt.access.openPanel());
+  await within(within(dlg()).getByRole("group", { name: "Control token" })).findByText("Unlocked (this browser)");
   a.unmount();
-  const remote = makeApp();
-  remote.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, tokenRequired: true } });
-  mount(remote);
-  act(() => remote.rt.access.openPanel());
+  const locked = makeApp();
+  locked.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: false } });
+  mount(locked);
+  act(() => locked.rt.access.openPanel());
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  assert.doesNotMatch(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /No control token is needed/);
+  assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Locked/);
+});
+
+// @spec DASH-ACC-003
+test("the control token's dialog points at the unlock link printed in the terminal", async () => {
+  const { app } = mount();
+  void ask(app, "control");
+  await within(dlg()).findByText(/unlock link printed in the terminal running/);
+  assert.match(dlg().textContent!, /mise run dashboard:unlock/);
 });
 
 // @spec DASH-ACC-007, DASH-ACC-008

@@ -14,12 +14,16 @@ import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners, type FeedConnection } from "./host.js";
 import { createAvatarRelay, systemClock, type Clock } from "./avatar-relay.js";
+import { unlockBase, unlockLine, UnlockLinks } from "./access.js";
+import { printToTerminal } from "./recovery.js";
 
 /** What the dashboard's `main` takes from outside, so a test can run it without a process env, signals or an exit. */
 export interface DashboardDeps {
   env?: NodeJS.ProcessEnv;
   /** Called when a listener cannot bind; default exits the process. */
   exit?: (code: number) => void;
+  /** Writes the unlock line to the terminal (DASH-UNL-001); standard output by default, never the logger. */
+  print?: (line: string) => void;
   /** The LAN listener's address; default all interfaces. */
   lanHost?: string;
   /** Gives the stack service its controller; default the Compose-backed one. */
@@ -50,7 +54,9 @@ export function dashboardService(deps: DashboardDeps = {}) {
       // @spec DASH-SINK-004
       const VOICE = urls.voice();
       // @spec DASH-CTRL-003, DASH-HOST-007
-      const { control, bind, tokenRequired } = setupControl(env, bus, log);
+      const { control, bind } = setupControl(env, bus, log);
+      const controlToken = controlTokenFromEnv(env);
+      const links = new UnlockLinks();
 
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
@@ -76,7 +82,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const models = { store, applied, maxBytes: cfg.dashboard.models.max_bytes };
       // @spec DASH-AVR-001, DASH-AVR-011, DASH-AVR-021
       const relay = createAvatarRelay({ bus, applied, clock: deps.clock ?? systemClock, log });
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), tokenRequired, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken, unlock: links, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
       const redacted = new WeakSet(); // sockets that arrived beyond loopback (DASH-FEED-011)
@@ -91,7 +97,9 @@ export function dashboardService(deps: DashboardDeps = {}) {
       if (!listeners) relay.stop(); // a listener that could not bind leaves nothing running
       if (listeners) {
         heartbeat.ready(); // only once both listeners are listening
-        if (control) log.info(tokenRequired ? "stack controls are enabled: from another machine the page asks for CONTROL_TOKEN from .env" : "stack controls are enabled: no token is needed on this machine; CONTROL_TOKEN in .env is for other machines");
+        // @spec DASH-UNL-001
+        if (controlToken !== undefined) (deps.print ?? printToTerminal)(unlockLine(unlockBase(bind, listeners.fullPort), links.issue()));
+        if (control) log.info("stack controls are enabled: open the unlock link printed in this terminal, or paste CONTROL_TOKEN from .env when the page asks");
         stack.start();
       }
     },

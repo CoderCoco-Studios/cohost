@@ -6,13 +6,14 @@ import type { TokenKind } from "../../state/types";
 import { TokenForm } from "./TokenForm";
 import { SETUP_WHY, TOKEN_LABEL, UNLOCKS } from "./text";
 
-function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSetUp?: boolean }): string {
+function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSetUp?: boolean }, session: boolean): string {
   if (t.notSetUp) return "Not set up on the server"; // a token kept in this browser means nothing while the server has none
   if (t.present) return `Unlocked · ${t.scope === "browser" ? "this browser" : "this tab"}`;
+  if (session) return "Unlocked (this browser)"; // the unlock link's session cookie (DASH-ACC-008)
   return "Locked";
 }
 
-function TokenRow({ kind, local }: { kind: TokenKind; /** The dashboard says no control token is needed from this machine. */ local?: boolean }) {
+function TokenRow({ kind }: { kind: TokenKind }) {
   const { state, access } = useAccess();
   const api = useApi();
   const [changing, setChanging] = useState(false);
@@ -20,9 +21,8 @@ function TokenRow({ kind, local }: { kind: TokenKind; /** The dashboard says no 
   const label = TOKEN_LABEL[kind];
   return (
     <div role="group" aria-label={label} className="token-row">
-      <div className="row"><strong>{label}</strong><span className={`tag ${t.present && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t)}</span></div>
+      <div className="row"><strong>{label}</strong><span className={`tag ${(t.present || (kind === "control" && state.unlocked)) && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t, kind === "control" && state.unlocked)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
-      {local ? <p className="help">No control token is needed from this machine: the dashboard listens on loopback only. The token is for other machines, once DASHBOARD_HOST opens the dashboard to them.</p> : null}
       {kind === "viewers" && t.notSetUp && !changing ? (
         <>
           <p className="help">{SETUP_WHY}</p>
@@ -45,22 +45,22 @@ function TokenRow({ kind, local }: { kind: TokenKind; /** The dashboard says no 
 
 /**
  * The Access panel: both tokens with their state (Unlocked with its storage scope, Locked, or Not set up on the server),
- * what each unlocks, and Change token and Lock (DASH-ACC-008); when `GET /services/control` says the token is not required
- * (a loopback bind, DASH-CTRL-011), the control token's entry says no token is needed from this machine.
+ * what each unlocks, and Change token and Lock; a browser unlocked by the unlock link shows the control token as "Unlocked (this
+ * browser)" (DASH-ACC-008).
  */
 // @spec DASH-ACC-008, DASH-ACC-007
 export function TokenPanel() {
-  const { state } = useAccess();
+  const { state, access } = useAccess();
   const api = useApi();
-  const [local, setLocal] = useState(false);
+  // Whether this browser is unlocked by the unlock link's session cookie, which the page cannot read (HttpOnly).
   useEffect(() => {
     let live = true;
-    void api.controlInfo().then((r) => { if (live && r.ok) setLocal(!r.data.tokenRequired); });
+    void api.controlInfo().then((r) => { if (live && r.ok) access.markUnlocked(r.data.unlocked); });
     return () => { live = false; };
-  }, [api]);
+  }, [api, access]);
   return (
     <div className="token-panel">
-      <TokenRow kind="control" local={local} />
+      <TokenRow kind="control" />
       <TokenRow kind="viewers" />
       {state.memoryOnly ? <p className="help">Storage is blocked in this browser, so tokens are kept in memory and you will be asked again after a reload.</p> : null}
     </div>

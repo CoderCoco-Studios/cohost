@@ -46,8 +46,8 @@ export interface FeedEvent {
 
 /** The `GET /services/control` answer. */
 export type ControlInfo = ({ enabled: false } | { enabled: true; runtime: string; advanced: boolean }) & {
-  /** True when the full surface is bound beyond loopback: only then does a gated request need the control token (DASH-CTRL-011). */
-  tokenRequired: boolean;
+  /** The request carried a valid session cookie: this browser was unlocked by the unlock link (DASH-CTRL-007). */
+  unlocked: boolean;
 };
 
 /** The `GET /services/manifest` unit descriptors (only what the shell and screens read). */

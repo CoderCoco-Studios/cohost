@@ -1,11 +1,11 @@
 import type http from "node:http";
+import { authorized } from "./access.js";
 import { readFileSync } from "node:fs";
 import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, secretsPath, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
 import type { ServiceDef } from "@cohost/control";
-import { NO_TOKEN_DETAIL, tokenRefusal, type TokenGate } from "./access.js";
 import { modelIssue, type AppliedView, type Framing, type Loadable } from "./applied.js";
 import type { ModelStore } from "./models.js";
-import { changedSensitiveKeys } from "./sensitive.js";
+import { changedSensitiveKeys, noTokenDetail } from "./sensitive.js";
 import type { StackSnapshot } from "./stack.js";
 
 export interface SettingsDeps {
@@ -16,10 +16,12 @@ export interface SettingsDeps {
   manifest: readonly ServiceDef[];
   /** The latest stack status. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
+  /** True when `CONTROL_ENABLED=1`: every `PUT /config/:section` then needs the control token (DASH-CTRL-004). */
   /** The operator's secrets file (`secrets/secrets.yaml`), for which secrets are set. Defaults to the loader's `secretsPath()`. */
   secretsFile?: () => string;
-  /** Who must present the control token: every `PUT /config/:section` needs it where it is required (DASH-CTRL-004, DASH-CTRL-011). */
-  gate: TokenGate;
+  controlMode?: boolean;
+  /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
+  controlToken?: string;
   /** The request body as text, capped at 64 KiB (throws past the cap). */
   body: (req: http.IncomingMessage) => Promise<string>;
   /** The model store and the applied view a save of `renderer` checks and sets (DASH-MDL-037, DASH-AVR-024). */
@@ -87,17 +89,15 @@ async function sensitiveInBody(d: SettingsDeps, req: http.IncomingMessage, secti
   } catch { return []; }
 }
 
-/**
- * The refusal of a save without the control token where it is required: 403 when none is configured, else 401 with
- * `www-authenticate: Bearer`; a save that changes sensitive keys names them, the paths, never the values (DASH-CTRL-009).
- */
-function refuseSave(res: http.ServerResponse, refusal: "none" | "wrong", sensitive: string[]): void {
+/** 401 for a missing or wrong token, 403 when no control token is configured at all; the paths, never the values. */
+function refuseSensitive(res: http.ServerResponse, token: string | undefined, sensitive: string[]): void {
   const keys = sensitive.join(", ");
-  const named = sensitive.length ? { sensitive } : {};
-  if (refusal === "none") { json(res, 403, { ok: false, detail: NO_TOKEN_DETAIL, ...named }); return; }
-  if (!sensitive.length) { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
+  if (token === undefined) {
+    json(res, 403, { ok: false, detail: noTokenDetail(keys), sensitive });
+    return;
+  }
   res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": "Bearer" });
-  res.end(JSON.stringify({ ok: false, detail: `changing ${keys} needs the control token (Authorization: Bearer)`, ...named }));
+  res.end(JSON.stringify({ ok: false, detail: `changing ${keys} needs the control token (Authorization: Bearer)`, sensitive }));
 }
 
 /**
@@ -126,12 +126,14 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     return true;
   }
 
-  // @spec DASH-CTRL-004, DASH-CTRL-009, DASH-CTRL-010, DASH-CTRL-011
+  // @spec DASH-CTRL-004, DASH-CTRL-009, DASH-CTRL-010
   const dryRun = url.searchParams.get("dryRun") === "1";
-  const refusal = tokenRefusal(d.gate, req.headers.authorization);
-  if (refusal) {
-    // It names the sensitive keys when the body shows a change to one.
-    refuseSave(res, refusal, dryRun ? [] : await sensitiveInBody(d, req, name));
+  const tokenOk = d.controlToken !== undefined && authorized(d.controlToken, req);
+  if (d.controlMode && !tokenOk) {
+    // The ordinary refusal; it names the sensitive keys when the body shows a change to one.
+    const sensitive = dryRun ? [] : await sensitiveInBody(d, req, name);
+    if (sensitive.length) refuseSensitive(res, d.controlToken, sensitive);
+    else { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); }
     return true;
   }
   const raw = await d.body(req); // over the cap this throws and nothing has been read or written
@@ -142,6 +144,10 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     return true;
   }
   const { etag, values } = input;
+  if (!dryRun && !tokenOk) {
+    const sensitive = changedSensitiveKeys(readFileSync(d.file(), "utf8"), name, values);
+    if (sensitive.length) { refuseSensitive(res, d.controlToken, sensitive); return true; }
+  }
 
   // The save is synchronous from the etag check to the write, so no other request can change the file in between. A save of
   // `renderer` also holds the applied view's lock, and reads the loadable models first, so the check sees the same store.

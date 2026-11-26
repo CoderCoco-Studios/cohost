@@ -60,9 +60,9 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    mise run dashboard
    ```
 
-   It builds itself first, so the first start takes a minute. It prints the address it is listening on.
+   It builds itself first, so the first start takes a minute. It prints the address it is listening on and a line `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`.
 
-4. Open `http://localhost:3000` in your browser. When the Access dialog asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep ^CONTROL_TOKEN= .env`.
+4. Open that unlock link in your browser. It works once, within 10 minutes, and opens the dashboard with this browser unlocked, so you never paste the control token. If the link has expired, `mise run dashboard:unlock` prints a fresh one. You can instead open `http://localhost:3000` and, when the Access dialog asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep ^CONTROL_TOKEN= .env`.
 
 5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
 

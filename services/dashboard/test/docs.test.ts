@@ -57,7 +57,7 @@ mkdirSync(unbuilt);
 
 const rec = recordingLog();
 async function serve(docsDir: string, opts: { control?: boolean; guard?: boolean } = {}) {
-  const handler = createDashboardHandler({ tokenRequired: !!opts.control,
+  const handler = createDashboardHandler({
     bus: new FakeBus(), log: rec.log, uiDir, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
@@ -92,7 +92,7 @@ test("the docs directory is found under the workspace root, or the working direc
   put("docs/.vitepress/dist/index.html", "<h1>from cwd</h1>", proj);
   process.chdir(proj);
   try {
-    const handler = createDashboardHandler({ tokenRequired: false,
+    const handler = createDashboardHandler({
       bus: new FakeBus(), log: rec.log, uiDir, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
       loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
       stack: new StackService({ log: rec.log, bus: () => "connected" }),

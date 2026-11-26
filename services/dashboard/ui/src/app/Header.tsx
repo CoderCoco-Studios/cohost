@@ -1,10 +1,11 @@
+import { useEffect } from "react";
 import { Button } from "../components/Button";
 import { Icon } from "../components/Icon";
 import { SegmentedGroup } from "../components/SegmentedGroup";
 import { ActionStatus } from "../components/ActionStatus";
 import { Status, stackStatus, type StatusInfo } from "../components/Status";
 import { attentionCount } from "../state/derive";
-import { useAccess, useFeed, useMute } from "../state/hooks";
+import { useAccess, useApi, useFeed, useMute } from "../state/hooks";
 import { useStale } from "./connection";
 import { useRuntime } from "./providers";
 import { formatHash, type Route } from "./routes";
@@ -38,6 +39,14 @@ export function Header({ name, route, onNavigate, mute }: { name: string; route:
   const stackInfo = stack ? stackStatus(stack) : null;
   const audioOn = useStore(audio.state, (s) => s.enabled);
   const { state: access, access: accessStore } = useAccess();
+  const api = useApi();
+  // Whether this browser was unlocked by the unlock link: its session cookie is HttpOnly, so the server says (DASH-ACC-001).
+  useEffect(() => {
+    let live = true;
+    void api.controlInfo().then((r) => { if (live && r.ok) accessStore.markUnlocked(r.data.unlocked); });
+    return () => { live = false; };
+  }, [api, accessStore]);
+  const unlocked = access.control.present || access.unlocked;
   const preference = useStore(theme.state, (s) => s.preference);
   return (
     <header className="top">
@@ -61,7 +70,7 @@ export function Header({ name, route, onNavigate, mute }: { name: string; route:
       <div className="header-group controls">
         <Button aria-pressed={audioOn} onClick={() => (audioOn ? audio.disable() : audio.enable())}><Icon name={audioOn ? "speaker" : "speakerOff"} /><span className="btn-text">{audioOn ? "Audio on" : "Audio off"}</span></Button>
         <Button aria-pressed={mute.muted} busy={mute.pending} onClick={() => void mute.toggle()}><Icon name="mic" /><span className="btn-text">{mute.label}</span></Button>
-        <Button onClick={() => accessStore.openPanel()}><Icon name={access.control.present ? "unlock" : "lock"} /><span className="btn-text">{access.control.present ? "Unlocked" : "Locked"}</span></Button>
+        <Button onClick={() => accessStore.openPanel()}><Icon name={unlocked ? "unlock" : "lock"} /><span className="btn-text">{unlocked ? "Unlocked" : "Locked"}</span></Button>
         <ActionStatus state={mute.action.state} onDismiss={mute.action.dismiss} />
         <SegmentedGroup legend="Theme" name="theme" value={preference} onChange={(v) => theme.set(v as ThemePreference)}
           options={[{ value: "auto", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />

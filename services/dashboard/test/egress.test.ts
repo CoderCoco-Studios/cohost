@@ -15,7 +15,7 @@ async function boot(dir: string) {
   process.env["CONFIG_DIR"] = dir;
   process.env["COHOST_ENV_FILE"] = join(dir, "no.env");
   after(() => { delete process.env["CONFIG_DIR"]; delete process.env["COHOST_ENV_FILE"]; });
-  const handler = createDashboardHandler({ tokenRequired: false,
+  const handler = createDashboardHandler({
     bus: new FakeBus(), log: recordingLog().log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: {} as unknown as StackService,
   });

@@ -128,7 +128,7 @@ test("a gated request with no token held is sent without one, and the Access dia
   assert.equal(r.ok, true);
   assert.equal(f.calls.length, 1);
   assert.equal(f.calls[0]!.headers.authorization, undefined);
-  assert.equal(access.state.get().prompt, null, "on loopback the server needs no token, so nothing asks for one");
+  assert.equal(access.state.get().prompt, null, "an unlocked browser sends its session cookie, so nothing asks before a 401");
 });
 
 test("the viewers token is separate from the control token", async () => {

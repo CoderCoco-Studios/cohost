@@ -1,7 +1,7 @@
 import http from "node:http";
+import { authorized } from "./access.js";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { NO_TOKEN_DETAIL, tokenRefusal, type TokenGate } from "./access.js";
 import { AppliedView } from "./applied.js";
 import {
   derivedName, findStored, judgeHead, MODEL_MAX_COUNT, MODEL_MAX_TOTAL_BYTES, modelNameOk, ModelStore, READ_FLAGS, sameModel, type Stored,
@@ -17,8 +17,8 @@ export interface ModelRoutes {
   applied: AppliedView;
   /** `dashboard.models.max_bytes`. */
   maxBytes: number;
-  /** Who must present the control token: every mutating model route needs it where it is required (DASH-MDL-016, DASH-CTRL-011). */
-  gate: TokenGate;
+  /** The control token when `CONTROL_ENABLED=1`: every mutating model route then needs it (DASH-MDL-016). */
+  token?: string;
   /** The one upload slot: an upload runs at a time (DASH-MDL-017). */
   slot: { busy: boolean };
   idleMs?: number;
@@ -109,6 +109,7 @@ async function serveNamed(m: ModelRoutes, req: http.IncomingMessage, res: http.S
   return serveFile(req, res, s);
 }
 
+const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => m.token !== undefined && !authorized(m.token, req);
 
 /**
  * Answers a request and closes its connection, writing the answer to the socket as it is (`connection: close`) and ending the
@@ -137,13 +138,8 @@ function stopped(req: http.IncomingMessage, status: number, value: object, o: { 
 const refuse = (req: http.IncomingMessage, status: number, value: object, headers?: Record<string, string>): void =>
   stopped(req, status, value, { drain: false, ...(headers ? { headers } : {}) });
 
-/** The control-token check of a mutating model route, answered before the body: false, with the refusal sent, when it may not proceed. */
-function authorized(m: ModelRoutes, req: http.IncomingMessage): boolean {
-  const refusal = tokenRefusal(m.gate, req.headers.authorization);
-  if (refusal === "none") refuse(req, 403, { ok: false, detail: NO_TOKEN_DETAIL });
-  else if (refusal === "wrong") refuse(req, 401, { ok: false, detail: "the control token is missing or wrong" }, { "www-authenticate": "Bearer" });
-  return refusal === undefined;
-}
+/** The 401 of a gated route, answered before the body. */
+const unauthorized = (req: http.IncomingMessage): void => refuse(req, 401, { ok: false, detail: "the control token is missing or wrong" }, { "www-authenticate": "Bearer" });
 
 /** Answers a failed write or an upload that could not start: `507` for a full disk, `500` otherwise, with the error code only (DASH-MDL-029). */
 function failure(req: http.IncomingMessage, err: unknown): void {
@@ -258,7 +254,7 @@ async function commitUpload(m: ModelRoutes, tmp: string, name: string, replace: 
 /** `POST /avatar/models?name=`: checks, streamed write, head checks, length check and commit (DASH-MDL-015 to DASH-MDL-032). */
 // @spec DASH-MDL-015, DASH-MDL-016, DASH-MDL-017, DASH-MDL-018, DASH-MDL-019, DASH-MDL-020, DASH-MDL-029, DASH-HTTP-015
 async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
-  if (!authorized(m, req)) return;
+  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
   const cl = req.headers["content-length"];
   const declared = cl === undefined ? undefined : Number(cl);
   if (declared !== undefined && (!Number.isSafeInteger(declared) || declared < 0)) return refuse(req, 400, { ok: false, detail: "Content-Length is not a byte count" });
@@ -314,7 +310,7 @@ async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.Serve
 /** `DELETE /avatar/models/<name>`: the name, then the applied model, under the lock (DASH-MDL-033 to DASH-MDL-036). */
 // @spec DASH-MDL-033, DASH-MDL-034, DASH-MDL-035, DASH-MDL-036, DASH-AVR-028
 async function remove(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, raw: string): Promise<void> {
-  if (!authorized(m, req)) return;
+  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
   const name = decodeName(raw);
   if (name === undefined) return notFound(res, "no stored model has that name");
   await m.applied.lock.run(async () => {

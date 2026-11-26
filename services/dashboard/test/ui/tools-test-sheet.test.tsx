@@ -17,8 +17,8 @@ const open = async (control: ControlInfo) => {
   await userEvent.setup().click(within(row).getByRole("button", { name: "Test tools" }));
   return { ...m, sheet: screen.getByRole("dialog", { name: "Test tools" }) };
 };
-const ON = { enabled: true, runtime: "compose", advanced: false, tokenRequired: false } as const;
-const OFF = { enabled: false, tokenRequired: false } as const;
+const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
+const OFF = { enabled: false, unlocked: false } as const;
 
 async function fill(sheet: HTMLElement, toolName: string, args: string) {
   const user = userEvent.setup();
@@ -49,7 +49,7 @@ test("a tools Test sheet sends service-level text as: tool, never as a chat mess
 });
 
 // @spec MOD-MAN-010, DASH-INJ-011, DASH-UI-006
-test("the tool call goes out without a token when none is held: on loopback it is sent with no Access dialog; a 401 asks for one, and Cancel sends nothing more", async () => {
+test("the tool call goes out without a token when none is held: when it succeeds no Access dialog opens; a 401 asks for one, and Cancel sends nothing more", async () => {
   const { app, sheet } = await open(OFF);
   app.fetch.on("POST /inject/text", { status: 202, json: { id: "req-2" } });
   const user = await fill(sheet, "stream_info", "{}");

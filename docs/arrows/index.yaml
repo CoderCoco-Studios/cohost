@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "62 specs: 60 [x], 2 [ ] (MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
+    next: "62 specs: 59 [x], 3 [ ] (MOD-MAN-002: every application unit declares logging, #349; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "232 specs: 232 [x], 0 [ ]. secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "253 specs: 230 [x], 23 [ ]. Logging design (#349): CFG-LOG-002..018, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in) to build. secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -231,7 +231,7 @@ arrows:
     blocks: [cortex]
     blockedBy: [config, event-bus, shared-runtime, memory, control-plane]
     detail: tools.md
-    next: "140 specs: 140 [x], 0 [ ], 0 [D]. TOOL-SVC-010 (secrets list, #318) and TOOL-SVC-011 (an unreachable server is down, #319) are built. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
+    next: "141 specs: 140 [x], 1 [ ], 0 [D]. TOOL-SVC-012 (tools logs with no file, #349) is to build. TOOL-SVC-010 (secrets list, #318) and TOOL-SVC-011 (an unreachable server is down, #319) are built. The MCP client (TOOL-MCP-001..028) is done under #206 but unverified against a real server. The built-in tools (TOOL-CLOCK, TOOL-STRM, TOOL-MEM, TOOL-TIMER; #207) are built and tested with fakes; no live Twitch, YouTube or memory run yet."
     drift: null
 
   voice:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "150 specs: 147 [x], 3 [ ]. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "152 specs: 143 [x], 9 [ ]. The ./data/logs mount of the logging design (DEPLOY-COMPOSE-002, -020, -022, -028 to -030, #349) is to build. Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

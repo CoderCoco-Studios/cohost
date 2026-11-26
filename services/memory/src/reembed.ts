@@ -6,12 +6,19 @@
  * columns to its dimension, so a database the service refuses to start on ("memories table has vector(N)") becomes usable.
  * Text and every other column are untouched; an interrupted run leaves the old vectors serving and a rerun resumes.
  */
-import { createLogger, loadConfig } from "@cohost/config";
+import { createLogger, loadConfig, type Config } from "@cohost/config";
 import { createMemoryEmbedder, createStore } from "./backend.js";
 import { runReembed } from "./reembed-run.js";
 
+// @spec MEM-START-007
 const log = createLogger("reembed");
-const cfg = loadConfig();
+let cfg: Config;
+try {
+  cfg = loadConfig();
+} catch (err) {
+  log.error(err instanceof Error ? err.message : String(err)); // no store opened, no model called
+  process.exit(1);
+}
 const store = createStore(cfg, createMemoryEmbedder(cfg), log);
 
 // @spec MEM-REEMBED-006

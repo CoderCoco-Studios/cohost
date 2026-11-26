@@ -5,6 +5,7 @@ import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { projectManifestSecrets } from "./secrets.js";
+import { ensureLogsDir, stderrWarn } from "./logs-dir.js";
 import { ComposeRuntime, defaultExec, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
 
 /** One container of the Compose project, as `docker compose ps` reports it. */
@@ -57,6 +58,8 @@ export interface StackControllerOptions {
   now?: () => number;
   /** Reads the Pocket token and the selected voice engine for the token file (CTRL-STACK-019). Defaults to the config loader. */
   readPocketConfig?: () => PocketConfig;
+  /** Where a warning goes (the `data/logs` directory could not be created); standard error by default. */
+  warn?: (msg: string) => void;
 }
 
 /** Containers that run to completion; they are never waited for and never count as down or degraded. */
@@ -158,7 +161,7 @@ export class StackController {
       const voice = loadConfig(true).voice;
       return { token: voice.pocket.hf_token, engine: voice.engine };
     });
-    this.runtime = new ComposeRuntime({ exec: this.exec, manifest: this.manifest, cwd: this.cwd, env: this.env, ...(o.onPath ? { onPath: o.onPath } : {}) });
+    this.runtime = new ComposeRuntime({ exec: this.exec, manifest: this.manifest, cwd: this.cwd, env: this.env, ...(o.onPath ? { onPath: o.onPath } : {}), ...(o.warn ? { warn: o.warn } : {}) });
   }
 
   private phase(kind: StackActionKind, phase: string): void {
@@ -288,12 +291,14 @@ export class StackController {
     return problem !== undefined ? { ok: true, warning: problem } : { ok: true };
   }
 
+  // @spec CTRL-RUNTIME-016
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
     const projected = await projectManifestSecrets(this.cwd, this.manifest); // CTRL-RUNTIME-014
     if (projected) return { ok: false, detail: projected.detail };
     const secret = this.writePocketSecret();
     if (!secret.ok) return { ok: false, detail: secret.detail };
+    ensureLogsDir(this.cwd, this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
     if (!up.ok) return { ok: false, detail: up.detail };
     this.phase(kind, "waiting");

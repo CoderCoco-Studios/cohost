@@ -37,7 +37,7 @@ export function setupControl(
   }
   if (!isLoopback(bind)) log.warn({ bind }, "the dashboard is bound to a non-loopback address: CONTROL_TOKEN and VIEWERS_TOKEN travel in cleartext over plain HTTP; use a reverse proxy or SSH tunnel");
   if (cfg.advanced) log.warn("CONTROL_ADVANCED=1: redis/postgres can be stopped from the dashboard");
-  const rt = runtime ?? new ComposeRuntime({ cwd: findWorkspaceRoot() ?? process.cwd() });
+  const rt = runtime ?? new ComposeRuntime({ cwd: findWorkspaceRoot() ?? process.cwd(), warn: (msg) => log.warn(msg) });
   const controller = new ServiceController({
     runtime: rt,
     groups: bus,

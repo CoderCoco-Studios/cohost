@@ -104,27 +104,29 @@ depends = ["lint:ts", "lint:rust"]
 description = "Run the Rust tests and check the desktop audio helper's Windows back end"
 run = ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]
 
+# The test tasks run through scripts/test-env.sh: a temporary COHOST_DATA_DIR and CONFIG_DIR (copies of the examples), with
+# COHOST_ENV_FILE and COHOST_SECRETS_FILE inside it, removed when the run ends (DEPLOY-TOOL-022).
 [tasks.test]
 description = "Run every test: Rust, then the build, then the TypeScript suite"
 depends = ["build", "test:rust"]
 env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
-run = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
+run = 'scripts/test-env.sh node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
 
 [tasks."test:only"]
 description = "Run the TypeScript suite with no build first"
 env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
-run = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
+run = 'scripts/test-env.sh node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
 
 [tasks."test:file"]
 description = "Run the given test files (arguments after the task name) after the build"
 depends = ["build"]
 env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
-run = "node --import tsx --test"
+run = "scripts/test-env.sh node --import tsx --test"
 
 [tasks."test:launch"]
 description = "Run the launch end-to-end test against Docker"
 depends = ["build", "doctor:docker"]
-run = "node --import tsx --test packages/control/test/launch.e2e.test.ts"
+run = "scripts/test-env.sh node --import tsx --test packages/control/test/launch.e2e.test.ts"
 
 [tasks."test:rust-example"]
 description = "Run the Rust bus example's round trip; fails when it skips"

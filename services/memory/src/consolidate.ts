@@ -7,13 +7,20 @@
  * duplicates and recheck sensitivity. Optional: if it is not run, the memory
  * service catches up on the next start.
  */
-import { createLogger, loadConfig } from "@cohost/config";
+import { createLogger, loadConfig, type Config } from "@cohost/config";
 import { createMemoryEmbedder, createStore } from "./backend.js";
 import { createConsolidatorHook } from "./consolidator.js";
 import { runConsolidate } from "./consolidate-run.js";
 
+// @spec MEM-START-007
 const log = createLogger("consolidate");
-const cfg = loadConfig();
+let cfg: Config;
+try {
+  cfg = loadConfig();
+} catch (err) {
+  log.error(err instanceof Error ? err.message : String(err)); // no store opened, no model called
+  process.exit(1);
+}
 const store = createStore(cfg, createMemoryEmbedder(cfg), log);
 const hook = createConsolidatorHook(cfg, log);
 

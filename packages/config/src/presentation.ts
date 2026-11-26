@@ -65,7 +65,7 @@ export interface SectionPresentation {
 export const SECTION_PATHS: readonly string[] = [
   "cohost", "llm", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.affect", "brain.memory", "brain.cortex",
   "brain.input_limits", "viewer_text",
-  "chat", "vision", "ears", "voice", "mouth", "avatar", "renderer", "connections", "dashboard", "network", "tools",
+  "chat", "vision", "ears", "voice", "mouth", "avatar", "renderer", "connections", "dashboard", "network", "logging", "tools",
 ];
 
 const sections: Record<string, SectionPresentation> = {
@@ -91,6 +91,8 @@ const sections: Record<string, SectionPresentation> = {
   "dashboard": { title: "Dashboard", group: "System", about: "The dashboard's web ports, the machine names it accepts, the size and lifetime limits of its test uploads, and the size limit of its avatar model files." },
   // @spec CFG-PRES-016
   "tools": { title: "Tools", group: "Brain", about: "Which MCP servers the co-host may call and which of their tools it may use, with the limits on how long a call runs, how many run at once and how a reply uses them." },
+  // @spec CFG-PRES-021
+  "logging": { title: "Logging", group: "System", about: "How much each program logs, how its lines look in the terminal and how large its log files under data/logs may grow. A change applies at each program's next start." },
   "network": { title: "Network", group: "System", about: "Which machines and address ranges count as your own network, so the co-host can tell what private data leaves it for a server outside your LAN." },
 };
 
@@ -394,6 +396,29 @@ const keys: Record<string, KeyPresentation> = {
 
   // ---- network
   "network.lan": { help: "Machines and networks you trust as your own, one per line: a host name such as nas, a single address such as 203.0.113.7, a dot suffix such as .ts.net for every machine in that domain, or a range such as 100.64.0.0/10. Use it for machines the co-host reaches over a VPN that the rule would otherwise count as outside your network. Empty adds none.", label: "Your network", sensitive: true },
+
+  // ---- logging
+  "logging.level": {
+    help: "How much each program writes to the terminal and its log file. Info is the everyday amount; debug and trace add detail for chasing a problem and grow the files faster; warn and error keep only trouble; silent writes nothing.",
+    label: "Log level",
+    widget: { type: "options", options: [
+      { value: "fatal", label: "Fatal: only what stops a program" },
+      { value: "error", label: "Error: failures only" },
+      { value: "warn", label: "Warn: failures and warnings" },
+      { value: "info", label: "Info: the everyday amount" },
+      { value: "debug", label: "Debug: extra detail for chasing a problem" },
+      { value: "trace", label: "Trace: everything, very noisy" },
+      { value: "silent", label: "Silent: nothing at all" },
+    ] },
+  },
+  "logging.terminal": {
+    help: "How log lines look in the terminal and in docker compose logs. Pretty is one readable line per entry with details indented below; JSON prints the raw structured line, for a tool that reads JSON. The log file always holds JSON.",
+    label: "Terminal format",
+    widget: { type: "options", options: [{ value: "pretty", label: "Pretty: readable lines" }, { value: "json", label: "JSON: one raw line per entry" }] },
+  },
+  "logging.file.enabled": { help: "When on, every program also writes its full log to data/logs/<program>.log, kept as JSON lines with every detail. Off, the log reaches only the terminal.", label: "Write log files" },
+  "logging.file.max_size_mb": { help: "How large a log file may grow before it is moved aside as an older file and a new one starts. Higher keeps more history in one file; each program uses at most this size times one more than the number of older files kept.", unit: "MB", label: "Largest log file" },
+  "logging.file.max_files": { help: "How many older log files each program keeps besides the current one; the oldest is deleted when a new one is moved aside. Higher keeps a longer history and uses more disk.", label: "Older log files kept" },
 
   // ---- mouth
   "mouth.outputs.discord.enabled": { help: "When on, the co-host's voice is played into the Discord voice channel. Off, nothing is played there." },

@@ -60,6 +60,7 @@ const IN_NETWORK = {
   VOICE_URL: "http://voice:8700",
   CONFIG_DIR: "/app/config",
   COHOST_SECRETS_FILE: "", // pinned empty so a value in .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)
+  COHOST_DATA_DIR: "/app/data", // pinned so each program's log file lands in the ./data/logs mount (DEPLOY-COMPOSE-003, DEPLOY-COMPOSE-029)
 };
 const TOOLS_ENVIRONMENT = ["COHOST_ISOLATION", "CONFIG_DIR", "REDIS_URL"];
 
@@ -78,6 +79,7 @@ test("every application service builds the root Dockerfile with SERVICE set to i
       for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
     }
     assert.ok(svc.volumes?.includes(name === "tools" ? "./config:/app/config:ro" : "./config:/app/config"), `${name}: the config bind mount`);
+    assert.equal(svc.volumes?.includes("./data/logs:/app/data/logs"), name !== "tools", `${name}: the logs bind mount`);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
     assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
     assert.ok(svc.healthcheck?.test?.join(" ").includes("healthcheck.js $$SERVICE"), `${name}: the container healthcheck`);

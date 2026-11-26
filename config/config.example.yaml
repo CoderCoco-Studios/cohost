@@ -405,3 +405,13 @@ tools:
 # Private addresses, localhost, host.docker.internal and dotless or .local names are on the LAN already; list other machines you trust.
 network:
   lan: []                     # host names, addresses, .suffixes and CIDR ranges counted as LAN (CFG-EGR-011); empty adds none
+
+# How each program logs. Read by every program's logger before the rest of this file, so a change applies at each program's
+# next start. The terminal (and `docker compose logs`) gets readable lines; data/logs/<program>.log keeps every entry as JSON.
+logging:
+  level: info                 # fatal | error | warn | info | debug | trace | silent; one level for the terminal and the file
+  terminal: pretty            # pretty = one readable line per entry, details indented below; json = pino's raw JSON line
+  file:
+    enabled: true             # write data/logs/<program>.log (tools never writes one)
+    max_size_mb: 10           # rotate a file before it grows past this many MiB (1 to 1024)
+    max_files: 3              # older files kept per program, <program>.1.log being the newest (1 to 50)

@@ -227,6 +227,25 @@ const ToolsSchema = z
   })
   .prefault(EMPTY_INPUT);
 
+/** The log levels `logging.level` accepts, most severe first; `silent` logs nothing. */
+export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
+
+/**
+ * The `logging` section: the level of both outputs, the terminal format and the log file's switch and rotation limits. Every
+ * program's logger reads it before `loadConfig` runs (CFG-LOG-002), so it holds literals only.
+ */
+// @spec CFG-SCH-113, CFG-SCH-114
+export const LoggingSchema = z.object({
+  level: z.preprocess((v) => (v === "" ? undefined : v), z.enum(LOG_LEVELS).default("info")),
+  terminal: z.preprocess((v) => (v === "" ? undefined : v), z.enum(["pretty", "json"]).default("pretty")),
+  file: z.object({
+    enabled: z.boolean().default(true),
+    max_size_mb: z.number().int().min(1).max(1024).default(10),
+    max_files: z.number().int().min(1).max(50).default(3),
+  }).prefault({}),
+}).prefault(EMPTY_INPUT);
+export type LoggingSettings = z.infer<typeof LoggingSchema>;
+
 export const ConfigSchema = z.object({
   cohost: z.object({
     name: z.string().min(1),
@@ -755,6 +774,8 @@ export const ConfigSchema = z.object({
   }).optional(),
   /** MCP servers and tool permissions (CFG-SCH-075); no tool is enabled unless `tools.allow` names it. */
   tools: ToolsSchema,
+  /** How much each program logs, how its terminal lines look and how large its log files grow (CFG-SCH-113, CFG-SCH-114). */
+  logging: LoggingSchema,
   // @spec CFG-SCH-038
   dashboard: z.object({
     /** The full surface's port; applies at the dashboard's next start. */

@@ -30,6 +30,8 @@ mise run test:rust    # the Rust tests only
 mise run typecheck    # tsc -b: type-checks every project
 ```
 
+Every test task runs the tests with a temporary `COHOST_DATA_DIR` and a temporary `CONFIG_DIR` holding copies of the `config/*.example.*` files, with `COHOST_ENV_FILE` and `COHOST_SECRETS_FILE` pointed inside it (`scripts/test-env.sh`), and removes both afterwards, so a test never writes log files into your `data/` or reads your `config.yaml`, `.env` or `secrets.yaml`.
+
 `mise run test` runs the `test:rust` and `build` tasks first (`build` is what catches type errors), then runs every `test/*.test.ts` under `packages/*` and `services/*`, and the dashboard UI's `.test.tsx` files, with Node's `node:test` runner through `tsx`. Run `mise run test:only` for a quick loop once the workspace is built. `mise run lint` adds oxlint, `cargo fmt --check` and Clippy; CI runs it beside the tests.
 
 The suite needs no network, no [GPU](../../start/glossary.md#gpu) and no account. Region logic is tested against a fake bus (see [Unit-test helpers](helpers.md)), HTTP backends against local stub servers.

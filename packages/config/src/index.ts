@@ -1,11 +1,12 @@
 import { readFileSync, existsSync, copyFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import pino from "pino";
 import { writeFileAtomic } from "./atomic.js";
 import { ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, type Config, type ExpressionMap } from "./schema.js";
 import { parseConfigText, unknownKeys, decodeIsolation, ISOLATION_ENV, type ConfigIssue } from "./pipeline.js";
 import { loadSecrets } from "./secrets.js";
+import { configDir, findWorkspaceRoot, loadDotEnv } from "./paths.js";
+import { configLogger, type Logger } from "./logging.js";
 
 export * from "./schema.js";
 export {
@@ -19,43 +20,11 @@ export { ollamaModels, type OllamaModels } from "./models.js";
 export * from "./editor.js";
 export * from "./presentation.js";
 export * from "./egress.js";
-
-/**
- * Walk up from `start` to the nearest dir containing pnpm-workspace.yaml.
- * The `dev:<service>` mise tasks and the memory one-shots run with cwd set to the package dir, so cwd alone isn't the repo root.
- */
-export function findWorkspaceRoot(start = process.cwd()): string | undefined {
-  let dir = resolve(start);
-  for (;;) {
-    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-// @spec CFG-DIR-001, CFG-DIR-002
-export const configDir = (): string =>
-  resolve(process.env.CONFIG_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
-
-/**
- * Where services keep generated files they must remember across restarts: `COHOST_DATA_DIR`, else `data` under the
- * workspace root (cwd when there is none). Each service writes only under `<dataDir()>/<service>/`.
- */
-// @spec CFG-DIR-006, CFG-DIR-007
-export const dataDir = (): string =>
-  resolve(process.env.COHOST_DATA_DIR ?? join(findWorkspaceRoot() ?? process.cwd(), "data"));
+export { findWorkspaceRoot, configDir, dataDir, dotEnvPath, loadDotEnv } from "./paths.js";
+export { createLogger, configLogger, loggingSettings, redact, resetLoggingForTest, type Logger, type CreateLoggerOptions, type TerminalOut } from "./logging.js";
+export { formatPretty, escapeTerminal } from "./log-pretty.js";
 
 let cached: Config | undefined;
-
-/**
- * Dev convenience: if a .env sits next to the config dir (repo root) and we're
- * not inside compose (which injects env itself), load it without overriding
- * anything already set. Handles `KEY=value`, `KEY="quoted value"`, comments.
- */
-// @spec CFG-ENV-010
-export const dotEnvPath = (): string =>
-  process.env.COHOST_ENV_FILE || join(findWorkspaceRoot() ?? dirname(configDir()), ".env");
 
 /**
  * The operator's credentials file, which the loader merges at the secret paths and never creates: `COHOST_SECRETS_FILE` when
@@ -83,29 +52,9 @@ let diagnostics: Pick<Logger, "warn"> | undefined;
 /** Replace (or, with `undefined`, restore) the logger the loader reports its notices and warnings through. */
 // @spec CFG-LOG-001
 export function setConfigLogger(l: Pick<Logger, "warn"> | undefined): void { diagnostics = l; }
-const diag = (): Pick<Logger, "warn"> => (diagnostics ??= createLogger("config"));
+const diag = (): Pick<Logger, "warn"> => diagnostics ?? configLogger();
 
 const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
-
-// @spec CFG-ENV-004, CFG-ENV-005, CFG-ENV-006, CFG-ISO-008
-export function loadDotEnv(file = dotEnvPath()): void {
-  if (!existsSync(file)) return;
-  for (const raw of readFileSync(file, "utf8").split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq < 1) continue;
-    const key = line.slice(0, eq).trim();
-    const rest = line.slice(eq + 1);
-    let val = rest.trim();
-    const q = val[0];
-    const close = q === '"' || q === "'" ? val.indexOf(q, 1) : -1;
-    if (close > 0 && /^\s*(#.*)?$/.test(val.slice(close + 1))) val = val.slice(1, close); // quoted, optionally followed by a comment
-    else if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) val = val.slice(1, -1);
-    else val = rest.replace(/\s+#.*$/, "").trim(); // unquoted: whitespace then `#` starts a comment (Compose env_file)
-    if (key !== ISOLATION_ENV && process.env[key] === undefined) process.env[key] = val; // only the process itself can carry an override
-  }
-}
 
 // @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010, CFG-LOAD-008
 export function loadConfig(force = false): Config {
@@ -195,9 +144,3 @@ export const urls = {
   /** Voice's public base URL; loopback by default, compose overrides with `http://voice:8700`. */
   voice: () => envOr("VOICE_URL", `http://127.0.0.1:${envOr("VOICE_PORT", "8700")}`),
 };
-
-// @spec CFG-URL-004
-export function createLogger(service: string) {
-  return pino({ name: service, level: envOr("LOG_LEVEL", "info") });
-}
-export type Logger = ReturnType<typeof createLogger>;

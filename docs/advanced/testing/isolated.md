@@ -59,7 +59,7 @@ mise run dev:salience
 COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' mise run dev:cortex
 ```
 
-`mise watch --restart dev:salience` does the same and rebuilds and restarts the service on every saved change. Set `LOG_LEVEL=debug` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
+`mise watch --restart dev:salience` does the same and rebuilds and restarts the service on every saved change. Its log prints in the terminal as readable lines and goes in full to `data/logs/<service>.log`. Set `logging.level: debug` in `config/config.yaml` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
 
 ## Scripting the mock's replies
 

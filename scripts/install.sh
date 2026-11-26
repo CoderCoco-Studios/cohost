@@ -167,6 +167,8 @@ seed_files() {
     (umask 077 && cp config/secrets.example.yaml secrets/secrets.yaml) && chmod 600 secrets/secrets.yaml
     log "Wrote secrets/secrets.yaml from config/secrets.example.yaml (mode 0600): your credentials go here (git-ignored, mounted by no container)."
   fi
+  # Every program's log file lives in data/logs; made here as the user running the installer, so Compose never creates it as root.
+  mkdir -p data/logs  # @spec DEPLOY-INST-017
 }
 # end seed-files
 seed_files

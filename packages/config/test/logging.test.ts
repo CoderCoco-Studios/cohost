@@ -487,6 +487,25 @@ test("a class instance is walked through its own keys and keeps its prototype; a
   assert.ok(!readFileSync(file("chat"), "utf8").includes("CLASS-LEAK"));
 });
 
+// @spec CFG-LOG-024
+test("a class instance whose toJSON throws on the censored copy is written as its own enumerable fields", () => {
+  class Session {
+    readonly #id: string;
+    constructor(id: string, public token: string, public host: string) { this.#id = id; }
+    toJSON(): object { return { id: this.#id, host: this.host }; }
+  }
+  const session = new Session("s1", "PRIVATE-LEAK", "h");
+  const r = redact({ session }) as { session: Session };
+  assert.ok(r.session instanceof Session, "the prototype is kept");
+  assert.deepEqual(JSON.parse(JSON.stringify(r.session)), { token: "[Redacted]", host: "h" });
+  assert.deepEqual(JSON.parse(JSON.stringify(session)), { id: "s1", host: "h" }, "the original's toJSON is untouched");
+  const { file } = setup();
+  createLogger("chat").info({ session }, "private field");
+  const [e] = lines(file("chat"));
+  assert.deepEqual(e!.session, { token: "[Redacted]", host: "h" });
+  assert.ok(!readFileSync(file("chat"), "utf8").includes("PRIVATE-LEAK"));
+});
+
 // @spec CFG-LOG-025
 test("logging adds no dependency, uses no pino transport and starts no worker thread", () => {
   const pkg = JSON.parse(readFileSync(join(repo, "packages", "config", "package.json"), "utf8")) as { dependencies: Record<string, string> };

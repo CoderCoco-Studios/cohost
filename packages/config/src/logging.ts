@@ -98,6 +98,17 @@ function copyObject(obj: object): Record<string, unknown> {
   if (obj instanceof Error) {
     for (const key of ["message", "stack"] as const) Object.defineProperty(copy, key, { value: obj[key], writable: true, configurable: true, enumerable: false });
   }
+  const toJSON: unknown = copy.toJSON;
+  if (typeof toJSON === "function") {
+    // The copy is not a real instance: a `toJSON` that reads a `#private` field throws on it, so it serialises as its own
+    // enumerable fields instead.
+    Object.defineProperty(copy, "toJSON", {
+      value(this: Record<string, unknown>, key: string): unknown {
+        try { return (toJSON as (this: unknown, key: string) => unknown).call(this, key); } catch { return { ...this }; }
+      },
+      writable: true, configurable: true, enumerable: false,
+    });
+  }
   return copy;
 }
 

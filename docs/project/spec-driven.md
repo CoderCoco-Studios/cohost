@@ -43,7 +43,7 @@ The `@cohost/shared` package is the `shared-runtime` segment.
    intent changes), LLD, EARS spec lines, an edge audit, then tests, then
    code. Each phase stops for review before the next.
 3. **Implement** — in a worktree/branch, never on `main`. Annotate code and
-   tests with `@spec <ID>`. Run `pnpm test`.
+   tests with `@spec <ID>`. Run `mise run test`.
 4. **Reconcile** — flip the EARS markers you implemented to `[x]` and update
    the arrow doc. `/arrow-maintenance` audits spec-to-code coherence and flags
    drift or orphans.

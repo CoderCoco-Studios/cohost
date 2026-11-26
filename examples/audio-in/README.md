@@ -11,12 +11,13 @@ convert a recording into the WAV ears reads without resampling.
 | `to-wav-sox.sh` | Converts any audio `sox` reads to 16 kHz mono 16-bit WAV |
 | `to-wav-ffmpeg.sh` | The same with `ffmpeg` |
 
-From the repository root:
+From the checkout (a task runs in the repository root, so give the clip's
+path from there or an absolute one):
 
 ```sh
-python3 examples/audio-in/send_clip.py clip.wav
-node examples/audio-in/send-clip.ts clip.wav
-sh examples/audio-in/send.sh clip.wav
+mise run example:audio-send:py -- clip.wav
+mise run example:audio-send:ts -- clip.wav
+mise run example:audio-send:sh -- clip.wav
 ```
 
 The explanation is on the

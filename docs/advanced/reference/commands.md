@@ -1,43 +1,115 @@
 ---
 title: Commands
-description: The root pnpm scripts, every cohostctl command, and the Docker Compose profiles and one-shot jobs.
+description: The project's mise tasks, every cohostctl command, and the Docker Compose profiles and one-shot jobs.
 track: advanced
 verified: f126b94
 ---
 
 # Commands
 
-Three families of commands: the `pnpm` scripts in the root `package.json`, `cohostctl` (a command-line twin of the dashboard's stack controls), and the `docker compose` profiles and one-shot jobs that both of them drive. Run everything from the repository root.
+Three families of commands: the tasks in the root `mise.toml`, `cohostctl` (a command-line twin of the dashboard's stack controls), and the `docker compose` profiles and one-shot jobs that both of them drive. Run everything from the repository root.
 
-## pnpm scripts
+## mise tasks
 
-| Script | What it does |
+Every command of the project is a task in `mise.toml`, run as `mise run <task>`. A task runs what it needs first (its `depends`), and a task with `sources` and `outputs` is skipped while nothing it reads has changed, so no command has a manual first step. `mise run --force <task>` runs a task and its dependencies regardless. Arguments after the task name reach the program the task runs:
+
+```bash
+mise run cohostctl -- status
+mise run bus:tail -- --replay 20
+```
+
+Adding or removing a dependency is the one thing that is not a task: run `pnpm add` or `pnpm remove` for a workspace package, and `cargo add` or `cargo remove` for a crate. `mise tasks` lists every task with its description.
+
+### Install and build
+
+| Task | What it does |
 | --- | --- |
-| `pnpm build` | `pnpm build:native`, then `tsc -b` |
-| `pnpm build:native` | Builds `crates/cohost-bus-node` with `cargo build --release` and copies the library to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. `@cohost/bus` cannot be imported without it |
-| `pnpm typecheck` | `tsc -b`, which type-checks every project and writes the build output. `pnpm lint` runs the same check |
-| `pnpm test` | `pnpm build:native`, `tsc -b`, then every `test/*.test.ts` under `packages/*` and `services/*` with Node's runner through `tsx` |
-| `pnpm test:only` | The same tests without the build |
-| `pnpm dashboard` | Builds the documentation site first (`pnpm docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It is the one thing you start by hand |
-| `pnpm cohostctl <command>` | Builds `packages/control`, then runs `cohostctl` with your arguments (see below) |
-| `pnpm dev` | Every service with `tsx watch`, against infrastructure from [Compose](../../start/glossary.md#docker-compose) |
-| `pnpm reflect` | The reflection pass of `memory`: appends a dated block of bullets to `## Learned` in `personality.md` |
-| `pnpm consolidate` | The viewer-note consolidation pass of `memory`, on the host |
-| `pnpm reembed` | Re-embeds every stored memory vector on the host, after an embedder change |
-| `pnpm docs:dev` | Starts the documentation site's dev server |
-| `pnpm docs:build` | Builds the documentation site and runs its checks |
-| `pnpm docs:preview` | Serves the built site |
-| `pnpm clean` | Removes every `dist/` |
+| `install` | `pnpm install --frozen-lockfile`; skipped while `pnpm-lock.yaml` and the `package.json` files are unchanged |
+| `build:native` | Builds `crates/cohost-bus-node` with `cargo build --release` and copies the library to `packages/bus/native/cohost-bus.linux-x64-gnu.node`. `@cohost/bus` cannot be imported without it, so every task that starts a host program depends on it. Skipped while no Rust source changed |
+| `build:ts` | `install`, then `tsc -b`: every package and service, incrementally |
+| `build:ui` | `build:ts` (the UI's Vite config loads `@cohost/config`), then the dashboard's web UI into `services/dashboard/dist-ui/`; skipped while `services/dashboard/ui` is unchanged |
+| `build` | `build:native`, `build:ts` and `build:ui` |
+| `clean` | Removes every `dist/` and `services/dashboard/dist-ui` |
 
-Other commands worth knowing, which are not `pnpm` scripts: `node scripts/lid-check.mjs` (every `@spec` ID exists and is defined once), `node scripts/gen-hook-schemas.mjs` (regenerates the [hook](../../start/glossary.md#hook) reply JSON Schemas) and `scripts/compose-smoke.sh` (builds the service images and checks they come up healthy). The dev helpers `bus-pub.ts`, `bus-tail.ts`, `stub-tts.ts` and `stub-llm.ts` are on [Fake inputs](../testing/inject.md) and [One service on its own](../testing/isolated.md).
+### Lint and test
+
+| Task | What it does |
+| --- | --- |
+| `typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check |
+| `lint:ts` | `typecheck`, then oxlint with type-aware rules |
+| `lint:rust` | `cargo fmt --check`, then Clippy over the workspace with warnings denied |
+| `lint` | `lint:ts` and `lint:rust` |
+| `test:rust` | `cargo test --workspace`, then the desktop audio helper's Windows check |
+| `test` | `test:rust` and `build`, then every `test/*.test.ts` under `packages/*` and `services/*` (and the dashboard UI's `.test.tsx` files) with Node's runner through `tsx` |
+| `test:only` | The same TypeScript tests with no build first |
+| `test:file` | Builds, then runs the test files given after the task name (`mise run test:file -- services/voice/test/wav.test.ts`); runner flags such as `--test-name-pattern` go before the files |
+| `test:launch` | `build` and `doctor:docker`, then the launch end-to-end test against Docker |
+| `test:rust-example` | The Rust bus example's round trip against Redis; fails when the round trip is skipped |
+| `lid-check` | Every `@spec` ID in code and tests exists and is defined once |
+| `smoke` | `doctor:docker`, then builds the service images and checks that a few services come up healthy in Compose |
+
+### Run on the host
+
+| Task | What it does |
+| --- | --- |
+| `dashboard` | Rebuilds the documentation site when the docs changed (`docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It is the one thing you start by hand |
+| `dashboard:ui` | The dashboard UI's Vite dev server |
+| `cohostctl` | Builds `packages/control`, then runs `cohostctl` with the arguments after `--` (see below) |
+| `secrets:project` | Copies `secrets/secrets.yaml` into each unit's directory under `secrets/units/` |
+| `reflect` | The reflection pass of `memory`: appends a dated block of bullets to `## Learned` in `personality.md` |
+| `consolidate` | The viewer-note consolidation pass of `memory`, on the host |
+| `reembed` | Re-embeds every stored memory vector on the host, after an embedder change |
+| `infra:up` | `doctor:docker`, then `docker compose up -d redis postgres ollama tts stt`: the infrastructure for the dev loop, from [Compose](../../start/glossary.md#docker-compose) |
+| `infra:down` | Stops those containers |
+| `dev:<service>` | Builds what changed, then runs one service (`dev:salience`, `dev:cortex`, and so on for each folder under `services/` except `dashboard`). `mise watch --restart dev:<service>` rebuilds and restarts it on every saved change |
+| `dev` | Every `dev:<service>` task under one `mise watch --restart`, against the infrastructure from `infra:up`; see [Developer setup](../dev-setup.md) |
+
+### Developer tools
+
+| Task | What it does |
+| --- | --- |
+| `bus:pub` | Publishes one zod-validated event onto the [bus](../../start/glossary.md#bus); see [Fake inputs](../testing/inject.md) |
+| `bus:tail` | Prints bus events as they arrive |
+| `bus:bench` | Benchmarks the bus, the TypeScript client against the native one |
+| `perf:connector` | Plays a clip into `ears` as a test connector |
+| `perf:baseline` | Measures the end-to-end latency baseline against the running stack |
+| `stub:llm` | A stand-in for Ollama's chat API on port 11434; see [One service on its own](../testing/isolated.md) |
+| `stub:tts` | A stand-in for the [Kokoro](../../start/glossary.md#kokoro) TTS server on port 8880 |
+| `hooks:schemas` | Regenerates the [hook](../../start/glossary.md#hook) reply JSON Schemas in `examples/modules/schemas/` |
+
+### Examples
+
+Each program under `examples/` that a page tells you to run has a task; the [Extend](../extend/index.md) pages use them.
+
+| Task | What it runs |
+| --- | --- |
+| `example:hook-server:py`, `example:hook-server:ts`, `example:hook-server:rust` | The example hook server on port 8900, in Python, TypeScript or Rust |
+| `example:hook-try` | One request to each hook of a running hook server |
+| `example:model-stub:py`, `example:model-stub:ts` | The example model server stub on port 8901 |
+| `example:model-try` | The example requests against a running model server (its base URL after `--`) |
+| `example:audio-send:sh`, `example:audio-send:py`, `example:audio-send:ts` | Sends a WAV clip to the `http` source of `ears` |
+| `example:audio-wav:sox`, `example:audio-wav:ffmpeg` | Converts a recording to the WAV `ears` expects |
+| `example:rust-bus` | The Rust bus example |
+| `example:now-playing` | The example TypeScript service |
+| `example:typecheck` | Type-checks the TypeScript examples |
+
+### Docs site and host checks
+
+| Task | What it does |
+| --- | --- |
+| `docs:build` | Checks and builds the documentation site; skipped while its sources are unchanged |
+| `docs:dev` | Starts the documentation site's dev server |
+| `docs:preview` | Serves the built site |
+| `doctor` | Checks the host's system prerequisites (Docker with Compose, the NVIDIA runtime when a GPU is present, `git`, `curl`, `libatomic1`, and the glibc floor), printing the fix for each that fails; installs nothing |
+| `doctor:docker`, `doctor:gpu`, `doctor:fetch`, `doctor:libatomic`, `doctor:glibc` | One of those checks each |
 
 ## cohostctl
 
 `cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_ENABLED` and `CONTROL_TOKEN`, which gate the dashboard's HTTP routes, do not apply. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
 
 ```bash
-pnpm cohostctl status
-pnpm cohostctl restart cortex --mode fresh
+mise run cohostctl -- status
+mise run cohostctl -- restart cortex --mode fresh
 ```
 
 | Command | What it does |
@@ -46,7 +118,7 @@ pnpm cohostctl restart cortex --mode fresh
 | `start <service> [--mode resume\|fresh] [--isolated]` | Starts one service. `fresh` resets its [consumer groups](../../start/glossary.md#consumer-group) so it ignores [events](../../start/glossary.md#event) published while it was away, and `resume` keeps its place. `--isolated` sets the isolation presets and also starts the services it needs |
 | `stop <service>` | Stops one service. Takes no options |
 | `restart <service> [--mode resume\|fresh] [--isolated]` | Stops and starts one service |
-| `latency [--count N]` | Per-stage p50 and p95 latency of the speech and vision paths, from the last N events on the [bus](../../start/glossary.md#bus) (default 5000). Read-only. A streamed reply is one sample: `tts`, `sink` and `total` are measured on its clause 0 (the earliest non-virtual `voice.playing` with `seq` 0, else the earliest one with `seq` 0), and `llm` ends at the `brain.say`'s `llmEndedAt`. The speech path starts with `endpoint` (the end-of-speech wait, `audioEndedAt` to `closedAt`, `0` when no `closedAt`) and `stt` from `closedAt`. A reply released from a prepared think is cut at its `confirmedAt`, so its stages still add up to `total`; `think` (focus to the end of the provisional think) is printed after `total` and is not in the sum. Lines marked `interjected` or `injected` are not samples. After the speech rows, an `early transcripts:` line counts published, retracted, reused, released, interjected and still-running early transcripts (absent when all are zero), and an `early stt` row gives the count, p50 and p95 of their speech-to-text time. To measure the connector path, run `scripts/dev/perf-baseline.sh --mode connector` (the default `--mode http` posts whole clips and has no `endpoint` row) |
+| `latency [--count N]` | Per-stage p50 and p95 latency of the speech and vision paths, from the last N events on the [bus](../../start/glossary.md#bus) (default 5000). Read-only. A streamed reply is one sample: `tts`, `sink` and `total` are measured on its clause 0 (the earliest non-virtual `voice.playing` with `seq` 0, else the earliest one with `seq` 0), and `llm` ends at the `brain.say`'s `llmEndedAt`. The speech path starts with `endpoint` (the end-of-speech wait, `audioEndedAt` to `closedAt`, `0` when no `closedAt`) and `stt` from `closedAt`. A reply released from a prepared think is cut at its `confirmedAt`, so its stages still add up to `total`; `think` (focus to the end of the provisional think) is printed after `total` and is not in the sum. Lines marked `interjected` or `injected` are not samples. After the speech rows, an `early transcripts:` line counts published, retracted, reused, released, interjected and still-running early transcripts (absent when all are zero), and an `early stt` row gives the count, p50 and p95 of their speech-to-text time. To measure the connector path, run `mise run perf:baseline -- --mode connector` (the default `--mode http` posts whole clips and has no `endpoint` row) |
 | `consolidate` | The viewer-note consolidation one-shot. Works with the stack down. Exit 0 ok, 1 failed |
 | `reembed` | Re-embeds stored memory vectors after an embedder change. Stop `memory` first. Exit 0 ok, 1 failed |
 | `launch` | Builds the images, brings the whole stack up and waits until it is ready |
@@ -58,7 +130,7 @@ Exit codes: 0 for success, 1 for a failure or a refusal, 2 for a usage error. Ev
 
 ## Docker Compose
 
-`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you. A hand-run `docker compose up` or `restart` uses the credentials the dashboard or `cohostctl` last copied into `secrets/units/`; after you change `secrets/secrets.yaml`, start or restart through one of those, or run `node packages/control/dist/project-secrets.js` first.
+`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you. A hand-run `docker compose up` or `restart` uses the credentials the dashboard or `cohostctl` last copied into `secrets/units/`; after you change `secrets/secrets.yaml`, start or restart through one of those, or run `mise run secrets:project` first.
 
 | Profile | Services | Why it is optional |
 | --- | --- | --- |
@@ -85,7 +157,7 @@ Setting `COMPOSE_PROFILES=discord,ears,mouth` in `.env` keeps those profiles on 
 | --- | --- |
 | `docker compose run --rm consolidate` | The viewer-note consolidation pass, the same as `cohostctl consolidate`. Best-effort: `memory` catches up at its next start if you never run it. It starts `postgres` and `ollama` if they are down and leaves them running |
 | `docker compose run --rm reembed` | Re-embeds every stored memory, viewer note and deletion record after you change the embedder to one with another vector size. `memory` refuses to start until you do, and an interrupted run changes nothing, so a rerun resumes |
-| `docker compose run --rm memory node services/memory/dist/reflect.js` | The reflection pass, the same as `pnpm reflect` |
+| `docker compose run --rm memory node services/memory/dist/reflect.js` | The reflection pass, the same as `mise run reflect` |
 
 ### The GPU overlay
 

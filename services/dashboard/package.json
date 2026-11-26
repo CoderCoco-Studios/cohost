@@ -9,14 +9,6 @@
     "dist",
     "dist-ui"
   ],
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -b",
-    "build:ui": "vite build --config ui/vite.config.ts",
-    "dev:ui": "vite --config ui/vite.config.ts",
-    "start": "node dist/index.js",
-    "test:ui": "TSX_TSCONFIG_PATH=../../tsconfig.test.json node --import tsx --test \"test/ui/*.test.tsx\""
-  },
   "dependencies": {
     "@cohost/bus": "workspace:*",
     "@cohost/config": "workspace:*",

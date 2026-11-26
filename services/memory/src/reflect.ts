@@ -1,5 +1,5 @@
 /**
- * reflect — run after a stream (`pnpm reflect` or
+ * reflect — run after a stream (`mise run reflect` or
  * `docker compose run --rm memory node services/memory/dist/reflect.js`).
  *
  * Reads everything remembered since the last reflection, asks the LLM what

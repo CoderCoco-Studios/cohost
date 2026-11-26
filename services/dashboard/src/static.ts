@@ -71,8 +71,8 @@ const NOT_BUILT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dashboard not built</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{background:#8882;padding:.1em .3em;border-radius:4px}</style></head>
 <body><h1>Dashboard not built</h1>
-<p>The dashboard's web page has not been built yet. Run <code>pnpm build</code> in the repository, then reload this page.</p>
-<p><code>pnpm dashboard</code> builds it each time it starts.</p></body></html>
+<p>The dashboard's web page has not been built yet. Run <code>mise run build</code> in the repository, then reload this page.</p>
+<p><code>mise run dashboard</code> builds it each time it starts.</p></body></html>
 `;
 
 /**
@@ -120,7 +120,7 @@ const AVATAR_NOT_BUILT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Avatar renderer not built</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{background:#8882;padding:.1em .3em;border-radius:4px}</style></head>
 <body><h1>Avatar renderer not built</h1>
-<p>The avatar renderer page has not been built yet. Run <code>pnpm build</code> in the repository, then reload this page.</p></body></html>
+<p>The avatar renderer page has not been built yet. Run <code>mise run build</code> in the repository, then reload this page.</p></body></html>
 `;
 
 /** The not-built page loads nothing: its one style is inline, and no script, image or frame is allowed (DASH-AVP-001). */

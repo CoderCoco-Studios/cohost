@@ -24,7 +24,7 @@ Run it while the stack is up:
 docker compose run --rm memory node services/memory/dist/reflect.js
 ```
 
-If you run services on the host rather than in [containers](../../start/glossary.md#container), `pnpm reflect` does the same. The first command uses [Docker](../../start/glossary.md#docker) to run the memory image once.
+If you run services on the host rather than in [containers](../../start/glossary.md#container), `mise run reflect` does the same. The first command uses [Docker](../../start/glossary.md#docker) to run the memory image once.
 
 The pass is careful about when to do nothing:
 
@@ -53,7 +53,7 @@ Run it after Stop by whichever route you like:
 - From a terminal:
 
   ```bash
-  pnpm cohostctl consolidate
+  mise run cohostctl consolidate
   ```
 
 - Or with Docker directly:

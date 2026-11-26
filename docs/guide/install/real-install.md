@@ -30,7 +30,7 @@ By the end of this page you will have the real stack running: a language model a
    ./scripts/install.sh
    ```
 
-   This installs [Docker](../../start/glossary.md#docker), Node, pnpm and the Rust toolchain if they are missing, builds the connection to the [bus](../../start/glossary.md#bus) (`pnpm build:native`), writes `.env` and your `config/` files, and downloads the images and models. If it installs Docker, it stops and asks you to log out and back in; do that and run it again. [What you need](prerequisites.md#what-the-installer-does) lists every step. If you skipped the installer on the previous page, you must run `pnpm build:native` yourself before step 5.
+   This installs [Docker](../../start/glossary.md#docker) and mise if they are missing, installs the project's Node, pnpm, Rust, Zig and Python through mise, builds the code and the connection to the [bus](../../start/glossary.md#bus), writes `.env` and your `config/` files, and downloads the images and models. If it installs Docker, it stops and asks you to log out and back in; do that and run it again. [What you need](prerequisites.md#what-the-installer-does) lists every step.
 
 3. Look at the settings you may want to change. Your accounts and models are keys in `config/config.yaml`, your credentials go in `secrets/secrets.yaml`, and `.env` holds only a few per-machine settings:
 
@@ -59,7 +59,7 @@ By the end of this page you will have the real stack running: a language model a
 5. Start the dashboard. It is the one program you start yourself.
 
    ```bash
-   pnpm dashboard
+   mise run dashboard
    ```
 
 6. Open `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`), enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks, and press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.

@@ -42,7 +42,7 @@ test("GET and HEAD /avatar answer the built avatar.html on both listeners, read 
 });
 
 // @spec DASH-AVP-001
-test("with no avatar.html (or one that is not a regular file) /avatar is a 503 'not built' page that loads nothing and names pnpm build", async (t) => {
+test("with no avatar.html (or one that is not a regular file) /avatar is a 503 'not built' page that loads nothing and names mise run build", async (t) => {
   const ui = tmpUi();
   writeFileSync(join(ui, "index.html"), "<!doctype html><title>x</title>");
   mkdirSync(join(ui, "avatar.html")); // a directory is not a regular file
@@ -55,7 +55,7 @@ test("with no avatar.html (or one that is not a regular file) /avatar is a 503 '
       assert.equal(x.headers["cache-control"], "no-store");
       if (method === "GET") {
         assert.match(x.text, /<title>Avatar renderer not built<\/title>/);
-        assert.match(x.text, /pnpm build/);
+        assert.match(x.text, /mise run build/);
         assert.doesNotMatch(x.text, /<script|<link|<img|<iframe|<object|\bsrc=|\bhref=|@import|url\(/i, "the page loads nothing");
       }
     }

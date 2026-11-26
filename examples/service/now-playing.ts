@@ -1,6 +1,6 @@
 // An example service: it watches a text file (the "now playing" file many streaming setups write) and tells the
 // co-host when the song changes. Run it with the path of the file:
-//   node --import tsx examples/service/now-playing.ts path/to/song.txt
+//   mise run example:now-playing -- /path/to/song.txt
 // It is built on the shared runtime from the first line, as every cohost service is. The workspace packages are
 // imported by path here because this folder is not a workspace package; inside a service folder they are imported as
 // "@cohost/bus" and "@cohost/shared".

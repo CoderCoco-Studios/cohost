@@ -136,7 +136,7 @@ const runEntry = (cwd: string, secretsFile: string) =>
 
 // @spec CTRL-RUNTIME-015, DEPLOY-SECRET-006
 test("node packages/control/dist/project-secrets.js projects for the workspace root and exits 0, or prints the message to stderr and exits 1", () => {
-  assert.ok(existsSync(entry), "run `pnpm build` first");
+  assert.ok(existsSync(entry), "run `mise run build` first");
   // the entry takes the workspace root from where it runs: a directory holding pnpm-workspace.yaml
   const w = workspace(GOOD);
   writeFileSync(join(w.root, "pnpm-workspace.yaml"), "packages: []\n");

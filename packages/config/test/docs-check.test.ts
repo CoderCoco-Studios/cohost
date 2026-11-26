@@ -11,7 +11,22 @@ import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_M
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 const load = (p: string): Promise<any> => import(pathToFileURL(join(repoRoot, p)).href);
-const pkg = () => JSON.parse(read("package.json")) as { scripts: Record<string, string> };
+interface MiseTask { name: string; run: string[]; depends: string[] }
+let miseTaskList: MiseTask[] | null = null;
+/** The repository's mise tasks as `mise tasks ls --json` reports them (mise is on PATH whenever the tests run). */
+const miseTasks = (): MiseTask[] => {
+  if (miseTaskList === null) {
+    const r = spawnSync("mise", ["tasks", "ls", "--json"], { cwd: repoRoot, encoding: "utf8" });
+    assert.equal(r.status, 0, `mise tasks ls failed: ${r.stderr}`);
+    miseTaskList = JSON.parse(r.stdout) as MiseTask[];
+  }
+  return miseTaskList;
+};
+const miseTask = (name: string): MiseTask => {
+  const t = miseTasks().find((x) => x.name === name);
+  assert.ok(t, `mise.toml defines no task ${name}`);
+  return t;
+};
 const frontmatter = (title: string, track: string, extra = "") => `---\ntitle: ${title}\ndescription: About ${title}.\ntrack: ${track}\n${extra}---\n\n`;
 
 function fails(r: { code: number | null; err: string; out: string }, re: RegExp) {
@@ -49,13 +64,14 @@ const dist = (files: Record<string, string>) => distRaw({ ...BUILT, ...files });
 // ---------------------------------------------------------------- Build
 
 // @spec DOCS-BUILD-001
-test("docs:build runs the source check, vitepress build, then the built-site check, chained with &&", () => {
-  assert.equal(pkg().scripts["docs:build"], "node scripts/docs-check.mjs && vitepress build docs && node scripts/docs-check.mjs --dist");
+test("the docs:build task runs the source check, vitepress build, then the built-site check, as steps in that order", () => {
+  // mise runs a task's run steps in order and stops at the first that exits non-zero.
+  assert.deepEqual(miseTask("docs:build").run, ["node scripts/docs-check.mjs", "vitepress build docs", "node scripts/docs-check.mjs --dist"]);
 });
 
 // @spec DOCS-BUILD-002
-test("docs:dev runs vitepress dev alone", () => {
-  assert.equal(pkg().scripts["docs:dev"], "vitepress dev docs");
+test("the docs:dev task runs vitepress dev alone", () => {
+  assert.deepEqual(miseTask("docs:dev").run, ["vitepress dev docs"]);
 });
 
 // @spec DOCS-BUILD-003
@@ -88,13 +104,16 @@ test("a clean tree exits 0 and a problem line names the file and line and exits 
 });
 
 // @spec DOCS-BUILD-006
-test("no docs script writes a markdown page", () => {
-  const s = pkg().scripts;
-  assert.equal(s["docs:prepare"], undefined);
-  for (const [name, cmd] of Object.entries(s)) {
-    if (!name.startsWith("docs:")) continue;
-    for (const part of cmd.split("&&")) assert.match(part.trim(), /^(vitepress (dev|build|preview) docs|node scripts\/docs-check\.mjs( --dist)?)$/, name);
+test("no docs task writes a markdown page", () => {
+  const docs = miseTasks().filter((t) => t.name.startsWith("docs:"));
+  assert.deepEqual(docs.map((t) => t.name).sort(), ["docs:build", "docs:dev", "docs:preview"]);
+  for (const t of docs) {
+    for (const step of t.run) assert.match(step.trim(), /^(vitepress (dev|build|preview) docs|node scripts\/docs-check\.mjs( --dist)?)$/, t.name);
+    // the one task a docs task depends on installs the packages; it writes nothing under docs/
+    assert.deepEqual(t.depends, ["install"], t.name);
   }
+  assert.deepEqual(miseTask("docs:preview").run, ["vitepress preview docs"]);
+  assert.deepEqual(miseTask("install").run.map((s) => s.trim()), ["pnpm install --frozen-lockfile", "touch node_modules/.modules.yaml"]);
   assert.equal(existsSync(join(repoRoot, "scripts/docs-prepare.mjs")), false);
 });
 
@@ -307,7 +326,7 @@ test("frontmatter title, description and a valid track are required", () => {
 // @spec DOCS-PAGE-002
 test("a page with a fenced code block needs a verified SHA of 7 to 40 lowercase hex characters", () => {
   const p = "docs/guide/troubleshooting.md";
-  const body = "# T\n\n```sh\npnpm build\n```\n";
+  const body = "# T\n\n```sh\nmise run build\n```\n";
   fails(check({ [p]: frontmatter("T", "simple") + body }), /troubleshooting\.md.*DOCS-PAGE-002/);
   fails(check({ [p]: frontmatter("T", "simple", "verified: ABCDEF1\n") + body }), /DOCS-PAGE-002/);
   fails(check({ [p]: frontmatter("T", "simple", "verified: abc12\n") + body }), /DOCS-PAGE-002/);
@@ -474,29 +493,53 @@ const shellPage = (fence: string, lang = "sh") => frontmatter("T", "simple", "ve
 const FP = "docs/guide/troubleshooting.md";
 
 // @spec DOCS-FACT-001
-test("pnpm commands in shell fences must name a root package.json script", () => {
-  passes(check({ [FP]: shellPage("pnpm dashboard\npnpm build\npnpm install\npnpm run test\npnpm -r build\npnpm --filter x foo\npnpm -C x nope") }));
-  fails(check({ [FP]: shellPage("pnpm dashbord") }), /troubleshooting\.md:11.*DOCS-FACT-001.*dashbord/);
-  fails(check({ [FP]: shellPage("pnpm run nope") }), /DOCS-FACT-001.*nope/);
-  fails(check({ [FP]: shellPage("PORT=4000 pnpm nope") }), /DOCS-FACT-001.*nope/);
-  fails(check({ [FP]: shellPage("cd x && pnpm nope") }), /DOCS-FACT-001.*nope/);
-  fails(check({ [FP]: shellPage("pnpm --silent nope") }), /DOCS-FACT-001.*nope/);
-  fails(check({ [FP]: shellPage("$ pnpm nope\nok", "console") }), /DOCS-FACT-001.*nope/);
-  passes(check({ [FP]: shellPage("pnpm nope\n$ pnpm nope", "console") }));
-  passes(check({ [FP]: shellPage("# pnpm nope in a comment-first fence\npnpm nope") }));
-  passes(check({ [FP]: shellPage("pnpm nope", "text") }));
-  fails(check({ "README.md": baseFiles()["README.md"].replace("pnpm dashboard", "pnpm dashbord") }), /README\.md.*DOCS-FACT-001/);
+test("mise run and mise watch in shell fences must name a task mise.toml defines", () => {
+  passes(check({ [FP]: shellPage("mise run dashboard\nmise run build\nmise run cohostctl -- status\nmise run cohostctl status\nmise r test\nmise run --jobs 2 dashboard\nmise run example:hook-server:py\nmise install\nmise trust\nmise exec -- node -v") }));
+  passes(check({ [FP]: shellPage("mise watch --restart dev:chat\nmise watch --restart dev:<service>\nmise run dev:<service>\nmise watch --restart dev:chat ::: dev:cortex\nmise run dev:chat ::: dev:cortex\nmise watch -t dev:chat") }));
+  fails(check({ [FP]: shellPage("mise run dashbord") }), /troubleshooting\.md:11.*DOCS-FACT-001.*mise run dashbord.*dashbord/);
+  fails(check({ [FP]: shellPage("PORT=4000 mise run nope") }), /DOCS-FACT-001.*nope/);
+  fails(check({ [FP]: shellPage("cd x && mise run nope") }), /DOCS-FACT-001.*nope/);
+  fails(check({ [FP]: shellPage("mise run --jobs 2 nope") }), /DOCS-FACT-001.*nope/);
+  fails(check({ [FP]: shellPage("mise run dev:chat ::: nope") }), /DOCS-FACT-001.*nope/);
+  fails(check({ [FP]: shellPage("mise watch --restart nope:<service>") }), /DOCS-FACT-001.*nope:<service>/);
+  fails(check({ [FP]: shellPage("mise watch --restart dev:chat ::: dev:gone") }), /DOCS-FACT-001.*dev:gone/);
+  fails(check({ [FP]: shellPage("mise run example:nope") }), /DOCS-FACT-001.*example:nope/);
+  fails(check({ [FP]: shellPage("$ mise run nope\nok", "console") }), /DOCS-FACT-001.*nope/);
+  // a fence whose first non-blank line is no command line is skipped
+  passes(check({ [FP]: shellPage("mise run nope\n$ mise run nope", "console") }));
+  passes(check({ [FP]: shellPage("# mise run nope in a comment-first fence\nmise run nope") }));
+  passes(check({ [FP]: shellPage("mise run nope", "text") }));
+  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard", "mise run dashbord") }), /README\.md.*DOCS-FACT-001/);
+  // with no mise.toml no task is defined
+  fails(check({ "mise.toml": null }), /mise\.toml.*DOCS-FACT-001/);
+});
+
+// @spec DOCS-FACT-001
+test("a command that runs pnpm or cargo fails unless it is a dependency edit, or is on an Extend page and names no repository path", () => {
+  for (const cmd of ["pnpm build", "pnpm dashboard", "pnpm install", "pnpm run test", "pnpm -r build", "pnpm --filter x foo", "cargo build", "cargo run -p cohost-bus", "cd x && pnpm test"]) {
+    fails(check({ [FP]: shellPage(cmd) }), /troubleshooting\.md:11.*DOCS-FACT-001.*runs (pnpm|cargo) directly/);
+  }
+  fails(check({ [FP]: shellPage("pnpm build") }), /DOCS-FACT-001.*"pnpm build"/);
+  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard", "pnpm dashboard") }), /README\.md.*DOCS-FACT-001.*pnpm dashboard/);
+  passes(check({ [FP]: shellPage("pnpm add x\npnpm add -D x\npnpm --filter @cohost/bus add x\npnpm remove x\ncargo add serde\ncargo remove serde\ncargo add --manifest-path crates/cohost-bus/Cargo.toml serde") }));
+  // an Extend page may run pnpm or cargo on code kept outside the checkout, but not on a path inside it
+  const extSh = (cmds: string) => check(extendRepo({ [`${EXT}typescript-service.md`]: guide("Add a TypeScript service", `\`\`\`sh\n${cmds}\n\`\`\`\n`) }));
+  assert.doesNotMatch(extSh("cargo run\npnpm install\npnpm exec tsx main.ts").err, /DOCS-FACT-001/);
+  assert.match(extSh("cargo run --manifest-path examples/Cargo.toml -p cohost-example-bus").err, /typescript-service\.md.*DOCS-FACT-001.*cargo run --manifest-path examples/);
+  assert.match(extSh("pnpm exec tsc -p examples/tsconfig.json").err, /DOCS-FACT-001.*pnpm exec tsc/);
+  // the allowance is the Extend pages' alone
+  fails(check({ [FP]: shellPage("cargo run") }), /troubleshooting\.md.*DOCS-FACT-001.*cargo run/);
 });
 
 // @spec DOCS-FACT-002
 test("NAME= assignments in shell and env fences must be named on the environment page", () => {
-  passes(check({ [FP]: shellPage("DASHBOARD_PORT=4000 pnpm dashboard\nexport LLM_PROVIDER=mock\ncd x") }));
-  fails(check({ [FP]: shellPage("PORT=4000 pnpm dashboard") }), /troubleshooting\.md:11.*DOCS-FACT-002.*PORT/);
+  passes(check({ [FP]: shellPage("DASHBOARD_PORT=4000 mise run dashboard\nexport LLM_PROVIDER=mock\ncd x") }));
+  fails(check({ [FP]: shellPage("PORT=4000 mise run dashboard") }), /troubleshooting\.md:11.*DOCS-FACT-002.*PORT/);
   fails(check({ [FP]: shellPage("export NOPE_X=1") }), /DOCS-FACT-002.*NOPE_X/);
   fails(check({ [FP]: shellPage("NOPE_X=1", "env") }), /DOCS-FACT-002.*NOPE_X/);
   fails(check({ [FP]: shellPage("NOPE_X=1", "dotenv") }), /DOCS-FACT-002.*NOPE_X/);
   passes(check({ [FP]: shellPage("lowercase=1 echo hi\n# NOPE_X=1\nNOPE_X=1", "text") }));
-  fails(check({ "README.md": baseFiles()["README.md"].replace("pnpm dashboard\n", "NOPE_Y=1 pnpm dashboard\n") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
+  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard\n", "NOPE_Y=1 mise run dashboard\n") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
 });
 
 // @spec DOCS-FACT-003
@@ -865,12 +908,14 @@ test("the README quick start clones, changes directory, then at most five comman
   fails(check(readmeWith((t) => t.replace("cd cohost\n", ""))), /README\.md.*DOCS-README-003.*cd/);
   fails(check(readmeWith((t) => t.replace("git clone https://github.com/CoderCoco-Studios/cohost.git\n", ""))), /DOCS-README-003.*clone/);
   fails(check(readmeWith((t) => t.replace("scripts/install.sh\n", ""))), /DOCS-README-003.*install\.sh/);
-  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "pnpm build\n"))), /DOCS-README-003.*pnpm dashboard/);
-  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "pnpm build\npnpm test\npnpm build\npnpm build\npnpm dashboard\n"))), /DOCS-README-003.*(five|5)/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "mise run build\n"))), /DOCS-README-003.*mise run dashboard/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "pnpm dashboard\n"))), /DOCS-README-003.*mise run dashboard/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "mise run dashboard:ui\n"))), /DOCS-README-003.*mise run dashboard/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "mise run build\nmise run test\nmise run build\nmise run build\nmise run dashboard\n"))), /DOCS-README-003.*(five|5)/);
   fails(check(readmeWith((t) => t.replace(/\[Install for real\]\([^)]*\)/, "[Install](https://codercoco-studios.github.io/cohost/)"))), /DOCS-README-003.*real-install/);
   // nothing is appended to .env, whatever the form
-  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "echo X=1 >> .env\npnpm dashboard\n"))), /DOCS-README-003.*\.env/);
-  fails(check(readmeWith((t) => t.replace("pnpm dashboard\n", "cp .env.example .env\npnpm dashboard\n"))), /DOCS-README-003.*\.env/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "echo X=1 >> .env\nmise run dashboard\n"))), /DOCS-README-003.*\.env/);
+  fails(check(readmeWith((t) => t.replace("mise run dashboard\n", "cp .env.example .env\nmise run dashboard\n"))), /DOCS-README-003.*\.env/);
   // the isolated start is named in the prose of the section
   fails(check(readmeWith((t) => t.replace(/tick isolated[^;]*;/, "start the services;"))), /DOCS-README-003.*isolated/);
   passes(check(readmeWith((t) => t.replace("scripts/install.sh\n", "scripts/install.sh\ntrue\ntrue\n"))));
@@ -1664,7 +1709,7 @@ test("fenced blocks on an Extend page are shell, yaml, env or text", () => {
 });
 
 // @spec DOCS-GUIDE-005
-test("a command line of a shell fence runs only pnpm, node, python3, cargo, sh, cd or export", () => {
+test("a command line of a shell fence runs only mise, pnpm, node, python3, cargo, sh, cd or export", () => {
   const sh = (cmds: string, lang = "sh") => withBody(`\`\`\`${lang}\n${cmds}\n\`\`\`\n`);
   fails(ext(sh("curl http://localhost")), /typescript-service\.md:\d+.*DOCS-GUIDE-005.*curl/);
   fails(ext(sh("FOO=1 BAR='a b' sox in.wav out.wav")), /DOCS-GUIDE-005.*sox/);
@@ -1683,6 +1728,25 @@ test("a command line of a shell fence runs only pnpm, node, python3, cargo, sh, 
   lacks(ext(sh("$ node a.ts\nprints curl and sox here\n$ pnpm build", "console")), /DOCS-GUIDE-005/);
   lacks(ext(sh("curl is fine in text\n", "text")), /DOCS-GUIDE-005/);
   lacks(ext({ "docs/guide/troubleshooting.md": page(OTHER, "# T\n\n```sh\ncurl x\n```\n") }), /DOCS-GUIDE-005/);
+  lacks(ext(sh("mise run example:rust-bus\nmise watch --restart dev:chat")), /DOCS-GUIDE-005/);
+});
+
+// @spec DOCS-GUIDE-005
+test("pnpm, node, python3, cargo or sh naming a path inside the repository fails on an Extend page; a dependency edit does not", () => {
+  const sh = (cmds: string) => withBody(`\`\`\`sh\n${cmds}\n\`\`\`\n`);
+  fails(ext(sh("cargo run --manifest-path examples/Cargo.toml -p cohost-example-bus")), /typescript-service\.md:\d+.*DOCS-GUIDE-005.*"cargo".*examples\/Cargo\.toml/);
+  fails(ext(sh("node examples/service/now-playing.ts")), /typescript-service\.md:\d+.*DOCS-GUIDE-005.*"node".*examples\/service\/now-playing\.ts/);
+  fails(ext(sh("node ./examples/service/now-playing.ts")), /DOCS-GUIDE-005.*"node"/);
+  fails(ext(sh("python3 scripts/x.py")), /DOCS-GUIDE-005.*"python3".*scripts\/x\.py/);
+  fails(ext(sh("sh examples/service/")), /DOCS-GUIDE-005.*"sh".*examples\/service/);
+  fails(ext(sh("pnpm exec tsc -p examples/tsconfig.json")), /DOCS-GUIDE-005.*"pnpm".*examples\/tsconfig\.json/);
+  fails(ext(sh("node --import tsx packages/bus/x.ts")), /DOCS-GUIDE-005.*packages\/bus\/x\.ts/);
+  fails(ext(sh("cargo build --manifest-path=crates/cohost-bus/Cargo.toml")), /DOCS-GUIDE-005.*crates\/cohost-bus\/Cargo\.toml/);
+  fails(ext(sh("LLM_PROVIDER=mock node services/cortex/dist/index.js")), /DOCS-GUIDE-005.*services\/cortex/);
+  // code the reader keeps outside the checkout, and dependency edits, pass
+  lacks(ext(sh("cargo run\nnode server.ts\npython3 stub.py\nsh try.sh\npnpm install\nnode my-examples/x.ts")), /DOCS-GUIDE-005/);
+  lacks(ext(sh("pnpm add x\npnpm --filter ./packages/bus add x\ncargo add serde\ncargo add --manifest-path crates/cohost-bus/Cargo.toml serde\ncargo remove serde\npnpm remove x")), /DOCS-GUIDE-005/);
+  lacks(ext(sh("mise run example:rust-bus\ncd examples")), /DOCS-GUIDE-005/);
 });
 
 // @spec DOCS-GUIDE-006
@@ -1968,21 +2032,21 @@ test("the Connector protocol page says no SDK, not a supported route, and names 
 });
 
 // @spec DOCS-EX-002
-test("the modules README names its seven files as code spans and the three run commands in a shell fence", () => {
+test("the modules README names its seven files as code spans and the three servers' mise tasks in a shell fence", () => {
   const p = "examples/modules/README.md";
   const site = "[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)";
   const names = "`server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`";
-  const runs = "```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```";
+  const runs = "```sh\nmise run example:hook-server:py\nmise run example:hook-server:ts\nmise run example:hook-server:rust\n```";
   passes(check({ [p]: `# M\n\n${names}.\n\n${runs}\n\n${site}\n` }));
   for (const n of ["server.py", "server.ts", "rust/", "try.sh", "try.expected.txt", "fixtures/", "schemas/"]) {
     fails(check({ [p]: `# M\n\n${names.replace(`\`${n}\``, n)}.\n\n${runs}\n\n${site}\n` }), new RegExp(`modules/README\\.md.*DOCS-EX-002.*${n.replace(/[./]/g, "\\$&")}`));
   }
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("python3 examples/modules/server.py\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*python3/);
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("node examples/modules/server.ts\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*node/);
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace(/cargo run.*\n/, "cargo build\n")}\n\n${site}\n` }), /DOCS-EX-002.*cargo run/);
+  for (const lang of ["py", "ts", "rust"]) {
+    fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace(`mise run example:hook-server:${lang}\n`, "")}\n\n${site}\n` }), new RegExp(`DOCS-EX-002.*example:hook-server:${lang}`));
+  }
   fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("```sh", "```text")}\n\n${site}\n` }), /DOCS-EX-002/);
   fails(check({ [p]: `# M\n\n${names}.\n\n${runs}\n` }), /DOCS-EX-002.*hooks/);
-  passes(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("-p cohost-example-hook-server", "--package cohost-example-hook-server")}\n\n${site}\n` }));
+  passes(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("mise run example:hook-server:py", "mise run -q example:hook-server:py")}\n\n${site}\n` }));
 });
 
 // @spec DOCS-EX-005

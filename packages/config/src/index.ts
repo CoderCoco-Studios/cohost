@@ -22,7 +22,7 @@ export * from "./egress.js";
 
 /**
  * Walk up from `start` to the nearest dir containing pnpm-workspace.yaml.
- * `pnpm dev` runs scripts with cwd set to the package dir, so cwd alone isn't the repo root.
+ * The `dev:<service>` mise tasks and the memory one-shots run with cwd set to the package dir, so cwd alone isn't the repo root.
  */
 export function findWorkspaceRoot(start = process.cwd()): string | undefined {
   let dir = resolve(start);

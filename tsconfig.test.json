@@ -1,5 +1,5 @@
 {
-  // Read by tsx (`TSX_TSCONFIG_PATH`, set in the root `test` and `test:only` scripts), not by tsc. tsx takes its compiler
+  // Read by tsx (`TSX_TSCONFIG_PATH`, set by the `test` and `test:only` tasks of mise.toml), not by tsc. tsx takes its compiler
   // options from one file, and the root tsconfig.json is a files-less solution file that matches nothing. The dashboard UI
   // tests and components are .tsx and need the automatic JSX runtime; every other test file is unaffected by it.
   "compilerOptions": { "jsx": "react-jsx" }

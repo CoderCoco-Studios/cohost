@@ -1,5 +1,5 @@
 /**
- * dashboard — a host process (`pnpm dashboard`), http://localhost:3000
+ * dashboard — a host process (`mise run dashboard`), http://localhost:3000
  *
  * - Live feed of everything on the bus, brain status, avatar preview
  * - Stack panel: Launch / Stop / Restart-all for the Compose stack (control mode), and per-service control

@@ -11,23 +11,23 @@ You will have a small TypeScript server, with nothing to install, that answers t
 
 ## What you need
 
-- Node 22.18 or later. The file `examples/modules/server.ts` runs with `node` on Node 22.18 or later, which strips the types as it reads the file, so there is no build step and no package to install. Check with `node --version`.
+- Node 22.18 or later, which the checkout's `mise.toml` provides through `mise install`. The file `examples/modules/server.ts` runs with `node` on Node 22.18 or later, which strips the types as it reads the file, so there is no build step and no package to install.
 - `curl` and a shell, for the try-it script.
-- A checkout of cohost, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
+- A checkout of cohost with mise, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
 - For pointing the co-host at it: [Docker](../../start/glossary.md#docker), if the services run in [containers](../../start/glossary.md#container).
 
 ## Steps
 
-1. Start the server. It listens on port 8900 and prints `listening on 8900`. Give another port as the first argument, or `0` for any free port.
+1. Start the server. It listens on port 8900 and prints `listening on 8900`. Give another port after `--` (`mise run example:hook-server:ts -- 8910`), or `0` for any free port.
 
    ```sh
-   node examples/modules/server.ts
+   mise run example:hook-server:ts
    ```
 
 2. In a second terminal, ask it the three questions cohost asks, with the try-it script (it is the same script for every language).
 
    ```sh
-   sh examples/modules/try.sh
+   mise run example:hook-try
    ```
 
    The script is these three requests:
@@ -69,11 +69,11 @@ Replace the body of one function and leave the plumbing alone. Each handler take
 
 To call a model that takes time, make the handler `async` and, in the plumbing, make the `end` callback `async` and `await` the call to `fn`: the reply is written when the answer is ready. Keep the call well inside `timeout_ms`, because a late reply is dropped and the rules answer instead.
 
-A handler that throws does no harm. The server answers 500 with the message, and the region uses its rules for that call. Run `sh examples/modules/try.sh` again after each change to see that the replies still have the right shape.
+A handler that throws does no harm. The server answers 500 with the message, and the region uses its rules for that call. Run `mise run example:hook-try` again after each change to see that the replies still have the right shape.
 
 ## How you know it worked
 
-- `sh examples/modules/try.sh` prints the three lines above.
+- `mise run example:hook-try` prints the three lines above.
 - The Services screen shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
 - Stop the server: the co-host keeps talking with the rules answers, and the region logs one warning, not one for each call.
 

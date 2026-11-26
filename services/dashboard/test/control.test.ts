@@ -283,7 +283,7 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   chmodSync(bin, 0o755);
   const before = { cwd: process.cwd(), bin: process.env.COHOST_DOCKER_BIN };
   process.env.COHOST_DOCKER_BIN = bin;
-  process.chdir(join(root, "services", "dashboard")); // as `pnpm --filter` starts it
+  process.chdir(join(root, "services", "dashboard")); // as a task whose working directory is the package starts it
   try {
     const setup = setupControl(ON, new CtlBus(), recordingLog().log);
     const r = await setup.control!.controller.restart("cortex");

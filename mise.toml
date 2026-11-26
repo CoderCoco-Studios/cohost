@@ -1,0 +1,462 @@
+# The project's toolchains and commands (deployment design, "Toolchains and commands"; HLD Tenet 14).
+# Every command a person or CI runs is a task here: `mise run <task>`. Dependency edits are the one
+# exception: `pnpm add`/`pnpm remove` and `cargo add`/`cargo remove`, run directly.
+# @spec DEPLOY-TOOL-001, DEPLOY-TOOL-003, DEPLOY-TOOL-005, DEPLOY-TOOL-009
+
+# The mise release the installer, the Dockerfile and CI install (DEPLOY-TOOL-002 holds them to it).
+min_version = "2026.11.14"
+
+[settings]
+# mise.lock records each tool's resolved version, URL and checksum; every install is `mise install --locked`.
+lockfile = true
+# pnpm's version is package.json "packageManager"; Rust's toolchain is rust-toolchain.toml. Neither is written here.
+idiomatic_version_file_enable_tools = ["pnpm", "rust"]
+
+[settings.rust]
+# The project's Rust never installs into or changes the operator's own ~/.rustup and ~/.cargo.
+rustup_home = "~/.local/share/mise/rustup"
+cargo_home = "~/.local/share/mise/cargo"
+
+[tools]
+node = "26.13.1"
+zig = "0.17.1"
+python = "3.15.2"
+watchexec = "2.8.0"
+
+[env]
+_.path = ["{{config_root}}/node_modules/.bin"]
+# Every x86_64-unknown-linux-gnu link and C/C++ compile goes through Zig (deployment "Linking through Zig").
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/scripts/zig-cc"
+CC_x86_64_unknown_linux_gnu = "{{config_root}}/scripts/zig-cc"
+CXX_x86_64_unknown_linux_gnu = "{{config_root}}/scripts/zig-cxx"
+AR_x86_64_unknown_linux_gnu = "{{config_root}}/scripts/zig-ar"
+# rustc's self-contained lld flags would reach the wrapper; turn them off.
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS = "-Clinker-features=-lld"
+ZIG_GLOBAL_CACHE_DIR = "{{env.HOME}}/.local/share/mise/zig-cache/global"
+ZIG_LOCAL_CACHE_DIR = "{{env.HOME}}/.local/share/mise/zig-cache/local"
+# The glibc the addon links against: the supported host floor (Ubuntu 22.04), not newer than Debian 13's 2.41.
+ZIG_GLIBC = "2.35"
+
+# ------------------------------------------------------------------------------------------ install and build
+
+[tasks.install]
+description = "Install the workspace's dependencies from pnpm-lock.yaml (frozen)"
+# pnpm leaves .modules.yaml untouched when nothing needs installing; the touch marks the install current
+# so the task (and every task after it) is skipped until a manifest or the lockfile changes again.
+run = ["pnpm install --frozen-lockfile", "touch node_modules/.modules.yaml"]
+sources = ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "packages/*/package.json", "services/*/package.json"]
+outputs = ["node_modules/.modules.yaml"]
+
+[tasks."build:native"]
+description = "Build the bus addon (crates/cohost-bus-node) into packages/bus/native/"
+run = [
+  "cargo build --release -p cohost-bus-node",
+  "mkdir -p packages/bus/native",
+  "cp target/release/libcohost_bus_node.so packages/bus/native/cohost-bus.linux-x64-gnu.node",
+]
+sources = ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "crates/**"]
+outputs = ["packages/bus/native/cohost-bus.linux-x64-gnu.node"]
+
+[tasks."build:ts"]
+description = "Compile every package and service (tsc -b, incremental)"
+depends = ["install"]
+run = "tsc -b"
+
+[tasks."build:ui"]
+description = "Build the dashboard's web UI into services/dashboard/dist-ui/"
+# ui/vite.config.ts imports @cohost/config, which resolves to its built dist/.
+depends = ["build:ts"]
+dir = "{{config_root}}/services/dashboard"
+run = "node_modules/.bin/vite build --config ui/vite.config.ts"
+sources = ["{{config_root}}/services/dashboard/ui/**"]
+outputs = ["{{config_root}}/services/dashboard/dist-ui/index.html"]
+
+[tasks.build]
+description = "Build everything: the bus addon, the TypeScript workspace and the dashboard UI"
+depends = ["build:native", "build:ts", "build:ui"]
+
+[tasks.clean]
+description = "Remove the TypeScript build output"
+run = "rm -rf packages/*/dist services/*/dist services/dashboard/dist-ui"
+
+# ------------------------------------------------------------------------------------------ lint and test
+
+[tasks.typecheck]
+description = "Type-check the workspace and the dashboard UI"
+depends = ["install"]
+run = ["tsc -b", "tsc -p services/dashboard/ui --noEmit"]
+
+[tasks."lint:ts"]
+description = "Lint TypeScript (oxlint, type-aware) after the type check"
+depends = ["typecheck"]
+run = "oxlint --type-aware"
+
+[tasks."lint:rust"]
+description = "Check Rust formatting and run Clippy with warnings denied"
+run = ["cargo fmt --check", "cargo clippy --workspace --all-targets -- -D warnings"]
+
+[tasks.lint]
+description = "Lint TypeScript and Rust"
+depends = ["lint:ts", "lint:rust"]
+
+[tasks."test:rust"]
+description = "Run the Rust tests and check the desktop audio helper's Windows back end"
+run = ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]
+
+[tasks.test]
+description = "Run every test: Rust, then the build, then the TypeScript suite"
+depends = ["build", "test:rust"]
+env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
+run = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
+
+[tasks."test:only"]
+description = "Run the TypeScript suite with no build first"
+env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
+run = 'node --import tsx --test "packages/*/test/*.test.ts" "services/*/test/*.test.ts" "services/*/test/ui/*.test.tsx"'
+
+[tasks."test:file"]
+description = "Run the given test files (arguments after the task name) after the build"
+depends = ["build"]
+env = { TSX_TSCONFIG_PATH = "tsconfig.test.json" }
+run = "node --import tsx --test"
+
+[tasks."test:launch"]
+description = "Run the launch end-to-end test against Docker"
+depends = ["build", "doctor:docker"]
+run = "node --import tsx --test packages/control/test/launch.e2e.test.ts"
+
+[tasks."test:rust-example"]
+description = "Run the Rust bus example's round trip; fails when it skips"
+shell = "bash -c"
+run = '''
+set -o pipefail
+log="$(mktemp)"
+cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture 2>&1 | tee "$log" || exit 1
+if grep -q '^SKIP ' "$log"; then echo "test:rust-example: the round trip was skipped" >&2; exit 1; fi
+grep -q '^RAN round_trip against ' "$log" || { echo "test:rust-example: no 'RAN round_trip against' line" >&2; exit 1; }
+'''
+
+[tasks.lid-check]
+description = "Check the linked-intent spec citations"
+run = "node scripts/lid-check.mjs"
+
+[tasks.smoke]
+description = "Build and start a few services in Compose and wait for them to be healthy"
+depends = ["doctor:docker"]
+run = "scripts/compose-smoke.sh"
+
+# ------------------------------------------------------------------------------------------ run on the host
+
+[tasks.dashboard]
+description = "Build and start the dashboard on this machine (it brings up the stack)"
+depends = ["build:native", "build:ui"]
+run = [
+  "mise run docs:build || echo 'mise run dashboard: the docs build failed (see above); starting the dashboard anyway' >&2",
+  "tsc -b services/dashboard",
+  "node services/dashboard/dist/index.js",
+]
+
+[tasks."dashboard:ui"]
+description = "Run the dashboard UI's Vite dev server"
+depends = ["build:ts"]
+dir = "{{config_root}}/services/dashboard"
+run = "node_modules/.bin/vite --config ui/vite.config.ts"
+
+[tasks.cohostctl]
+description = "Run the cohostctl CLI (arguments after the task name)"
+depends = ["build:native", "install"]
+run = ["tsc -b packages/control", "node packages/control/dist/cli.js"]
+
+[tasks."secrets:project"]
+description = "Project secrets/secrets.yaml into each unit's secrets directory"
+depends = ["install"]
+run = ["tsc -b packages/control", "node packages/control/dist/project-secrets.js"]
+
+[tasks.reflect]
+description = "Run the memory reflection pass once"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/memory"
+run = "node dist/reflect.js"
+
+[tasks.consolidate]
+description = "Run one memory consolidation pass"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/memory"
+run = "node dist/consolidate.js"
+
+[tasks.reembed]
+description = "Re-embed the memory store with the configured embedder"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/memory"
+run = "node dist/reembed.js"
+
+[tasks."infra:up"]
+description = "Start the infrastructure containers for the Docker-free dev loop"
+depends = ["doctor:docker"]
+run = "docker compose up -d redis postgres ollama tts stt"
+
+[tasks."infra:down"]
+description = "Stop the infrastructure containers"
+depends = ["doctor:docker"]
+run = "docker compose stop redis postgres ollama tts stt"
+
+# ------------------------------------------------------------------------------------------ dev loop
+# One task per directory under services/ except dashboard. `outputs = []`: a clean exit never marks a
+# service up to date. `mise watch --restart dev:<service>` rebuilds what changed and restarts it.
+# @spec DEPLOY-TOOL-014
+
+[tasks."dev:affect"]
+description = "Run the affect service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/affect"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/affect/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:avatar"]
+description = "Run the avatar service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/avatar"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/avatar/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:chat"]
+description = "Run the chat service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/chat"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/chat/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:connector-discord"]
+description = "Run the Discord connector (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/connector-discord"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/connector-discord/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:cortex"]
+description = "Run the cortex service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/cortex"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/cortex/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:ears"]
+description = "Run the ears service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/ears"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/ears/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:eyes"]
+description = "Run the eyes service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/eyes"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/eyes/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:memory"]
+description = "Run the memory service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/memory"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/memory/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:mouth"]
+description = "Run the mouth service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/mouth"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/mouth/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:salience"]
+description = "Run the salience service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/salience"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/salience/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:tools"]
+description = "Run the tools service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/tools"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/tools/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks."dev:voice"]
+description = "Run the voice service (use with mise watch --restart)"
+depends = ["build:native", "build:ts"]
+dir = "{{config_root}}/services/voice"
+run = "node dist/index.js"
+sources = ["{{config_root}}/services/voice/src/**", "{{config_root}}/packages/*/src/**"]
+outputs = []
+
+[tasks.dev]
+description = "Run every service, rebuilding and restarting on a source change"
+run = "MISE_JOBS=12 mise watch --restart dev:affect ::: dev:avatar ::: dev:chat ::: dev:connector-discord ::: dev:cortex ::: dev:ears ::: dev:eyes ::: dev:memory ::: dev:mouth ::: dev:salience ::: dev:tools ::: dev:voice"
+
+# ------------------------------------------------------------------------------------------ developer tools
+# Arguments after the task name reach the program: `mise run bus:tail -- --replay 20`.
+# @spec DEPLOY-TOOL-015
+
+[tasks."bus:pub"]
+description = "Publish one event onto the bus"
+depends = ["build:native", "build:ts"]
+run = "tsx scripts/dev/bus-pub.ts"
+
+[tasks."bus:tail"]
+description = "Print bus events as they arrive"
+depends = ["build:native", "build:ts"]
+run = "tsx scripts/dev/bus-tail.ts"
+
+[tasks."bus:bench"]
+description = "Benchmark the bus (TypeScript against native)"
+depends = ["build:native", "build:ts"]
+run = "tsx scripts/dev/bus-bench.ts"
+
+[tasks."perf:connector"]
+description = "Play a clip into ears as a test connector"
+depends = ["build:native", "build:ts"]
+run = "tsx scripts/dev/perf-connector.ts"
+
+[tasks."perf:baseline"]
+description = "Measure the end-to-end latency baseline against the running stack"
+depends = ["build:native", "build:ts", "doctor:docker"]
+run = "scripts/dev/perf-baseline.sh"
+
+[tasks."stub:llm"]
+description = "Run the stub LLM server on :11434"
+depends = ["install"]
+run = "tsx scripts/dev/stub-llm.ts"
+
+[tasks."stub:tts"]
+description = "Run the stub TTS server on :8880"
+depends = ["install"]
+run = "tsx scripts/dev/stub-tts.ts"
+
+[tasks."hooks:schemas"]
+description = "Write the hook reply schemas under examples/modules/schemas/"
+depends = ["build:ts"]
+run = "node scripts/gen-hook-schemas.mjs"
+
+# ------------------------------------------------------------------------------------------ examples
+# One task per program under examples/ that a page tells the reader to run from the checkout.
+# @spec DEPLOY-TOOL-016
+
+[tasks."example:hook-server:py"]
+description = "Run the Python example hook server (:8900)"
+run = "python3 examples/modules/server.py"
+
+[tasks."example:hook-server:ts"]
+description = "Run the TypeScript example hook server (:8900)"
+run = "node examples/modules/server.ts"
+
+[tasks."example:hook-server:rust"]
+description = "Run the Rust example hook server (:8900)"
+run = "cargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server"
+
+[tasks."example:hook-try"]
+description = "Send one request to each hook of a running example hook server"
+run = "sh examples/modules/try.sh"
+
+[tasks."example:model-stub:py"]
+description = "Run the Python example model server stub (:8901)"
+run = "python3 examples/model-stub/stub.py"
+
+[tasks."example:model-stub:ts"]
+description = "Run the TypeScript example model server stub (:8901)"
+run = "node examples/model-stub/stub.ts"
+
+[tasks."example:model-try"]
+description = "Send the example requests to a running model server"
+run = "sh examples/model-stub/try.sh"
+
+[tasks."example:audio-send:sh"]
+description = "Send a WAV clip to ears' http source (curl)"
+run = "sh examples/audio-in/send.sh"
+
+[tasks."example:audio-send:py"]
+description = "Send a WAV clip to ears' http source (Python)"
+run = "python3 examples/audio-in/send_clip.py"
+
+[tasks."example:audio-send:ts"]
+description = "Send a WAV clip to ears' http source (TypeScript)"
+run = "node examples/audio-in/send-clip.ts"
+
+[tasks."example:audio-wav:sox"]
+description = "Convert a recording to the WAV ears expects (sox)"
+run = "sh examples/audio-in/to-wav-sox.sh"
+
+[tasks."example:audio-wav:ffmpeg"]
+description = "Convert a recording to the WAV ears expects (ffmpeg)"
+run = "sh examples/audio-in/to-wav-ffmpeg.sh"
+
+[tasks."example:rust-bus"]
+description = "Run the Rust bus example"
+run = "cargo run --manifest-path examples/Cargo.toml -p cohost-example-bus"
+
+[tasks."example:now-playing"]
+description = "Run the example TypeScript service (now-playing)"
+depends = ["build:native", "build:ts"]
+run = "node --import tsx examples/service/now-playing.ts"
+
+[tasks."example:typecheck"]
+description = "Type-check the TypeScript examples"
+depends = ["build:ts"]
+run = "tsc -p examples/tsconfig.json"
+
+# ------------------------------------------------------------------------------------------ docs site
+
+[tasks."docs:build"]
+description = "Check and build the docs site (skipped while its sources are unchanged)"
+depends = ["install"]
+run = ["node scripts/docs-check.mjs", "vitepress build docs", "node scripts/docs-check.mjs --dist"]
+sources = ["docs/**", "!docs/.vitepress/dist/**", "!docs/.vitepress/cache/**", "scripts/docs-check.mjs", "examples/**", "README.md"]
+outputs = ["docs/.vitepress/dist/index.html"]
+
+[tasks."docs:dev"]
+description = "Run the docs site's dev server"
+depends = ["install"]
+run = "vitepress dev docs"
+
+[tasks."docs:preview"]
+description = "Serve the built docs site"
+depends = ["install"]
+run = "vitepress preview docs"
+
+# ------------------------------------------------------------------------------------------ host prerequisites
+# Checks only; installs nothing. @spec DEPLOY-TOOL-017
+
+[tasks.doctor]
+description = "Check the host's system prerequisites"
+run = "scripts/doctor.sh"
+
+[tasks."doctor:docker"]
+description = "Check Docker, Compose and the daemon"
+run = "scripts/doctor.sh docker"
+
+[tasks."doctor:gpu"]
+description = "Check the NVIDIA runtime when a GPU is present"
+run = "scripts/doctor.sh gpu"
+
+[tasks."doctor:fetch"]
+description = "Check git and curl"
+run = "scripts/doctor.sh fetch"
+
+[tasks."doctor:libatomic"]
+description = "Check libatomic.so.1, which the Node binary links"
+run = "scripts/doctor.sh libatomic"
+
+[tasks."doctor:glibc"]
+description = "Check the host's glibc against the supported floor"
+run = "scripts/doctor.sh glibc"

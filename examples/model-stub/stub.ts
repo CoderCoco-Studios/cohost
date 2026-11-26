@@ -1,5 +1,6 @@
 // The smallest server cohost's OpenAI-compatible provider accepts. Node built-ins only.
-//   node examples/model-stub/stub.ts [port]      (default 8901, 0 = any free port; Node 22.18 or later)
+//   mise run example:model-stub:ts -- [port]      (default 8901, 0 = any free port)
+// A copy outside the checkout runs as `node stub.ts [port]` on Node 22.18 or later.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 

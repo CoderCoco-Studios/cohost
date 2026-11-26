@@ -10,10 +10,11 @@ The Rust package `cohost-example-bus`, a member of the examples Cargo workspace
 | `main.rs` | In `src/`: a program that runs them against `REDIS_URL` |
 | `round_trip.rs` | The integration test in `tests/`; needs Redis |
 
-From the repository root, with Redis running:
+From the checkout, with Redis running, run the program, then its test:
 
 ```shell
-cargo run --manifest-path examples/Cargo.toml -p cohost-example-bus
+mise run example:rust-bus
+mise run test:rust-example
 ```
 
 The explanation is on the

@@ -39,7 +39,7 @@ By the end of this page the co-host will be reading the live chat of a YouTube b
 3. Restart the `chat` service. A new broadcast has a new video id, so restart chat for each stream. From a terminal in the cohost folder:
 
    ```bash
-   pnpm cohostctl restart chat
+   mise run cohostctl restart chat
    ```
 
 4. Check the Services screen: the `youtube` source reads when the broadcast is live. A broadcast that has not started is `waiting` and is looked up again every `recheck_ms`.

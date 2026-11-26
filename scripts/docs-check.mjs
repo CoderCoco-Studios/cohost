@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Docs-site check (docs-site segment, DOCS-BUILD-001, DOCS-BUILD-005): a deterministic, read-only pass over the
- * documentation, run by `pnpm docs:build` before and after `vitepress build`.
+ * documentation, run by `mise run docs:build` before and after `vitepress build`.
  *
  *   node scripts/docs-check.mjs [root]         source pass: frontmatter, sidebar, glossary links, facts checked against
  *                                              the repository, links to GitHub, wording, README and examples
@@ -29,8 +29,14 @@ const REQUIRED_EXCLUDES = ['high-level-design.md', 'intent/**', 'decisions/**', 
 const MAY_BE_EMPTY = new Set(['decisions/**', 'plans/**']);
 const SHELL_LANGS = new Set(['sh', 'bash', 'shell', 'zsh', 'console']);
 const ENV_LANGS = new Set(['env', 'dotenv']);
-const PNPM_BUILTINS = new Set(['install', 'i', 'add', 'remove', 'update', 'exec', 'dlx', 'run', 'why', 'list', 'ls', 'store', 'config', 'env', 'outdated', 'prune', 'rebuild', 'setup', 'init', 'import', 'link', 'unlink', 'audit', 'fetch', 'patch', 'pack', 'publish']);
-const PNPM_SKIP_FLAGS = new Set(['--filter', '-F', '-r', '--recursive', '-C', '--dir']);
+// Flags of `mise run` and `mise watch` that take a value as the next word (so that word is no task name).
+const MISE_RUN_VALUE_FLAGS = new Set(['-C', '--cd', '-j', '--jobs', '-o', '--output', '-t', '--tool', '-E', '--env', '-s', '--shell', '--timeout']);
+const MISE_WATCH_VALUE_FLAGS = new Set(['-C', '--cd', '-w', '--watch', '-W', '--watch-file', '-e', '--exts', '-f', '--filter', '--delay', '--debounce', '--on-busy-update', '--signal', '--stop-signal', '--stop-timeout', '--poll', '--shell', '-E', '--env', '-j', '--jobs']);
+// Flags of pnpm and cargo, before the subcommand, that take a value as the next word.
+const PKG_VALUE_FLAGS = new Set(['--filter', '-F', '-C', '--dir', '--workspace-dir', '--config', '-Z', '--color', '--manifest-path']);
+const DEP_EDITS = new Set(['add', 'remove']);
+// A word naming a path inside the repository: a program there runs through its `mise run` task (DOCS-GUIDE-005, DOCS-FACT-001).
+const REPO_PATH = /^(?:\.\/)?(?:examples|scripts|packages|services|crates)(?:\/|$)/;
 const NARRATION = /\b(previously|formerly|deprecated|legacy)\b/gi;
 const ALLOW = '<!-- docs-check: allow -->';
 // Build output and installed packages under examples/ (cargo's target/, node_modules/) are no example directory or README.
@@ -307,7 +313,9 @@ function commandLines(fence) {
 const EXTEND_DIR = 'advanced/extend/';
 const EXTEND_REFERENCES = new Set(['index.md', 'hooks.md', 'connector-protocol.md']);
 const FENCE_LANGS = new Set([...SHELL_LANGS, 'yaml', 'yml', 'env', 'dotenv', 'text', 'txt']);
-const ALLOWED_COMMANDS = new Set(['pnpm', 'node', 'python3', 'cargo', 'sh', 'cd', 'export']);
+const ALLOWED_COMMANDS = new Set(['mise', 'pnpm', 'node', 'python3', 'cargo', 'sh', 'cd', 'export']);
+// First words that run code the reader keeps outside the checkout; one naming a path inside it fails DOCS-GUIDE-005.
+const OUTSIDE_CODE_COMMANDS = new Set(['pnpm', 'node', 'python3', 'cargo', 'sh']);
 const GUIDE_HEADINGS = ['What you need', 'How you know it worked', "If it didn't"];
 const TESTED_HEADER = ['Task', 'Python', 'TypeScript', 'Rust', 'Any language with curl'];
 const LANG_EXT = { Python: '.py', TypeScript: '.ts', Rust: '.rs', 'Any language with curl': '.sh' };
@@ -455,6 +463,74 @@ const commandStart = (words) => {
   while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i])) i++;
   return i;
 };
+
+/** The first word of a command that names a path inside the repository (a `--flag=value` value counts), or null. */
+const repoPathWord = (words) => {
+  for (const w of words.slice(1)) {
+    const cand = w.startsWith('-') && w.includes('=') ? w.slice(w.indexOf('=') + 1) : w;
+    if (REPO_PATH.test(cand)) return cand;
+  }
+  return null;
+};
+
+/** The subcommand of a `pnpm` or `cargo` command (`words[0]` is the program): its first word that is no flag or flag value. */
+const pkgSubcommand = (words) => {
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i];
+    if (PKG_VALUE_FLAGS.has(w)) i++;
+    else if (!w.startsWith('-') && !w.startsWith('+')) return w;
+  }
+  return undefined;
+};
+
+/** Whether a command is a dependency edit: `pnpm add`, `pnpm remove`, `cargo add` or `cargo remove`. */
+const isDepEdit = (words) => (words[0] === 'pnpm' || words[0] === 'cargo') && DEP_EDITS.has(pkgSubcommand(words) ?? '');
+
+/** The task names a `mise run` or `mise watch` command names (`:::` separates tasks; `words[0]` is `mise`), or null for another mise command. */
+function miseTasks(words) {
+  let i = 1;
+  for (; i < words.length && words[i].startsWith('-'); i++) if (words[i] === '-C' || words[i] === '--cd') i++;
+  const sub = words[i];
+  if (sub !== 'run' && sub !== 'r' && sub !== 'watch' && sub !== 'w') return null;
+  const watch = sub === 'watch' || sub === 'w';
+  const valueFlags = watch ? MISE_WATCH_VALUE_FLAGS : MISE_RUN_VALUE_FLAGS;
+  const tasks = [];
+  let expect = true;
+  for (i++; i < words.length; i++) {
+    const w = words[i];
+    if (w === ':::') expect = true;
+    else if (w === '--') {
+      if (watch) break;
+      expect = false;
+    } else if (watch && (w === '-t' || w === '--task')) {
+      if (words[i + 1] !== undefined) tasks.push(words[++i]);
+    } else if (watch && w.startsWith('--task=')) tasks.push(w.slice('--task='.length));
+    else if (!expect) continue;
+    else if (valueFlags.has(w)) i++;
+    else if (w.startsWith('-')) continue;
+    else {
+      tasks.push(w);
+      if (!watch) expect = false;
+    }
+  }
+  return tasks;
+}
+
+/** The task names `mise.toml` defines (`[tasks.name]` and `[tasks."name:x"]` headers), or null when it does not exist. */
+function miseTaskNames(root) {
+  const text = readIf(join(root, 'mise.toml'));
+  if (text === null) return null;
+  const names = new Set();
+  for (const m of text.matchAll(/^\s*\[tasks\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_:-]+))\]\s*(?:#.*)?$/gm)) names.add(m[1] ?? m[2] ?? m[3]);
+  return names;
+}
+
+/** Whether a task name a page shows is defined: a `<placeholder>` part matches any text, so `dev:<service>` matches `dev:chat`. */
+function taskDefined(tasks, name) {
+  if (!name.includes('<')) return tasks.has(name);
+  const re = new RegExp(`^${name.split(/<[^>]*>/).map(esc).join('.+')}$`);
+  return [...tasks].some((t) => re.test(t));
+}
 
 /** The body of the `[name]` table of a TOML text, or null. */
 function tomlSection(text, name) {
@@ -619,6 +695,10 @@ function extendChecks(root, pages, lldText, add) {
             const at = commandStart(words);
             const first = words[at];
             if (first !== undefined && !ALLOWED_COMMANDS.has(first)) add(p.file, n, 'DOCS-GUIDE-005', `command starts with "${first}"; a shell fence runs only ${[...ALLOWED_COMMANDS].join(', ')}`);
+            if (OUTSIDE_CODE_COMMANDS.has(first) && !isDepEdit(words.slice(at))) {
+              const inRepo = repoPathWord(words.slice(at));
+              if (inRepo !== null) add(p.file, n, 'DOCS-GUIDE-005', `command "${first}" names ${inRepo}, a path inside the repository; a program in the checkout runs through its mise run task, and ${first} is for code kept outside the checkout`);
+            }
             for (const w of words) {
               const cand = w.startsWith('-') && w.includes('=') ? w.slice(w.indexOf('=') + 1) : w;
               if (cand.startsWith('examples/') || cand.startsWith('./examples/')) {
@@ -1115,41 +1195,42 @@ export async function runSource(root) {
     }
   }
 
-  // ---- facts: package scripts, env vars, ports, config keys, event types
-  const pkgText = readIf(join(root, 'package.json'));
-  let scripts = new Set();
-  try {
-    scripts = new Set(Object.keys(JSON.parse(pkgText ?? '{}').scripts ?? {}));
-  } catch (e) {
-    add('package.json', 0, 'DOCS-FACT-001', `cannot parse package.json: ${e.message}`);
-  }
+  // ---- facts: task names and direct commands, env vars, ports, config keys, event types
+  const tasks = miseTaskNames(root);
+  let missingMise = false;
   const envPage = pages.get(ENV_PAGE);
   const envSpans = envPage?.a.spans ?? [];
   const factTargets = [...pages.values()];
   const readme = readIf(join(root, 'README.md'));
   if (readme !== null) factTargets.push({ rel: 'README.md', file: 'README.md', a: analyze(readme), text: readme, fm: {}, readme: true });
   for (const p of factTargets) {
+    const onExtend = !p.readme && p.rel.startsWith(EXTEND_DIR);
     for (const fence of p.a.fences) {
       if (SHELL_LANGS.has(fence.lang)) {
-        const cmds = commandLines(fence);
-        const firstLine = fence.lines.find((l) => l.text.trim());
-        const firstIsCmd = firstLine && cmds.some((c) => c.n === firstLine.n);
-        for (const { n, cmd } of cmds) {
+        for (const { n, cmd } of commandLines(fence)) {
           const { names } = leadingAssignments(cmd);
           for (const name of names) if (/^[A-Z][A-Z0-9_]*$/.test(name) && !spanNames(envSpans, name)) add(p.file, n, 'DOCS-FACT-002', `names variable ${name}, which the Environment and ports page (${ENV_PAGE}) does not name`);
         }
-        if (!firstIsCmd) continue;
-        for (const { n, cmd } of cmds) {
-          for (const seg of cmd.split(/&&|\|\||;|\|/)) {
-            const tokens = leadingAssignments(seg).rest.split(/\s+/).filter(Boolean);
-            if (tokens[0] !== 'pnpm') continue;
-            const args = tokens.slice(1);
-            if (args.some((t) => PNPM_SKIP_FLAGS.has(t))) continue;
-            const flagless = args.filter((t) => !t.startsWith('-'));
-            let name = flagless[0];
-            if (name === 'run') name = flagless[1];
-            else if (name === undefined || PNPM_BUILTINS.has(name)) continue;
-            if (name !== undefined && !scripts.has(name)) add(p.file, n, 'DOCS-FACT-001', `command "pnpm ${args.join(' ')}" names ${name}, which is no script in the root package.json`);
+        const firstLine = fence.lines.find((l) => l.text.trim());
+        const lines = logicalLines(fence);
+        if (!firstLine || !lines.some((l) => l.n === firstLine.n)) continue;
+        for (const { n, text } of lines) {
+          for (const all of shellCommands(text)) {
+            const words = all.slice(commandStart(all));
+            const shown = words.join(' ');
+            if (words[0] === 'mise') {
+              const named = miseTasks(words);
+              if (named === null) continue;
+              if (tasks === null) {
+                missingMise = true;
+                continue;
+              }
+              for (const t of named) if (!taskDefined(tasks, t)) add(p.file, n, 'DOCS-FACT-001', `command "${shown}" names the task ${t}, which mise.toml does not define`);
+            } else if (words[0] === 'pnpm' || words[0] === 'cargo') {
+              if (isDepEdit(words)) continue;
+              if (onExtend && repoPathWord(words) === null) continue;
+              add(p.file, n, 'DOCS-FACT-001', `command "${shown}" runs ${words[0]} directly; run its mise task (mise run <task>), or use ${words[0]} add / ${words[0]} remove for a dependency edit`);
+            }
           }
         }
       } else if (ENV_LANGS.has(fence.lang)) {
@@ -1160,6 +1241,7 @@ export async function runSource(root) {
       }
     }
   }
+  if (missingMise) add('mise.toml', 0, 'DOCS-FACT-001', 'does not exist, so no task a page runs with mise run or mise watch is defined');
   const mustExist = (page, rel, spec) => {
     if (!page) add(`docs/${rel}`, 0, spec, 'the page does not exist');
     return page;
@@ -1274,7 +1356,7 @@ export async function runSource(root) {
         }
         const body = fence.lines.map((l) => l.text).join('\n');
         if (!/scripts\/install\.sh/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must run scripts/install.sh');
-        if (!/(^|\n)\s*pnpm dashboard\b/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must start the dashboard with pnpm dashboard');
+        if (!/(^|\n)\s*mise run dashboard(?![\w:-])/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must start the dashboard with mise run dashboard');
         if (/\.env\b/.test(body)) add('README.md', fence.line, 'DOCS-README-003', 'the quick start must write nothing to .env: mock mode is an isolated start from the dashboard');
         const sectionText = ra.plain.filter((l) => inSec(l.n)).map((l) => l.text).join('\n');
         if (!/\bisolated\b/i.test(sectionText)) add('README.md', fence.line, 'DOCS-README-003', 'the Quick start prose must reach mock mode by an isolated start from the dashboard');
@@ -1300,9 +1382,9 @@ export async function runSource(root) {
     const ma = analyze(modules);
     for (const name of ['server.py', 'server.ts', 'rust/', 'try.sh', 'try.expected.txt', 'fixtures/', 'schemas/']) if (!ma.spans.includes(name)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must name ${name} as a code span`);
     const cmds = ma.fences.filter((f) => SHELL_LANGS.has(f.lang)).flatMap((f) => logicalLines(f).flatMap((l) => shellCommands(l.text).map((w) => w.slice(commandStart(w)))));
-    if (!cmds.some((w) => w[0] === 'python3')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Python server: a python3 command in a shell fence');
-    if (!cmds.some((w) => w[0] === 'node')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the TypeScript server: a node command in a shell fence');
-    if (!cmds.some((w) => w[0] === 'cargo' && w.includes('run') && w.some((x) => x === '-p' || x === '--package' || x.startsWith('--package=') || /^-p./.test(x)))) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Rust server: a cargo run -p command in a shell fence');
+    for (const [lang, what] of [['py', 'Python'], ['ts', 'TypeScript'], ['rust', 'Rust']]) {
+      if (!cmds.some((w) => w[0] === 'mise' && w[1] === 'run' && w.includes(`example:hook-server:${lang}`))) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must show how to run the ${what} server: mise run example:hook-server:${lang} in a shell fence`);
+    }
     if (!ma.links.some((l) => l.href.replace(/[#?].*$/, '').replace(/\/$/, '') === `${SITE}advanced/extend/hooks`)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must link the Brain hooks page ${SITE}advanced/extend/hooks`);
   }
   const exReadme = readIf(join(exDir, 'README.md'));
@@ -2021,7 +2103,7 @@ async function themeSourceChecks(root, add, configText) {
       if (!name || !bg) continue;
       const theme = await loadShikiTheme(name, [root, here]);
       if (!theme) {
-        add(configRel, 0, 'DOCS-THEME-007', `cannot find the installed Shiki theme ${name} to check against code-bg (${mode}); run pnpm install`);
+        add(configRel, 0, 'DOCS-THEME-007', `cannot find the installed Shiki theme ${name} to check against code-bg (${mode}); run mise run install`);
         continue;
       }
       const colours = new Map();

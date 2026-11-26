@@ -2,8 +2,8 @@
  * Stand-in for the Kokoro TTS container, so `voice` (and the avatar lip-sync,
  * and the dashboard sink) run with no GPU and no model download.
  *
- *   node --import tsx scripts/dev/stub-tts.ts            # listens on :8880
- *   TTS_URL=http://127.0.0.1:8880 node --import tsx services/voice/src/index.ts
+ *   mise run stub:tts            # listens on :8880
+ *   TTS_URL=http://127.0.0.1:8880 mise run dev:voice
  *
  * Answers POST /v1/audio/speech with a 24 kHz mono 16-bit WAV: a quiet
  * pulsing tone lasting ~65 ms per character, so the mouth envelope moves.

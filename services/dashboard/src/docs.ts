@@ -14,8 +14,8 @@ const NOT_BUILT = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Docs not built</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem}code{background:#8882;padding:.1em .3em;border-radius:4px}</style></head>
 <body><h1>Docs not built</h1>
-<p>The docs site has not been built yet. Run <code>pnpm docs:build</code> in the repository, then reload this page.</p>
-<p><code>pnpm dashboard</code> builds the docs each time it starts.</p></body></html>
+<p>The docs site has not been built yet. Run <code>mise run docs:build</code> in the repository, then reload this page.</p>
+<p><code>mise run dashboard</code> builds them when it starts.</p></body></html>
 `;
 
 /** Answers `GET`/`HEAD` for `/cohost` and `/cohost/...` from the built docs; false for anything else, which the caller routes on. */

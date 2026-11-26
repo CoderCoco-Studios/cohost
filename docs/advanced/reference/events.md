@@ -7,7 +7,7 @@ verified: f126b94
 
 # Bus events
 
-Services never call each other. They publish [events](../../start/glossary.md#event) on the [bus](../../start/glossary.md#bus), which is built on [Redis Streams](../../start/glossary.md#redis-streams), and read the types they care about through [consumer groups](../../start/glossary.md#consumer-group). The registry of types and their payload schemas is `EventPayloads` in `packages/bus/src/events.ts`; this page is its readable form. `bus-pub --list` prints the type names.
+Services never call each other. They publish [events](../../start/glossary.md#event) on the [bus](../../start/glossary.md#bus), which is built on [Redis Streams](../../start/glossary.md#redis-streams), and read the types they care about through [consumer groups](../../start/glossary.md#consumer-group). The registry of types and their payload schemas is `EventPayloads` in `packages/bus/src/events.ts`; this page is its readable form. `mise run bus:pub -- --list` prints the type names.
 
 Every event has the same envelope: `id` (the stream id, such as `1718000000000-0`), `type`, `ts` (epoch milliseconds), `source` (the publishing service) and `data` (the payload below). Domain events live on the stream `cohost:events`. `service.heartbeat` has its own capped stream, `cohost:health`, so it never crowds out the feed.
 

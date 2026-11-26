@@ -6,7 +6,11 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "scripts": { "build": "tsc -b" },
-  "dependencies": { "@cohost/shared": "workspace:*" },
-  "devDependencies": { "@cohost/bus": "workspace:*", "@cohost/config": "workspace:*" }
+  "dependencies": {
+    "@cohost/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cohost/bus": "workspace:*",
+    "@cohost/config": "workspace:*"
+  }
 }

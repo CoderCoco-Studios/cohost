@@ -15,21 +15,22 @@ All commands run from the repository root.
 
 | Need | Why |
 | --- | --- |
-| A built workspace | `pnpm test` builds it for you; see [Developer setup](../dev-setup.md) for the Rust toolchain that the native [bus](../../start/glossary.md#bus) addon needs |
+| The toolchains from `mise install` | `mise run test` builds the workspace, the native [bus](../../start/glossary.md#bus) addon included, before it tests; see [Developer setup](../dev-setup.md) |
 | [Redis](../../start/glossary.md#redis) 6.2 or newer at `redis://127.0.0.1:6379` (or `REDIS_URL`) | The bus round-trip tests. Without it they skip themselves |
 | [Postgres](../../start/glossary.md#postgres) with [pgvector](../../start/glossary.md#pgvector), pointed to by `COHOST_TEST_DATABASE_URL` | The memory store tests against a real database. Without the variable they skip themselves |
 
-The easiest Redis is the [Compose](../../start/glossary.md#docker-compose) one: `docker compose up -d redis`. It binds `127.0.0.1:6379`, which is where the suite looks. Any Redis 6.2 or newer on that port works too.
+The easiest Redis is the [Compose](../../start/glossary.md#docker-compose) one: `docker compose up -d redis`, or `mise run infra:up` for all the infrastructure. It binds `127.0.0.1:6379`, which is where the suite looks. Any Redis 6.2 or newer on that port works too.
 
 ## Run everything
 
 ```bash
-pnpm test         # build the native addon, tsc -b, then every test
-pnpm test:only    # the same tests without the build step
-pnpm typecheck    # tsc -b: type-checks every project
+mise run test         # the Rust tests, the build, then every TypeScript test
+mise run test:only    # the TypeScript tests without the build
+mise run test:rust    # the Rust tests only
+mise run typecheck    # tsc -b: type-checks every project
 ```
 
-`pnpm test` runs `pnpm build:native` and `tsc -b` first, which is what catches type errors, then runs every `test/*.test.ts` under `packages/*` and `services/*` with Node's `node:test` runner through `tsx`. Run `pnpm test:only` for a quick loop once the workspace is built.
+`mise run test` runs the `test:rust` and `build` tasks first (`build` is what catches type errors), then runs every `test/*.test.ts` under `packages/*` and `services/*`, and the dashboard UI's `.test.tsx` files, with Node's `node:test` runner through `tsx`. Run `mise run test:only` for a quick loop once the workspace is built. `mise run lint` adds oxlint, `cargo fmt --check` and Clippy; CI runs it beside the tests.
 
 The suite needs no network, no [GPU](../../start/glossary.md#gpu) and no account. Region logic is tested against a fake bus (see [Unit-test helpers](helpers.md)), HTTP backends against local stub servers.
 
@@ -46,13 +47,13 @@ A skipped test is not a failed one, but a run with skips is not a full pass. The
 
 ## Run one package, one service or one test
 
-The root has no per-package `test` script; call the runner directly. Tests import sources through `tsx`, so no build is needed:
+`mise run test:file` runs Node's test runner over the files you give it after the task name. It builds first, because the packages a test imports resolve to their built `dist/` and the native addon; flags for the runner go before the files.
 
 ```bash
-node --import tsx --test services/salience/test/*.test.ts       # one service
-node --import tsx --test packages/bus/test/*.test.ts            # one package
-node --import tsx --test services/voice/test/wav.test.ts        # one file
-node --import tsx --test --test-name-pattern="mention" services/salience/test/*.test.ts   # by test name
+mise run test:file -- services/salience/test/*.test.ts       # one service
+mise run test:file -- packages/bus/test/*.test.ts            # one package
+mise run test:file -- services/voice/test/wav.test.ts        # one file
+mise run test:file -- --test-name-pattern="mention" services/salience/test/*.test.ts   # by test name
 ```
 
 Where the tests live:
@@ -66,20 +67,20 @@ Where the tests live:
 | `services/ears`, `mouth`, `eyes`, `chat`, `connector-discord` | Transcription and describer logic with fake backends, the [connector](../../start/glossary.md#connector) source and [sink](../../start/glossary.md#sink) against a fake bus, the chat filter |
 | `packages/shared`, `control` | The shared runtime (bootstrap, lifecycle, idle plan, inject handler, Discord session), the manifest and the stack controller |
 | `services/dashboard` | HTTP routes, the live feed, the React UI (happy-dom, by role and accessible name) |
-| `crates/*/tests` | The Rust bus client; run with `cargo test --workspace` |
+| `crates/*/tests` | The Rust bus client; run with `mise run test:rust` |
 
 ## What CI runs
 
-Four workflows watch every pull request and every push to `main`:
+Four workflows watch every pull request and every push to `main`. Each step is an action or one `mise run <task>`, the same command you run locally:
 
 | Workflow | Runs |
 | --- | --- |
-| `test` | `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, then `pnpm test`, with Redis 8 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
-| `lid-check` | `node scripts/lid-check.mjs`: every `@spec` ID in code and tests exists and is defined once |
-| `compose-smoke` | `scripts/compose-smoke.sh` builds the service images and requires `salience`, `affect` and `avatar` to reach healthy, then starts `tools` and checks from inside it that the name `redis` resolves and the name `salience` does not (`tools` is on a Redis-only network), then runs the launch end-to-end test against a real Compose project |
-| `docs-build` | `pnpm docs:build`, the documentation site and its checks (pull requests only) |
+| `test` | `mise run lint`, `mise run test`, then `mise run test:rust-example` (the Rust bus example's round trip, which must run rather than skip), with Redis 8 and a pgvector Postgres as service [containers](../../start/glossary.md#container) so nothing skips |
+| `lid-check` | `mise run lid-check`: every `@spec` ID in code and tests exists and is defined once |
+| `compose-smoke` | `mise run smoke` builds the service images and requires `salience`, `affect` and `avatar` to reach healthy, then starts `tools` and checks from inside it that the name `redis` resolves and the name `salience` does not (`tools` is on a Redis-only network), then `mise run test:launch` runs the launch end-to-end test against a real Compose project |
+| `docs-build` | `mise run docs:build`, the documentation site and its checks (pull requests only) |
 
 ## Known problems
 
-- **Bus state persists in Redis between runs.** Services that subscribe from `latest` ignore old [events](../../start/glossary.md#event), but `bus-tail --replay` shows them. Reset the stream with `docker compose exec redis redis-cli DEL cohost:events`.
+- **Bus state persists in Redis between runs.** Services that subscribe from `latest` ignore old [events](../../start/glossary.md#event), but `mise run bus:tail -- --replay 20` shows them. Reset the stream with `docker compose exec redis redis-cli DEL cohost:events`.
 - **Real integrations are not run by the suite.** The suite never touches the [Kokoro](../../start/glossary.md#kokoro) GPU image, [OBS](../../start/glossary.md#obs), Discord, the authenticated Twitch path or [VTube Studio](../../start/glossary.md#vtube-studio). [Real hardware and accounts](real-backends.md) says which of those have been run and how to check the rest, and [Status](../../project/status.md) lists what has run against the real services.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Writes the hook reply JSON Schemas (packages/modules/src/schemas.ts) to examples/modules/schemas/.
-// Run after `pnpm build`:  node scripts/gen-hook-schemas.mjs
+// Run as `mise run hooks:schemas` (it builds the workspace first).
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -1,8 +1,8 @@
 /**
  * Publish one validated event onto the bus.
  *
- *   node --import tsx scripts/dev/bus-pub.ts chat.message '{"platform":"twitch","user":"viewer","text":"hi Coco!","mentionsCohost":true}'
- *   node --import tsx scripts/dev/bus-pub.ts --list        # event types + required fields
+ *   mise run bus:pub -- chat.message '{"platform":"twitch","user":"viewer","text":"hi Coco!","mentionsCohost":true}'
+ *   mise run bus:pub -- --list        # event types + required fields
  *
  * Payload goes through the same zod schema as Bus.publish, so a typo fails
  * here instead of being silently dropped by every subscriber. REDIS_URL

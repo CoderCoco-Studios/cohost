@@ -1,6 +1,7 @@
 name: test
 
-# @spec DEPLOY-CI-001
+# @spec DEPLOY-CI-001, DEPLOY-CI-012
+# Every step is an action or one `mise run <task>`: the checks CI runs are the commands a developer runs.
 on:
   pull_request:
   push:
@@ -42,39 +43,26 @@ jobs:
       COHOST_TEST_DATABASE_URL: postgres://cohost:cohost@127.0.0.1:5432/cohost_test
     steps:
       - uses: actions/checkout@v7.0.1
-      # pnpm version comes from "packageManager" in package.json.
-      - uses: pnpm/action-setup@v6.1.1
-      - uses: actions/setup-node@v7.1.0
+      # Every tool of mise.toml (Node, pnpm, Rust, Zig, Python, watchexec), installed --locked from mise.lock.
+      - uses: jdx/mise-action@v5.3.0
         with:
-          node-version: 26
-          cache: pnpm
-      - name: Install the pinned Rust toolchain
-        # rust-toolchain.toml names the version and components; rustup is preinstalled on the runner.
-        run: rustup show active-toolchain || rustup toolchain install
-      # EARS-SRC-023: the desktop audio helper's Linux back end links libpulse (found through pkg-config).
-      - name: Install the desktop audio helper's Linux build prerequisites
+          version: 2026.11.14
+      # Held until the desktop audio helper moves to the pure-Rust pulseaudio client (ears EARS-SRC-023, the
+      # follow-up to #344): its Linux back end still links libpulse through pkg-config, so lint:rust and test:rust
+      # need these two packages. DEPLOY-CI-001 and DEPLOY-CI-012 stay open until this step is removed.
+      - name: Install the desktop audio helper's Linux build prerequisites (until EARS-SRC-023)
         run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config
       - uses: actions/cache@v6.1.0
         with:
           path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
+            ~/.local/share/mise/cargo/registry/index
+            ~/.local/share/mise/cargo/registry/cache
+            ~/.local/share/mise/cargo/git/db
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'mise.lock') }}
           restore-keys: cargo-${{ runner.os }}-
-      - run: pnpm install --frozen-lockfile
-      - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
-      # EARS-SRC-023: compile the helper's Windows back end; the target comes from rust-toolchain.toml.
-      - run: cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio
-      - name: Rust bus example round trip (must run, not skip)
-        # REDIS_URL is set, so the test itself fails if Redis is unreachable; this also fails on a SKIP line and requires the RAN line.
-        shell: bash
-        run: |
-          set -eo pipefail
-          cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture 2>&1 | tee round-trip.log
-          if grep -q '^SKIP ' round-trip.log; then echo "the round trip was skipped"; exit 1; fi
-          grep -q '^RAN round_trip against ' round-trip.log
-      - run: pnpm test
+      - run: mise run lint
+      # test:rust (cargo test, the Windows check), then the build, then the TypeScript suite.
+      - run: mise run test
+      # The Rust bus example's round trip must run, not skip (BUS-NAT-CI-002).
+      - run: mise run test:rust-example

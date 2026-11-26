@@ -19,10 +19,10 @@ Swap `cortex` for the service you are chasing. The images for every service buil
 
 ### `@cohost/bus cannot load the native addon`
 
-The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for platform ... at <path>. Build it with pnpm build:native.`
+The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for platform ... at <path>. Build it with mise run build:native.`
 
-- **Cause:** the [bus](../start/glossary.md#bus) client has a small compiled part, and it has not been built on this machine (or this machine is not 64-bit Linux, the only kind it supports).
-- **Fix:** run `pnpm build:native`, or `pnpm build`, which runs it first. It needs the Rust toolchain that the installer puts on the machine; see [What you need](install/prerequisites.md). Do this before `pnpm dashboard` or `pnpm cohostctl`.
+- **Cause:** the [bus](../start/glossary.md#bus) client has a small compiled part, and it has not been built on this machine (or this machine is not 64-bit Linux, the only kind it supports). Every `mise run` task that starts a program on your machine, such as `mise run dashboard` or `mise run cohostctl`, builds it first, so this message means the program was started some other way, or the build failed.
+- **Fix:** start the program through its task (`mise run dashboard`, `mise run cohostctl`), or build the part with `mise run build:native` and read the error it prints. The build uses the Rust and Zig that mise installs from `mise.toml`; if `mise run doctor` or `mise install` reports a problem, fix that first. See [What you need](install/prerequisites.md).
 
 ### The dashboard will not start, mentioning `CONTROL_TOKEN`
 
@@ -41,7 +41,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### My settings are not being read
 
-- **Cause:** the co-host reads `config/` (including `config.yaml`), `secrets/secrets.yaml` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml`. A copy in some other folder is ignored.
+- **Cause:** the co-host reads `config/` (including `config.yaml`), `secrets/secrets.yaml` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml` (the cohost checkout's top folder). A copy in some other folder is ignored.
 - **Fix:** edit `config/config.yaml`, `secrets/secrets.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
 
 ### A program on my PC cannot reach the voice service
@@ -91,7 +91,7 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 ### The `chat` service does nothing
 
 - **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
-- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `pnpm cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
+- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `mise run cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
 
 ### The `youtube` chat source stops with a reason
 
@@ -149,7 +149,7 @@ Work down the list:
 ### The memory service will not start after I changed the embedding model
 
 - **Cause:** the new model's vectors are a different size from the stored ones, so the service refuses to start.
-- **Fix:** stop memory and run `pnpm cohostctl reembed`. See [Starting and stopping](operate/start-stop.md).
+- **Fix:** stop memory and run `mise run cohostctl reembed`. See [Starting and stopping](operate/start-stop.md).
 
 ### No notes are being written about viewers
 

@@ -115,14 +115,14 @@ test("only GET and HEAD are served here; any other method falls through to the r
 });
 
 // @spec DASH-BUILD-005
-test("with no built index.html, GET / is a 503 'Dashboard not built' page that names pnpm build and loads nothing; the assets answer 404", async () => {
+test("with no built index.html, GET / is a 503 'Dashboard not built' page that names mise run build and loads nothing; the assets answer 404", async () => {
   const r = await fetch(`${empty.base}/`);
   assert.equal(r.status, 503);
   assert.equal(r.headers.get("content-type"), "text/html; charset=utf-8");
   assert.equal(r.headers.get("cache-control"), "no-store");
   const body = await r.text();
   assert.match(body, /<title>Dashboard not built<\/title>/);
-  assert.match(body, /pnpm build/);
+  assert.match(body, /mise run build/);
   assert.ok(!/<script|<link|src=|href=|@import|url\(/i.test(body), "loads nothing");
   assert.equal((await fetch(`${empty.base}/assets/index-abc.js`)).status, 404);
   assert.equal(await (await fetch(`${empty.base}/stack`)).text(), "fell through"); // every other route is unaffected

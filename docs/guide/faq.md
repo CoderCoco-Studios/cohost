@@ -59,7 +59,7 @@ Yes, with the optional screenshot sense, which looks at a source in OBS every fe
 
 ## Why is it slow to answer?
 
-Each reply passes through hearing, deciding, writing and speaking, and the writing step dominates. A bigger model or a slower GPU takes longer. `pnpm cohostctl latency` prints how long each stage took over recent history, which shows where the time goes. A smaller or hosted model is the usual cure; see [Choose a model](tune/model.md).
+Each reply passes through hearing, deciding, writing and speaking, and the writing step dominates. A bigger model or a slower GPU takes longer. `mise run cohostctl latency` prints how long each stage took over recent history, which shows where the time goes. A smaller or hosted model is the usual cure; see [Choose a model](tune/model.md).
 
 ## Is it safe to open the dashboard to other computers?
 

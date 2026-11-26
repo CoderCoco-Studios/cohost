@@ -7,9 +7,15 @@ operator and developer documentation.
 
 ## Commands
 
-- `pnpm build` / `pnpm typecheck` — `tsc -b`
-- `pnpm test` — build then run all `test/*.test.ts` with node:test + tsx
-- `pnpm test:only` — skip the build
+Every command is a `mise.toml` task (`mise run <task>`); toolchains come from
+`mise.toml` through `mise install`. Dependency edits are `pnpm add`/`pnpm remove`
+and `cargo add`/`cargo remove`, run directly.
+
+- `mise run build` — the bus addon, `tsc -b` and the dashboard UI
+- `mise run typecheck` — `tsc -b` plus the dashboard UI type check
+- `mise run test` — build, then the Rust tests and every `test/*.test.ts` with node:test + tsx
+- `mise run test:only` — skip the build
+- `mise run test:file -- <file>…` — build, then the given test files
 
 ## Pre-alpha: no backward compatibility
 

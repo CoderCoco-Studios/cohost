@@ -11,9 +11,9 @@ You will have a small Python server that answers the three brain [hooks](../../s
 
 ## What you need
 
-- Python 3. The server uses only its standard library, so there is nothing to install.
+- Python 3, which comes from the checkout's `mise.toml` through `mise install`. The server uses only its standard library, so there is nothing to install.
 - `curl` and a shell, for the try-it script.
-- A checkout of cohost, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
+- A checkout of cohost with mise, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
 - For pointing the co-host at it: [Docker](../../start/glossary.md#docker), if the services run in [containers](../../start/glossary.md#container).
 
 ## Steps
@@ -21,13 +21,13 @@ You will have a small Python server that answers the three brain [hooks](../../s
 1. Start the server. It listens on port 8900 and prints one line for each request it answers.
 
    ```sh
-   python3 examples/modules/server.py
+   mise run example:hook-server:py
    ```
 
 2. In a second terminal, ask it the three questions cohost asks, with the try-it script (it is the same script for every language).
 
    ```sh
-   sh examples/modules/try.sh
+   mise run example:hook-try
    ```
 
    The script is these three requests:
@@ -69,11 +69,11 @@ Replace the body of one function and leave the plumbing alone. Each handler take
 
 Load your model once, at the top of the file, not inside the function: a handler runs for every decision, and the region gives up on a call after `timeout_ms`. If your model needs a [GPU](../../start/glossary.md#gpu) or is slow, lower its work per call rather than raising the timeout, because a late reply is dropped and the rules answer instead.
 
-A handler that raises an error does no harm. The server answers 500 with the error text, and the region uses its rules for that call. Run `sh examples/modules/try.sh` again after each change to see that the replies still have the right shape.
+A handler that raises an error does no harm. The server answers 500 with the error text, and the region uses its rules for that call. Run `mise run example:hook-try` again after each change to see that the replies still have the right shape.
 
 ## How you know it worked
 
-- `sh examples/modules/try.sh` prints the three lines above.
+- `mise run example:hook-try` prints the three lines above.
 - The server's terminal shows a `/salience`, `/affect` or `/critic` line for each decision once a hook points at it.
 - The Services screen shows `hook.<name>` as `ok` under the dependencies of the service that owns the hook, and its log has no `module failed` warnings.
 

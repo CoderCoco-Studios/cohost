@@ -13,10 +13,10 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 
 ## What you need
 
-- A checkout of cohost, with the commands run from its top folder, installed and built with `pnpm install` and `pnpm build`. [Developer setup](../dev-setup.md) covers both, and covers starting Redis in a [container](../../start/glossary.md#container).
+- A checkout of cohost with mise, with the commands run from its top folder. Each task below builds the workspace before it runs. [Developer setup](../dev-setup.md) covers it, and covers starting Redis in a [container](../../start/glossary.md#container).
 - Redis running on `localhost:6379`, which is where the services look for it by default.
 - A `config/config.yaml`. Every service loads the same config, and the first run of any service creates it from `config/config.example.yaml`.
-- A text file holding a song title. Create `song.txt` anywhere you like, with a title such as `Blue Monday` on one line.
+- A text file holding a song title. Create `song.txt` in your home folder, or anywhere you like, with a title such as `Blue Monday` on one line.
 
 ## Steps
 
@@ -34,10 +34,10 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 
    A few choices are worth noticing. The service publishes `vision.summary`, an event type that already exists, which the brain reads as something the co-host noticed. It reads `brain.say` through a [consumer group](../../start/glossary.md#consumer-group) of its own, started at the newest entry, so it never replays old lines. And the heartbeat's `file` dependency is `down` whenever the file cannot be read, so the Services screen shows the service as `degraded` and names the dependency, the way a real service reports a missing account.
 
-2. Run it with the path of your file.
+2. Run it with the path of your file after `--`. The task runs in the repository root, so give an absolute path or one from there.
 
    ```sh
-   node --import tsx examples/service/now-playing.ts song.txt
+   mise run example:now-playing -- ~/song.txt
    ```
 
    With no path it prints a usage line and exits with status 1.
@@ -45,7 +45,7 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 3. In a second terminal, watch the events it publishes.
 
    ```sh
-   node --import tsx scripts/dev/bus-tail.ts vision.summary
+   mise run bus:tail -- vision.summary
    ```
 
    Change the title in `song.txt` and save. A `vision.summary` event reading `Now playing: ` and the new title appears within two seconds.
@@ -53,7 +53,7 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 4. Make the co-host speak the title, and see the service notice. Publish a line that names the song:
 
    ```sh
-   node --import tsx scripts/dev/bus-pub.ts brain.say '{"id":"t1","text":"I love this song, Blue Monday!","emotion":"happy"}'
+   mise run bus:pub -- brain.say '{"id":"t1","text":"I love this song, Blue Monday!","emotion":"happy"}'
    ```
 
    If the title in your file is `Blue Monday`, the service's terminal logs `co-host mentioned the song`. The match ignores capital letters.
@@ -65,30 +65,30 @@ The example is not yet a module of cohost: it has no manifest entry and no [Comp
 1. A new folder under `services/`, named for your service, holding your file as `src/index.ts`, a `package.json` that depends on `@cohost/bus`, `@cohost/config` and `@cohost/shared` with `workspace:*`, and a `tsconfig.json` that references the packages it uses. Inside the folder, import the packages by name instead of by path.
 2. An entry in `packages/control/src/manifest.ts`. It names the `config.yaml` sections the service reads, the services it uses, whether it honours `pause`, and its test input. That one entry is what makes the dashboard's settings editor, its start and stop buttons and its test panel know the service.
 3. A service in `docker-compose.yml`, copied from a neighbour such as `salience`, so it starts with the rest.
-4. A reference to the new folder in the root `tsconfig.json`, so `pnpm build` builds it.
+4. A reference to the new folder in the root `tsconfig.json`, so `mise run build` builds it, and a `dev:<service>` task in `mise.toml` beside the others, so `mise run dev` runs it.
 
 A new kind of event is one more entry in `packages/bus/src/events.ts`: a name and the schema of its payload. The example avoids that on purpose, because an example that needs a new event type would have to change the bus to run.
 
 ## How you know it worked
 
 - The Services screen of the [dashboard](../../guide/operate/dashboard.md) lists `now-playing` as `up` while the file exists, with the dependency `file: ok`. Delete the file and the row turns `degraded` within a few seconds, with `file: down`.
-- `bus-tail` prints a `vision.summary` event for the first title and for each change, and none while the title stays the same.
-- This runs the service against a stand-in bus, with no Redis, and every check passes:
+- `mise run bus:tail` prints a `vision.summary` event for the first title and for each change, and none while the title stays the same.
+- The test suite runs the service against a stand-in bus, with no Redis, in `packages/testing/test/example-service.test.ts`, and every check passes:
 
   ```sh
-  node --import tsx --test packages/testing/test/example-service.test.ts
+  mise run test
   ```
 
 - This type-checks the example against the real packages:
 
   ```sh
-  pnpm exec tsc -p examples/tsconfig.json
+  mise run example:typecheck
   ```
 
 ## If it didn't
 
-- **A usage line and nothing else.** The path was missing. Pass the file's path after the script.
+- **A usage line and nothing else.** The path was missing. Pass the file's path after `--`.
 - **`config` errors on start, or the process exits at once.** `runService` ends the process with status 1 when the config does not load. Run any other service once, or copy `config/config.example.yaml` to `config/config.yaml`, and try again.
-- **`Cannot find module` for a path under `packages/`.** The workspace is not built. Run `pnpm build`; the example imports the built packages.
+- **`Cannot find module` for a path under `packages/`.** The workspace is not built. Run `mise run build`; the example imports the built packages.
 - **The service waits and prints nothing.** It cannot reach Redis. Start it, or set `REDIS_URL` to where it runs.
 - **No `vision.summary` appears.** The title must be non-empty and different from the last one it published. A file the service cannot read publishes nothing, and shows as `down` on the Services screen.

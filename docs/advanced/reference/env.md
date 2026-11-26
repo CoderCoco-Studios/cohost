@@ -9,7 +9,7 @@ verified: f126b94
 
 `.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `secrets/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
 
-[Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run from source read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
+[Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run on the host read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
 
 Provider credentials such as `ANTHROPIC_API_KEY` or `AWS_ACCESS_KEY_ID` are not read from the environment. They are keys of `secrets.yaml`: `llm.claude.api_key`, `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key`, among others. A key left in `.env` cannot keep a provider working.
 
@@ -45,7 +45,7 @@ Needed before configuration can be read.
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `personality.md` and `expressions.yaml` (credentials are in `secrets/secrets.yaml`, which it does not move). Compose sets `/app/config` |
-| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run from source |
+| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run on the host |
 | `COHOST_SECRETS_FILE` | `secrets/secrets.yaml` at the workspace root | A test seam: the tests point it at a credentials file in a temporary folder. Do not set it in `.env`; Compose pins it empty in the containers, so each reads its own copy of its credentials |
 | `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache |
 | `COHOST_DOCKER_BIN` | `docker` | The [Docker](../../start/glossary.md#docker) executable the dashboard and `cohostctl` run. Set it to `docker.exe` on [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration |
@@ -105,8 +105,8 @@ Set these yourself only to point a script or a test somewhere else.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `STUB_TTS_PORT` | `8880` | The port of `scripts/dev/stub-tts.ts` |
-| `STUB_LLM_PORT` | `11434` | The port of `scripts/dev/stub-llm.ts` |
+| `STUB_TTS_PORT` | `8880` | The port of the stand-in TTS server (`mise run stub:tts`) |
+| `STUB_LLM_PORT` | `11434` | The port of the stand-in Ollama chat server (`mise run stub:llm`) |
 | `COHOST_TEST_DATABASE_URL` | unset | A [pgvector](../../start/glossary.md#pgvector) database for the memory store tests. They skip without it |
 | `COHOST_LIVE_STACK` | unset | `1` runs the live-stack end-to-end test, which needs Docker |
 | `COHOST_LIVE_CLAUDE_MODEL` | unset | A Claude model id that, together with the Claude API key the test reads from `ANTHROPIC_API_KEY`, runs the Claude API smoke test. It is the one place that variable is read, and only by that test |
@@ -117,9 +117,9 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 
 | Port | What | Published by | Notes |
 | --- | --- | --- | --- |
-| `3000` | The full dashboard (page, controls, Launch and Stop) | The host process (`pnpm dashboard`) | The `dashboard.port` key of `config.yaml`, bound to `DASHBOARD_HOST` |
+| `3000` | The full dashboard (page, controls, Launch and Stop) | The host process (`mise run dashboard`) | The `dashboard.port` key of `config.yaml`, bound to `DASHBOARD_HOST` |
 | `3001` | The LAN listener: the [sink](../../start/glossary.md#sink) page, its audio and the playback report, for a second PC's [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) | The host process | The `dashboard.lan_port` key of `config.yaml`, all interfaces. Must differ from `dashboard.port` |
-| `6379` | [Redis](../../start/glossary.md#redis) | `redis` | For `pnpm dev` outside Docker |
+| `6379` | [Redis](../../start/glossary.md#redis) | `redis` | For `mise run dev` outside Docker |
 | `5432` | [Postgres](../../start/glossary.md#postgres) | `postgres` | |
 | `11434` | [Ollama](../../start/glossary.md#ollama) | `ollama` | |
 | `8880` | The TTS server | `tts` | |

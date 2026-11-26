@@ -10,12 +10,12 @@ languages, with a script that checks any server the same way.
 | `try.sh` | Sends cohost's two requests with `curl` and prints each reply |
 | `try.expected.txt` | The replies the stub gives, one JSON document per line |
 
-From the repository root:
+From the checkout:
 
 ```sh
-python3 examples/model-stub/stub.py
-node examples/model-stub/stub.ts
-sh examples/model-stub/try.sh
+mise run example:model-stub:py
+mise run example:model-stub:ts
+mise run example:model-try
 ```
 
 The explanation is on the

@@ -26,7 +26,7 @@ The design flows in one direction, from the vision to the code:
 | Tests | Tests that cite the spec IDs they exercise | `packages/*/test` and `services/*/test` |
 | Code | Code annotated with the same IDs at the entry point of each behaviour | `packages/*`, `services/*` and `crates/*` |
 
-A change starts at the top and flows down, with each layer checked before the next. [How specs work](../../project/spec-driven.md) describes the method, and `node scripts/lid-check.mjs` confirms that every ID cited in code and tests exists. Because the layers cite each other by ID, you can start from a behaviour you see in the code and find the sentence that requires it, or start from a requirement and find the tests and code.
+A change starts at the top and flows down, with each layer checked before the next. [How specs work](../../project/spec-driven.md) describes the method, and `mise run lid-check` confirms that every ID cited in code and tests exists. Because the layers cite each other by ID, you can start from a behaviour you see in the code and find the sentence that requires it, or start from a requirement and find the tests and code.
 
 ## The design pages
 

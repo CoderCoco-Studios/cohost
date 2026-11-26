@@ -21,8 +21,8 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 
 ## What you need
 
-- A checkout of cohost, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
-- A Rust toolchain, the one `rust-toolchain.toml` pins, which Developer setup also covers.
+- A checkout of cohost with mise, with the commands run from its top folder. [Developer setup](../dev-setup.md) covers it.
+- The Rust toolchain `rust-toolchain.toml` pins, which `mise install` brings from the checkout's `mise.toml`.
 - Redis running on `localhost:6379`, in a [container](../../start/glossary.md#container) as Developer setup describes, or at the address in `REDIS_URL`.
 
 ## Steps
@@ -48,13 +48,13 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 5. Run it. The first build compiles the dependencies, so it takes a while.
 
    ```sh
-   cargo run --manifest-path examples/Cargo.toml -p cohost-example-bus
+   mise run example:rust-bus
    ```
 
 6. In a second terminal, publish an event. The program prints its type and its source.
 
    ```sh
-   node --import tsx scripts/dev/bus-pub.ts brain.say '{"id":"t1","text":"hello from the bus","emotion":"happy"}'
+   mise run bus:pub -- brain.say '{"id":"t1","text":"hello from the bus","emotion":"happy"}'
    ```
 
    The program's terminal shows `brain.say from dev-pub`. Press Ctrl-C there and it exits with status 0, after one more heartbeat.
@@ -63,10 +63,10 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 
 - The Services screen of the [dashboard](../../guide/operate/dashboard.md) lists `rust-example` as `up`. When you press Ctrl-C its last heartbeat says `stopping`, and the row turns `down`.
 - Each event on the bus, including the ones other services publish, becomes one line in the program's terminal.
-- This runs the example's tests. They need Redis, and they choose a stream prefix of their own, so they never touch the `cohost` one. With `REDIS_URL` unset and no Redis on the default address they print `SKIP` and pass; with `REDIS_URL` set and Redis unreachable they fail:
+- This runs the example's tests. They need Redis, and they choose a stream prefix of their own, so they never touch the `cohost` one. The task passes only when the round trip ran against Redis: with no Redis it fails, saying the round trip was skipped:
 
   ```sh
-  cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus
+  mise run test:rust-example
   ```
 
 ## If it didn't
@@ -74,4 +74,4 @@ If you want a service that has all of those without writing them, [Add a TypeScr
 - **`rust-example: ...` and exit status 1.** The program could not reach Redis, or the connection dropped. The message names the cause. Start Redis, or set `REDIS_URL`, and run it again.
 - **It runs but prints nothing.** The consumer group starts at the end of the stream, so it shows events published after it started. Publish one, as in step 6.
 - **The Services screen does not list it.** The dashboard reads the health stream under the prefix `cohost`, and the program uses that prefix. Check that both use the same Redis.
-- **The tests print `SKIP`.** `REDIS_URL` is unset and nothing answers at `redis://127.0.0.1:6379`, which is how the tests behave without Redis. Start Redis to run them for real. If `REDIS_URL` is set and Redis is unreachable, they fail instead.
+- **`test:rust-example: the round trip was skipped`.** `REDIS_URL` is unset and nothing answers at `redis://127.0.0.1:6379`, so the test printed `SKIP`, which the task counts as a failure. Start Redis, or set `REDIS_URL`, and run it again.

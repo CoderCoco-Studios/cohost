@@ -12,14 +12,14 @@ You start, stop and restart the co-host from the dashboard with a click, or from
 ## What you need
 
 - A finished install: [Install for real](../install/real-install.md), or [Try it with no accounts](../install/first-run.md) for [mock mode](../../start/glossary.md#mock-mode).
-- The dashboard running on your PC with `pnpm dashboard`. The dashboard is not part of the stack it controls, so it must be started by hand first.
+- The dashboard running on your PC with `mise run dashboard`. The dashboard is not part of the stack it controls, so it must be started by hand first.
 
 ## Start everything
 
 1. Run the dashboard.
 
    ```bash
-   pnpm dashboard
+   mise run dashboard
    ```
 
 2. Open `http://localhost:<dashboard.port>` (3000 by default), open the **Services** screen, and enter the `CONTROL_TOKEN` from `.env` in the [Access dialog](dashboard.md#the-access-dialog) when it asks.
@@ -42,7 +42,7 @@ On the **Services** screen each service row has **Start** or **Restart** and **S
 The **Start** and **Restart** dialog holds two options that change how a start behaves:
 
 - **Start mode:** `resume` picks up the backlog of unread [events](../../start/glossary.md#event) where the service left off; `fresh` skips the backlog and starts from now. The default is `fresh` for every co-host service except memory, so a restart never makes the co-host answer chat from five minutes ago. Memory resumes, so it does not miss anything it should store.
-- **Isolated:** starts only that service, with its pretend backends (the isolation overrides for that unit) and no accounts. `pnpm cohostctl start <service> --isolated` does the same from a terminal. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
+- **Isolated:** starts only that service, with its pretend backends (the isolation overrides for that unit) and no accounts. `mise run cohostctl start <service> --isolated` does the same from a terminal. It is for testing one piece. See [One service on its own](../../advanced/testing/isolated.md).
 
 The three brain parts [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect) and [cortex](../../start/glossary.md#cortex) also have **Pause** and **Resume**. Pausing idles one in place without stopping its container.
 
@@ -54,16 +54,16 @@ The [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.m
 
 | Command | What it does |
 | --- | --- |
-| `pnpm cohostctl status` | Prints the state of every service. Add a name for one. See [Service health](health.md). |
-| `pnpm cohostctl launch` | Builds the images, starts the whole stack, waits until it is ready. |
-| `pnpm cohostctl rebuild` | The same as `launch`. |
-| `pnpm cohostctl stop-all` | Stops every container; nothing is removed. |
-| `pnpm cohostctl restart-all` | Restarts every running co-host service. |
-| `pnpm cohostctl start cortex` | Starts one service. Also `stop` and `restart`. |
-| `pnpm cohostctl restart cortex --mode fresh` | Restarts with a start mode (`resume` or `fresh`). `--isolated` starts it with pretend backends. |
-| `pnpm cohostctl consolidate` | Runs the viewer-note pass. See [After a stream](after-stream.md). |
-| `pnpm cohostctl reembed` | Re-embeds stored memories after you change the [embedding](../../start/glossary.md#embedding) model. See below. |
-| `pnpm cohostctl latency` | Prints how long each stage of the speech and sight paths takes, from recent history. Read-only. |
+| `mise run cohostctl status` | Prints the state of every service. Add a name for one. See [Service health](health.md). |
+| `mise run cohostctl launch` | Builds the images, starts the whole stack, waits until it is ready. |
+| `mise run cohostctl rebuild` | The same as `launch`. |
+| `mise run cohostctl stop-all` | Stops every container; nothing is removed. |
+| `mise run cohostctl restart-all` | Restarts every running co-host service. |
+| `mise run cohostctl start cortex` | Starts one service. Also `stop` and `restart`. |
+| `mise run cohostctl restart cortex --mode fresh` | Restarts with a start mode (`resume` or `fresh`). `--isolated` starts it with pretend backends. |
+| `mise run cohostctl consolidate` | Runs the viewer-note pass. See [After a stream](after-stream.md). |
+| `mise run cohostctl reembed` | Re-embeds stored memories after you change the [embedding](../../start/glossary.md#embedding) model. See below. |
+| `mise run cohostctl latency` | Prints how long each stage of the speech and sight paths takes, from recent history. Read-only. |
 
 Each command exits with 0 on success and 1 on failure or refusal. A mistyped command prints the usage and exits with 2.
 
@@ -94,7 +94,7 @@ Then press **Launch** again.
 If you change `llm.embed_model` in `config/config.yaml` to one that produces a different vector size (from `nomic-embed-text` to `mxbai-embed-large`, say), the memory service refuses to start, because the stored vectors no longer fit. Stop memory, then re-embed every stored row in place:
 
 ```bash
-pnpm cohostctl reembed
+mise run cohostctl reembed
 ```
 
 An interrupted run changes nothing, and running it again resumes where it stopped. Start memory again afterwards.

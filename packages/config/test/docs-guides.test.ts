@@ -130,10 +130,8 @@ test("the member reader handles single and multi-line arrays, comments and a lat
   assert.deepEqual(workspaceMembers('[package]\nname = "x"\n'), []);
 });
 
-const hasCargo = spawnSync("cargo", ["--version"], { encoding: "utf8" }).status === 0;
-
 // @spec DOCS-GUIDE-026
-test("cargo build --manifest-path examples/Cargo.toml --workspace --all-targets succeeds", { skip: hasCargo ? false : "cargo is not installed", timeout: 900_000 }, () => {
+test("cargo build --manifest-path examples/Cargo.toml --workspace --all-targets succeeds", { timeout: 900_000 }, () => {
   const r = spawnSync("cargo", ["build", "--manifest-path", "examples/Cargo.toml", "--workspace", "--all-targets"], { cwd: repoRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   assert.equal(r.status, 0, `cargo build failed:\n${r.stdout}${r.stderr}`);
 });

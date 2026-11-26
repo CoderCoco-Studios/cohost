@@ -23,7 +23,7 @@ function load(): Binding {
   const path = new URL(`../native/${file}`, import.meta.url).pathname;
   const fail = (why: string, cause?: unknown): never => {
     throw Object.assign(
-      new Error(`@cohost/bus cannot load the native addon (${why}): looked for ${file} for platform ${platform}, arch ${arch} at ${path}. Build it with \`pnpm build:native\`.`, { cause }),
+      new Error(`@cohost/bus cannot load the native addon (${why}): looked for ${file} for platform ${platform}, arch ${arch} at ${path}. Build it with \`mise run build:native\`.`, { cause }),
       { code: "BUS_INTERNAL" },
     );
   };

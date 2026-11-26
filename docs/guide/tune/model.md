@@ -32,11 +32,11 @@ What does leave the machine with a hosted choice is the text the co-host's brain
 After changing `config.yaml` or `secrets.yaml`, restart the parts that read the `llm` section. Each is one command:
 
 ```bash
-pnpm cohostctl restart cortex
-pnpm cohostctl restart memory
-pnpm cohostctl restart salience
-pnpm cohostctl restart affect
-pnpm cohostctl restart eyes
+mise run cohostctl restart cortex
+mise run cohostctl restart memory
+mise run cohostctl restart salience
+mise run cohostctl restart affect
+mise run cohostctl restart eyes
 ```
 
 Restart `eyes` too when it describes the screen with a hosted provider (`vision.provider` `openai`, `anthropic` or `bedrock`), because it then uses the same keys.

@@ -13,7 +13,7 @@ You will send a clip of speech to the ears service from your own program and wat
 
 - A running `ears` service with its `http` [audio source](../../start/glossary.md#audio-source) turned on. [One service on its own](../testing/isolated.md) shows how to start a service with no accounts.
 - A clip: a WAV file. For anything else (MP3, M4A, Ogg), the converters below turn it into a WAV.
-- One of Python 3 (standard library only), Node 22.18 or later, or `curl`. The TypeScript client runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
+- A checkout of cohost with mise: each client runs from it through an `example:audio-send:*` task, with the Python and Node from `mise.toml`. A copy of a client outside the checkout needs Python 3 (standard library only), Node 22.18 or later, or `curl`. The TypeScript client runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
 - For the converters: `sox` or `ffmpeg`, whichever you already have.
 
 ## Turn on the `http` source
@@ -48,7 +48,7 @@ Live audio from a connector source (`ears.sources`, such as `discord`) is transc
 
 ## Send a clip
 
-Each client shows the same call. In every one, the reply is printed, and the exit status is 0 only when ears answered 200.
+Each client shows the same call. In every one, the reply is printed, and the exit status is 0 only when ears answered 200. Each runs from the checkout through its task, with the arguments after `--`. A task runs in the repository root, so give the clip's path from there, or an absolute path.
 
 1. From Python. The sending part of `send_clip.py`:
 
@@ -57,17 +57,17 @@ Each client shows the same call. In every one, the reply is printed, and the exi
    Run it with a file, and optionally `--url`, `--speaker` and `--source`, in any order:
 
    ```sh
-   python3 examples/audio-in/send_clip.py clip.wav --speaker Chris
+   mise run example:audio-send:py -- clip.wav --speaker Chris
    ```
 
 2. From TypeScript. The sending part of `send-clip.ts`, which takes the same arguments:
 
    <<< @/../examples/audio-in/send-clip.ts#send
 
-   Run it with `node`, on Node 22.18 or later:
+   The task runs it with `node`, which on Node 22.18 or later strips the types:
 
    ```sh
-   node examples/audio-in/send-clip.ts clip.wav --speaker Chris
+   mise run example:audio-send:ts -- clip.wav --speaker Chris
    ```
 
 3. From any language with `curl`. A program in a language with no example here can make the same request. `send.sh` is that request as a script, and it is tested like the two clients:
@@ -77,10 +77,18 @@ Each client shows the same call. In every one, the reply is printed, and the exi
    Give it a file and, optionally, the URL:
 
    ```sh
-   sh examples/audio-in/send.sh clip.wav
+   mise run example:audio-send:sh -- clip.wav
    ```
 
 The clients leave out `--url` when ears is on its default address, `http://127.0.0.1:8765/audio`. Give `--url` (or the second argument of `send.sh`) for any other address.
+
+To use a client in your own program, copy its file out of the checkout and run the copy with its own tool:
+
+```sh
+python3 send_clip.py clip.wav --speaker Chris
+node send-clip.ts clip.wav --speaker Chris
+sh send.sh clip.wav
+```
 
 ## Convert a recording
 
@@ -91,21 +99,21 @@ A WAV with 16 000 samples a second, one channel and 16 bits is what the [speech-
 <<< @/../examples/audio-in/to-wav-ffmpeg.sh#convert
 
 ```sh
-sh examples/audio-in/to-wav-sox.sh recording.mp3 clip.wav
+mise run example:audio-wav:sox -- recording.mp3 clip.wav
 ```
 
 ```sh
-sh examples/audio-in/to-wav-ffmpeg.sh recording.m4a clip.wav
+mise run example:audio-wav:ffmpeg -- recording.m4a clip.wav
 ```
 
-The tests run each converter on a generated clip. A converter's test is skipped on a machine where its program is not installed, so a script is only known to work where `sox` or `ffmpeg` was present.
+The tests run each converter on a generated clip. `sox` and `ffmpeg` do not come from `mise.toml`, so a converter's test is skipped on a machine where its program is not installed, and a script is only known to work where `sox` or `ffmpeg` was present.
 
 ## How you know it worked
 
 - A client prints a JSON reply that begins `{"heard":true`, and exits with status 0.
 - ears publishes one `speech.heard` [event](../../start/glossary.md#event) for the clip, whose speaker is the one you gave, or `http` when you gave none.
 - The co-host reacts to the line, if the rest of the stack is running.
-- `pnpm test` runs all three clients against a real `http` source, so the examples stay true to the listener.
+- `mise run test` runs all three clients against a real `http` source, so the examples stay true to the listener.
 
 ## If it didn't
 

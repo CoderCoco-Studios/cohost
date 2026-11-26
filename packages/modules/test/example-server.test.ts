@@ -83,9 +83,7 @@ test("every recorded reference-server response passes the real salience, affect 
 
 // ---- live layer: one set of assertions per reference server
 
-const hasPython = spawnSync("python3", ["--version"]).status === 0;
 const hasCurl = spawnSync("curl", ["--version"]).status === 0;
-const hasCargo = spawnSync("cargo", ["--version"]).status === 0;
 const [nodeMajor = 0, nodeMinor = 0] = process.versions.node.split(".").map(Number);
 const nodeStrips = nodeMajor > 22 || (nodeMajor === 22 && nodeMinor >= 18);
 const NEEDS_NODE = "needs Node 22.18 or later";
@@ -203,7 +201,7 @@ async function liveAssertions(port: number): Promise<void> {
 }
 
 // @spec HOOK-EX-001, HOOK-EX-002, HOOK-EX-003, HOOK-EX-004, HOOK-EX-005, HOOK-EX-006, HOOK-EX-007, HOOK-EX-008, HOOK-EX-009, HOOK-EX-010, HOOK-EX-016
-test("server.py answers the fixture requests with the fixture responses, 404s unknown paths, and tolerates an empty body", { skip: !hasPython && "python3 not installed" }, async () => {
+test("server.py answers the fixture requests with the fixture responses, 404s unknown paths, and tolerates an empty body", async () => {
   await liveAssertions(await startServer("python3", ["-I", "-B", "-c", launcher, exampleDir], /^(\d+)$/));
 });
 
@@ -228,7 +226,7 @@ test("server.ts imports only node: built-ins", { skip: !nodeStrips && NEEDS_NODE
 });
 
 // @spec HOOK-EX-013, HOOK-EX-015, HOOK-EX-016
-test("the Rust server behaves as server.py does", { skip: !hasCargo && "cargo not installed", timeout: 600_000 }, async () => {
+test("the Rust server behaves as server.py does", { timeout: 600_000 }, async () => {
   const build = spawnSync("cargo", ["build", "--manifest-path", path.join(repoRoot, "examples/Cargo.toml"), "-p", "cohost-example-hook-server"], { encoding: "utf8" });
   assert.equal(build.status, 0, build.stderr);
   const targetDir = process.env.CARGO_TARGET_DIR ?? path.join(repoRoot, "examples/target");

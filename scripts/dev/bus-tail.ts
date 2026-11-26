@@ -1,10 +1,10 @@
 /**
  * Live-tail the bus, one line per event.
  *
- *   node --import tsx scripts/dev/bus-tail.ts                       # new events only
- *   node --import tsx scripts/dev/bus-tail.ts --replay 20          # last 20, then live
- *   node --import tsx scripts/dev/bus-tail.ts brain.say voice.utterance   # filter by type
- *   node --import tsx scripts/dev/bus-tail.ts --json                # raw JSON lines
+ *   mise run bus:tail                       # new events only
+ *   mise run bus:tail -- --replay 20          # last 20, then live
+ *   mise run bus:tail -- brain.say voice.utterance   # filter by type
+ *   mise run bus:tail -- --json                # raw JSON lines
  *
  * Uses a non-group XREAD (like the dashboard), so it never steals events from
  * a service's consumer group. Long arrays (voice envelope) are elided.

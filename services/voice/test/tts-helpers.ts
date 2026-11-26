@@ -1,5 +1,5 @@
 /**
- * Shared helpers for the TTS engine tests (not a test file: `pnpm test` runs `*.test.ts` only).
+ * Shared helpers for the TTS engine tests (not a test file: `mise run test` runs `*.test.ts` only).
  * A WAV builder that can write the awkward headers real servers send, an async-iterable chunker, a local `node:http` fake
  * speech server that records every request, and a fake `TtsEngine`.
  */

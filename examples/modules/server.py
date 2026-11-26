@@ -7,7 +7,9 @@ a "is chat talking to me" detector, a toxicity filter, anything. The co-host
 POSTs JSON to a URL and reads JSON back; what happens in between is yours.
 Standard library only, so it runs anywhere:
 
-    python3 examples/modules/server.py            # listens on :8900
+    mise run example:hook-server:py               # listens on :8900
+
+A copy outside the checkout runs as `python3 server.py`.
 
 Then in config/config.yaml (the co-host runs in Docker, so reach the host by name):
 

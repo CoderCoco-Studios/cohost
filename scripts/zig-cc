@@ -1,0 +1,36 @@
+#!/bin/sh
+# The C compiler and linker driver for every x86_64-unknown-linux-gnu Rust build: `zig cc` (or `zig c++`
+# when run through zig-cxx) targeting the glibc mise.toml pins in ZIG_GLIBC (deployment "Linking through
+# Zig"). It removes the caller's target and linker-selection arguments, which Zig must not see, maps
+# -lgcc_s to Zig's libunwind (unwinding stays: the bus addon's panic catching needs it), drops the one
+# rustc linker flag Zig's linker rejects, and passes every other argument unchanged and in order.
+# @spec DEPLOY-TOOL-019
+set -eu
+
+case "${ZIG_CC_LANG:-cc}" in
+  c++) lang=c++ ;;
+  *) lang=cc ;;
+esac
+
+if [ -z "${ZIG_GLIBC:-}" ]; then
+  echo "zig-$lang: ZIG_GLIBC is not set, so this ran outside the mise environment; run the command through mise (mise run <task>, or mise exec -- <command>)" >&2
+  exit 1
+fi
+
+n=$#
+skip_next=0
+for arg do
+  if [ "$skip_next" = 1 ]; then
+    skip_next=0
+    continue
+  fi
+  case $arg in
+    -target) skip_next=1 ;;
+    --target=* | -fuse-ld=* | -B* | -Wl,-znostart-stop-gc) ;;
+    -lgcc_s) set -- "$@" -lunwind ;;
+    *) set -- "$@" "$arg" ;;
+  esac
+done
+shift "$n"
+
+exec zig "$lang" -target "x86_64-linux-gnu.$ZIG_GLIBC" "$@"

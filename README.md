@@ -9,14 +9,16 @@ is monolithic and anything can be swapped.
 ## Quick start
 
 Try it with no accounts: no Twitch, Discord, OBS, GPU or API key. You need
-Linux or WSL2 (Ubuntu or Debian). The installer sets up Docker, Node and pnpm,
-and may ask you to log out and back in once; run it again after that.
+Linux or WSL2 (Ubuntu or Debian). The installer sets up Docker and mise, which
+installs the project's Node, pnpm, Rust, Zig and Python. It may ask you to log
+out and back in once; run it again after that. When it finishes, open a new
+shell so mise is active, and run the last line there.
 
 ```bash
 git clone https://github.com/CoderCoco-Studios/cohost.git
 cd cohost
 ./scripts/install.sh
-pnpm dashboard
+mise run dashboard
 ```
 
 Open the URL the dashboard prints (<http://localhost:3000> by default), enter

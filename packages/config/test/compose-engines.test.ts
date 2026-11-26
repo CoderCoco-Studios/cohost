@@ -259,14 +259,19 @@ test("the Compose service names are the hosts of the default engine URLs", () =>
 });
 
 // @spec DEPLOY-ENG-017
-test("neither Compose file names latest-cu128; .env.example comments KOKORO_IMAGE with it for an RTX 50-series card and says it is unconfirmed", () => {
-  for (const f of ["docker-compose.yml", "docker-compose.gpu.yml"]) assert.doesNotMatch(read(f), /latest-cu128/, f);
-  const env = read(".env.example").split("\n");
-  const at = env.findIndex((l) => /^#\s*KOKORO_IMAGE=.*latest-cu128/.test(l));
-  assert.ok(at >= 0, "a commented KOKORO_IMAGE line naming latest-cu128");
-  const block = env.slice(Math.max(0, at - 6), at + 3).join("\n");
-  assert.match(block, /RTX 50/);
-  assert.match(block, /not (?:been )?confirmed|unconfirmed/i);
+test("the GPU overlay's tts defaults to Kokoro-FastAPI v0.10.0-cu128 with a dated reason; latest-cu128 is named nowhere; .env.example offers v0.10.0-cu126", () => {
+  assert.equal(gpu.services.tts!.image, "${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128}");
+  const lines = read("docker-compose.gpu.yml").split("\n");
+  const at = lines.findIndex((l) => /^\s*image:.*kokoro-fastapi-gpu:v0\.10\.0-cu128/.test(l));
+  assert.ok(at >= 0, "the overlay's tts image line");
+  // The comment block directly above the image line gives the reason and the date the tag was looked up.
+  let from = at;
+  while (from > 0 && lines[from - 1]!.trimStart().startsWith("#")) from--;
+  const comment = lines.slice(from, at).join("\n");
+  assert.match(comment, /RTX 50/, "the reason names RTX 50-series cards");
+  assert.match(comment, /\b\d{4}-\d{2}-\d{2}\b/, "the comment dates the lookup");
+  for (const f of ["docker-compose.yml", "docker-compose.gpu.yml", ".env.example"]) assert.doesNotMatch(read(f), /latest-cu128/, f);
+  assert.ok(read(".env.example").split("\n").some((l) => /^#\s*KOKORO_IMAGE=ghcr\.io\/remsky\/kokoro-fastapi-gpu:v0\.10\.0-cu126$/.test(l)), "a commented KOKORO_IMAGE line naming v0.10.0-cu126");
 });
 
 // @spec DEPLOY-ENG-019

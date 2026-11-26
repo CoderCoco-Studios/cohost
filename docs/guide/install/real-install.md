@@ -91,6 +91,14 @@ The optional speech engine servers have their own profiles: `pocket` (the Pocket
 
 If the installer found an NVIDIA card it set `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in `.env`, which adds the GPU overlay. You do not need to do anything else.
 
+The GPU overlay runs the text-to-speech engine (Kokoro) from its CUDA 12.8 build, `ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128`. That build is the one RTX 50-series cards need, and it needs an NVIDIA driver of the R570 series or newer (on WSL2, the Windows driver). If `docker compose ps` shows `tts` restarting, or its log says "no kernel image is available" or names an unsupported driver, update the driver, or switch to the CUDA 12.6 build by adding this line to `.env` and pressing Launch again:
+
+```sh
+KOKORO_IMAGE=ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu126
+```
+
+The CUDA 12.6 build does not run on RTX 50-series cards.
+
 If you run a Windows `docker.exe` from WSL2, that program splits the list on `;` instead of `:`. Also set `COMPOSE_PATH_SEPARATOR` to `:` in `.env` in that case. The GPU overlay has not been run through `docker.exe`.
 
 ## How you know it worked

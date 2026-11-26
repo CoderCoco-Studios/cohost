@@ -23,7 +23,7 @@ Read by `docker compose` itself, before any container exists.
 | `COMPOSE_PATH_SEPARATOR` | unset | Set to `:` when a Windows `docker.exe` (see `COHOST_DOCKER_BIN`) would otherwise split `COMPOSE_FILE` on `;` |
 | `COMPOSE_PROFILES` | unset | Optional services that stay on across restarts and Launch: `eyes`, `ears`, `mouth` and `discord`, and the speech engine servers `pocket`, `nemotron` and `kyutai`, for example `discord,ears,mouth` |
 | `COMPOSE_PROJECT_NAME` | the folder name | The Compose project name. Set it only to run a second stack beside the first |
-| `KOKORO_IMAGE` | CPU image `ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0` | Override the [TTS](../../start/glossary.md#tts) image. The GPU overlay switches the default to the CUDA build |
+| `KOKORO_IMAGE` | CPU image `ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0` | Override the [TTS](../../start/glossary.md#tts) image. The GPU overlay switches the default to the CUDA 12.8 build `ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128`; set `ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu126` where that build does not run |
 | `SPEACHES_IMAGE` | CPU image `ghcr.io/speaches-ai/speaches:0.8.3-cpu` | Override the [STT](../../start/glossary.md#stt) image. The GPU overlay switches the default to the CUDA build |
 
 ## The dashboard's access controls

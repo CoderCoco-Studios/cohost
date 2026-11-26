@@ -265,19 +265,11 @@ test("a workflow step that runs anything else fails, naming the file and line", 
 });
 
 // @spec DEPLOY-CI-012
-test("the one held step (the desktop helper's libpulse, until EARS-SRC-023) passes only in the test workflow, with that exact command", () => {
-  const held = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
-  assert.equal(run({ ".github/workflows/test.yml": workflow(held) }).code, 0);
-  assert.equal(run({ ".github/workflows/other.yml": workflow(held) }).code, 1, "not in another workflow");
-  assert.equal(run({ ".github/workflows/test.yml": workflow(`${held} cmake`) }).code, 1, "not with another package");
-});
-
-// @spec DEPLOY-CI-012
-test("the held step fails the check once the spec it waits for is implemented", () => {
-  const held = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
-  const open = run({ ".github/workflows/test.yml": workflow(held), [SPECS]: spec("- [ ] **EARS-SRC-023**: x.") });
-  assert.equal(open.code, 0, open.err);
-  const done = run({ ".github/workflows/test.yml": workflow(held), [SPECS]: spec("- [x] **EARS-SRC-023**: x.") });
-  assert.equal(done.code, 1);
-  assert.match(done.err, /held only until EARS-SRC-023, which is implemented; remove the step/);
+test("no step is held: the desktop helper's former libpulse install fails in the test workflow too", () => {
+  const formerlyHeld = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
+  for (const wf of [".github/workflows/test.yml", ".github/workflows/other.yml"]) {
+    const r = run({ [wf]: workflow(formerlyHeld) });
+    assert.equal(r.code, 1, wf);
+    assert.match(r.err, /a workflow step must be a uses: action or a run: of exactly one mise run/, wf);
+  }
 });

@@ -87,13 +87,10 @@ const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** One `mise run <task>` command: optional leading NAME=value assignments, `mise run`, its flags, one task, the task's arguments. */
 const ONE_MISE_RUN = /^(?:[A-Z_][A-Z0-9_]*=[^\s;&|<>`$()]*\s+)*mise\s+run\s+(?:-\S+\s+)*[A-Za-z0-9][\w:.-]*(?:\s+[^\s;&|<>`$()]+)*$/;
 /**
- * Steps held until another spec lands, each named by its file and exact `run:` text with the spec that removes it.
- * The desktop audio helper's Linux back end links libpulse through pkg-config until it moves to the pure-Rust
- * pulseaudio client (ears EARS-SRC-023); the test workflow installs both until then.
+ * Steps held until another spec lands, each `{ file, run, until }`: the workflow file, the step's exact `run:` text
+ * and the spec whose implementation removes it. None is held.
  */
-const HELD_STEPS = [
-  { file: ".github/workflows/test.yml", run: "sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config", until: "EARS-SRC-023" },
-];
+const HELD_STEPS = [];
 
 /** The steps of every `steps:` list in a workflow: their keys and the line each starts on. Reads YAML as text (no install). */
 function workflowSteps(text) {

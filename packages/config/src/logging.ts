@@ -11,6 +11,7 @@ import { parseDocument } from "yaml";
 import pino from "pino";
 import { LoggingSchema, type LoggingSettings } from "./schema.js";
 import { configDir, dataDir, loadDotEnv } from "./paths.js";
+import { coerceEmptyNumbers } from "./pipeline.js";
 import { formatPretty } from "./log-pretty.js";
 import { LogFile } from "./log-file.js";
 
@@ -36,7 +37,11 @@ function writeStdoutSync(text: string): void {
     try {
       off += writeSync(1, buf, off, buf.length - off);
     } catch (err) {
-      if ((err as { code?: string }).code !== "EAGAIN" || ++waits > 1000) return;
+      if ((err as { code?: string }).code !== "EAGAIN" || ++waits > 1000) {
+        // Giving up part-way through a line: end it, so the next entry starts on a line of its own.
+        if (off > 0) try { writeSync(1, "\n"); } catch { /* stdout is gone or still full */ }
+        return;
+      }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
     }
   }
@@ -49,37 +54,50 @@ const REDACTED_KEYS = new Set(["token", "authorization", "password", "api_key", 
 const CENSOR = "[Redacted]";
 
 /**
- * `value` with every field named in `REDACTED_KEYS`, at any depth of its plain objects, arrays and errors, replaced by
- * `[Redacted]`. Copies only what changes, so the caller's objects are never modified; anything else passes through.
+ * `value` with every field named in `REDACTED_KEYS`, at any depth of its objects, arrays and errors, replaced by
+ * `[Redacted]`. A class instance is walked through its own enumerable keys and copied with its prototype; a Buffer, a typed
+ * array or a Date passes through. Copies only what changes, so the caller's objects are never modified. `memo` maps each
+ * object already met to its result, so a shared reference is censored everywhere it appears and a cycle ends in
+ * `[Circular]` instead of the uncensored original.
  */
 // @spec CFG-LOG-024
-export function redact(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
-  if (value === null || typeof value !== "object" || seen.has(value)) return value;
-  seen.add(value);
+export function redact(value: unknown, memo: Map<object, unknown> = new Map()): unknown {
+  if (value === null || typeof value !== "object") return value;
+  if (memo.has(value)) return memo.get(value);
+  if (ArrayBuffer.isView(value) || value instanceof Date) { memo.set(value, value); return value; }
+  memo.set(value, "[Circular]");
+  let result: unknown = value;
   if (Array.isArray(value)) {
     let changed = false;
-    const out = value.map((v: unknown) => { const r = redact(v, seen); if (r !== v) changed = true; return r; });
-    return changed ? out : value;
+    const out = value.map((v: unknown) => { const r = redact(v, memo); if (r !== v) changed = true; return r; });
+    if (changed) result = out;
+  } else {
+    const src = value as Record<string, unknown>;
+    let copy: Record<string, unknown> | undefined;
+    for (const key of Object.keys(src)) {
+      const cur = src[key];
+      const next = REDACTED_KEYS.has(key.toLowerCase()) ? CENSOR : redact(cur, memo);
+      if (next === cur) continue;
+      copy ??= copyObject(value);
+      copy[key] = next;
+    }
+    if (copy) result = copy;
   }
-  const proto: unknown = Object.getPrototypeOf(value);
-  const isError = value instanceof Error;
-  if (!isError && proto !== Object.prototype && proto !== null) return value;
-  const src = value as Record<string, unknown>;
-  let copy: Record<string, unknown> | undefined;
-  for (const key of Object.keys(src)) {
-    const cur = src[key];
-    const next = REDACTED_KEYS.has(key.toLowerCase()) ? CENSOR : redact(cur, seen);
-    if (next === cur) continue;
-    copy ??= isError ? copyError(value) : { ...src };
-    copy[key] = next;
-  }
-  return copy ?? value;
+  memo.set(value, result);
+  return result;
 }
 
-/** A copy of an error with its prototype, own properties, and `message` and `stack` read out as plain values (V8 keeps the stack behind an accessor bound to the original). */
-function copyError(err: Error): Record<string, unknown> {
-  const copy = Object.create(Object.getPrototypeOf(err) as object, Object.getOwnPropertyDescriptors(err)) as Record<string, unknown>;
-  for (const key of ["message", "stack"] as const) Object.defineProperty(copy, key, { value: err[key], writable: true, configurable: true, enumerable: false });
+/**
+ * A copy of an object with its prototype and own properties. An error's `message` and `stack` are read out as plain values
+ * (V8 keeps the stack behind an accessor bound to the original).
+ */
+function copyObject(obj: object): Record<string, unknown> {
+  const proto = Object.getPrototypeOf(obj) as object | null;
+  if (proto === Object.prototype) return { ...(obj as Record<string, unknown>) };
+  const copy = Object.create(proto, Object.getOwnPropertyDescriptors(obj)) as Record<string, unknown>;
+  if (obj instanceof Error) {
+    for (const key of ["message", "stack"] as const) Object.defineProperty(copy, key, { value: obj[key], writable: true, configurable: true, enumerable: false });
+  }
   return copy;
 }
 
@@ -99,6 +117,7 @@ let out: TerminalOut = STDOUT;
 let settings: LoggingSettings | undefined;
 let sink: Sink | undefined;
 let configLog: Logger | undefined;
+let colour: boolean | undefined;
 
 /**
  * The process's one read of the `logging` section: `.env` first (it never overrides a set variable), then `config.yaml` in the
@@ -114,16 +133,26 @@ export function loggingSettings(): LoggingSettings {
     const doc = parseDocument(readFileSync(join(configDir(), "config.yaml"), "utf8"));
     if (doc.errors.length === 0) section = (doc.toJS() as { logging?: unknown } | null)?.logging;
   } catch { /* missing or unreadable: the defaults */ }
-  const parsed = LoggingSchema.safeParse(section ?? {});
+  // A key written with no value is null and takes its default, as in loadConfig (CFG-LOAD-002).
+  const parsed = LoggingSchema.safeParse(coerceEmptyNumbers(section ?? {}));
   settings = parsed.success ? parsed.data : LoggingSchema.parse({});
   return settings;
+}
+
+/**
+ * Whether the level name is coloured (CFG-LOG-009): standard output is a TTY and `NO_COLOR` is unset or empty. Decided once,
+ * when the sink is created (or at the first terminal-only write before there is one), not per entry.
+ */
+function colourOn(): boolean {
+  colour ??= out.isTTY && !process.env.NO_COLOR;
+  return colour;
 }
 
 /** The terminal text of one serialised entry under the read settings: pino's line for `json`, the laid-out lines for `pretty`. */
 function terminalWrite(line: string): void {
   try {
     if (loggingSettings().terminal === "json") out.write(line);
-    else out.write(formatPretty(line, out.isTTY && !process.env.NO_COLOR));
+    else out.write(formatPretty(line, colourOn()));
   } catch { /* logging never throws */ }
 }
 
@@ -153,6 +182,8 @@ const destination = (write: (line: string) => void): pino.DestinationStream => (
 // @spec CFG-LOG-017, CFG-LOG-022, CFG-LOG-023
 function createSink(service: string, withFile: boolean): Sink {
   const s = loggingSettings();
+  colour = undefined;
+  colourOn();
   const file = withFile && s.file.enabled
     ? new LogFile({
         dir: join(dataDir(), "logs"), service,
@@ -209,5 +240,6 @@ export function resetLoggingForTest(terminal?: TerminalOut): void {
   sink = undefined;
   settings = undefined;
   configLog = undefined;
+  colour = undefined;
   out = terminal ?? STDOUT;
 }

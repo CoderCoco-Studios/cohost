@@ -6,9 +6,12 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+data=""
+conf=""
+# Armed before the first directory exists, so a failed second mktemp still removes the first.
+trap 'rm -rf ${data:+"$data"} ${conf:+"$conf"}' EXIT
 data="$(mktemp -d "${TMPDIR:-/tmp}/cohost-test-data.XXXXXX")"
 conf="$(mktemp -d "${TMPDIR:-/tmp}/cohost-test-config.XXXXXX")"
-trap 'rm -rf "$data" "$conf"' EXIT
 
 cp "$root"/config/*.example.* "$conf"/
 export COHOST_DATA_DIR="$data"

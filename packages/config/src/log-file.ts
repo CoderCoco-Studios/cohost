@@ -3,7 +3,7 @@
  * each entry it stats the path: the size decides rotation, and a path that is gone or names another file than the open
  * descriptor is reopened. Nothing here throws: a failure warns once per episode through `warn` and is retried at the next entry.
  */
-import { closeSync, fchmodSync, fstatSync, mkdirSync, chmodSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeSync, type Stats } from "node:fs";
+import { closeSync, existsSync, fchmodSync, fstatSync, mkdirSync, chmodSync, openSync, readdirSync, renameSync, statSync, unlinkSync, writeSync, type Stats } from "node:fs";
 import { join } from "node:path";
 
 export interface LogFileOptions {
@@ -85,7 +85,9 @@ export class LogFile {
     const at = (n: number): string => join(this.o.dir, `${this.o.service}.${n}.log`);
     let moved = false;
     try {
-      for (const n of numbered()) renameSync(at(n), at(n + 1));
+      // Shift only when `.1.log` is taken: after a failed `.log` rename the older files were already shifted, and a retry
+      // must not move them up again.
+      if (existsSync(at(1))) for (const n of numbered()) renameSync(at(n), at(n + 1));
       this.close();
       renameSync(this.path, at(1));
       moved = true;

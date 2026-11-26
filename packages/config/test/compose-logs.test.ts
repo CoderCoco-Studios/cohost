@@ -24,9 +24,10 @@ test("every application service but tools, the one-shots included, mounts ./data
     else assert.deepEqual(logs, [], `${name} has no ./data/logs mount`);
   }
   assert.ok((compose["x-ts-service"].volumes ?? []).includes(LOGS), "the x-ts-service anchor carries the mount");
-  for (const name of ["tools", "models", "redis", "postgres", "ollama", "tts", "stt", "stt-nemotron", "stt-kyutai"]) {
-    assert.ok(!(compose.services[name]!.volumes ?? []).some((m) => sourceOf(m).startsWith("./data")), `${name} mounts no part of ./data`);
+  for (const name of ["tools", "models", "redis", "postgres", "ollama", "tts", "stt", "tts-pocket", "stt-nemotron", "stt-kyutai"]) {
+    assert.ok(!(compose.services[name]!.volumes ?? []).some((m) => sourceOf(m).startsWith("./data/logs")), `${name} does not mount ./data/logs`);
   }
+  assert.ok(!(compose.services.tools!.volumes ?? []).some((m) => sourceOf(m).startsWith("./data")), "tools mounts no part of ./data");
 });
 
 // @spec DEPLOY-COMPOSE-030

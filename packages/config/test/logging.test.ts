@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ConfigSchema, LoggingSchema, PRESENTATION, SECTION_PATHS, configLogger, createLogger, escapeTerminal, formatPretty, loadConfig, loggingSettings,
-  resetLoggingForTest, type TerminalOut,
+  redact, resetLoggingForTest, type TerminalOut,
 } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, repo, sandbox, captureWarnings } from "./helpers/config-sandbox.js";
 
@@ -116,6 +116,20 @@ test("the bootstrap read loads .env first, so CONFIG_DIR there is honoured, and 
   writeFileSync(join(dir, "..", ".env"), `CONFIG_DIR=${other}\nLOG_LEVEL=error\n`);
   assert.equal(createLogger("svc").level, "trace");
   assert.equal(loggingSettings().level, "trace");
+});
+
+// @spec CFG-LOG-002
+test("the bootstrap read takes a key written with no value as its default, as loadConfig does", () => {
+  setup("  level:\n  terminal: json\n");
+  assert.deepEqual(loggingSettings(), { level: "info", terminal: "json", file: { enabled: true, max_size_mb: 10, max_files: 3 } });
+});
+
+// @spec CFG-LOG-002
+test("the bootstrap read validates the logging section alone, so an invalid other section does not reset it", () => {
+  const { dir } = setup();
+  writeFileSync(join(dir, "config.yaml"), `${MINIMAL_YAML.replace("name: Coco", 'name: ""')}logging:\n  level: debug\n`);
+  assert.equal(createLogger("svc").level, "debug");
+  assert.throws(() => loadConfig(true), /cohost\.name/, "the whole file is still invalid for loadConfig");
 });
 
 // @spec CFG-LOG-003
@@ -259,6 +273,20 @@ test("a file that would pass max_size_mb rotates through numbered files, and tho
   writeFileSync(join(logs, "chat.7.log"), "old\n");
   log.info({ big }, "six");
   assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.2.log", "chat.log"]);
+});
+
+// @spec CFG-LOG-015, CFG-LOG-021
+test("a retried rotation after a failed .log rename does not shift the older files a second time", () => {
+  const { logs, file } = setup("  file: { max_size_mb: 1, max_files: 3 }\n");
+  const log = createLogger("chat");
+  log.info({ big: "a".repeat(700 * 1024) }, "current");
+  // the state a failed attempt leaves: the older files already moved up one, `.1.log` free, `.log` still in place
+  writeFileSync(join(logs, "chat.2.log"), "older\n");
+  log.info({ big: "b".repeat(700 * 1024) }, "next");
+  assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.2.log", "chat.log"]);
+  assert.equal(readFileSync(join(logs, "chat.2.log"), "utf8"), "older\n", "chat.2.log stayed where it was");
+  assert.deepEqual(lines(join(logs, "chat.1.log")).map((e) => e.msg), ["current"]);
+  assert.deepEqual(lines(file("chat")).map((e) => e.msg), ["next"]);
 });
 
 // @spec CFG-LOG-015
@@ -413,6 +441,50 @@ test("token, authorization, password, api_key, apikey, secret and cookie are cen
   assert.equal(logged.token, "[Redacted]");
   assert.match(String(logged.stack), /Error: failed/);
   assert.equal(err.token, "inner");
+});
+
+// @spec CFG-LOG-024
+test("a credential reached twice through a shared reference, or through a cycle, is censored everywhere", () => {
+  const { out, file } = setup();
+  const log = createLogger("chat");
+  const creds = { token: "SHARED-LEAK", user: "u" };
+  log.info({ a: creds, b: creds, list: [creds] }, "shared");
+  const cyc: Record<string, unknown> = { token: "CYCLE-LEAK", n: 1 };
+  cyc.self = cyc;
+  log.info({ cyc }, "cycle");
+  const text = readFileSync(file("chat"), "utf8");
+  for (const leak of ["SHARED-LEAK", "CYCLE-LEAK"]) {
+    assert.ok(!text.includes(leak), `file holds ${leak}`);
+    assert.ok(!out.text().includes(leak), `terminal holds ${leak}`);
+  }
+  const [shared, cycle] = lines(file("chat"));
+  assert.deepEqual(shared!.a, { token: "[Redacted]", user: "u" });
+  assert.deepEqual(shared!.b, { token: "[Redacted]", user: "u" });
+  assert.deepEqual(shared!.list, [{ token: "[Redacted]", user: "u" }]);
+  assert.deepEqual(cycle!.cyc, { token: "[Redacted]", n: 1, self: "[Circular]" });
+  assert.equal(creds.token, "SHARED-LEAK", "the caller's objects are unchanged");
+  assert.equal(cyc.token, "CYCLE-LEAK");
+});
+
+// @spec CFG-LOG-024
+test("a class instance is walked through its own keys and keeps its prototype; a Buffer, a typed array and a Date pass through", () => {
+  class Client { constructor(public apiKey: string, public host: string) {} describe(): string { return `client@${this.host}`; } }
+  const client = new Client("CLASS-LEAK", "h");
+  const r = redact({ client }) as { client: Client };
+  assert.ok(r.client instanceof Client, "the prototype is kept");
+  assert.equal(r.client.apiKey, "[Redacted]");
+  assert.equal(r.client.describe(), "client@h");
+  assert.equal(client.apiKey, "CLASS-LEAK", "the original is unchanged");
+  const buf = Buffer.from("x");
+  const arr = new Uint8Array([1]);
+  const date = new Date(0);
+  const passed = redact({ buf, arr, date }) as Record<string, unknown>;
+  assert.equal(passed.buf, buf);
+  assert.equal(passed.arr, arr);
+  assert.equal(passed.date, date);
+  const { file } = setup();
+  createLogger("chat").info({ client }, "instance");
+  assert.ok(!readFileSync(file("chat"), "utf8").includes("CLASS-LEAK"));
 });
 
 // @spec CFG-LOG-025

@@ -18,7 +18,7 @@ Terms: "the service" is the `tools` service; "a tool" is a built-in tool or an M
 
 - [x] **TOOL-SVC-010**: The `tools` unit's manifest entry shall declare `secrets` as exactly `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret` and `chat.youtube.api_key`, so the service's secrets projection holds no other secret path (deployment DEPLOY-SECRET-003).
 - [x] **TOOL-SVC-011**: When an MCP server's URL names a host that does not resolve or cannot be reached from the service's network (a Compose service other than `redis`, deployment DEPLOY-NET-002), the service shall treat the server as `down` like any unreachable server, with a sentence the service wrote and no resolver or socket error text.
-- [ ] **TOOL-SVC-012**: When the service starts, it shall create its logger with `createLogger("tools", { file: false })` and hand it to `runService`, so that it writes no log file whatever `logging.file.enabled` holds (config CFG-LOG-017) and its log reaches only its standard output; its level and terminal format follow the `logging` section like every program's.
+- [ ] **TOOL-SVC-012**: When the service starts, it shall create its logger with `createLogger("tools", { file: false })` and hand it to `runService`, so that it writes no log file whatever `logging.file.enabled` holds (config CFG-LOG-022) and its log reaches only its standard output; its level and terminal format follow the `logging` section like every program's.
 
 ## Tools and the catalog (TOOL-CAT)
 

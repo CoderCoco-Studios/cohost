@@ -404,8 +404,9 @@ const sameValue = (a: unknown, b: unknown): boolean =>
 /**
  * Applies `values` (key of the section to new value) to the file text and validates the result with the loader's pipeline,
  * applying no isolation override. Returns the edited text and warnings, or the issues that stopped it (the text is never
- * partly edited). The warnings name each edited key a running unit overrides (`running`, as for `readSection`) and, for the
- * `dashboard` section, that it applies at the dashboard's next start and where the page address moves.
+ * partly edited). The warnings name each edited key a running unit overrides (`running`, as for `readSection`), for the
+ * `dashboard` and `logging` sections that the dashboard picks the change up at its next start, and for `dashboard` where the
+ * page address moves.
  */
 // @spec MOD-CFG-009, MOD-CFG-010, MOD-CFG-011, MOD-CFG-012, MOD-CFG-015
 export function applySection(text: string, section: string, values: Record<string, unknown>, secretsSet: readonly string[] = [], running: RunningOverrides = {}): ApplyResult {
@@ -452,6 +453,9 @@ export function applySection(text: string, section: string, values: Record<strin
     if (iso && iso.overriddenBy.length) {
       warnings.push(`${e.leaf.path.join(".")}: ${iso.overriddenBy.join(", ")} ${iso.overriddenBy.length === 1 ? "is" : "are"} running isolated with ${iso.name}, so the new value applies only after ${iso.overriddenBy.length === 1 ? "it is" : "they are"} started again without isolation`);
     }
+  }
+  if (section === "logging" && edited.length) {
+    warnings.push("logging: the dashboard reads these keys when it starts, so it picks the change up at its next start");
   }
   if (section === "dashboard" && edited.length) {
     warnings.push("dashboard: the dashboard reads these keys when it starts, so the change applies at its next start");

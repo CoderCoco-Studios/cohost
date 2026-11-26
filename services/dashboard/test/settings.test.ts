@@ -284,6 +284,17 @@ test("a dashboard save says it applies at the dashboard's next start, and a save
 
 const svc = (service: string, overrides?: Record<string, string>, status = "running") => ({ service, status, ...(overrides ? { overrides } : {}) });
 
+// @spec MOD-CFG-015
+test("a logging save offers the running units that declare it and warns that the dashboard picks it up at its next start", async () => {
+  const t = await boot({ stack: { services: [svc("cortex"), svc("voice", undefined, "exited")] } });
+  const r = await t.put("/config/logging", { etag: sha(t.text()), values: { level: "debug" } });
+  assert.equal(r.status, 200);
+  const j = (await r.json()) as { warnings: string[]; restart: string[] };
+  assert.deepEqual(j.restart, ["cortex"]);
+  assert.equal(j.warnings.length, 1);
+  assert.match(j.warnings[0]!, /dashboard.*next start/i);
+});
+
 // @spec MOD-CFG-018
 test("a running unit that declares the section and was started with an override is listed in isolation.overriddenBy of the key the override name selects", async () => {
   const t = await boot({ stack: { services: [svc("avatar", { AVATAR_DRIVER: "null" }), svc("cortex", { LLM_PROVIDER: "mock" }), svc("voice", {}), svc("salience")] } });

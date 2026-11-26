@@ -190,7 +190,7 @@ test("a literal or default key is set to the given value whatever the key is, an
 });
 
 // @spec MOD-CFG-015
-test("an edit to a key that a running unit overrides warns naming the key and the units; the dashboard section warns about its next start and the new page address", () => {
+test("an edit to a key that a running unit overrides warns naming the key and the units; the dashboard and logging sections warn about the dashboard's next start, and the dashboard section about the new page address", () => {
   const overridden = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "x" }, [], { LLM_PROVIDER: ["cortex", "memory"] }));
   assert.equal(overridden.warnings.length, 1);
   assert.match(overridden.warnings[0]!, /llm\.provider/);
@@ -206,6 +206,10 @@ test("an edit to a key that a running unit overrides warns naming the key and th
   assert.match(ports.warnings[0]!, /next start/);
   assert.match(ports.warnings[1]!, /address.*4000.*4001/s);
   assert.deepEqual(ok(applySection(FIXTURE, "dashboard", {})).warnings, []);
+  const logging = ok(applySection(FIXTURE, "logging", { level: "debug" }));
+  assert.equal(logging.warnings.length, 1);
+  assert.match(logging.warnings[0]!, /^logging: .*dashboard.*next start/);
+  assert.deepEqual(ok(applySection(FIXTURE, "logging", {})).warnings, []);
 });
 
 // @spec MOD-CFG-010

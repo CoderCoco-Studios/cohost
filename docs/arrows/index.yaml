@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "114 specs: 111 [x], 1 [ ], 2 [D] (CTRL-RUNTIME-016: data/logs created before Compose, #349; (CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the other 111 specs against the code (the last one ran at cb06bf3)."
+    next: "114 specs: 111 [x], 1 [ ], 2 [D] (CTRL-RUNTIME-016: data/logs created before Compose, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the other 111 specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:

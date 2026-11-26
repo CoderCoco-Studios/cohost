@@ -28,7 +28,7 @@ interface Svc {
   env_file?: string | string[];
   healthcheck?: { test: string[] | string; interval?: string; timeout?: string; retries?: number; start_period?: string };
   depends_on?: Record<string, { condition?: string; required?: boolean }>;
-  deploy?: { resources?: { reservations?: { devices?: Array<{ driver?: string; capabilities?: string[] }> } } };
+  deploy?: { resources?: { reservations?: { devices?: Array<{ driver?: string; count?: number | string; capabilities?: string[] }> } } };
 }
 interface File { services: Record<string, Svc>; volumes?: Record<string, unknown> }
 const load = (f: string) => parse(read(f), { merge: true }) as File;
@@ -256,6 +256,16 @@ test("the Compose service names are the hosts of the default engine URLs", () =>
   assert.deepEqual(hosts.map((u) => u.hostname), ["tts-pocket", "stt-nemotron", "stt-kyutai"]);
   for (const u of hosts) assert.ok(base.services[u.hostname], `${u.hostname} is a Compose service`);
   assert.deepEqual(hosts.map((u) => u.port), ["8000", "8080", "8080"], "the container ports");
+});
+
+// @spec DEPLOY-COMPOSE-010
+test("the GPU overlay reserves every NVIDIA device for ollama, tts and stt and switches tts and stt to the GPU images", () => {
+  for (const name of ["ollama", "tts", "stt"]) {
+    const devices = gpu.services[name]?.deploy?.resources?.reservations?.devices;
+    assert.ok(devices?.some((d) => d.driver === "nvidia" && d.count === "all" && d.capabilities?.includes("gpu")), `${name} reserves every NVIDIA device`);
+  }
+  assert.equal(gpu.services.tts!.image, "${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128}");
+  assert.equal(gpu.services.stt!.image, "${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:0.8.3-cuda}");
 });
 
 // @spec DEPLOY-ENG-017

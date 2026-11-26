@@ -36,7 +36,7 @@ async function rig(text: string, o: Partial<RecoveryHandlerDeps> & { secrets?: s
 }
 
 type Raw = { ok: boolean; file: string; path: string; text: string; etag: string; message: string; line?: number; col?: number; detail?: string };
-type Written = { ok: boolean; etag: string; problems: RecoveryProblem[]; valid: boolean; detail?: string };
+type Written = { ok: boolean; etag: string; rawEtag?: string; problems: RecoveryProblem[]; valid: boolean; detail?: string };
 const problems = async (r: Rig): Promise<RecoveryProblem[]> => ((await (await fetch(`${r.url}/recovery`)).json()) as { problems: RecoveryProblem[] }).problems;
 const getRaw = (r: Rig, file: string, headers: Record<string, string> = {}) => fetch(`${r.url}/recovery/raw?file=${file}`, { headers });
 const putRaw = (r: Rig, body: unknown, headers: Record<string, string> = {}) =>
@@ -104,7 +104,7 @@ test("secrets.yaml text is read only with the control token, in both control mod
     } finally { await none.close(); }
     const r = await rig(EXAMPLE, { secrets: BROKEN_SECRETS, controlEnabled, controlToken: "tok" });
     try {
-      for (const headers of [{}, { authorization: "Bearer nope" }]) {
+      for (const headers of [{}, { authorization: "Bearer nope" }] as Record<string, string>[]) {
         const res = await getRaw(r, "secrets", headers);
         assert.equal(res.status, 401, `control ${controlEnabled}`);
         assert.equal(res.headers.get("www-authenticate"), "Bearer");
@@ -144,7 +144,6 @@ test("a raw write replaces config.yaml atomically keeping its mode, and fixing t
   const r = await rig(BROKEN);
   try {
     chmodSync(r.configFile, 0o640);
-    const ino = statSync(r.configFile).ino;
     const stale = await putRaw(r, { file: "config", etag: "old", text: EXAMPLE });
     assert.equal(stale.status, 409);
     assert.equal(((await stale.json()) as { etag: string }).etag, etagOf(BROKEN));
@@ -157,9 +156,11 @@ test("a raw write replaces config.yaml atomically keeping its mode, and fixing t
     assert.equal(readFileSync(r.configFile, "utf8"), still, "the text is written as sent, still broken");
     assert.equal(body.valid, false);
     assert.equal(body.etag, etagOf(still));
+    assert.equal(body.rawEtag, etagOf(still));
     assert.deepEqual(body.problems.map((p) => [p.kind, p.raw]), [["syntax", true]]);
     assert.equal(r.valid(), 0);
 
+    const ino = statSync(r.configFile).ino;
     const fixed = EXAMPLE.replace(/^ {2}name: "Coco"/m, '  name: "Mika"   # fixed by hand');
     res = await putRaw(r, { file: "config", etag: body.etag, text: fixed });
     assert.equal(res.status, 200);
@@ -177,7 +178,7 @@ test("a raw write replaces config.yaml atomically keeping its mode, and fixing t
   } finally { await r.close(); }
 });
 
-// @spec DASH-RCV-017, DASH-RCV-012
+// @spec DASH-RCV-017, DASH-RCV-012, DASH-HTTP-015
 test("a raw write is refused for a file without a syntax error, for a malformed body and over 1 MiB, writing nothing", async () => {
   const text = EXAMPLE.replace(/^ {2}name: "Coco"/m, '  name: "${NAME}"');
   const r = await rig(text);

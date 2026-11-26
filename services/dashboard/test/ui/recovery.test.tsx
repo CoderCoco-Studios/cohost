@@ -178,7 +178,7 @@ test("a syntax error row edits the file as text: the textarea holds it with the 
   assert.match(r.textContent ?? "", /line 3, column 9/);
 
   const still = { ...SYNTAX, message: "not valid YAML at line 2, column 15 (UNEXPECTED_TOKEN)" };
-  b.app.fetch.on("POST /recovery/raw", { json: { ok: true, etag: "e2", problems: [still], valid: false } });
+  b.app.fetch.on("POST /recovery/raw", { json: { ok: true, etag: "e2", rawEtag: "r2", problems: [still], valid: false } });
   await userEvent.clear(area);
   await userEvent.type(area, "cohost:{enter}  name: [[Coco, x");
   await userEvent.click(within(r).getByRole("button", { name: "Save" }));
@@ -193,7 +193,7 @@ test("a syntax error row edits the file as text: the textarea holds it with the 
   await userEvent.click(within(row("/cohost/config/config.yaml")).getByRole("button", { name: "Save" }));
   await waitFor(() => assert.ok(screen.getByRole("heading", { level: 2, name: "dashboard.port" })));
   assert.equal(screen.queryByRole("textbox", { name: "config.yaml" }), null, "the editor closes once the file parses");
-  assert.equal((JSON.parse(b.app.fetch.callsTo("POST /recovery/raw")[1]!.body!) as { etag: string }).etag, "e2");
+  assert.equal((JSON.parse(b.app.fetch.callsTo("POST /recovery/raw")[1]!.body!) as { etag: string }).etag, "r2", "the next save carries the etag of the text written");
 });
 
 // @spec DASH-RCV-020

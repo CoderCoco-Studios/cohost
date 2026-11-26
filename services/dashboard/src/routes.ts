@@ -147,7 +147,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ active: false }));
         return;
       }
-      if (req.method === "POST" && /^\/recovery\/(set|reset|reset-all)$/.test(url.pathname)) {
+      if ((req.method === "POST" && /^\/recovery\/(set|reset|reset-all|raw)$/.test(url.pathname)) || (req.method === "GET" && url.pathname === "/recovery/raw")) {
         req.resume();
         res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the config is valid" }));

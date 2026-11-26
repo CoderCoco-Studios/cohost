@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Banner } from "../components/Banner";
 import { Button } from "../components/Button";
 import { PageHeading } from "../components/PageHeading";
-import { TextField } from "../components/Field";
+import { TextAreaField, TextField } from "../components/Field";
 import type { Api, ApiResult } from "../state/api";
 import { useApi } from "../state/hooks";
 import { AccessDialog } from "./AccessDialog";
@@ -19,13 +19,23 @@ export interface RecoveryProblem {
   fallback?: unknown;
   resetPath?: string;
   repair?: "quote" | "clear";
+  /** The file does not parse as YAML: it is edited as text (DASH-RCV-020). */
+  raw?: true;
   actions: { set: boolean; reset: boolean; fallback: boolean };
 }
 
 /** `GET /recovery` in recovery mode. */
 export interface RecoveryState { active: true; file: string; secretsFile: string; etag: string; problems: RecoveryProblem[] }
 
-type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; tokenNeeded?: string[] };
+type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: true; port?: number; tokenNeeded?: string[]; rawEtag?: string };
+
+/** `GET /recovery/raw`: a file that does not parse, as text (DASH-RCV-016). */
+interface RawText { ok: true; file: RecoveryProblem["file"]; path: string; text: string; etag: string; message: string; line?: number; col?: number }
+
+/** The raw editor while it is open: the file, the text being edited, the etag it was read with and the parser's message. */
+interface RawEdit { file: RecoveryProblem["file"]; text: string; etag: string; message: string }
+
+const FILE_NAME: Record<RecoveryProblem["file"], string> = { config: "config.yaml", secrets: "secrets.yaml" };
 
 /** The port the normal dashboard moves to, when the server says it moves; otherwise it comes up where the page is. */
 const movedTo = (r: { moved?: true; port?: number }): { port?: number } => (r.moved && r.port !== undefined ? { port: r.port } : {});
@@ -73,7 +83,7 @@ function failure(r: Extract<ApiResult<unknown>, { ok: false }>): string {
  * The screen config recovery mode shows in place of the shell: every failing key of `config.yaml` and `secrets.yaml` with its
  * actions, Reset all, Check again, and, once the files validate, a wait for the normal dashboard and a reload.
  */
-// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015
+// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015, DASH-RCV-020, DASH-RCV-021
 export function RecoveryScreen({ initial, reload = defaultReload, navigate = defaultNavigate, probe = defaultProbe, here = location, pollMs = 1000 }: {
   initial: RecoveryState;
   reload?: () => void;
@@ -91,6 +101,17 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
   // Set once the files are valid: the port the normal dashboard moves to, when the server says it moves (else it comes up here).
   const [valid, setValid] = useState<{ port?: number } | null>(null);
   const [misses, setMisses] = useState(0);
+  const [raw, setRaw] = useState<RawEdit | null>(null);
+  const [rawNote, setRawNote] = useState<string | null>(null);
+  const [control, setControl] = useState(false);
+  const [stopped, setStopped] = useState(false);
+
+  // The Stop button is offered only where the stack routes are (control enabled, DASH-RCV-021).
+  useEffect(() => {
+    let live = true;
+    void api.controlInfo().then((r) => { if (live && r.ok && r.data.enabled) setControl(true); });
+    return () => { live = false; };
+  }, [api]);
 
   const target = valid?.port !== undefined ? `${here.protocol}//${here.hostname}:${valid.port}/` : undefined;
   const ownAddress = `${here.protocol}//${here.hostname}${here.port ? `:${here.port}` : ""}/`;
@@ -142,6 +163,47 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     setErrors({ [key]: failure(r) });
   };
 
+  /** Reads `file` as text into the raw editor; `note` says why it was read again. A refusal is shown in the row. */
+  const openRaw = async (file: RecoveryProblem["file"], key: string, note: string | null = null): Promise<void> => {
+    setBusy(key);
+    const r = await api.get<RawText>(`/recovery/raw?file=${file}`, { auth: "control", action: `Edit ${FILE_NAME[file]} as text` });
+    setBusy(null);
+    if (!r.ok) { setErrors({ [key]: failure(r) }); return; }
+    setRaw({ file, text: r.data.text, etag: r.data.etag, message: r.data.message });
+    setRawNote(note);
+    setErrors({});
+  };
+
+  /** Saves the raw editor's text; it stays open, with the new message, while the file still does not parse. */
+  const saveRaw = async (edit: RawEdit, key: string): Promise<void> => {
+    setBusy(key);
+    const r = await api.post<WriteResult>("/recovery/raw", { file: edit.file, etag: edit.etag, text: edit.text }, { auth: "control", action: `Save ${FILE_NAME[edit.file]}` });
+    setBusy(null);
+    setRawNote(null);
+    if (r.ok) {
+      setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
+      setErrors({});
+      setTokenNeeded(r.data.tokenNeeded ?? []);
+      const still = r.data.problems.find((p) => p.file === edit.file && p.raw);
+      setRaw(still ? { ...edit, etag: r.data.rawEtag ?? edit.etag, message: still.message } : null);
+      if (r.data.valid) setValid(movedTo(r.data));
+      return;
+    }
+    if (r.status === 409 && typeof (r.data as { etag?: unknown } | undefined)?.etag === "string") {
+      await openRaw(edit.file, key, "The file changed since it was read. This is its text now: make your change again and Save.");
+      return;
+    }
+    setErrors({ [key]: failure(r) });
+  };
+
+  const stopStack = async (): Promise<void> => {
+    setBusy("stop");
+    const r = await api.post<{ ok: true; action: "stop" }>("/stack/stop", undefined, { auth: "control", action: "Stop the stack" });
+    setBusy(null);
+    setStopped(r.ok);
+    setErrors(r.ok ? {} : { stop: failure(r) });
+  };
+
   const files = [...new Set(state.problems.map((p) => (p.file === "secrets" ? state.secretsFile : state.file)))].join(" and ");
   if (valid) {
     return (
@@ -164,14 +226,19 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
         <div className="row">
           <Button variant="primary" busy={busy === "all"} disabled={busy !== null} onClick={() => void send("all", "reset-all", {}, "Reset all failing keys")}>Reset all failing keys</Button>
           <Button disabled={busy !== null} onClick={() => void refresh()}>Check again</Button>
+          {control ? <Button busy={busy === "stop"} disabled={busy !== null} onClick={() => void stopStack()}>Stop the stack</Button> : null}
         </div>
         {errors.all ? <Banner tone="bad">{errors.all}</Banner> : null}
+        {errors.stop ? <Banner tone="bad">{errors.stop}</Banner> : null}
+        {stopped ? <Banner tone="ok">The stack is stopped.</Banner> : null}
         {tokenNeeded.length ? <Banner tone="warn">The keys in config.yaml are fixed. {tokenNeeded.join(", ")} in secrets.yaml need the control token: use the button on {tokenNeeded.length === 1 ? "its row" : "their rows"} and enter the token when the page asks.</Banner> : null}
         <ul className="recovery-list" aria-label="Failing keys">
           {state.problems.map((p, i) => {
             const key = `${p.file}:${p.path}:${i}`;
             const fileName = p.file === "secrets" ? state.secretsFile : state.file;
-            const none = !p.actions.set && !p.actions.reset && !p.actions.fallback;
+            const none = !p.actions.set && !p.actions.reset && !p.actions.fallback && !p.raw;
+            const name = FILE_NAME[p.file];
+            const editing = p.raw && raw?.file === p.file ? raw : null;
             return (
               <li key={key} className="card">
                 <div className="card-h">
@@ -185,6 +252,19 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
                     <p>This is a credential. Remove it from config.yaml here, then set it in Settings, {p.section?.title ?? "its section"}, with its masked field once the dashboard is back.</p>
                   ) : null}
                   {none ? <p>Fix this by hand in {fileName}, then press Check again.</p> : null}
+                  {p.raw && !editing ? (
+                    <div className="row"><Button busy={busy === key} disabled={busy !== null} onClick={() => void openRaw(p.file, key)}>Edit {name} as text</Button></div>
+                  ) : null}
+                  {editing ? (
+                    <form className="stack-y recovery-raw" onSubmit={(e) => { e.preventDefault(); void saveRaw(editing, key); }}>
+                      {rawNote ? <Banner tone="warn">{rawNote}</Banner> : null}
+                      <TextAreaField label={name} help={editing.message} value={editing.text} onChange={(text) => setRaw({ ...editing, text })} rows={20} spellCheck={false} autoComplete="off" />
+                      <div className="row">
+                        <Button type="submit" variant="primary" busy={busy === key} disabled={busy !== null}>Save</Button>
+                        <Button disabled={busy !== null} onClick={() => { setRaw(null); setRawNote(null); }}>Cancel</Button>
+                      </div>
+                    </form>
+                  ) : null}
                   {p.actions.set ? (
                     <form className="row" onSubmit={(e) => { e.preventDefault(); void send(key, "set", { path: p.path, value: values[key] ?? "" }, `Set ${p.path}`); }}>
                       <TextField label={`New value for ${p.path}`} value={values[key] ?? ""} onChange={(v) => setValues((m) => ({ ...m, [key]: v }))} autoComplete="off" />

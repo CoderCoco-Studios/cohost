@@ -7,6 +7,7 @@ import { parseConfigText, unknownKeys, decodeIsolation, ISOLATION_ENV, type Conf
 import { loadSecrets } from "./secrets.js";
 import { configDir, findWorkspaceRoot, loadDotEnv } from "./paths.js";
 import { configLogger, type Logger } from "./logging.js";
+import { ConfigError, bracketIndexes, type ConfigProblem } from "./errors.js";
 
 export * from "./schema.js";
 export {
@@ -14,6 +15,7 @@ export {
   type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
 } from "./pipeline.js";
 export { updateSecrets } from "./secrets.js";
+export { ConfigError, type ConfigProblem, type ConfigProblemKind } from "./errors.js";
 export { projectSecrets, type SecretUnit } from "./project.js";
 export { writeFileAtomic } from "./atomic.js";
 export { ollamaModels, type OllamaModels } from "./models.js";
@@ -56,7 +58,7 @@ const diag = (): Pick<Logger, "warn"> => diagnostics ?? configLogger();
 
 const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
 
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010, CFG-LOAD-008
+// @spec CFG-RCV-001, CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010, CFG-LOAD-008
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
@@ -71,7 +73,7 @@ export function loadConfig(force = false): Config {
   if (notMerged.length > 0) diag().warn(`[config] ${secretsFile}: ignoring keys that are not secret keys: ${notMerged.join(", ")}`);
   if (!parsed.ok) {
     const applied = Object.keys(overrides);
-    throw new Error(`Invalid ${file}:\n${formatIssues(parsed.issues)}` + (applied.length ? `\n\n(${ISOLATION_ENV} overrides applied: ${applied.join(", ")})` : ""));
+    throw new ConfigError(`Invalid ${file}:\n${formatIssues(parsed.issues)}` + (applied.length ? `\n\n(${ISOLATION_ENV} overrides applied: ${applied.join(", ")})` : ""), problemsOf(file, parsed));
   }
   if (parsed.ignoredSecrets.length > 0) diag().warn(`[config] ${file}: ignoring values at secret keys: ${parsed.ignoredSecrets.join(", ")}; credentials belong in ${secretsFile}`);
   const stray = unknownKeys(parsed.raw, parsed.config);
@@ -83,6 +85,33 @@ export function loadConfig(force = false): Config {
   }
   cached = parsed.config;
   return cached;
+}
+
+/** The problems of a failed parse of `config.yaml`, as `ConfigError` carries them (list indexes written `[i]`). */
+const problemsOf = (file: string, parsed: Extract<ReturnType<typeof parseConfigText>, { ok: false }>): ConfigProblem[] =>
+  parsed.issues.map((i) => ({ file, path: bracketIndexes(i.path), message: i.message, kind: parsed.kind }));
+
+/**
+ * Every problem of `secrets.yaml` and `config.yaml` as the loader would meet them, secrets first, read fresh: no cache, no
+ * warning, no isolation override. `config.yaml` is validated with the secrets that could be read (none when `secrets.yaml`
+ * itself fails). Empty when `loadConfig(true)` would succeed; a failure that is not about the files' content is thrown. The
+ * files default to the loader's, and `configText` stands in for the text of `config.yaml` (an edit not yet written); the
+ * dashboard's recovery screen and the control plane's config gate call it.
+ */
+// @spec CFG-RCV-002
+export function checkConfig(files: { configFile?: string; secretsFile?: string; configText?: string } = {}): ConfigProblem[] {
+  const file = files.configFile ?? ensureFromExample("config.yaml", "config.example.yaml");
+  const problems: ConfigProblem[] = [];
+  let values: Readonly<Record<string, string>> = {};
+  try {
+    values = loadSecrets(files.secretsFile ?? secretsPath()).values;
+  } catch (e) {
+    if (!(e instanceof ConfigError)) throw e;
+    problems.push(...e.problems);
+  }
+  const parsed = parseConfigText(files.configText ?? readFileSync(file, "utf8"), values);
+  if (!parsed.ok) problems.push(...problemsOf(file, parsed));
+  return problems;
 }
 
 /**

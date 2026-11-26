@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "260 specs: 260 [x], 0 [ ]. The logging design (#349) is built: CFG-LOG-002..025, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in). secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "265 specs: 265 [x], 0 [ ]. The structured ConfigError, checkConfig and the recovery editor (CFG-RCV-001 to 005, #360) are built. The logging design (#349) is built: CFG-LOG-002..025, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in). secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "427 specs: 416 [x], 11 [ ]: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented."
+    next: "442 specs: 431 [x], 11 [ ]: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 015, #360) is built."
     drift: null
 
   control-plane:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "114 specs: 112 [x], 0 [ ], 2 [D] (CTRL-RUNTIME-016, data/logs created before Compose, is built, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
+    next: "116 specs: 114 [x], 0 [ ], 2 [D] (the config gate CTRL-GATE-001 and CTRL-CLI-018 are built, #360; CTRL-RUNTIME-016, data/logs created before Compose, is built, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:

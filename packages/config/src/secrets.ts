@@ -3,6 +3,7 @@ import { parseDocument, Document, isMap } from "yaml";
 import { secretPathOf, isSecretPrefix } from "./schema.js";
 import { writeFileAtomic } from "./atomic.js";
 import type { SecretValues } from "./pipeline.js";
+import { ConfigError, invalidMessage } from "./errors.js";
 
 /** What `secrets.yaml` holds, as `loadConfig` needs it. No field carries text of the file beyond key paths. */
 export interface LoadedSecrets {
@@ -16,21 +17,25 @@ export interface LoadedSecrets {
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
-/** The failure of a file the loader or `updateSecrets` cannot use: names the file and a position or a path, never text of the file. */
-const invalid = (file: string, lines: string[]): Error => new Error(`Invalid ${file}:\n${lines.map((l) => `  ${l}`).join("\n")}`);
+/**
+ * The failure of a file the loader or `updateSecrets` cannot use: names the file and a position or a path, never text of the
+ * file. A `ConfigError` of kind `secrets`, one problem per line (CFG-RCV-001).
+ */
+const invalid = (file: string, lines: { path: string; message: string }[]): ConfigError =>
+  new ConfigError(invalidMessage(file, lines), lines.map((l) => ({ file, path: l.path, message: l.message, kind: "secrets" as const })));
 
 /** Parses the file text; a syntax error is reported by line and column only, because the library's own message quotes the source. */
 function parseSecretsText(file: string, text: string): Document {
   const doc = parseDocument(text);
   if (doc.errors.length) {
     const pos = doc.errors[0]!.linePos?.[0];
-    throw invalid(file, [`(file): not valid YAML${pos ? ` at line ${pos.line}, column ${pos.col}` : ""}`]);
+    throw invalid(file, [{ path: "", message: `not valid YAML${pos ? ` at line ${pos.line}, column ${pos.col}` : ""}` }]);
   }
   return doc;
 }
 
 /** Reads `file` as `secrets.yaml`: a missing file holds nothing, one that cannot be read or parsed is an error. */
-// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010, CFG-SEC-016
+// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-RCV-001, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010, CFG-SEC-016
 export function loadSecrets(file: string): LoadedSecrets {
   let text: string;
   try {
@@ -41,7 +46,7 @@ export function loadSecrets(file: string): LoadedSecrets {
     throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`, { cause: e });
   }
   const root: unknown = parseSecretsText(file, text).toJS();
-  if (root !== null && !isObj(root)) throw invalid(file, ["(file): the root must be a mapping nested like config.yaml"]);
+  if (root !== null && !isObj(root)) throw invalid(file, [{ path: "", message: "the root must be a mapping nested like config.yaml" }]);
 
   const values: Record<string, string> = {};
   const ignored: string[] = [];
@@ -67,8 +72,8 @@ export function loadSecrets(file: string): LoadedSecrets {
   if (root) walk(root, "");
   if (wrong.length || multiline.length) {
     throw invalid(file, [
-      ...wrong.map((p) => `${p}: must be a string (write a value made only of digits in quotes)`),
-      ...multiline.map((p) => `${p}: must be a single line`),
+      ...wrong.map((p) => ({ path: p, message: "must be a string (write a value made only of digits in quotes)" })),
+      ...multiline.map((p) => ({ path: p, message: "must be a single line" })),
     ]);
   }
 
@@ -108,7 +113,7 @@ export function updateSecrets(linkOrFile: string, changes: Readonly<Record<strin
     if (code !== "ENOENT") throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`, { cause: e });
   }
   const doc = text === "" ? new Document({}) : parseSecretsText(file, text);
-  if (doc.contents !== null && !isMap(doc.contents)) throw invalid(file, ["(file): the root must be a mapping nested like config.yaml"]);
+  if (doc.contents !== null && !isMap(doc.contents)) throw invalid(file, [{ path: "", message: "the root must be a mapping nested like config.yaml" }]);
   for (const [path, value] of next) {
     try {
       doc.setIn(path.split("."), value);

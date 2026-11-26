@@ -68,7 +68,7 @@ Specs for `packages/control` and the semantics the dashboard and compose consume
 
 ## Config gate (CTRL-GATE)
 
-- [ ] **CTRL-GATE-001**: When `configRefusal(check = checkConfig)` is called, the system shall return undefined when `check` returns no problem, and otherwise the text `the config is invalid (<n> problem(s); first: <path>): fix it on the dashboard's config recovery screen (mise run dashboard), then try again`, `<path>` being the first problem's path, or its file when the path is empty; a failure `check` throws shall propagate.
+- [x] **CTRL-GATE-001**: When `configRefusal(check = checkConfig)` is called, the system shall return undefined when `check` returns no problem, and otherwise the text `the config is invalid (<n> problem(s); first: <path>): fix it on the dashboard's config recovery screen (mise run dashboard), then try again`, `<path>` being the first problem's path, or its file when the path is empty; a failure `check` throws shall propagate. <!-- test: packages/control/test/config-gate.test.ts -->
 
 ## Control configuration (CTRL-CONFIG)
 
@@ -118,7 +118,7 @@ The heartbeat publisher lives in `@cohost/shared`, and its mechanics are shared-
 - [x] **CTRL-CLI-012**: When `cohostctl restart-all` runs, the system shall run `StackController.restartAll` with a `ServiceController` built as for `restart` (`by: "cohostctl"`, the bus audit publisher, `CONTROL_ADVANCED` honoured), print `restart <id>: ok` or `restart <id> failed: <detail>` per unit it restarted, and exit 0 when every restart succeeded and 1 otherwise, including when no application service was running. <!-- test: packages/control/test/cli.test.ts -->
 - [x] **CTRL-CLI-016**: When `cohostctl reembed` runs (no arguments or options), the system shall run `ComposeRuntime.reembed` without opening the bus, publishing `service.lifecycle` or applying a `ServiceController` guard, print `reembed: ok` (followed by the job's last output line in parentheses when there is one) and exit 0, or print `reembed failed: <detail>` and exit 1. <!-- test: packages/control/test/cli.test.ts -->
 - [x] **CTRL-CLI-017**: If Redis cannot be reached when a `cohostctl` command that uses the bus runs (`status`, `start`, `stop`, `restart`, `restart-all`), the system shall open its bus connection fail-fast (BUS-STREAM-009), recognise the failure by the error `code` `BUS_CONNECTION`, print one line `cannot reach Redis at <url>: <reason> (is the stack up? run cohostctl launch)` to stderr, where `<reason>` is that error's message (BUS-NAT-ERR-009), with no connection-library error output, and exit 1. <!-- test: packages/control/test/latency.test.ts -->
-- [ ] **CTRL-CLI-018**: When `cohostctl launch`, `rebuild`, `start`, `restart` or `restart-all` runs and `configRefusal` (CTRL-GATE-001) returns a text, the system shall print it and exit 1 after parsing its arguments and before it takes the lifecycle lock, opens the bus or runs a Docker command; `stop`, `stop-all`, `status`, `consolidate`, `reembed` and `latency` shall not check the configuration.
+- [x] **CTRL-CLI-018**: When `cohostctl launch`, `rebuild`, `start`, `restart` or `restart-all` runs and `configRefusal` (CTRL-GATE-001) returns a text, the system shall print it and exit 1 after parsing its arguments and before it takes the lifecycle lock, opens the bus or runs a Docker command; `stop`, `stop-all`, `status`, `consolidate`, `reembed` and `latency` shall not check the configuration. <!-- test: packages/control/test/config-gate.test.ts -->
 
 ## Latency report (CTRL-LAT)
 

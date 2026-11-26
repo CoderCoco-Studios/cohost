@@ -11,11 +11,15 @@
  * Two listeners: the full surface on DASHBOARD_HOST (default 127.0.0.1) and a LAN listener on all interfaces
  * that serves only the sink page and its audio.
  *
- * The entry is one call to the shared bootstrap; the service itself is `service.ts`.
+ * The entry loads the configuration (running config recovery mode while config.yaml or secrets.yaml does not validate,
+ * `recovery.ts`) and then makes one call to the shared bootstrap; the service itself is `service.ts`.
  */
+import { createLogger } from "@cohost/config";
 import { runService } from "@cohost/shared";
 import { dashboardService } from "./service.js";
+import { startDashboard } from "./recovery.js";
 
 const svc = dashboardService();
-// @spec DASH-HTTP-016
-await runService({ service: "dashboard", health: svc.health, main: svc.main });
+const log = createLogger("dashboard");
+// @spec DASH-HTTP-016, DASH-RCV-001
+await startDashboard({ log, run: (cfg) => runService({ service: "dashboard", health: svc.health, main: svc.main, log, ...(cfg ? { loadConfig: () => cfg } : {}) }) });

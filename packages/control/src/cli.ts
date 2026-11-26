@@ -27,6 +27,7 @@ import { LifecycleLock, type LockResult } from "./lock.js";
 import { HealthTracker, withContainerRestarts, type ServiceHealth } from "./health.js";
 import { appServiceIds } from "./manifest.js";
 import { latencyReport } from "./latency.js";
+import { configRefusal } from "./config-gate.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
@@ -214,7 +215,12 @@ export interface CliWiring {
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
   err?: (line: string) => void;
+  /** The config gate (CTRL-GATE-001): a refusal text while the configuration is invalid; the loader's files by default. */
+  configRefusal?: () => string | undefined;
 }
+
+/** The commands that start a service from the configuration, refused while it is invalid (CTRL-CLI-018). */
+const GATED = new Set(["launch", "rebuild", "start", "restart", "restart-all"]);
 
 /** The reason, when `e` is a failure to reach Redis (error `code` `BUS_CONNECTION`, its message names the cause); otherwise undefined. */
 // @spec CTRL-CLI-017
@@ -233,13 +239,20 @@ function redisUrl(env: NodeJS.ProcessEnv | undefined): string {
  * The whole of cohostctl: parse, then build what the command needs. Arguments that do not parse never build a
  * runtime, open the bus or run Docker; the bus is opened on first use and always stopped.
  */
-// @spec CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-CLI-017, CTRL-STACK-001, CTRL-LOCK-004
+// @spec CTRL-CLI-018, CTRL-CLI-002, CTRL-CLI-004, CTRL-CLI-009, CTRL-CLI-010, CTRL-CLI-012, CTRL-CLI-013, CTRL-CLI-014, CTRL-CLI-015, CTRL-CLI-016, CTRL-CLI-017, CTRL-STACK-001, CTRL-LOCK-004
 export async function executeCli(argv: readonly string[], w: CliWiring = {}): Promise<number> {
   const out = w.out ?? console.log;
   const err = w.err ?? console.error;
-  try { parseCli(argv); } catch (e) {
+  let cmd: CliCommand;
+  try { cmd = parseCli(argv); } catch (e) {
     err(`${(e as Error).message}\n${USAGE}`);
     return 2;
+  }
+  // @spec CTRL-CLI-018
+  if (GATED.has(cmd.cmd)) {
+    let refusal: string | undefined;
+    try { refusal = (w.configRefusal ?? (() => configRefusal()))(); } catch (e) { err(e instanceof Error ? e.message : String(e)); return 1; }
+    if (refusal !== undefined) { err(refusal); return 1; }
   }
   // Opened on first use, so `consolidate`, `launch`, `rebuild` and `stop-all` (run when redis may be stopped) never connect.
   let bus: CliBus | undefined;

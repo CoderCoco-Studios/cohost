@@ -21,8 +21,9 @@ export interface RunServiceOptions<B extends BootBus = Bus> {
   health: (cfg: Config) => HeartbeatSpec;
   /** The service itself; resolves once it is running. It calls `heartbeat.ready()` or an idle plan itself. */
   main: (ctx: ServiceContext<B>) => Promise<void>;
-  // Replacements for tests: no Redis, no signal handling, no process exit.
+  /** Supplies the configuration instead of `loadConfig()`: the dashboard hands over the one it loaded itself (DASH-HTTP-016). */
   loadConfig?: () => Config;
+  // Replacements for tests: no Redis, no signal handling, no process exit.
   createBus?: (service: string, log: Logger) => B;
   onShutdown?: (fn: () => void | Promise<void>, log?: Logger) => void;
   exit?: (code: number) => void;

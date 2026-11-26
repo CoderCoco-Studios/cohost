@@ -53,7 +53,7 @@ function readText(repoRoot, rel) {
   try {
     return readFileSync(join(repoRoot, rel), 'utf8');
   } catch (e) {
-    throw new Error(`${rel}: cannot read: ${e.message}`);
+    throw new Error(`${rel}: cannot read: ${e.message}`, { cause: e });
   }
 }
 
@@ -67,7 +67,7 @@ export function splitFrontmatter(text, rel) {
   try {
     data = parseYaml(m[1]) ?? {};
   } catch (e) {
-    throw new Error(`${rel}: cannot parse frontmatter: ${String(e.message).split('\n')[0]}`);
+    throw new Error(`${rel}: cannot parse frontmatter: ${String(e.message).split('\n')[0]}`, { cause: e });
   }
   if (typeof data !== 'object' || Array.isArray(data)) throw new Error(`${rel}: frontmatter is not a mapping`);
   return { data, body: src.slice(m[0].length) };

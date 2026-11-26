@@ -4,7 +4,7 @@ import { parseWav } from "@cohost/shared";
 import { testConfig, waitFor } from "@cohost/testing";
 import { collect, TtsError, type TtsEngine } from "../src/engine.js";
 import { createEngine } from "../src/engines.js";
-import { fakeServer, pcm, sendWav, sleep, streamedHeader, wavBytes, type FakeServer } from "./tts-helpers.js";
+import { fakeServer, pcm, sleep, streamedHeader, wavBytes, type FakeServer } from "./tts-helpers.js";
 
 const voiceCfg = (voice: Record<string, unknown>) => testConfig({ voice }).voice;
 const openai = (server: FakeServer, over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) =>
@@ -152,8 +152,8 @@ test("pocket: ping is GET /health, true only for a 2xx, false for a failure or a
     assert.deepEqual(s.requests.map((r) => `${r.method} ${r.url}`), ["GET /health", "GET /health"]);
   } finally { await s.close(); }
   assert.equal(await e.ping!(new AbortController().signal), false, "refused");
-  assert.equal(createEngine(voiceCfg({ engine: "kokoro" })).ping, undefined);
-  assert.equal(createEngine(voiceCfg({ engine: "openai", openai: { base_url: "http://x/v1", model: "m" }, voice: "v" })).ping, undefined);
+  assert.equal("ping" in createEngine(voiceCfg({ engine: "kokoro" })), false);
+  assert.equal("ping" in createEngine(voiceCfg({ engine: "openai", openai: { base_url: "http://x/v1", model: "m" }, voice: "v" })), false);
 });
 
 // ---- stub

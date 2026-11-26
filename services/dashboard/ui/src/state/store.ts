@@ -9,7 +9,7 @@ export interface Store<T> {
   get(): T;
   /** Replaces the value (or patches it with a function of the current one) and notifies subscribers when it changed. */
   set(next: T | ((prev: T) => T)): void;
-  subscribe(listener: () => void): () => void;
+  subscribe: (listener: () => void) => () => void;
 }
 
 export function createStore<T>(initial: T): Store<T> {

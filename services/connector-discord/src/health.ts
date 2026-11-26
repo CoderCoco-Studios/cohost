@@ -20,10 +20,10 @@ export function readToken(cfg: Config): string {
 /** What the heartbeat reads from the running connector. */
 export interface ConnectorStatus {
   /** The voice connection is Ready. */
-  voiceReady(): boolean;
+  voiceReady: () => boolean;
   /** The capability is registered `ready` (not absent through a tag conflict) and, for `audio-in`, capture runs. */
-  audioIn(): boolean;
-  audioOut(): boolean;
+  audioIn: () => boolean;
+  audioOut: () => boolean;
 }
 
 // @spec CONN-HLTH-001

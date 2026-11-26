@@ -86,8 +86,8 @@ test("pocket starts with tts down, probes GET /health at start, and tts is ok on
   await waitFor(() => s.requests.some((r) => r.method === "GET" && r.url === "/health"), "the start-up probe", 3000);
   assert.ok(t.bus.health.length > 0 && t.bus.health[0]!.state === "starting");
   await waitFor(() => last(t.bus).deps.tts === "ok", "tts ok after the probe", 4000);
-  assert.match(String(last(t.bus).detail ?? ""), /pocket/);
-  assert.match(String(last(t.bus).detail ?? ""), /127\.0\.0\.1/);
+  assert.match(last(t.bus).detail ?? "", /pocket/);
+  assert.match(last(t.bus).detail ?? "", /127\.0\.0\.1/);
 });
 
 // @spec VOICE-HLTH-007, VOICE-HLTH-010

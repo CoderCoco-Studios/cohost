@@ -13,7 +13,6 @@
  * `eyesService(deps)` is the service minus the process: `index.ts` hands its `health` and `main` to `runService`,
  * and a test hands it a fake OBS client.
  */
-import type { Bus } from "@cohost/bus";
 import type { Config } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { Eyes, buildVisionProvider, createDescriber, describerLabel, gapOf, startEyes, stripDataUrl, type Describe, type VisionBuild } from "./eyes.js";
@@ -44,7 +43,7 @@ const timerSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(
 /** The wait before the next look: the interval minus what the look took, and never less than 500 ms. */
 export const nextDelay = (intervalMs: number, elapsedMs: number): number => Math.max(500, intervalMs - elapsedMs);
 
-export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): HeartbeatSpec; main(ctx: ServiceContext<Bus>): Promise<void> } {
+export function eyesService(deps: EyesServiceDeps): { health: (cfg: Config) => HeartbeatSpec; main: (ctx: ServiceContext) => Promise<void> } {
   const { obs } = deps;
   const sleep = deps.sleep ?? timerSleep;
   const now = deps.now ?? (() => performance.now());
@@ -63,7 +62,7 @@ export function eyesService(deps: EyesServiceDeps): { health(cfg: Config): Heart
     async main({ cfg, bus, log, heartbeat, onStop }) {
       const { host, port, password } = cfg.vision.obs;
       let stopped = false;
-      const fatal = (err: unknown): void => { log.error({ err }, "fatal"); (deps.exit ?? process.exit)(1); };
+      const fatal = (err: unknown): void => { log.error({ err }, "fatal"); if (deps.exit) deps.exit(1); else process.exit(1); };
 
       // @spec EYES-GAP-002, EYES-GAP-003, EYES-HEALTH-003
       // A gap keeps the service up with `vision` down; the reason is the heartbeat detail while

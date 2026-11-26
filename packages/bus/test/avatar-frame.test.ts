@@ -36,7 +36,7 @@ test("a value out of range, not finite or not a number is refused, per field", (
     ["headX", [-90.01, 90.01]], ["headY", [-90.01, 90.01]], ["headZ", [-90.01, 90.01]],
     ["eyeX", [-1.01, 1.01]], ["eyeY", [-1.01, 1.01]],
   ];
-  for (const [k, vs] of bad) for (const v of vs) assert.equal(AvatarFrameSchema.safeParse(good({ [k]: v })).success, false, `${k}=${v}`);
+  for (const [k, vs] of bad) for (const v of vs) assert.equal(AvatarFrameSchema.safeParse(good({ [k]: v })).success, false, `${k}=${String(v)}`);
   for (const k of ["mouthOpen", "mouthSmile", "intensity", "blink", "headX", "headY", "headZ", "eyeX", "eyeY"]) {
     for (const v of [NaN, Infinity, -Infinity, "0.5", null]) assert.equal(AvatarFrameSchema.safeParse(good({ [k]: v })).success, false, `${k}=${String(v)}`);
   }

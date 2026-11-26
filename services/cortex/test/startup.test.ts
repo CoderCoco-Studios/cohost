@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ChatProvider } from "@cohost/llm";
-import { silentLog } from "@cohost/testing";
 import { startCortex, trackLlm } from "../src/startup.js";
 
 function wiring(over: { resetGroup?: () => Promise<void> } = {}) {
@@ -75,7 +74,7 @@ test("trackLlm: complete() passes through to the provider untracked", async () =
   assert.deepEqual(seen, []);
 });
 
-const streamWith = (stream: (m: unknown[], o?: { signal?: AbortSignal }) => AsyncGenerator<unknown>): ChatProvider =>
+const streamWith = (stream: (m: unknown[], o?: { signal?: AbortSignal }) => AsyncGenerator): ChatProvider =>
   ({ ...llmWith(async () => "ok"), stream } as unknown as ChatProvider);
 
 // @spec CTX-HEALTH-003

@@ -64,7 +64,8 @@ export function useRendererStatus(): StatusRead {
 /** The renderer values the file holds, as the schema reads them (a key not in the file holds its default). */
 export function savedFraming(st: SectionState): { model: string; zoom: number; offsetY: number; turn: number } {
   const num = (k: string, d: number): number => { const v = st.keys[k]?.value; return typeof v === "number" ? v : d; };
-  return { model: String(st.keys.model?.value ?? ""), zoom: num("zoom", 1), offsetY: num("offset_y", 0), turn: num("turn", 0) };
+  const model = st.keys.model?.value;
+  return { model: typeof model === "string" ? model : "", zoom: num("zoom", 1), offsetY: num("offset_y", 0), turn: num("turn", 0) };
 }
 
 /** The status line's own words for a read the page has (DASH-AVS-008): the pages connected, or what the avatar waits for. */

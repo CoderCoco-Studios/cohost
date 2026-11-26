@@ -91,7 +91,7 @@ function openSession(url: string, key: string, bound: number, eot: EotOptions | 
       if (settled) return;
       const ev = parse(data);
       if (ev?.type === "Error") {
-        const message = String(ev.message ?? "");
+        const message = typeof ev.message === "string" ? ev.message : "";
         return fail(message === NO_FREE_CHANNELS ? new SttCapacityError(message) : new Error(`kyutai: ${message}`));
       }
       if (ev?.type !== "Ready") return;
@@ -183,7 +183,7 @@ class KyutaiSession implements SttSession {
         if (this.state === "flushing" && ev.id === this.markerId) this.end(this.hypothesis, false);
         return;
       case "Error":
-        this.fail(new Error(`kyutai: ${String(ev.message ?? "server error")}`));
+        this.fail(new Error(`kyutai: ${typeof ev.message === "string" ? ev.message : "server error"}`));
         return;
       default:
         return; // EndWord and anything else: ignored (EARS-KYU-005)

@@ -42,13 +42,13 @@ export function createMouth(opts: MouthOptions = {}) {
   let routing: Routing | undefined;
 
   return {
-    health(cfg: Config): HeartbeatSpec {
+    health: (cfg: Config): HeartbeatSpec => {
       const plan = mouthPlan(cfg.mouth.outputs);
       const isReady = (name: string): boolean => (name === "discord" ? discord?.isReady() ?? false : ready.get(name) ?? false);
       return new MouthHealth(plan, cfg.mouth.outputs, isReady, (name) => !routing?.isSwitchedOff(name)).spec;
     },
 
-    async main({ cfg, bus, log, heartbeat, onStop }: ServiceContext<MouthBus>): Promise<void> {
+    main: async ({ cfg, bus, log, heartbeat, onStop }: ServiceContext<MouthBus>): Promise<void> => {
       const o = cfg.mouth.outputs;
       const plan = mouthPlan(o);
       // The idle plan: no subscription, no clips, nothing published but the heartbeat.

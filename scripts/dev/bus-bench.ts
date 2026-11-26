@@ -78,7 +78,7 @@ async function phase(path: "events" | "frames", sources: number, prefix: string)
     p99: pct(lat, 99), max: lat[got - 1] ?? NaN, cpu: ((cu.user + cu.system) / 1000 / wall) * 100, eld99: eld.percentile(99) / 1e6,
   });
   if (sent !== got) (JSON_OUT ? console.error : console.log)(`  ${path} x${sources}: sent ${sent}, received ${got}`);
-  bus.stop(); await Promise.race([Promise.allSettled(readers), sleep(1000)]);
+  void bus.stop(); await Promise.race([Promise.allSettled(readers), sleep(1000)]);
 }
 
 const prefix = `bench${process.pid}`;

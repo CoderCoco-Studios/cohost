@@ -56,7 +56,7 @@ test("while OBS has not been reachable the heartbeat is degraded with obs down, 
   const d = hbs.find((h) => h.state === "degraded")!;
   assert.deepEqual(d.deps, { obs: "down", vision: "ok" });
   assert.match(d.detail ?? "", /OBS/);
-  assert.ok(states.indexOf("degraded") < states.indexOf("ready"), `degraded before ready: ${states}`);
+  assert.ok(states.indexOf("degraded") < states.indexOf("ready"), `degraded before ready: ${states.join(",")}`);
 });
 
 // @spec EYES-OBS-004, EYES-HEALTH-005

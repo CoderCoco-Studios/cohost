@@ -37,6 +37,7 @@ export const defaultExec: ExecFile = (file, args, opts) =>
     // execFile never spawns a shell; args is an argv array.
     const { timeoutMs, ...rest } = opts;
     nodeExecFile(file, args, { ...rest, timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- `err` is node's ExecFileException, an Error
       if (err) reject(Object.assign(err, { stdout, stderr }));
       else resolve({ stdout, stderr });
     });

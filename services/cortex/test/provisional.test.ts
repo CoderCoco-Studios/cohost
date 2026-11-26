@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { event, waitFor } from "@cohost/testing";
 import {
-  EARLY, FINAL, J, call, chatFocus, confirm, control, endOther, gate, opened, ordinary, other, provisional, setup, sleep, streamed, systemMsg,
+  EARLY, FINAL, call, chatFocus, confirm, control, endOther, gate, opened, ordinary, other, provisional, setup, sleep, streamed, systemMsg,
   userMsg, withdraw, type S,
 } from "./provisional.fixture.js";
 
@@ -16,7 +16,6 @@ const MULTI = "[happy] First clause is here, second clause follows, and a third 
  * and every test waits for the limit with a bounded wait, so the limit's own effect is what is checked.
  */
 const LIMIT = 1000;
-const withoutIds = (events: unknown[]) => J(events).map((e: Record<string, unknown>) => { const { id: _id, ...rest } = e; return rest; });
 
 /** Starts a provisional think over `text` and waits until the model has been read to its end. */
 async function hold(s: S, text = MULTI, focus = provisional()): Promise<void> {

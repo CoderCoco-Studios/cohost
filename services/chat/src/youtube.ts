@@ -1,6 +1,6 @@
 import type { Config } from "@cohost/config";
 import type { ChatRemoval, ChatSource, ChatSourceStartEnv, ChatSourceState, ChatSourceStatus } from "./source.js";
-import { mapLiveChatItem, type LiveChatItem, type MapResult } from "./youtube-map.js";
+import { mapLiveChatItem, type LiveChatItem } from "./youtube-map.js";
 import {
   createYouTubeTransport, YouTubeApiError, type LiveChatListResponse, type LookupItem, type YouTubeTransport,
 } from "./youtube-transport.js";

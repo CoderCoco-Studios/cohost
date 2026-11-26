@@ -60,6 +60,7 @@ test("the default liveness check treats a running pid as live, and a signal EPER
   withDir((dir, file) => {
     new LifecycleLock({ by: "cohostctl", dir, pid: 5 }).tryAcquire("launch");
     const killed: number[] = [];
+    // oxlint-disable-next-line typescript/unbound-method -- the original is saved only to be put back as it was
     const real = process.kill;
     process.kill = ((pid: number) => { killed.push(pid); throw Object.assign(new Error("nope"), { code: "EPERM" }); }) as typeof process.kill;
     try {

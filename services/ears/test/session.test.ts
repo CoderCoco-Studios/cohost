@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { event, recordingLog, testConfig } from "@cohost/testing";
+import { event, recordingLog } from "@cohost/testing";
 import { EARS_LOOP_TYPES, createEarsHandler, subscribeEars } from "../src/session.js";
 
 const utterance = () => event("voice.utterance", { id: "u1", seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: "http://voice/u1.wav", sampleRate: 24000 });

@@ -111,7 +111,7 @@ export async function toolsMain(
     },
   });
 
-  const dispatch = (ev: BusEvent<EventType>): void => {
+  const dispatch = (ev: BusEvent): void => {
     switch (ev.type) {
       case "tool.request":
         // TOOL-SVC-007: one result per request; a failure of the service's own code is logged, never thrown into the bus.
@@ -136,7 +136,7 @@ export async function toolsMain(
     }
   };
 
-  void bus.subscribe({ group: "tools", types: SUBSCRIBED, start: "latest" }, (ev) => dispatch(ev as BusEvent<EventType>)).catch((err) => {
+  void bus.subscribe({ group: "tools", types: SUBSCRIBED, start: "latest" }, (ev) => dispatch(ev as BusEvent)).catch((err) => {
     log.error({ err }, "fatal");
     exit(1);
   });

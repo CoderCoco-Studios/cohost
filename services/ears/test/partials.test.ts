@@ -259,7 +259,7 @@ test("a failed speech.partial publish is logged, does not consume its seq and th
   const stt = fakeStt(AGREE);
   resetSeq();
   let failed = 0;
-  const r = await boot(cfg(), { setup: (b) => { reg(b); b.fail = (t) => String(t) === "speech.partial" && failed++ === 0; } });
+  const r = await boot(cfg(), { setup: (b) => { reg(b); b.fail = (t) => t === "speech.partial" && failed++ === 0; } });
   try {
     await sleep(60);
     await feed(r.bus, 30, { gapMs: 15 });

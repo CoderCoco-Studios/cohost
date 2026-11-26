@@ -2,7 +2,7 @@
  * The ears service body, split from `index.ts` so the whole start-up (plans, idle, sources, shutdown) can run under test
  * through `runService` with fakes. `index.ts` only hands this to `runService`.
  */
-import { ConnectorRegistry, type Bus, type BusEvent } from "@cohost/bus";
+import { ConnectorRegistry, type BusEvent } from "@cohost/bus";
 import { earsSources, egressDestinations, type Config } from "@cohost/config";
 import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { EarsHealth, earsPlan, sttInfoOf } from "./health.js";
@@ -33,8 +33,8 @@ export interface EarsServiceOptions {
 }
 
 export function createEarsService(opts: EarsServiceOptions = {}): {
-  health(cfg: Config): HeartbeatSpec;
-  main(ctx: ServiceContext<Bus>): Promise<void>;
+  health: (cfg: Config) => HeartbeatSpec;
+  main: (ctx: ServiceContext) => Promise<void>;
 } {
   let health: EarsHealth | undefined;
   let built: BuiltEngines | undefined;

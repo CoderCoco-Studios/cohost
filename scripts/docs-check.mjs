@@ -174,7 +174,7 @@ export function parsePageTree(lld) {
   let header = null;
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
-    if (/^## /.test(line)) break;
+    if (line.startsWith('## ')) break;
     const h = /^\*\*(.+?)\*\*\s*\(`track:\s*(\w+)`\)/.exec(line);
     if (h) {
       section = { name: h[1], track: h[2], rows: [] };
@@ -268,7 +268,7 @@ function keyPaths(value, prefix = '', out = new Set()) {
     for (const item of value) keyPaths(item, `${prefix}[]`, out);
   } else if (value && typeof value === 'object') {
     for (const [k, v] of Object.entries(value)) {
-      const p = prefix ? `${prefix}.${k}` : String(k);
+      const p = prefix ? `${prefix}.${k}` : k;
       out.add(p);
       keyPaths(v, p, out);
     }
@@ -613,7 +613,7 @@ function lldExtensionTables(lldText) {
   const start = lines.findIndex((l) => /^## Extension guides\s*$/.test(l));
   const section = [];
   if (start !== -1) {
-    for (let i = start + 1; i < lines.length && !/^## /.test(lines[i]); i++) section.push({ n: i + 1, text: lines[i] });
+    for (let i = start + 1; i < lines.length && !lines[i].startsWith('## '); i++) section.push({ n: i + 1, text: lines[i] });
   }
   const tables = tablesOf(section);
   const is = (t, want) => want.every((w, i) => t.header[i] === w);
@@ -1292,7 +1292,7 @@ export async function runSource(root) {
     const start = lines.findIndex((l) => /^export const EventPayloads\s*=\s*\{/.test(l));
     if (start === -1) add('packages/bus/src/events.ts', 0, 'DOCS-FACT-006', 'cannot find EventPayloads');
     else {
-      for (let i = start + 1; i < lines.length && !/^\}/.test(lines[i]); i++) {
+      for (let i = start + 1; i < lines.length && !lines[i].startsWith('}'); i++) {
         const m = /^ {2}"([^"]+)":/.exec(lines[i]);
         if (m && !spanNames(evPage.a.spans, m[1])) add(evPage.file, 0, 'DOCS-FACT-006', `does not name the event type ${m[1]}`);
       }
@@ -1836,6 +1836,7 @@ function evalCond(cond, expr) {
   const atoms = cond.replace(/(?:props\.)?\bexpression\s*(===|==|!==|!=)\s*(['"])(\w+)\2/g, (_m, op, _q, v) => String(op.startsWith('!') ? v !== expr : v === expr));
   if (!/^[\s!()&|truefals]*$/.test(atoms)) return true;
   try {
+    // oxlint-disable-next-line typescript/no-implied-eval -- `atoms` is checked above to hold only true, false, !, &&, || and parentheses
     return Boolean(new Function(`return (${atoms});`)());
   } catch {
     return true;
@@ -1963,7 +1964,6 @@ const unquote = (v) => {
  */
 async function themeSourceChecks(root, add, configText) {
   const configRel = 'docs/.vitepress/config.ts';
-  const CODE = ['code-bg'];
 
   // ---- the theme entry
   const entry = readIf(join(root, `${THEME_DIR}index.ts`));
@@ -2032,7 +2032,7 @@ async function themeSourceChecks(root, add, configText) {
   if (tokensOk) {
     for (const { fg, bgs, min } of pairs) {
       for (const bg of bgs) {
-        for (const [mode, map] of [['light', light], ['dark', dark]]) {
+        for (const { mode, map } of [{ mode: 'light', map: light }, { mode: 'dark', map: dark }]) {
           const a = map.get(fg) && parseHex(map.get(fg));
           const b = map.get(bg) && parseHex(map.get(bg));
           if (!a || !b) {
@@ -2096,7 +2096,7 @@ async function themeSourceChecks(root, add, configText) {
   // ---- Shiki themes against code-bg
   if (tokensOk && configText !== null) {
     const here = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-    for (const [mode, map] of [['light', light], ['dark', dark]]) {
+    for (const { mode, map } of [{ mode: 'light', map: light }, { mode: 'dark', map: dark }]) {
       const name = shikiNames[mode];
       const bgHex = map.get('code-bg');
       const bg = bgHex && parseHex(bgHex);
@@ -2634,7 +2634,7 @@ function themeDistChecks(root, dist, files, htmlFiles, add) {
     for (const m of marks) {
       if (inside(m, nav)) {
         if (m.attrs['aria-hidden'] !== 'true') add(F, 0, 'DOCS-THEME-015', 'the mark in the nav bar must carry aria-hidden="true"');
-        if ('role' in m.attrs) add(F, 0, 'DOCS-THEME-015', `the mark in the nav bar must carry no role, found role="${m.attrs.role}"`);
+        if ('role' in m.attrs) add(F, 0, 'DOCS-THEME-015', `the mark in the nav bar must carry no role, found role="${String(m.attrs.role)}"`);
         if ('aria-label' in m.attrs) add(F, 0, 'DOCS-THEME-015', 'the mark in the nav bar must carry no aria-label');
       } else {
         if (m.attrs.role !== 'img') add(F, 0, 'DOCS-THEME-056', `a mark shown alone must carry role="img", found ${m.attrs.role === undefined ? 'no role' : `role="${m.attrs.role}"`}`);

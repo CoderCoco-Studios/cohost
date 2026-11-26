@@ -27,6 +27,7 @@ type Json = Record<string, unknown>;
 type SalienceEvent = { kind: string; text: string; mention?: boolean; changed?: boolean };
 
 /** A field the request must carry: a missing one throws, and the caller answers 500 naming it. */
+// oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- the caller names the field's type: need<string>(req, "text")
 function need<T>(req: Json, name: string): T {
   if (req[name] === undefined) throw new Error(`missing field: ${name}`);
   return req[name] as T;

@@ -14,7 +14,6 @@ import { createFileOutput } from "../src/file-output.js";
 // Seams as in clauses.test.ts: playback.enqueue(id, url, { text, durationMs, seq?, more? }).
 
 const wav = (ms: number) => wavWrap(Buffer.alloc(24 * ms * 2), 24000, 1);
-const clip = (ms: number): FallbackClip => { const body = wav(ms); return { name: "00-clip.wav", text: "Error: unable to play line.", durationMs: ms, bytes: body.length, sha256: "x", wav: body }; };
 const U = (text: string, durationMs: number, seq: number, more?: true) => ({ text, durationMs, seq, ...(more ? { more } : {}) });
 type Out = { playback: { enqueue(...a: never[]): Promise<void> }; stop(order: { ids?: string[] }): Promise<void> };
 const put = (o: Out, id: string, seq: number, utt: unknown) => (o.playback.enqueue as unknown as (id: string, url: string, utt: unknown) => Promise<void>)(id, `http://voice/${id}-${seq}.wav`, utt);

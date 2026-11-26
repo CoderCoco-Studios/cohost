@@ -108,7 +108,7 @@ export function mermaidFence(md) {
     } catch (e) {
       const line = file ? fenceLine(file, token.content, nth) : null;
       const where = file ? `${file.rel}${line ? `:${line}` : ''}` : String(env.relativePath || 'unknown page');
-      throw new Error(`${where}: cannot render the mermaid diagram: ${String(e && e.message).split('\n')[0]}`);
+      throw new Error(`${where}: cannot render the mermaid diagram: ${String(e && e.message).split('\n')[0]}`, { cause: e });
     }
     const label = `Diagram: ${nearestHeading(tokens, idx) ?? frontmatterTitle(env, src)}`;
     const labelled = stripImports(svg).replace(/^<svg\b/, `<svg role="img" aria-label="${md.utils.escapeHtml(label)}"`);

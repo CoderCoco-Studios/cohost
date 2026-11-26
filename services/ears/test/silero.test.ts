@@ -13,8 +13,8 @@ const voiced = (t0: number) => (i: number) => {
 };
 
 async function detectors(t: { skip(msg: string): void }) {
-  if (!existsSync(SILERO_MODEL_PATH)) return void t.skip(`model missing: ${SILERO_MODEL_PATH}`);
-  try { return await loadSilero(); } catch (err) { return void t.skip(`runtime or model did not load: ${String(err)}`); }
+  if (!existsSync(SILERO_MODEL_PATH)) { t.skip(`model missing: ${SILERO_MODEL_PATH}`); return undefined; }
+  try { return await loadSilero(); } catch (err) { t.skip(`runtime or model did not load: ${String(err)}`); return undefined; }
 }
 async function run(d: { probability(p: Buffer): number | Promise<number> }, make: (k: number) => Buffer, frames = 50) {
   const ps: number[] = [];

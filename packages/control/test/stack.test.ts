@@ -352,7 +352,7 @@ test("launch: writes the Pocket token to data/tts-pocket-secret/hf_token under t
     assert.ok(saw.order.indexOf("up") >= 0);
     assert.equal(readFileSync(join(secretDir, "hf_token"), "utf8"), "hf_abc123");
     const written = new Set<string>();
-    const walk = (d: string, rel = ""): void => { for (const n of readdirSync(d)) { const p = join(d, n); statSync(p).isDirectory() ? walk(p, `${rel}${n}/`) : written.add(`${rel}${n}`); } };
+    const walk = (d: string, rel = ""): void => { for (const n of readdirSync(d)) { const p = join(d, n); if (statSync(p).isDirectory()) walk(p, `${rel}${n}/`); else written.add(`${rel}${n}`); } };
     walk(join(dir, "data"));
     assert.deepEqual([...written], ["tts-pocket-secret/hf_token"], "no other secret is written to a file under data/");
   } finally {

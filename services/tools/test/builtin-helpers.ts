@@ -66,7 +66,7 @@ export function scriptedFetch(route: (r: Seen) => Response | Promise<Response>) 
   const fn = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const headers: Record<string, string> = {};
     new Headers(init.headers).forEach((v, k) => { headers[k.toLowerCase()] = v; });
-    const r: Seen = { url: String(input), method: (init.method ?? "GET").toUpperCase(), headers, body: init.body === undefined ? "" : String(init.body), init };
+    const r: Seen = { url: input instanceof Request ? input.url : String(input), method: (init.method ?? "GET").toUpperCase(), headers, body: typeof init.body === "string" ? init.body : "", init };
     seen.push(r);
     return route(r);
   }) as typeof globalThis.fetch;

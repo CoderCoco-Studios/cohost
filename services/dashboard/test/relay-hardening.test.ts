@@ -53,6 +53,7 @@ test("the listeners survive a reset of raw upgrade sockets that are refused: not
 test("an over-rate socket whose close handshake stalls is terminated one second later on the injected clock", async (t) => {
   const r = await relay(t);
   // Counts the server's terminate calls: a close that is answered would end the socket without one.
+  // oxlint-disable-next-line typescript/unbound-method -- saved to be called with the socket as `this` and put back after
   const orig = WebSocket.prototype.terminate;
   let terminated = 0;
   WebSocket.prototype.terminate = function (this: WebSocket) { terminated++; return orig.call(this); };

@@ -1,4 +1,4 @@
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Redis } from "ioredis";
 import { Bus, EVENT_TYPES, EventPayloads, type BusEvent } from "../src/index.js";
@@ -23,7 +23,7 @@ interface Scratch {
   events: string;
   health: string;
   /** A Bus on the scratch streams; it is stopped when the test ends. */
-  bus(source: string, log?: ConstructorParameters<typeof Bus>[1]): Bus;
+  bus: (source: string, log?: ConstructorParameters<typeof Bus>[1]) => Bus;
   raw: Redis;
 }
 

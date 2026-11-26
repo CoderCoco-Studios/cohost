@@ -115,7 +115,7 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
       }
       let clip;
       try {
-        clip = decodeClip(body.buf, String(req.headers["content-type"] ?? ""));
+        clip = decodeClip(body.buf, req.headers["content-type"] ?? "");
       } catch (err) {
         if (err instanceof ClipError) return reply(res, err.code === "unsupported-type" ? 415 : 400, { error: err.message });
         throw err;

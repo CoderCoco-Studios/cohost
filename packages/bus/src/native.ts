@@ -12,7 +12,7 @@ import type { BusTransport, TransportFactory } from "./transport.js";
 interface Binding {
   /** Begins opening the shared connection without blocking or throwing, even when Redis is unreachable (BUS-NAT-TRN-004). */
   Transport: new (url: string, prefix: string, failFast: boolean) => BusTransport;
-  connectorKey(prefix: string, id: string): string;
+  connectorKey: (prefix: string, id: string) => string;
   HEALTH_MAXLEN: number;
 }
 

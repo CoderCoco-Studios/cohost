@@ -6,7 +6,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { GatewayIntentBits } from "discord.js";
 import { VoiceConnectionStatus } from "@discordjs/voice";
-import { encodeFrame, decodeFrame, type Frame, type Registration, type Bus } from "@cohost/bus";
+import { encodeFrame, decodeFrame, type Frame, type Registration } from "@cohost/bus";
 import { runService, wavWrap } from "@cohost/shared";
 import { FakeBus, event, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { createConnectorService } from "../src/service.js";
@@ -73,7 +73,6 @@ class FakePlayer extends EventEmitter {
   drain() { this.state.status = "idle"; }
 }
 
-const mono = (n = 640) => Buffer.alloc(n, 3);
 const outFrame = (seq: number, over: Partial<Frame> = {}): Frame => ({ epoch: 5, seq, rate: 48000, ch: 2, pcm: Buffer.alloc(3840, seq + 1), utt: "u1", ...over });
 
 interface RigOpts {
@@ -117,14 +116,14 @@ function rig(o: RigOpts = {}) {
     voice: {
       createClient: (i) => { intents.push(...i); return client as never; },
       joinVoiceChannel: ((jo: Record<string, unknown>) => { joins.push(jo); const c = new FakeConnection(); conns.push(c); return c; }) as never,
-      entersState: (async (_c: unknown, status: string) => {
+      entersState: (async (_c: unknown, status: VoiceConnectionStatus) => {
         if (status === VoiceConnectionStatus.Ready && joinsToFail > 0) { joinsToFail--; throw new Error("not ready"); }
         if (status !== VoiceConnectionStatus.Ready) throw new Error("did not recover");
       }) as never,
       sleep: async (ms) => { sleeps.push(ms); await new Promise((r) => setImmediate(r)); },
     },
   });
-  const done = runService<Bus>({
+  const done = runService({
     service: "connector-discord", ...svc,
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
     onShutdown: (fn) => { shutdown = fn; }, exit: (c) => { exits.push(c); },

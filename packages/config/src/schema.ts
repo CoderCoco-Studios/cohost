@@ -399,7 +399,7 @@ export const ConfigSchema = z.object({
         .array(
           z.object({
             /** Regex (case-insensitive) tested against the event text. */
-            match: z.string().min(1).refine((m) => { try { new RegExp(m, "i"); return true; } catch { return false; } }, { message: "not a valid regular expression" }),
+            match: z.string().min(1).refine((m) => { try { RegExp(m, "i"); return true; } catch { return false; } }, { message: "not a valid regular expression" }),
             /** Which senses this reflex listens to. */
             on: z.array(z.enum(["chat", "speech", "vision"])).default(["chat", "speech", "vision"]),
             /** One is picked at random. */

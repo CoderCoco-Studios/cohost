@@ -11,7 +11,6 @@ const down = (code: "BUS_CONNECTION" | "BUS_REDIS" | "BUS_INTERNAL" = "BUS_CONNE
 const cursors = (f: FakeTransport) => f.of("readGroup").map((c) => c.args[2]);
 const sub = (bus: Bus, handler: (e: BusEvent) => unknown = () => {}, extra: object = {}) =>
   run(bus.subscribe({ group: "g", start: "latest", blockMs: 10, ...extra } as never, handler as never));
-const idsOf = (calls: { args: unknown[] }[]) => calls.map((c) => c.args[1]);
 
 // @spec BUS-NAT-ACK-001
 test("the facade acks through the reader's synchronous ack, which only queues; the queued ids travel with the next readGroup", async () => {
@@ -367,7 +366,7 @@ test("a repeated Bus.stop() resolves, and not before the first close has complet
   const [a, b] = [bus.stop(), bus.stop()];
   const done: number[] = [];
   await Promise.all([a.then(() => done.push(performance.now() - t0)), b.then(() => done.push(performance.now() - t0))]);
-  assert.ok(done.every((d) => d >= 35), `both resolved after the close finished: ${done}`);
+  assert.ok(done.every((d) => d >= 35), `both resolved after the close finished: ${done.join(",")}`);
   await within(bus.stop(), 500, "third stop");
 });
 

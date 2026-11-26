@@ -17,7 +17,7 @@ import type { Load } from "./useViewers";
 type Dlg = { kind: "delete"; note: NoteData } | { kind: "clear" } | { kind: "link" } | { kind: "unlink"; link: LinkData } | null;
 const enc = encodeURIComponent;
 const gate = (action: string) => ({ auth: "viewers" as const, action });
-const narrow = (): boolean => { try { return window.matchMedia?.("(max-width: 719.98px)").matches === true; } catch { return false; } };
+const narrow = (): boolean => { try { return window.matchMedia("(max-width: 719.98px)").matches; } catch { return false; } };
 
 function NoteItem({ note, figures, onDelete }: { note: NoteData; figures: MemoryFigures | null; onDelete: () => void }) {
   const next = whatNext(note, figures);

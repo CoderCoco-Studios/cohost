@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { BusEvent } from "@cohost/bus";
 import { FakeBus, event, testConfig } from "@cohost/testing";
 import { createMemoryHandler } from "../src/region.js";
-import type { Memory, MemoryKind } from "../src/store.js";
+import type { Memory } from "../src/store.js";
 import { viewerKey } from "@cohost/shared/untrusted";
 import { InMemoryStore } from "../src/fake-store.js";
 

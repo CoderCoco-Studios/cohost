@@ -29,7 +29,7 @@ let data: unknown;
 try {
   data = JSON.parse(json ?? "{}");
 } catch (e) {
-  console.error(`payload is not valid JSON: ${e}`);
+  console.error(`payload is not valid JSON: ${String(e)}`);
   process.exit(2);
 }
 
@@ -38,8 +38,8 @@ try {
   const id = await bus.publish(type as EventType, data as never);
   console.log(`published ${type} ${id}`);
 } catch (e) {
-  console.error(`rejected: ${e instanceof Error ? e.message : e}`);
+  console.error(`rejected: ${e instanceof Error ? e.message : String(e)}`);
   process.exitCode = 1;
 } finally {
-  bus.stop();
+  await bus.stop();
 }

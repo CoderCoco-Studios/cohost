@@ -5,7 +5,7 @@
 import type { Readable, Transform } from "node:stream";
 import { createAudioPlayer, type AudioPlayer, type AudioResource } from "@discordjs/voice";
 import { GatewayIntentBits } from "discord.js";
-import { ConnectorRegistrar, FrameSequencer, FrameTracker, type Bus, type CapabilityEntry } from "@cohost/bus";
+import { ConnectorRegistrar, FrameSequencer, FrameTracker, type CapabilityEntry } from "@cohost/bus";
 import type { Config } from "@cohost/config";
 import { startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { createDiscordVoiceSession, type DiscordVoiceDeps } from "@cohost/shared/discord-voice";
@@ -35,8 +35,8 @@ const capabilities = (ready: boolean): CapabilityEntry[] => [
 ];
 
 export function createConnectorService(opts: ConnectorServiceOptions = {}): {
-  health(cfg: Config): HeartbeatSpec;
-  main(ctx: ServiceContext<Bus>): Promise<void>;
+  health: (cfg: Config) => HeartbeatSpec;
+  main: (ctx: ServiceContext) => Promise<void>;
 } {
   let voiceReady = false;
   let registrar: ConnectorRegistrar | undefined;

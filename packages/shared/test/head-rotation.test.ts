@@ -25,7 +25,7 @@ test("eulerToQuat(0, 0, 0) is the identity and a single axis gives sin and cos o
   const { eulerToQuat } = await import("@cohost/shared/head-rotation");
   assert.deepEqual(eulerToQuat(0, 0, 0), [0, 0, 0, 1]);
   const h = Math.SQRT1_2;
-  const near = (got: number[], want: number[]) => got.forEach((v, i) => assert.ok(Math.abs(v - want[i]!) < 1e-12, `${got} vs ${want}`));
+  const near = (got: number[], want: number[]) => got.forEach((v, i) => assert.ok(Math.abs(v - want[i]!) < 1e-12, `${got.join(",")} vs ${want.join(",")}`));
   near(eulerToQuat(90, 0, 0), [h, 0, 0, h]); // pitch -> x
   near(eulerToQuat(0, 90, 0), [0, h, 0, h]); // yaw -> y
   near(eulerToQuat(0, 0, 90), [0, 0, h, h]); // roll -> z

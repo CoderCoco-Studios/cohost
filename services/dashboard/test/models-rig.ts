@@ -79,7 +79,7 @@ export function vrm1(o: { meta?: Record<string, unknown>; expressions?: { preset
     extensionsUsed: ["VRMC_vrm", ...(o.used ?? [])],
     ...(o.required ? { extensionsRequired: o.required } : {}),
     extensions: { VRMC_vrm: { specVersion: "1.0", meta: o.meta ?? { name: "Sample", authors: ["Someone"], licenseUrl: "https://example.test/license" }, ...ex } },
-    ...(o.more ?? {}),
+    ...o.more,
   }), { bin: o.bin ?? 16 });
 }
 

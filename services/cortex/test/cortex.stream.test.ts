@@ -72,7 +72,7 @@ function setup(opts: { cfg?: Record<string, unknown>; kind?: CriticKind; critic?
   const cortexCfg = {
     recall_timeout_ms: 100, clause_min_chars: 10, clause_max_chars: 60, max_clauses: 8,
     ...(kind === "rules" ? {} : { critic: kind === "llm" ? { kind } : { kind, url: "http://critic.invalid" } }),
-    ...(opts.cfg ?? {}),
+    ...opts.cfg,
   };
   const cfg = testConfig({ brain: { memory: { recall_k: 0 }, cortex: cortexCfg } });
   const bus = new LoopBus();
@@ -273,7 +273,7 @@ test("a clause with no word character after cleaning is dropped, and seq has no 
 
 // @spec CTX-CRITIC-001, CTX-STREAM-016
 test("rules critic: asked once, on the first clause, before it is published; later clauses do not ask", async () => {
-  const s = setup({ critic: (i) => { assert.equal(s.bus.of("brain.say").length, 0, "asked before the first clause is published"); return { ok: true }; } });
+  const s = setup({ critic: () => { assert.equal(s.bus.of("brain.say").length, 0, "asked before the first clause is published"); return { ok: true }; } });
   await run(s, ["[happy] Hello there everyone, and a second clause, and a third one."]);
   assert.equal(s.criticCalls.length, 1);
   assert.deepEqual([s.criticCalls[0]!.text, s.criticCalls[0]!.emotion, s.criticCalls[0]!.reason], ["Hello there everyone,", "happy", "mentioned"]);

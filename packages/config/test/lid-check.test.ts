@@ -27,6 +27,7 @@ function run(files: Record<string, string>, root?: string) {
 }
 
 // The marker is assembled so this file does not cite the fixture IDs itself.
+// oxlint-disable-next-line eslint/no-useless-concat -- split so lid-check does not read this file as citing a spec
 const AT = "@" + "spec";
 const SPECS = "docs/intent/x/x-specs.md";
 const spec = (...lines: string[]) => lines.join("\n") + "\n";
@@ -118,10 +119,12 @@ test("Rust and Cargo.toml @spec citations are read and target/ is skipped", () =
   const specs = spec("- [x] **X-ONE-001**: a.");
   const ok = run({ [SPECS]: specs, "crates/a/src/lib.rs": `// ${AT} X-ONE-001\n`, "crates/a/Cargo.toml": `# ${AT} X-ONE-001\n` });
   assert.equal(ok.code, 0, ok.err);
+  // oxlint-disable-next-line eslint/no-useless-concat -- the IDs are split so lid-check does not read this file as citing them
   const bad = run({ [SPECS]: specs, "crates/a/src/lib.rs": `// ${AT} X-NO` + `PE-009\n`, "crates/a/Cargo.toml": `# ${AT} X-NO` + `PE-008\n` });
   assert.equal(bad.code, 1);
   assert.match(bad.err, /lib\.rs:1: @.pec X-NOPE-009/);
   assert.match(bad.err, /Cargo\.toml:1: @.pec X-NOPE-008/);
+  // oxlint-disable-next-line eslint/no-useless-concat -- the ID is split so lid-check does not read this file as citing it
   const skipped = run({ [SPECS]: specs, "target/debug/build/x.rs": `// ${AT} X-NO` + `PE-009\n` });
   assert.equal(skipped.code, 0, skipped.err);
 });

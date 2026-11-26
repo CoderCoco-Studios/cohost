@@ -154,7 +154,7 @@ test("a failing store makes buildNotesReply throw so the region handler can answ
 
 // @spec MEM-REG-002
 test("a viewer on their first message gets a note captured and surfaced: regular status gates neither", async () => {
-  const { store, cfg, ask } = setup();
+  const { store, cfg } = setup();
   const onEvent = createCaptureHandler({
     cfg, full: testConfig(), store, log: recordingLog().log,
     hook: { kind: "llm", run: async () => ({ note: { category: "general", text: "just got a Steam Deck" } }) },

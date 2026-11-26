@@ -45,7 +45,7 @@ export const isLabelable = (c: Control): boolean => ["select", "number", "text",
 /** Whether a control brings its own label and help (the shared pickers and the secret field). */
 export const isEmbedded = (c: Control): boolean => ["model", "voice", "secret", "mcp-servers", "tool-list", "avatar-model"].includes(c.kind);
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
+const asString = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v as number | boolean));
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 const lc = (s: string) => s.toLowerCase();
 

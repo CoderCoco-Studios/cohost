@@ -165,7 +165,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
   for (const n of want) {
     const i = lines.findIndex((l) => new RegExp(`^#?\\s*${n}=`).test(l));
     assert.ok(i > 0, n);
-    assert.ok(/#/.test(lines[i]!) || /^#/.test(lines[i - 1]!), `${n} has a comment`);
+    assert.ok(/#/.test(lines[i]!) || lines[i - 1]!.startsWith("#"), `${n} has a comment`);
   }
   for (const n of ["COMPOSE_FILE", "CONTROL_ENABLED", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
   for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);

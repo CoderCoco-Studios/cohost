@@ -149,8 +149,8 @@ test("OBS unreachable at start: retries and reports degraded, then ready once it
     assert.equal(r.obs.connects, 3);
     await waitFor(() => heartbeats(r.bus).some((h) => h.state === "ready" && h.mode !== "off" && h.deps?.obs === "ok"), "ready once OBS answers");
     const states = heartbeats(r.bus).map((h) => h.state);
-    assert.ok(states.includes("degraded"), `degraded while unreachable: ${states}`);
-    assert.ok(states.indexOf("degraded") < states.lastIndexOf("ready"), `degraded before ready: ${states}`);
+    assert.ok(states.includes("degraded"), `degraded while unreachable: ${states.join(",")}`);
+    assert.ok(states.indexOf("degraded") < states.lastIndexOf("ready"), `degraded before ready: ${states.join(",")}`);
   } finally { await r.stop(); }
 });
 
@@ -290,7 +290,7 @@ test("enabled: a 400 for one injected frame leaves deps.vision ok, a 503 sets it
 
     m.state.status = 200;
     inject(r, "i3");
-    await waitFor(() => results(r).length === 3 && results(r)[2]!.ok === true, "success result");
+    await waitFor(() => results(r).length === 3 && results(r)[2]!.ok, "success result");
     await waitFor(() => lastHeartbeat(r)?.deps?.vision === "ok", "vision ok again", 4000);
   } finally { await r.stop(); }
 });

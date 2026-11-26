@@ -120,13 +120,13 @@ function earlyLines(events: readonly BusEvent[]): string[] {
   for (const e of events) {
     const d = e.data as Record<string, unknown>;
     if (e.type === "speech.early") {
-      const key = `${d.utteranceId}#${d.seq}`;
+      const key = `${String(d.utteranceId)}#${String(d.seq)}`;
       if (!early.has(key)) early.set(key, d.sttMs);
     } else if (e.type === "speech.retracted") {
-      retracted.add(`${d.utteranceId}#${d.seq}`);
+      retracted.add(`${String(d.utteranceId)}#${String(d.seq)}`);
     } else if (e.type === "speech.heard") {
       // Keyed by utteranceId, or by the envelope id when the event carries none (CTRL-LAT-026).
-      const key = String(d.utteranceId ?? e.id);
+      const key = typeof d.utteranceId === "string" ? d.utteranceId : e.id;
       if (d.earlySeq !== undefined && d.earlySeq !== null) reused.add(key);
       if (d.earlyLate === true) late.add(key);
     } else if (e.type === "brain.say") {

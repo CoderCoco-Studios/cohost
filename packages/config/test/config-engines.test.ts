@@ -23,7 +23,7 @@ const issues = (over: Record<string, unknown>): string[] => {
   return r.success ? [] : r.error.issues.map((i) => i.path.join("."));
 };
 const rejects = (over: Record<string, unknown>, key: string): void => {
-  assert.ok(issues(over).includes(key), `${JSON.stringify(over)} should fail naming ${key}, got [${issues(over)}]`);
+  assert.ok(issues(over).includes(key), `${JSON.stringify(over)} should fail naming ${key}, got [${issues(over).join(",")}]`);
 };
 const vision = (v: Record<string, unknown>) => ({ vision: { model: "v", obs: {}, ...v } });
 

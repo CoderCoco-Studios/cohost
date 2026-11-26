@@ -300,7 +300,7 @@ test("a bad head is 400 JSON {ok:false, detail} as soon as it is read, the tempo
     assert.equal(res!.status, 400, why);
     assert.equal(res!.json().ok, false, why);
     assert.equal(typeof res!.json().detail, "string", why);
-    assert.match(String(res!.headers["connection"] ?? "close"), /close/i, why);
+    assert.match(res!.headers["connection"] ?? "close", /close/i, why);
     assert.deepEqual(r.ls(), [], `${why}: nothing left behind`);
   }
 });

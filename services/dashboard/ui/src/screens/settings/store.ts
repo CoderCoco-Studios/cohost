@@ -271,7 +271,7 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
           return;
         }
         if (r.status === 400 && r.data && typeof r.data === "object" && Array.isArray((r.data as { issues?: unknown }).issues)) {
-          const issues = ((r.data as { issues: Issue[] }).issues).filter((i) => i && typeof i.message === "string").map((i) => ({ path: String(i.path ?? ""), message: i.message }));
+          const issues = ((r.data as { issues: Issue[] }).issues).filter((i) => i && typeof i.message === "string").map((i) => ({ path: i.path ?? "", message: i.message }));
           patchSection(path, (cur) => ({ ...cur, issues }));
           const found = `${issues.length} ${issues.length === 1 ? "problem" : "problems"}`;
           stop(path, `${dryRun ? "check" : "save"} found ${found}`, `${dryRun ? "Check" : "Save"} found ${found}; ${titleOf(path)} was not changed.`);

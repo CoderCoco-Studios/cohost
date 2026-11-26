@@ -44,7 +44,7 @@ export function draftsOf(st: SectionState): Drafts {
   const framing: Framing = { zoom: value("zoom", 1), offsetY: value("offset_y", 0), turn: value("turn", 0) };
   const valid = Number.isFinite(framing.zoom) && framing.zoom > 0 && Number.isFinite(framing.offsetY) && Number.isFinite(framing.turn);
   return {
-    model: e.model ? String(e.model.value ?? "") : undefined,
+    model: e.model ? (typeof e.model.value === "string" ? e.model.value : "") : undefined,
     framing: framingEdited && valid ? framing : undefined,
     framingEdited,
   };

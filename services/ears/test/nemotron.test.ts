@@ -9,7 +9,7 @@ import { earsCfg, nemotronServer, sleep, until, type NemotronServer } from "./st
 // so the failure cases run in real time.
 const TIMEOUT = 300;
 const cfgFor = (srv: NemotronServer, over: Record<string, unknown> = {}) =>
-  earsCfg({ stt_engine: "nemotron", stt_timeout_ms: TIMEOUT, nemotron: { url: srv.url, ...((over.nemotron as object) ?? {}) }, ...Object.fromEntries(Object.entries(over).filter(([k]) => k !== "nemotron")) });
+  earsCfg({ stt_engine: "nemotron", stt_timeout_ms: TIMEOUT, nemotron: { url: srv.url, ...(over.nemotron as object | undefined) }, ...Object.fromEntries(Object.entries(over).filter(([k]) => k !== "nemotron")) });
 const connect = async (srv: NemotronServer, over: Record<string, unknown> = {}): Promise<SttSession> =>
   createNemotronEngine(cfgFor(srv, over)).open({ signal: new AbortController().signal });
 /** `n` bytes of s16le "audio" of one distinguishing value. */

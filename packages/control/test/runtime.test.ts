@@ -100,7 +100,7 @@ test("compose: consolidate runs the fixed one-shot argv with a long timeout and 
     seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
     return { stdout: "starting\nconsolidate completed\n\n", stderr: "warn" };
   };
-  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {}, cwd: WS });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   assert.deepEqual(await rt.consolidate(), { ok: true, detail: "consolidate completed" });
   assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "consolidate"], timeoutMs: 30 * 60_000, cwd: WS }]);
   const quiet = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec: async () => ({ stdout: "", stderr: "" }) });
@@ -115,7 +115,7 @@ test("compose: reembed runs the fixed one-shot argv with a long timeout and repo
     seen.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd });
     return { stdout: "x\nreembed completed\n", stderr: "" };
   };
-  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {}, cwd: WS });
+  const rt = new ComposeRuntime({ cwd: WS, onPath: hasDocker, exec, env: {} });
   assert.deepEqual(await rt.reembed(), { ok: true, detail: "reembed completed" });
   assert.deepEqual(seen, [{ args: ["compose", "run", "--rm", "-T", "reembed"], timeoutMs: 30 * 60_000, cwd: WS }]);
   const boom: ExecFile = async () => { throw Object.assign(new Error("exit 1"), { stdout: "", stderr: " boom \n" }); };

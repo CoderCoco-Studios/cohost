@@ -38,7 +38,7 @@ export function loadSecrets(file: string): LoadedSecrets {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "ENOENT") return { values: {}, ignored: [], loose: false };
-    throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`);
+    throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`, { cause: e });
   }
   const root: unknown = parseSecretsText(file, text).toJS();
   if (root !== null && !isObj(root)) throw invalid(file, ["(file): the root must be a mapping nested like config.yaml"]);
@@ -105,7 +105,7 @@ export function updateSecrets(linkOrFile: string, changes: Readonly<Record<strin
     text = readFileSync(file, "utf8");
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`);
+    if (code !== "ENOENT") throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`, { cause: e });
   }
   const doc = text === "" ? new Document({}) : parseSecretsText(file, text);
   if (doc.contents !== null && !isMap(doc.contents)) throw invalid(file, ["(file): the root must be a mapping nested like config.yaml"]);

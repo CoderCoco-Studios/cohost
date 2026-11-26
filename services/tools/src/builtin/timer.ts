@@ -4,7 +4,7 @@
  * one scheduler holds every due time; a delay longer than the platform's timer maximum is re-armed in chunks.
  */
 import { randomUUID } from "node:crypto";
-import type { BusEvent, Publisher } from "@cohost/bus";
+import type { Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { boundText } from "@cohost/shared/untrusted";
 import { SourceFailed, type SourceCallResult } from "../source.js";
@@ -138,7 +138,7 @@ export class TimerTool {
     return new Promise<boolean>((resolve) => {
       const onAbort = (): void => resolve(false);
       signal.addEventListener("abort", onAbort, { once: true });
-      this.loaded.then(() => {
+      void this.loaded.then(() => {
         signal.removeEventListener("abort", onAbort);
         resolve(true);
       });

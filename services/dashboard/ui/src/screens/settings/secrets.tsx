@@ -103,7 +103,7 @@ export function SecretPair({ section, title, keys, models, reads }: { section: S
         <div className="srow-k"><span className="label">{`${title} keys`}</span></div>
         <div className="srow-c row">
           <Button aria-pressed={shown} onClick={() => setShown((s) => !s)}>{shown ? "Hide" : "Show"}</Button>
-          <Button variant="primary" onClick={save} disabled={!canSave} busy={busy}>{`Save both ${title} keys`}</Button>
+          <Button variant="primary" onClick={() => void save()} disabled={!canSave} busy={busy}>{`Save both ${title} keys`}</Button>
           {isSet[0] || isSet[1] ? <Button variant="danger" onClick={() => setConfirming(true)} disabled={busy}>{`Clear both ${title} keys`}</Button> : null}
           <p className="help">They are saved together: the services refuse to start with only one of the two set.</p>
         </div>

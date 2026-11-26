@@ -1,4 +1,4 @@
-import { test, after, mock } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ModuleSchema } from "@cohost/config";
@@ -179,8 +179,8 @@ test("building an llm-kind hook on the mock provider warns once, names the hook,
   assert.equal(warns.length, 2);
   assert.match(warns[1]!.msg, /unusable/);
   // Only llm-kind hooks resolve a provider, and a real provider does not warn.
-  new Module("t", ModuleSchema.parse({ kind: "llm" }), openaiCfg, llmImpl, logger);
-  new Module("t", ModuleSchema.parse({ kind: "rules" }), mockCfg, { rules }, logger);
+  assert.ok(new Module("t", ModuleSchema.parse({ kind: "llm" }), openaiCfg, llmImpl, logger));
+  assert.ok(new Module("t", ModuleSchema.parse({ kind: "rules" }), mockCfg, { rules }, logger));
   assert.equal(warns.length, 2);
 });
 

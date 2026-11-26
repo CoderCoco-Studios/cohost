@@ -102,7 +102,7 @@ test("readSection reports each key's source (literal or default), editability, e
   const leaf = readSection(FIXTURE, "brain.working_memory_events").keys;
   assert.deepEqual(leaf, { working_memory_events: { source: "literal", editable: true, value: 30, raw: "30" } });
   const everyKey = Object.values(readSection(FIXTURE, "vision").keys).concat(Object.values(readSection(FIXTURE, "dashboard").keys)).filter((k) => !k.secret);
-  assert.ok(everyKey.every((k) => (k.source === "literal" || k.source === "default") && k.editable === true), "every non-secret key is editable and has one of two sources");
+  assert.ok(everyKey.every((k) => (k.source === "literal" || k.source === "default") && k.editable), "every non-secret key is editable and has one of two sources");
   assert.deepEqual(readSection(FIXTURE, "dashboard").keys["lan_port"], { source: "default", editable: true, value: 3001 });
 });
 

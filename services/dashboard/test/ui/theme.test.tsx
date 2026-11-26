@@ -57,7 +57,8 @@ test("index.html's bootstrap script applies a saved Light or Dark before first p
   const script = /<script>([\s\S]*?)<\/script>/.exec(html)![1]!;
   const run = (storage: unknown) => {
     const doc = { documentElement: { dataset: {} as Record<string, string> } };
-    new Function("localStorage", "document", script)(storage, doc);
+    // oxlint-disable-next-line typescript/no-implied-eval -- runs the page's inline theme script, the code under test
+  new Function("localStorage", "document", script)(storage, doc);
     return doc.documentElement.dataset.theme;
   };
   const s = new FakeStorage(); s.setItem("cohost.theme", "light");

@@ -495,7 +495,7 @@ test("after a save with units to restart a banner names them and the warnings; R
   assert.ok(within(banner).getByText("demo.port: moves"));
   await user.click(within(banner).getByRole("button", { name: "Restart" }));
   await settle(6);
-  const calls = b.app.fetch.calls.filter((c) => /\/restart$/.test(c.path)).map((c) => [c.method, c.path, c.body]);
+  const calls = b.app.fetch.calls.filter((c) => c.path.endsWith("/restart")).map((c) => [c.method, c.path, c.body]);
   assert.deepEqual(calls, [["POST", "/services/voice/restart", undefined], ["POST", "/services/mouth/restart", undefined], ["POST", "/services/salience/restart", undefined]]);
   const after = screen.getByRole("region", { name: "Restart needed" });
   assert.match(text(after), /Restart these services to apply: mouth/);
@@ -695,7 +695,7 @@ test("saving two sections that hold edits on separate pages' worth of state uses
 
 // @spec DASH-SET-031
 test("when a later section of a save fails with issues, the bar names the section saved and the one not, keeps its edits and offers no Reload", async () => {
-  const b = await open("demo", { routes: { "PUT /config/extra": { status: 400, json: { ok: false, issues: [{ path: "extra", message: "too big" }] } } } });
+  await open("demo", { routes: { "PUT /config/extra": { status: 400, json: { ok: false, issues: [{ path: "extra", message: "too big" }] } } } });
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
   const extra = within(row("extra")).getByRole("spinbutton", { name: "Extra events" });

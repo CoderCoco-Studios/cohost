@@ -4,7 +4,7 @@ import { runHeartbeat, testConfig } from "@cohost/testing";
 import { TtsError } from "../src/engine.js";
 import { createEngine } from "../src/engines.js";
 import { VoiceHealth } from "../src/health.js";
-import { audioOf, fakeEngine, fakeServer, pcm } from "./tts-helpers.js";
+import { audioOf, fakeEngine, fakeServer } from "./tts-helpers.js";
 
 afterEach(() => mock.timers.reset());
 

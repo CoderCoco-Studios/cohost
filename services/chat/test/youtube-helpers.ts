@@ -84,7 +84,7 @@ export function text(id: string, sec: number | undefined, body = id, author: Aut
 }
 
 /** A `tombstone` resource deleting `deletedId`. */
-export function tombstone(id: string, deletedId: string | undefined, sec: number | undefined = undefined): Item {
+export function tombstone(id: string, deletedId: string | undefined, sec?: number): Item {
   return {
     id,
     snippet: { type: "tombstone", ...(sec === undefined ? {} : { publishedAt: at(sec) }), ...(deletedId === undefined ? {} : { messageDeletedDetails: { deletedMessageId: deletedId } }) },
@@ -93,7 +93,7 @@ export function tombstone(id: string, deletedId: string | undefined, sec: number
 }
 
 /** A `userBannedEvent` resource. */
-export function banned(id: string, channelId: string | undefined, banType: "permanent" | "temporary" = "permanent", sec: number | undefined = undefined): Item {
+export function banned(id: string, channelId: string | undefined, banType: "permanent" | "temporary" = "permanent", sec?: number): Item {
   return {
     id,
     snippet: {

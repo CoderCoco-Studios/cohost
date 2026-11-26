@@ -2,6 +2,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { VoiceConnectionStatus } from "@discordjs/voice";
+import { GatewayIntentBits } from "discord.js";
 import { createDiscordVoiceSession } from "../src/discord-voice.js";
 
 class FakeConnection extends EventEmitter {
@@ -9,7 +10,7 @@ class FakeConnection extends EventEmitter {
   destroy() { this.destroyed = true; }
 }
 
-function rig(ctx: TestContext, over: { enters?: (c: FakeConnection, status: string, ms: number) => Promise<void>; loginError?: Error; failJoins?: number; notVoice?: boolean } = {}) {
+function rig(ctx: TestContext, over: { enters?: (c: FakeConnection, status: VoiceConnectionStatus, ms: number) => Promise<void>; loginError?: Error; failJoins?: number; notVoice?: boolean } = {}) {
   const client = Object.assign(new EventEmitter(), {
     destroyed: 0,
     logins: [] as string[],
@@ -24,11 +25,11 @@ function rig(ctx: TestContext, over: { enters?: (c: FakeConnection, status: stri
   const conns: FakeConnection[] = [];
   const joinOpts: Record<string, unknown>[] = [];
   const sleeps: number[] = [];
-  const enters: [string, number][] = [];
+  const enters: [VoiceConnectionStatus, number][] = [];
   const events: string[] = [];
   let joinsToFail = over.failJoins ?? 0;
   const session = createDiscordVoiceSession({
-    token: "tok", guildId: "g1", channelId: "chan", intents: [1, 2], selfMute: true, selfDeaf: false,
+    token: "tok", guildId: "g1", channelId: "chan", intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers], selfMute: true, selfDeaf: false,
     log: { info() {}, warn() {}, error() {} } as never,
     fetchMembers: true,
     onConnected: (c) => { events.push("connected"); void c; },
@@ -38,7 +39,7 @@ function rig(ctx: TestContext, over: { enters?: (c: FakeConnection, status: stri
     deps: {
       createClient: () => client as never,
       joinVoiceChannel: ((o: Record<string, unknown>) => { joinOpts.push(o); const c = new FakeConnection(); conns.push(c); return c; }) as never,
-      entersState: (async (c: FakeConnection, status: string, ms: number) => {
+      entersState: (async (c: FakeConnection, status: VoiceConnectionStatus, ms: number) => {
         enters.push([status, ms]);
         if (status === VoiceConnectionStatus.Ready && joinsToFail > 0) { joinsToFail--; throw new Error("not ready"); }
         if (over.enters) return over.enters(c, status, ms);

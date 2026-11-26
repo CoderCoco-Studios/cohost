@@ -119,7 +119,7 @@ test("tools.servers is one row per server with its name and URL without userinfo
 // @spec DASH-TOOL-006
 test("a server name, URL and detail that hold markup are shown as text: no element is made from them", async () => {
   const evil = '<img src=x onerror="alert(1)"><b>b</b>';
-  const yaml = `tools:\n  servers:\n    "${"x"}":\n      url: "http://h.example/${encodeURIComponent(evil)}"\n`;
+  const yaml = `tools:\n  servers:\n    "x":\n      url: "http://h.example/${encodeURIComponent(evil)}"\n`;
   await open({ yaml, cat: catalog([], [{ name: "x", state: "down", detail: `${evil}<script>alert(2)</script> [l](http://e.example)` }]) });
   const row = server("x");
   assert.ok(row);

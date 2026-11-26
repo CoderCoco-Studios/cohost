@@ -12,7 +12,7 @@ export interface ServiceContext<B extends BootBus = Bus> {
   log: Logger;
   heartbeat: Heartbeat;
   /** Register a teardown step; steps run in reverse registration order on shutdown. */
-  onStop(fn: () => void | Promise<void>): void;
+  onStop: (fn: () => void | Promise<void>) => void;
 }
 
 export interface RunServiceOptions<B extends BootBus = Bus> {

@@ -148,7 +148,7 @@ export class StackService {
     if (!this.ops || this.probing || this.waiting) return;
     this.probing = true;
     try {
-      this.observe(await (this.ops.statusWithRestarts ?? this.ops.status).call(this.ops));
+      this.observe(await (this.ops.statusWithRestarts ? this.ops.statusWithRestarts() : this.ops.status()));
     } catch (err) {
       this.observe({ docker: { ok: false, detail: message(err).slice(0, 500) }, services: [] });
     } finally {

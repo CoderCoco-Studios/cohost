@@ -3,6 +3,7 @@
 // do not exist yet: this file is the failing-first step of issue #218.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import { Emotion } from "@cohost/config";
 import { eulerToQuat } from "@cohost/shared/head-rotation";
 import { EMOTIONS, REST_FRAME, parseFrame } from "../../ui/src/avatar/frame";
@@ -46,7 +47,7 @@ test("a frame with a missing field, a non-finite or non-number value, or a value
     assert.equal(parseFrame(partial), null, `missing ${k}`);
   }
   for (const k of ["mouthOpen", "mouthSmile", "headX", "headY", "headZ", "eyeX", "eyeY", "blink", "intensity"] as const) {
-    for (const bad of [NaN, Infinity, -Infinity, "0.5", null, undefined, true, {}, []]) assert.equal(parseFrame({ ...good, [k]: bad }), null, `${k}=${String(bad)}`);
+    for (const bad of [NaN, Infinity, -Infinity, "0.5", null, undefined, true, {}, []]) assert.equal(parseFrame({ ...good, [k]: bad }), null, `${k}=${inspect(bad)}`);
   }
   for (const [k, v] of [["mouthOpen", 1.01], ["mouthOpen", -0.01], ["mouthSmile", 2], ["blink", -1], ["intensity", 1.5], ["headX", 90.1], ["headY", -91], ["headZ", 200], ["eyeX", 1.1], ["eyeY", -1.1]] as const) {
     assert.equal(parseFrame({ ...good, [k]: v }), null, `${k}=${v}`);

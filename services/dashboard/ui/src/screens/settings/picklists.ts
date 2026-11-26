@@ -19,7 +19,6 @@ export function usePickLists(wantModels: boolean, wantVoices: boolean, openedFor
     if (wantModels) void api.get<{ models: string[] }>("/options/models").then((r) => { if (live) setModels(r.ok && Array.isArray(r.data?.models) ? r.data.models : null); });
     if (wantVoices) void api.get<{ voices: string[] }>("/options/voices").then((r) => { if (live) setVoices(r.ok && Array.isArray(r.data?.voices) ? r.data.voices : null); });
     return () => { live = false; };
-    // Once per opening of a page: the deps are the page and what it wants, not the api object.
-  }, [openedFor, wantModels, wantVoices]);
+  }, [api, openedFor, wantModels, wantVoices]);
   return { models, voices };
 }

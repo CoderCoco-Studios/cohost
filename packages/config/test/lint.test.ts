@@ -16,7 +16,7 @@ interface OxlintConfig {
   plugins?: string[];
   categories?: Record<string, Severity>;
   rules?: Record<string, RuleSetting>;
-  overrides?: { files: string[]; rules?: Record<string, RuleSetting> }[];
+  overrides?: { files: string[]; plugins?: string[]; rules?: Record<string, RuleSetting> }[];
 }
 
 /** JSON with whole-line `//` comments, the form the repository's tsconfig and oxlint files use. */
@@ -136,6 +136,23 @@ test("the workspace, the dashboard UI's type check and its bundle are on ES2024,
   assert.deepEqual(ui.compilerOptions.lib, ["ES2024", "DOM", "DOM.Iterable"]);
   assert.match(readRepo("services/dashboard/ui/vite.config.ts"), /^\s*target: "es2024",$/m);
   for (const r of ["unicorn/no-array-sort", "unicorn/no-array-reverse"]) assert.equal(severity(rc.rules![r]!), "error", r);
+});
+
+// @spec DEPLOY-LINT-010
+test("the dashboard UI is linted with the react plugin and the two react-hooks rules as errors", () => {
+  const ui = (rc.overrides ?? []).filter((o) => o.plugins?.includes("react"));
+  assert.equal(ui.length, 1, "one override adds the react plugin");
+  const o = ui[0]!;
+  assert.deepEqual([...o.files].toSorted(), ["services/dashboard/test/ui/**", "services/dashboard/ui/**"]);
+  assert.deepEqual([...o.plugins!].toSorted(), ["eslint", "oxc", "react", "typescript", "unicorn"]);
+  for (const r of ["react-hooks/rules-of-hooks", "react-hooks/exhaustive-deps"]) assert.equal(o.rules?.[r] && severity(o.rules[r]), "error", r);
+  // The rule names resolve: an effect that reads a value its dependency list leaves out fails under the same settings.
+  const dir = mkdtempSync(join(tmpdir(), "cohost-lint-react-"));
+  writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({ plugins: o.plugins, categories: {}, rules: o.rules }));
+  writeFileSync(join(dir, "c.tsx"), 'import { useEffect } from "react";\nexport function C({ a }: { a: number }) {\n  useEffect(() => { console.log(a); }, []);\n  return null;\n}\n');
+  const r = spawnSync(join(repoRoot, "node_modules/.bin/oxlint"), ["--deny-warnings", "-c", join(dir, ".oxlintrc.json"), join(dir, "c.tsx")], { cwd: dir, encoding: "utf8" });
+  assert.notEqual(r.status, 0, "a missing dependency is reported");
+  assert.match(r.stdout, /exhaustive-deps/);
 });
 
 const DISABLE = ["oxlint", "disable"].join("-");

@@ -76,7 +76,9 @@ function NumberBox({ value, onChange, wiring, step, unit, schema }: { value: unk
 function LinesBox({ value, onChange, wiring, rows = 4 }: { value: unknown; onChange: (v: string[]) => void; wiring: Wiring; rows?: number }) {
   const list = asList(value);
   const [text, setText] = useState(list.join("\n"));
-  useEffect(() => { setText((t) => (JSON.stringify(fromLines(t)) === JSON.stringify(list) ? t : list.join("\n"))); }, [list.join("\n")]);
+  // The list as JSON: `asList` builds a new array on each render, and an outside change is one to its contents.
+  const listJson = JSON.stringify(list);
+  useEffect(() => { setText((t) => (JSON.stringify(fromLines(t)) === listJson ? t : (JSON.parse(listJson) as string[]).join("\n"))); }, [listJson]);
   return (
     <textarea id={wiring.id} className="field" rows={rows} spellCheck={false} value={text} aria-describedby={wiring.describedBy} aria-invalid={wiring.invalid || undefined}
       onChange={(e) => { setText(e.target.value); onChange(fromLines(e.target.value)); }} />
@@ -88,6 +90,7 @@ function JsonBox({ value, onChange, wiring }: { value: unknown; onChange: (v: un
   const pretty = JSON.stringify(value ?? null, null, 2);
   const [text, setText] = useState(pretty);
   const [bad, setBad] = useState<string | undefined>();
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs when the value changes from outside (pretty is derived from it); `bad` and `value` are read as they are then, so fixing the JSON in the box does not rewrite it
   useEffect(() => { if (!bad) setText((t) => { try { return JSON.stringify(JSON.parse(t)) === JSON.stringify(value ?? null) ? t : pretty; } catch { return pretty; } }); }, [pretty]);
   const errId = useId();
   return (

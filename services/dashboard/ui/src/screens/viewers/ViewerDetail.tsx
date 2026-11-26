@@ -94,7 +94,8 @@ export function ViewerDetail({ selected, load, figures, onChanged, onLinked, onR
 
   // On a narrow screen the list is hidden once a viewer is open: move focus to the panel's heading.
   useEffect(() => { if (key !== undefined && narrow()) heading.current?.focus(); }, [key]);
-  useEffect(() => { setDlg(null); inline.dismiss(); }, [selected]);
+  const dismissInline = inline.dismiss;
+  useEffect(() => { setDlg(null); dismissInline(); }, [selected, dismissInline]);
 
   const className = `card viewers-detail-pane${stale.className ? ` ${stale.className}` : ""}`;
   if (selected === null) {

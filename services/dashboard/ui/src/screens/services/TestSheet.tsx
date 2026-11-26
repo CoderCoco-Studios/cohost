@@ -54,7 +54,9 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
   const fileRefs = useRef(new Map<string, HTMLInputElement>());
 
   const add = useCallback((ev: FeedEvent) => setEvents((list) => [...list, ev].slice(-KEEP)), []);
-  useEffect(() => feed.onEvent((ev, replay) => {
+  // The observed types as one string: `unitTest` builds a new array on each render, and the listener changes only with its contents.
+  const observed = observe.join("|");
+  useEffect(() => { const types = observed.split("|"); return feed.onEvent((ev, replay) => {
     if (replay) return;
     if (ev.type === "inject.result") {
       const id = (ev.data as { id?: unknown }).id;
@@ -62,8 +64,8 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       results.current.set(id, ev);
       if (results.current.size > KEEP) results.current.delete(results.current.keys().next().value as string);
       if (ours.current.has(id)) add(ev);
-    } else if (observe.includes(ev.type)) add(ev);
-  }), [feed, add, observe.join("|")]);
+    } else if (types.includes(ev.type)) add(ev);
+  }); }, [feed, add, observed]);
 
   const track = (id: string) => { ours.current.add(id); const early = results.current.get(id); if (early) add(early); };
   const gate = { auth: "control" as const };

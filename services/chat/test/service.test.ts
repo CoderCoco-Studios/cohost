@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
 import { chatService, type ChatClientLike, type ChatServiceDeps } from "../src/service.js";
+import type { TwitchUserInfo } from "../src/twitch.js";
 import { loadStoredToken, saveStoredToken } from "../src/token-store.js";
 
 /** A bus that also answers the inject subscription calls (FakeBus only records). */
@@ -23,7 +24,7 @@ class SvcBus extends FakeBus {
 class FakeClient implements ChatClientLike {
   connected: (() => void)[] = [];
   disconnected: ((manually: boolean, reason?: Error) => void)[] = [];
-  messages: ((chan: string, user: string, text: string, msg: { userInfo: unknown }) => void)[] = [];
+  messages: ((chan: string, user: string, text: string, msg: { id: string; userInfo: TwitchUserInfo }) => void)[] = [];
   removed: ((chan: string, id: string, msg: unknown) => void)[] = [];
   banned: ((chan: string, user: string, msg: { targetUserId: string | null }) => void)[] = [];
   timedOut: ((chan: string, user: string, duration: number, msg: { targetUserId: string | null }) => void)[] = [];
@@ -37,7 +38,7 @@ class FakeClient implements ChatClientLike {
   onChatClear(cb: (chan: string, msg: unknown) => void) { this.cleared.push(cb); }
   onConnect(cb: () => void) { this.connected.push(cb); }
   onDisconnect(cb: (manually: boolean, reason?: Error) => void) { this.disconnected.push(cb); }
-  onMessage(cb: (chan: string, user: string, text: string, msg: { userInfo: unknown }) => void) { this.messages.push(cb); }
+  onMessage(cb: (chan: string, user: string, text: string, msg: { id: string; userInfo: TwitchUserInfo }) => void) { this.messages.push(cb); }
   connect() { this.connects++; }
   quit() { this.quits++; }
 }
@@ -69,7 +70,7 @@ function rig(over: Record<string, unknown> = {}, deps: Partial<ChatServiceDeps> 
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
     onShutdown: (fn) => { shutdown = fn; }, exit: (c) => { exits.push(c); },
   });
-  return { bus, rec, clients, auths, exits, start, deps: () => svc.health(cfg).deps(), stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
+  return { bus, rec, clients, auths, exits, start, deps: () => { const d = svc.health(cfg).deps; return typeof d === "function" ? d() : d; }, stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
 }
 
 // @spec CHAT-TW-008
@@ -79,7 +80,7 @@ test("a message in the joined channel goes through the filter and is published; 
     await r.start();
     const client = r.clients[0]!;
     assert.deepEqual(client.opts.channels, ["chan"], "the channel is normalised");
-    const msg = { userInfo: { displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false } };
+    const msg = { id: "tw-msg-0", userInfo: { displayName: "Bob", userId: "42", isMod: false, isBroadcaster: false, isSubscriber: false } };
     client.messages[0]!("#chan", "bob", "hello   Coco", msg);
     client.messages[0]!("#chan", "bob", "!uptime", msg);
     await waitFor(() => r.bus.of("chat.message").length >= 1, "chat.message");

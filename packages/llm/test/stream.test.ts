@@ -195,6 +195,7 @@ test("stream() requests carry the non-streamed fields: stops, defaults, caller o
     await collect(p.stream(hello, { temperature: 0.9, maxTokens: 5 }));
     await collect(p.stream(hello, { json: true }));
     const [def, over, json] = b.seen.map((s) => s.body);
+    assert.ok(def && over && json);
     if (kind === "ollama") {
       assert.deepEqual(def.options.stop, stopsAll);
       assert.equal(def.options.temperature, 0.4); assert.equal(def.options.num_predict, 77);

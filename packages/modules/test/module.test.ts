@@ -38,7 +38,7 @@ const server = http.createServer(async (req, res) => {
   let body = ""; for await (const c of req) body += c;
   const a = answers.shift();
   if (a === "hang") return; // never answers → timeout
-  if (a === "500") { res.statusCode = 500; return res.end("{}"); }
+  if (a === "500") { res.statusCode = 500; res.end("{}"); return; }
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify(a ?? { echo: JSON.parse(body) }));
 });

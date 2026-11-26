@@ -99,7 +99,7 @@ test("lookup is one GET of videos.list with parts liveStreamingDetails and snipp
     assert.equal(q.query.get("id"), VIDEO);
     assert.equal(q.query.get("part"), "liveStreamingDetails,snippet");
     assert.equal(q.headers["x-goog-api-key"], KEY, "the key travels in the header (CHAT-YT-001)");
-    assert.deepEqual([...q.query.keys()].sort(), ["id", "part"], "and never in the URL");
+    assert.deepEqual([...q.query.keys()].toSorted(), ["id", "part"], "and never in the URL");
     assert.equal(q.headers.authorization, undefined, "no OAuth token");
     assert.deepEqual(item, { liveBroadcastContent: "live", activeLiveChatId: CHAT, scheduledStartTime: "2026-11-23T10:55:00Z" });
   });
@@ -249,7 +249,7 @@ test("the stream is StreamList for the chat id with parts snippet and authorDeta
     assert.equal(c.request.pageToken, "RESUME");
     assert.equal(c.metadata.get("x-goog-api-key")[0], KEY);
     assert.equal(c.metadata.get("authorization").length, 0, "no OAuth token");
-    assert.equal(Object.keys(c.request).filter((k) => c.request[k] !== undefined && c.request[k] !== "" && !(Array.isArray(c.request[k]) && c.request[k].length === 0)).sort().join(), "liveChatId,pageToken,part");
+    assert.equal(Object.keys(c.request).filter((k) => c.request[k] !== undefined && c.request[k] !== "" && !(Array.isArray(c.request[k]) && c.request[k].length === 0)).toSorted().join(), "liveChatId,pageToken,part");
     await it.return?.();
   });
 });

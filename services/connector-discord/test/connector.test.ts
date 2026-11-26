@@ -276,7 +276,7 @@ test("bots (cached or fetched) and the connector's own account are never read, a
   await waitFor(() => r.users.fetched.length >= 3, "fetches");
   await new Promise((res) => setTimeout(res, 20));
   assert.deepEqual(conn.subs.map((s) => s.userId), ["fresh"], "only the fetched human, once");
-  assert.deepEqual(r.users.fetched.sort(), ["bot2", "fresh", "ghost"].sort(), "bot1 was cached, me never looked up");
+  assert.deepEqual(r.users.fetched.toSorted(), ["bot2", "fresh", "ghost"].toSorted(), "bot1 was cached, me never looked up");
   // a speaker that ended can be captured again
   r.decoders[0]!.end();
   await waitFor(() => { speak("fresh"); return conn.subs.length === 2; }, "second subscription after the first ended");
@@ -355,7 +355,7 @@ test("seq gaps within an epoch are added to a loss counter reported in the heart
 test("a tag another live connector serves is left out of the registration: degraded with the conflict named, that dependency down", async () => {
   const other: Registration = {
     v: 1, id: "other", kind: "x", version: "1", instance: "i", pid: 1, startedAt: 1, intervalMs: 5000, state: "ready", detail: "",
-    capabilities: [{ cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream" }],
+    capabilities: [{ cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream", flush: false }],
   };
   const s = rig({ others: [other] });
   await s.done;

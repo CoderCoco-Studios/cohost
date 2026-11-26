@@ -265,14 +265,14 @@ test("a file that would pass max_size_mb rotates through numbered files, and tho
   const log = createLogger("chat");
   const big = "x".repeat(600 * 1024);
   for (let i = 1; i <= 5; i++) log.info({ i, big }, `entry ${i}`);
-  assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.2.log", "chat.log"]);
+  assert.deepEqual(readdirSync(logs).toSorted(), ["chat.1.log", "chat.2.log", "chat.log"]);
   assert.deepEqual(lines(file("chat")).map((e) => e.i), [5]);
   assert.deepEqual(lines(join(logs, "chat.1.log")).map((e) => e.i), [4]);
   assert.deepEqual(lines(join(logs, "chat.2.log")).map((e) => e.i), [3]);
   // a file numbered past max_files from a larger earlier setting is deleted at the next rotation
   writeFileSync(join(logs, "chat.7.log"), "old\n");
   log.info({ big }, "six");
-  assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.2.log", "chat.log"]);
+  assert.deepEqual(readdirSync(logs).toSorted(), ["chat.1.log", "chat.2.log", "chat.log"]);
 });
 
 // @spec CFG-LOG-015, CFG-LOG-021
@@ -283,7 +283,7 @@ test("a retried rotation after a failed .log rename does not shift the older fil
   // the state a failed attempt leaves: the older files already moved up one, `.1.log` free, `.log` still in place
   writeFileSync(join(logs, "chat.2.log"), "older\n");
   log.info({ big: "b".repeat(700 * 1024) }, "next");
-  assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.2.log", "chat.log"]);
+  assert.deepEqual(readdirSync(logs).toSorted(), ["chat.1.log", "chat.2.log", "chat.log"]);
   assert.equal(readFileSync(join(logs, "chat.2.log"), "utf8"), "older\n", "chat.2.log stayed where it was");
   assert.deepEqual(lines(join(logs, "chat.1.log")).map((e) => e.msg), ["current"]);
   assert.deepEqual(lines(file("chat")).map((e) => e.msg), ["next"]);
@@ -362,7 +362,7 @@ test("a rotation that cannot rename warns once, keeps appending to the current f
   assert.match(warnings()[0]!, /EACCES/);
   assert.deepEqual(lines(file("chat")).map((e) => e.msg), ["first", "second", "third"]);
   log.info({ big }, "fourth");
-  assert.deepEqual(readdirSync(logs).sort(), ["chat.1.log", "chat.log"]);
+  assert.deepEqual(readdirSync(logs).toSorted(), ["chat.1.log", "chat.log"]);
   assert.deepEqual(lines(file("chat")).map((e) => e.msg), ["fourth"]);
 });
 
@@ -487,10 +487,29 @@ test("a class instance is walked through its own keys and keeps its prototype; a
   assert.ok(!readFileSync(file("chat"), "utf8").includes("CLASS-LEAK"));
 });
 
+// @spec CFG-LOG-024
+test("a class instance whose toJSON throws on the censored copy is written as its own enumerable fields", () => {
+  class Session {
+    readonly #id: string;
+    constructor(id: string, public token: string, public host: string) { this.#id = id; }
+    toJSON(): object { return { id: this.#id, host: this.host }; }
+  }
+  const session = new Session("s1", "PRIVATE-LEAK", "h");
+  const r = redact({ session }) as { session: Session };
+  assert.ok(r.session instanceof Session, "the prototype is kept");
+  assert.deepEqual(JSON.parse(JSON.stringify(r.session)), { token: "[Redacted]", host: "h" });
+  assert.deepEqual(JSON.parse(JSON.stringify(session)), { id: "s1", host: "h" }, "the original's toJSON is untouched");
+  const { file } = setup();
+  createLogger("chat").info({ session }, "private field");
+  const [e] = lines(file("chat"));
+  assert.deepEqual(e!.session, { token: "[Redacted]", host: "h" });
+  assert.ok(!readFileSync(file("chat"), "utf8").includes("PRIVATE-LEAK"));
+});
+
 // @spec CFG-LOG-025
 test("logging adds no dependency, uses no pino transport and starts no worker thread", () => {
   const pkg = JSON.parse(readFileSync(join(repo, "packages", "config", "package.json"), "utf8")) as { dependencies: Record<string, string> };
-  assert.deepEqual(Object.keys(pkg.dependencies).sort(), ["pino", "yaml", "zod"]);
+  assert.deepEqual(Object.keys(pkg.dependencies).toSorted(), ["pino", "yaml", "zod"]);
   const src = join(repo, "packages", "config", "src");
   for (const f of readdirSync(src)) {
     const text = readFileSync(join(src, f), "utf8");

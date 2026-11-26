@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FakeBus, event, recordingLog } from "@cohost/testing";
-import { MOUTH_LOOP_TYPES, createMouthHandler, subscribeMouth } from "../src/session.js";
+import { MOUTH_LOOP_TYPES, createMouthHandler, subscribeMouth, type MouthOutput } from "../src/session.js";
 import { ClaimMemory } from "../src/fallback.js";
 
 const utterance = (id = "u1") => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });
 const playingEv = (id: string, sink: string) => event("voice.playing", { id, seq: 0, sink });
 const failedEv = () => event("voice.failed", { id: "u1", seq: 0, sink: "discord", reason: "x" });
-const out = (name: string, ready: () => boolean, queued: [string, string, string][]) => ({
-  name, isReady: ready, playback: { enqueue: async (id: string, url: string) => { queued.push([name, id, url]); } },
+const out = (name: string, ready: () => boolean, queued: [string, string, string][]): MouthOutput => ({
+  name, isReady: ready, closeLine() {}, refuse: async () => {}, stop: async () => {}, playback: { enqueue: async (id: string, url: string) => { queued.push([name, id, url]); } },
 });
 
 // @spec MOUTH-ROUTE-003, MOUTH-FALL-013
@@ -50,7 +50,7 @@ test("the loop remembers each utterance id and every voice.playing claim, and ig
 
 // @spec MOUTH-PLAY-001, MOUTH-PLAY-008
 test("the one mouth loop reads voice.utterance, brain.clause, voice.playing, voice.stop and control (set_routing only)", () => {
-  assert.deepEqual([...MOUTH_LOOP_TYPES].sort(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
+  assert.deepEqual([...MOUTH_LOOP_TYPES].toSorted(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
 });
 
 // @spec MOUTH-START-005, MOUTH-PLAY-001

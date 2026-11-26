@@ -44,7 +44,7 @@ const upgrade = (path: string, headers: Record<string, string> = {}): Promise<st
 
 // @spec DASH-BUILD-007
 test("the proxied prefixes are exactly the dashboard's routes and the dev server's own paths are not proxied", () => {
-  assert.deepEqual([...PROXIED_PREFIXES].sort(), ["/audio", "/avatar", "/config", "/control", "/health", "/inject", "/mouth", "/options", "/personality", "/secrets", "/services", "/sink", "/stack", "/tools", "/viewers", "/ws"]);
+  assert.deepEqual([...PROXIED_PREFIXES].toSorted(), ["/audio", "/avatar", "/config", "/control", "/health", "/inject", "/mouth", "/options", "/personality", "/secrets", "/services", "/sink", "/stack", "/tools", "/viewers", "/ws"]);
   for (const p of ["/ws", "/audio/a.wav", "/services/control", "/stack", "/config/schema", "/secrets/llm.openai.api_key", "/options/models", "/health", "/tools", "/tools/x", "/avatar", "/avatar/model", "/avatar/models/a.vrm", "/avatar/ws", "/avatar/renderer"]) assert.equal(isProxied(p), true, p);
   for (const p of ["/", "/src/main.tsx", "/@vite/client", "/assets/x.js", "/servicesx", "/wsx", "/node_modules/.vite/deps/react.js", "/avatar.html", "/avatar.html/x", "/avatarx", "/toolsx"]) assert.equal(isProxied(p), false, p);
 });

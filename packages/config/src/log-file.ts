@@ -81,7 +81,7 @@ export class LogFile {
    */
   private rotate(): boolean {
     const own = new RegExp(`^${escapeRegExp(this.o.service)}\\.(\\d+)\\.log$`);
-    const numbered = (): number[] => readdirSync(this.o.dir).flatMap((f) => { const m = own.exec(f); return m ? [Number(m[1])] : []; }).sort((a, b) => b - a);
+    const numbered = (): number[] => readdirSync(this.o.dir).flatMap((f) => { const m = own.exec(f); return m ? [Number(m[1])] : []; }).toSorted((a, b) => b - a);
     const at = (n: number): string => join(this.o.dir, `${this.o.service}.${n}.log`);
     let moved = false;
     try {

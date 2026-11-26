@@ -42,7 +42,7 @@ test("the ears group also reads voice.playing and voice.done where an enabled so
     assert.equal(t.subs.length, 1, "one loop");
     assert.equal(t.subs[0]!.opts.group, "ears");
     assert.equal(t.subs[0]!.opts.start, "latest");
-    assert.deepEqual([...t.subs[0]!.opts.types].sort(), ["inject.request", "voice.done", "voice.playing"]);
+    assert.deepEqual([...t.subs[0]!.opts.types].toSorted(), ["inject.request", "voice.done", "voice.playing"]);
   });
   await run(cfg({ sources: ["discord"] }), async (t) => { // desktop is named but not enabled
     assert.deepEqual(t.subs.map((s) => [...s.opts.types]), [["inject.request"]]);

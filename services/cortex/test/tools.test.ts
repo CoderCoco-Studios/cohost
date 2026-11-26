@@ -196,7 +196,7 @@ async function ready(o: SetupOpts = {}): Promise<S> {
   return s;
 }
 
-type FocusInput = EventInput<"attention.focus">;
+type FocusInput = Focus;
 const speech = (over: Partial<NonNullable<FocusInput["focus"]>> = {}, top: Partial<FocusInput> = {}): FocusInput => ({
   reason: "mentioned", score: 1, focus: { kind: "speech", source: "mic", who: "Chris", text: "what time is it?", mention: false, ...over }, ...top,
 });
@@ -294,11 +294,11 @@ for (const c of OFFERS) {
       assert.equal("maxTokens" in opts, false, "and no maxTokens: the provider keeps llm.max_tokens");
       return;
     }
-    assert.deepEqual(opts.tools!.map((t) => t.name).sort(), [...c.offered].sort());
-    assert.deepEqual(Object.keys(opts).sort(), ["maxTokens", "signal", "tools"], "no option other than tools, maxTokens and signal");
+    assert.deepEqual(opts.tools!.map((t) => t.name).toSorted(), [...c.offered].toSorted());
+    assert.deepEqual(Object.keys(opts).toSorted(), ["maxTokens", "signal", "tools"], "no option other than tools, maxTokens and signal");
     // The guest case sets no tools.reply.max_tokens, so the default applies (CTX-TOOL-005).
     assert.equal(opts.maxTokens, c.name === "guest" ? s.cfg.tools.reply.max_tokens : 300);
-    assert.deepEqual(Object.keys(opts.tools![0]!).sort(), ["description", "name", "parameters"]);
+    assert.deepEqual(Object.keys(opts.tools![0]!).toSorted(), ["description", "name", "parameters"]);
   });
 }
 

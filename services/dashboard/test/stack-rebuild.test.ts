@@ -11,6 +11,8 @@ import { StackService, type StackOps } from "../src/stack.js";
 const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
 const restarter = { restart: async () => ({ ok: true }) };
+/** A FakeBus the control plane can reset consumer groups on. */
+class CtlBus extends FakeBus { async resetGroup(): Promise<void> {} }
 
 /** A StackOps that records calls; `statusWithRestarts` is the one the probe should prefer. */
 function ops(withRestarts: StackStatus) {
@@ -58,7 +60,7 @@ test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and
   const f = ops(crashed);
   svc.attach(f.o);
   await svc.probe();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], ...(control ? { control } : {}), stack: svc,
@@ -117,7 +119,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
 // @spec DASH-HTTP-014, MOD-MAN-007
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
@@ -131,7 +133,7 @@ test("GET /services/manifest lists every unit of the manifest, ungated, and carr
   assert.deepEqual(body.units.find((u) => u.id === "cortex")!.requires, ["salience", "affect"]);
   assert.equal(body.units.find((u) => u.id === "redis")!.infra, true);
   assert.deepEqual(body.units, JSON.parse(JSON.stringify(unitDescriptors())), "each unit carries id, config, uses, requires, pause, test, infra and defaultMode");
-  assert.deepEqual(Object.keys(body.units[0]!).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"]);
+  assert.deepEqual(Object.keys(body.units[0]!).toSorted(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"]);
   assert.doesNotMatch(JSON.stringify(body), /pnpm|composeName|isolatedEnv/);
 });
 
@@ -151,8 +153,8 @@ test("GET /services/manifest lists the twenty units in manifest order, the tools
   assert.deepEqual(units.map((u) => u.id), SERVICE_MANIFEST.map((s) => s.id));
   for (const id of ["tools", "connector-discord", "stt-nemotron", "stt-kyutai", "tts-pocket"]) assert.ok(units.some((u) => u.id === id), id);
   for (const u of units) {
-    assert.deepEqual(Object.keys(u).sort(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"], String(u.id));
-    assert.deepEqual(Object.keys(u.test as object).sort(), ["inputs", "observe"], String(u.id));
+    assert.deepEqual(Object.keys(u).toSorted(), ["config", "defaultMode", "id", "infra", "pause", "requires", "test", "uses"], String(u.id));
+    assert.deepEqual(Object.keys(u.test as object).toSorted(), ["inputs", "observe"], String(u.id));
   }
   const tools = units.find((u) => u.id === "tools")!;
   assert.deepEqual((tools.test as { inputs: string[] }).inputs, ["text"]);

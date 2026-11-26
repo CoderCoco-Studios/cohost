@@ -125,7 +125,7 @@ test("no source inserts a string as HTML, calls alert/confirm/prompt, or carries
 
 // @spec DASH-A11Y-007
 test("every stylesheet main.tsx imports exists, and every stylesheet is imported", () => {
-  assert.deepEqual([...order].sort(), readdirSync(dir).filter((f) => f.endsWith(".css")).sort());
+  assert.deepEqual([...order].toSorted(), readdirSync(dir).filter((f) => f.endsWith(".css")).toSorted());
 });
 
 // @spec DASH-A11Y-007

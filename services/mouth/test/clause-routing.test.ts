@@ -31,7 +31,7 @@ function spy(name: string, ready: () => boolean) {
 
 // @spec MOUTH-PLAY-001
 test("the one mouth loop also reads brain.clause", () => {
-  assert.deepEqual([...MOUTH_LOOP_TYPES].sort(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
+  assert.deepEqual([...MOUTH_LOOP_TYPES].toSorted(), ["brain.clause", "control", "voice.playing", "voice.stop", "voice.utterance"]);
 });
 
 // @spec MOUTH-PLAY-001, MOUTH-CLAUSE-005

@@ -12,7 +12,7 @@ const pkg = (over: Partial<BundledPackage> = {}): BundledPackage => ({ name: "le
 
 // @spec DEPLOY-LIC-006
 test("the allow-list is exactly the ten permissive identifiers", () => {
-  assert.deepEqual([...ALLOWED_LICENCES].sort(), ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BlueOak-1.0.0", "CC0-1.0", "ISC", "MIT", "Unlicense", "Zlib"]);
+  assert.deepEqual([...ALLOWED_LICENCES].toSorted(), ["0BSD", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "BlueOak-1.0.0", "CC0-1.0", "ISC", "MIT", "Unlicense", "Zlib"]);
 });
 
 // @spec DEPLOY-LIC-006

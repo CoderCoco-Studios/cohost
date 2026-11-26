@@ -72,7 +72,7 @@ test("If-None-Match naming the current etag, a list holding it, or * answers 304
     const res = await r.get("/avatar/model", { "if-none-match": inm });
     assert.equal(res.status, 304, inm);
     assert.equal(res.body.length, 0);
-    assert.deepEqual(Object.keys(res.headers).filter((h) => ["etag", "cache-control", "content-type", "content-length", "x-content-type-options"].includes(h)).sort(), ["cache-control", "etag"], inm);
+    assert.deepEqual(Object.keys(res.headers).filter((h) => ["etag", "cache-control", "content-type", "content-length", "x-content-type-options"].includes(h)).toSorted(), ["cache-control", "etag"], inm);
     assert.equal(res.headers["etag"], etag);
     assert.equal(res.headers["cache-control"], "no-cache");
   }
@@ -144,7 +144,7 @@ test("GET /avatar/models answers the sorted list with the limits and the active 
   assert.equal(res.status, 200);
   assert.equal(res.headers["cache-control"], "no-store");
   const j = res.json();
-  assert.deepEqual(Object.keys(j).sort(), ["active", "maxBytes", "maxModels", "maxTotalBytes", "models"]);
+  assert.deepEqual(Object.keys(j).toSorted(), ["active", "maxBytes", "maxModels", "maxTotalBytes", "models"]);
   assert.deepEqual(j.models.map((m: { name: string }) => m.name), ["A.vrm", "b.vrm", "c.vrm"]);
   assert.equal(j.active, "b.vrm");
   assert.equal(j.maxBytes, 5 * MiB);
@@ -221,7 +221,7 @@ test("VRM 1.0 meta is normalised into title, authors, license, usage and express
   assert.ok(usage("Sexual use", "Allowed"));
   assert.ok(usage("Political or religious use", "Not allowed"));
   assert.ok(usage("Antisocial or hateful use", "Allowed"));
-  assert.deepEqual([...e.expressions].sort(), ["aa", "blink", "happy", "wink"]);
+  assert.deepEqual([...e.expressions].toSorted(), ["aa", "blink", "happy", "wink"]);
   const long = by["Long.vrm"];
   assert.ok(texts(long.title).every((s) => s.length <= 500) && texts(long.title).some((s) => s.length === 500), "title cut at 500");
   assert.ok(texts(long.authors).every((s) => s.length <= 500) && texts(long.authors).some((s) => s.length === 500), "an author cut at 500");
@@ -256,7 +256,7 @@ test("VRM 0.x meta is normalised the same way, presets map to their 1.0 names an
   assert.ok(usage("Commercial use", "Disallow"));
   assert.ok(usage("Violent use", "Allow"));
   assert.ok(usage("Sexual use", "Disallow"));
-  assert.deepEqual([...e.expressions].sort(), ["MyFace", "Plain", "aa", "angry", "blink", "blinkLeft", "blinkRight", "ee", "happy", "ih", "lookUp", "neutral", "oh", "ou", "relaxed", "sad"].sort());
+  assert.deepEqual([...e.expressions].toSorted(), ["MyFace", "Plain", "aa", "angry", "blink", "blinkLeft", "blinkRight", "ee", "happy", "ih", "lookUp", "neutral", "oh", "ou", "relaxed", "sad"].toSorted());
 });
 
 // @spec DASH-MDL-014, DASH-MDL-024, DASH-MDL-025, DASH-MDL-026

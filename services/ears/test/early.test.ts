@@ -219,7 +219,7 @@ test("a streaming engine with early reply on: no snapshot or early event, the lo
       assert.equal(r.heard()[0]!.earlySeq, undefined);
       const warns = r.log.lines.filter((l) => l.level === "warn").map((l) => `${l.msg ?? ""} ${JSON.stringify(l.obj)}`).filter((w) => /early/i.test(w));
       assert.equal(warns.length, 1, "one warning");
-      assert.ok(warns[0]!.includes("ears.early.enabled") && warns[0]!.includes(name) && /streaming/i.test(warns[0]!), warns[0]);
+      assert.ok(warns[0]!.includes("ears.early.enabled") && warns[0]!.includes(name) && /streaming/i.test(warns[0]!), warns[0]!);
       assert.match(detail(r), /early reply off: streaming engine/);
       assert.doesNotMatch(detail(r), /early: \d/);
     }, { streaming: s.engine });

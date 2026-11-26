@@ -299,7 +299,7 @@ function scanSdkEnvNames(): string[] {
     }
   };
   for (const r of roots) walk(r);
-  return [...names].sort();
+  return [...names].toSorted();
 }
 
 // @spec LLM-CLAUDE-019
@@ -364,7 +364,7 @@ test("bedrock: no environment variable changes the signing credential, region, e
 // @spec LLM-CLAUDE-013
 test("claude api live smoke (set ANTHROPIC_API_KEY and COHOST_LIVE_CLAUDE_MODEL to run)", { skip: !process.env.ANTHROPIC_API_KEY || !process.env.COHOST_LIVE_CLAUDE_MODEL }, async () => {
   const p = new AnthropicProvider(llmCfg({ provider: "anthropic", model: process.env.COHOST_LIVE_CLAUDE_MODEL, claude: { api_key: "" } }));
-  assert.equal(await p.ping(), true, p.lastError);
+  assert.equal(await p.ping(), true, p.lastError ?? "no lastError");
   const out = await p.chat(user("Reply with the single word: ok"), { maxTokens: 512 });
   assert.ok(out.length > 0);
 });
@@ -469,7 +469,7 @@ test("every tag working-memory renders at the start of a chat, voice or screen l
   ctx.push(ev("chat.message", { platform: "twitch", user: "viewer", text: "hello", isMod: false, isSub: false, mentionsCohost: false }, 1));
   ctx.push(ev("speech.heard", { speaker: "Streamer", text: "hi chat", durationMs: 500 }, 2));
   ctx.push(ev("vision.summary", { text: "a menu", changed: true }, 3));
-  ctx.pushSelf("welcome", "happy");
+  ctx.pushSelf("welcome", "happy", 4);
   const lines = ctx.transcript("Coco").split("\n");
   const tags = lines.map((l) => /^\[[a-z]+\]/.exec(l)?.[0]);
   assert.equal(lines.length, 4);
@@ -642,8 +642,10 @@ test("claude: complete() and stream() prepend a (begin) user turn when the turns
     const onlySystem = await request(kind, call, [{ role: "system", content: "s" }]);
     assert.deepEqual(onlySystem.body.messages, [begin], `${kind} ${call}`);
     const startsAssistant = await request(kind, call, [{ role: "assistant", content: "hello" }, { role: "user", content: "hi" }]);
-    assert.deepEqual(startsAssistant.body.messages[0], begin, `${kind} ${call}`);
-    assert.equal(startsAssistant.body.messages.length, 3);
+    const sent = startsAssistant.body.messages;
+    assert.ok(Array.isArray(sent), `${kind} ${call}`);
+    assert.deepEqual(sent[0], begin, `${kind} ${call}`);
+    assert.equal(sent.length, 3);
     const startsUser = await request(kind, call, user("hi"));
     assert.deepEqual(startsUser.body.messages, [{ role: "user", content: "hi" }]);
   }
@@ -700,7 +702,8 @@ test("json: true sends no stop sequences on complete() of any real provider", as
   await (new Ollama(llmCfg({ provider: "ollama" }), b.base) as any).complete(user("hi"), { json: true });
   await (new OpenAICompatible(llmCfg({ openai: { base_url: `${b.base}/v1` } })) as any).complete(user("hi"), { json: true });
   assert.equal(b.seen.length, 2);
-  assert.equal("stop" in (b.seen[0]!.body.options ?? {}), false, "ollama");
+  const ollamaOptions = b.seen[0]!.body.options;
+  assert.equal(typeof ollamaOptions === "object" && ollamaOptions !== null && "stop" in ollamaOptions, false, "ollama");
   assert.equal("stop" in b.seen[1]!.body, false, "openai");
 });
 
@@ -1093,7 +1096,9 @@ test("claude and bedrock: stop_reason tool_use maps to tool_calls, max_tokens to
       for (const [reason, finish] of [["tool_use", "tool_calls"], ["max_tokens", "length"], ["refusal", "refusal"]] as const) {
         const file = call === "complete" ? `${kind}-tool-use-thinking.json` : `${kind}-stream-tool-use.sse`;
         const body = fixture(file).replace(/"stop_reason": ?"tool_use"/, `"stop_reason": "${reason}"`);
-        const b = await claudeBackend(({ res }) => (call === "complete" ? (res.writeHead(200, { "content-type": "application/json" }), res.end(body)) : sendSse(res, body)));
+        const b = await claudeBackend(({ res }) => {
+          if (call === "complete") { res.writeHead(200, { "content-type": "application/json" }); res.end(body); } else sendSse(res, body);
+        });
         const p = claude(kind, b.fetch);
         const r = call === "complete" ? await p.complete(user("hi"), { tools: [weatherTool] }) : (await collect(p.stream(user("hi"), { tools: [weatherTool] }))).at(-1).result;
         assert.equal(r.finish, finish, `${kind} ${call} ${reason}`);

@@ -26,7 +26,7 @@ test("startup: idle, then the cortex group exists (resetGroup), then subscribe a
   assert.equal(o.group, "cortex");
   assert.equal(o.start, "latest");
   assert.equal("fromNow" in o, false);
-  assert.deepEqual([...(o.types as string[])].sort(), [
+  assert.deepEqual([...(o.types as string[])].toSorted(), [
     "affect.state", "attention.focus", "attention.resolve", "brain.clause", "brain.say", "chat.message", "chat.removed", "control",
     "memory.notes.reply", "memory.recall.reply", "memory.viewer", "speech.heard", "tool.catalog", "tool.result", "vision.summary", "voice.done", "voice.failed", "voice.playing", "voice.stop", "voice.utterance",
   ]);
@@ -51,7 +51,7 @@ test("startup: ready waits for the group; a failed resetGroup never reports read
 });
 
 const llmWith = (chat: () => Promise<string>): ChatProvider =>
-  ({ name: "fake", model: "m", chat, ping: async () => true, lastError: "boom", pingIsNominal: true });
+  ({ name: "fake", model: "m", chat, complete: async () => { throw new Error("not used"); }, stream: () => { throw new Error("not used"); }, ping: async () => true, lastError: "boom", pingIsNominal: true });
 
 // @spec CTX-HEALTH-003
 test("trackLlm: every chat outcome feeds the dependency: failure down, success ok again", async () => {

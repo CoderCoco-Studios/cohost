@@ -232,7 +232,7 @@ class CallAssembler { // @spec LLM-TOOL-004, LLM-TOOL-007, LLM-TOOL-022, LLM-TOO
   drop(i: number): void { this.calls.delete(i); }
   build(capped: boolean, dropCut: boolean): ToolCall[] {
     const out: ToolCall[] = [];
-    for (const i of [...this.calls.keys()].sort((a, b) => a - b)) {
+    for (const i of [...this.calls.keys()].toSorted((a, b) => a - b)) {
       const c = this.calls.get(i)!;
       // A call the cap cut before its arguments began (no arguments, or blank) is incomplete too.
       const unbegun = c.args === undefined || (typeof c.args === "string" && c.args.trim() === "");
@@ -534,7 +534,7 @@ async function* streamReply(plan: StreamPlan, messages: ChatMessage[], opts: Cha
       yield { type: "tool_call", call }; // @spec LLM-STREAM-003, LLM-STREAM-006, LLM-STREAM-012, LLM-STREAM-032
       throwIfAborted(); // @spec LLM-STREAM-026
     }
-    const ordered = [...blocks].sort(([a], [b]) => a - b).map(([, block]) => block);
+    const ordered = [...blocks].toSorted(([a], [b]) => a - b).map(([, block]) => block);
     const continuation = refused ? undefined : plan.continuation?.(ordered); // @spec LLM-TOOL-014, LLM-STREAM-038
     yield { type: "done", result: resultOf(trimmer.raw, finishOf(capped, asked, toolCalls, refused), toolCalls, continuation) }; // @spec LLM-IF-009, LLM-STREAM-009, LLM-STREAM-028, LLM-STREAM-033
   } finally {

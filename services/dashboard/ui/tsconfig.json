@@ -3,8 +3,8 @@
   // `tsc -p services/dashboard/ui --noEmit` after `tsc -b` (DASH-BUILD-008).
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",

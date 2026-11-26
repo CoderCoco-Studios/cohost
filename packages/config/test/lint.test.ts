@@ -16,7 +16,7 @@ interface OxlintConfig {
   plugins?: string[];
   categories?: Record<string, Severity>;
   rules?: Record<string, RuleSetting>;
-  overrides?: { files: string[]; rules?: Record<string, RuleSetting> }[];
+  overrides?: { files: string[]; plugins?: string[]; rules?: Record<string, RuleSetting> }[];
 }
 
 /** JSON with whole-line `//` comments, the form the repository's tsconfig and oxlint files use. */
@@ -32,7 +32,7 @@ const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encodin
 test(".oxlintrc.json is the only oxlint configuration and turns on four plugins and two categories as errors", () => {
   const configs = tracked.filter((f) => /(^|\/)\.?oxlintrc(\.[a-z]+)?$|(^|\/)oxlint\.config\.[a-z]+$/.test(f));
   assert.deepEqual(configs, [RC]);
-  assert.deepEqual([...(rc.plugins ?? [])].sort(), ["eslint", "oxc", "typescript", "unicorn"]);
+  assert.deepEqual([...(rc.plugins ?? [])].toSorted(), ["eslint", "oxc", "typescript", "unicorn"]);
   assert.deepEqual(rc.categories, { correctness: "error", suspicious: "error" });
 });
 
@@ -54,7 +54,7 @@ test("the promise rules are errors, no override turns them off, and node:test's 
   assert.ok(Array.isArray(floating));
   const safe = (floating[1] as { allowForKnownSafeCalls?: { from: string; package?: string; name: string | string[] }[] }).allowForKnownSafeCalls ?? [];
   const fromNodeTest = safe.filter((s) => s.from === "package" && s.package === "node:test").flatMap((s) => (Array.isArray(s.name) ? s.name : [s.name]));
-  assert.deepEqual(fromNodeTest.sort(), ["after", "afterEach", "before", "beforeEach", "describe", "it", "suite", "test"]);
+  assert.deepEqual(fromNodeTest.toSorted(), ["after", "afterEach", "before", "beforeEach", "describe", "it", "suite", "test"]);
 });
 
 /** Rules set to `off` (`"off"` or `["off", …]`) in `.oxlintrc.json` with no `//` comment above them (over a run of `off` lines). */
@@ -102,10 +102,57 @@ test("each test directory has a tsconfig.json with the project's compiler option
 test("the root tsconfig.json is a solution file, and no tsconfig sets baseUrl", () => {
   const root = parseJsonc(readRepo("tsconfig.json")) as Record<string, unknown>;
   assert.deepEqual(root.files, []);
-  assert.deepEqual(Object.keys(root).sort(), ["files", "references"]);
+  assert.deepEqual(Object.keys(root).toSorted(), ["files", "references"]);
   const tsconfigs = tracked.filter((f) => /(^|\/)tsconfig[^/]*\.json$/.test(f));
   assert.ok(tsconfigs.length > 20);
   for (const f of tsconfigs) assert.doesNotMatch(readRepo(f), /"baseUrl"/, `${f} sets baseUrl`);
+});
+
+const base = parseJsonc(readRepo("tsconfig.base.json")) as { compilerOptions: Record<string, unknown> };
+
+/** The `//` comment lines directly above `"<rule>":` in `.oxlintrc.json`, joined. */
+const commentAbove = (rule: string): string => {
+  const lines = rcText.split("\n");
+  let i = lines.findIndex((l) => l.trimStart().startsWith(`"${rule}":`));
+  assert.ok(i > 0, `${rule} is in ${RC}`);
+  const out: string[] = [];
+  while (--i >= 0 && lines[i]!.trimStart().startsWith("//")) out.unshift(lines[i]!.trim());
+  return out.join(" ");
+};
+
+// @spec DEPLOY-LINT-008
+test("tsconfig.base.json sets noImplicitReturns, and consistent-return stays off naming it as the check", () => {
+  assert.equal(base.compilerOptions.noImplicitReturns, true);
+  assert.equal(severity(rc.rules!["typescript/consistent-return"]!), "off");
+  assert.match(commentAbove("typescript/consistent-return"), /noImplicitReturns/);
+});
+
+// @spec DEPLOY-LINT-009
+test("the workspace, the dashboard UI's type check and its bundle are on ES2024, and sort and reverse whose result is used are errors", () => {
+  assert.equal(base.compilerOptions.target, "ES2024");
+  assert.deepEqual(base.compilerOptions.lib, ["ES2024"]);
+  const ui = parseJsonc(readRepo("services/dashboard/ui/tsconfig.json")) as { compilerOptions: Record<string, unknown> };
+  assert.equal(ui.compilerOptions.target, "ES2024");
+  assert.deepEqual(ui.compilerOptions.lib, ["ES2024", "DOM", "DOM.Iterable"]);
+  assert.match(readRepo("services/dashboard/ui/vite.config.ts"), /^\s*target: "es2024",$/m);
+  for (const r of ["unicorn/no-array-sort", "unicorn/no-array-reverse"]) assert.equal(severity(rc.rules![r]!), "error", r);
+});
+
+// @spec DEPLOY-LINT-010
+test("the dashboard UI is linted with the react plugin and the two react-hooks rules as errors", () => {
+  const ui = (rc.overrides ?? []).filter((o) => o.plugins?.includes("react"));
+  assert.equal(ui.length, 1, "one override adds the react plugin");
+  const o = ui[0]!;
+  assert.deepEqual([...o.files].toSorted(), ["services/dashboard/test/ui/**", "services/dashboard/ui/**"]);
+  assert.deepEqual([...o.plugins!].toSorted(), ["eslint", "oxc", "react", "typescript", "unicorn"]);
+  for (const r of ["react-hooks/rules-of-hooks", "react-hooks/exhaustive-deps"]) assert.equal(o.rules?.[r] && severity(o.rules[r]), "error", r);
+  // The rule names resolve: an effect that reads a value its dependency list leaves out fails under the same settings.
+  const dir = mkdtempSync(join(tmpdir(), "cohost-lint-react-"));
+  writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({ plugins: o.plugins, categories: {}, rules: o.rules }));
+  writeFileSync(join(dir, "c.tsx"), 'import { useEffect } from "react";\nexport function C({ a }: { a: number }) {\n  useEffect(() => { console.log(a); }, []);\n  return null;\n}\n');
+  const r = spawnSync(join(repoRoot, "node_modules/.bin/oxlint"), ["--deny-warnings", "-c", join(dir, ".oxlintrc.json"), join(dir, "c.tsx")], { cwd: dir, encoding: "utf8" });
+  assert.notEqual(r.status, 0, "a missing dependency is reported");
+  assert.match(r.stdout, /exhaustive-deps/);
 });
 
 const DISABLE = ["oxlint", "disable"].join("-");

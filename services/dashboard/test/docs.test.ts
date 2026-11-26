@@ -110,7 +110,7 @@ test("the docs directory is found under the workspace root, or the working direc
 
 // @spec DASH-DOCS-001
 test("serving never writes to the docs directory", async () => {
-  const snap = () => JSON.stringify(readdirSync(dist, { recursive: true }).map(String).sort().map((f) => [f, statSync(join(dist, f)).mtimeMs]));
+  const snap = () => JSON.stringify(readdirSync(dist, { recursive: true }).map(String).toSorted().map((f) => [f, statSync(join(dist, f)).mtimeMs]));
   const before = snap();
   for (const p of ["/cohost/", "/cohost/guide/operate/health", "/cohost/nope", "/cohost/assets/app.abc123.js"]) await get(p);
   assert.equal(snap(), before);
@@ -220,7 +220,7 @@ test("If-None-Match listing the etag (with or without W/) or * is a 304 with onl
   for (const inm of [etag, unweak, `"zzz", ${etag}`, `W/"other",${unweak}`, "*"]) {
     const r = await get("/cohost/assets/app.abc123.js", { "if-none-match": inm });
     assert.equal(r.status, 304, inm);
-    assert.deepEqual(Object.keys(r.headers).filter((k) => !["date", "connection", "keep-alive"].includes(k)).sort(), ["cache-control", "etag"], inm);
+    assert.deepEqual(Object.keys(r.headers).filter((k) => !["date", "connection", "keep-alive"].includes(k)).toSorted(), ["cache-control", "etag"], inm);
     assert.equal(r.headers["cache-control"], "public, max-age=31536000, immutable");
     assert.equal(r.body, "");
   }

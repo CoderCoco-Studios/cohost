@@ -113,7 +113,7 @@ test("openai-compatible: trailing slashes, bearer auth, config defaults and a fa
     let body = ""; for await (const c of req) body += c;
     seen.url = req.url; seen.auth = req.headers.authorization;
     lastBody = body ? JSON.parse(body) : {};
-    if (lastBody.model === "broken") { res.statusCode = 502; return res.end("upstream down"); }
+    if (lastBody.model === "broken") { res.statusCode = 502; res.end("upstream down"); return; }
     res.end(JSON.stringify({ choices: [{ message: { content: "  hi there \n" } }] }));
   });
   await new Promise<void>((r) => s.listen(0, r));

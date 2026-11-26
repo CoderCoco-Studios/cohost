@@ -171,7 +171,7 @@ test("appendFrame adds one entry with the encodeFrame fields to <prefix>:audio.<
     const rows = (await raw.xrangeBuffer(key, "-", "+")) as [Buffer, Buffer[]][];
     assert.equal(rows[0]![0].toString(), id);
     const f = rows[0]![1].map((x) => x.toString("latin1"));
-    for (const [k, v] of [["v", "1"], ["seq", "7"], ["rate", "16000"], ["ch", "1"], ["utt", "u1"], ["last", "1"]]) assert.equal(f[f.indexOf(k!) + 1], v, k);
+    for (const [k, v] of [["v", "1"], ["seq", "7"], ["rate", "16000"], ["ch", "1"], ["utt", "u1"], ["last", "1"]] as const) assert.equal(f[f.indexOf(k) + 1], v, k);
   });
 });
 

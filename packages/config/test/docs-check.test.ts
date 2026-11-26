@@ -5,9 +5,9 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.ts";
-import { extendRepo, guide, INDEX, RUST_BUS, CONNECTOR, GUIDES_TABLE, TESTED_TABLE, LAYOUT_TABLE, SERVICE_README, RUST_README, CONSTANTS, FIXTURES_URL, EXT, SITE } from "./helpers/docs-extend-fixture.ts";
-import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
+import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.js";
+import { extendRepo, guide, INDEX, RUST_BUS, CONNECTOR, GUIDES_TABLE, TESTED_TABLE, LAYOUT_TABLE, SERVICE_README, RUST_README, CONSTANTS, FIXTURES_URL, EXT, SITE } from "./helpers/docs-extend-fixture.js";
+import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.js";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 const load = (p: string): Promise<any> => import(pathToFileURL(join(repoRoot, p)).href);
@@ -28,6 +28,12 @@ const miseTask = (name: string): MiseTask => {
   return t;
 };
 const frontmatter = (title: string, track: string, extra = "") => `---\ntitle: ${title}\ndescription: About ${title}.\ntrack: ${track}\n${extra}---\n\n`;
+/** One file of the base fixture tree; fails the test when the fixture has no such path. */
+const base = (p: string): string => {
+  const s = baseFiles()[p];
+  assert.ok(s !== undefined, `no base fixture file ${p}`);
+  return s;
+};
 
 function fails(r: { code: number | null; err: string; out: string }, re: RegExp) {
   assert.equal(r.code, 1, `expected exit 1; stdout: ${r.out} stderr: ${r.err}`);
@@ -90,7 +96,7 @@ test("ignoreDeadLinks is unset or exactly 'localhostLinks'", async () => {
 
 // @spec DOCS-BUILD-004
 test("the docs check rejects a config that ignores more than localhost links", () => {
-  const cfg = baseFiles()["docs/.vitepress/config.ts"].replace("base:", "ignoreDeadLinks: true, base:");
+  const cfg = base("docs/.vitepress/config.ts").replace("base:", "ignoreDeadLinks: true, base:");
   fails(check({ "docs/.vitepress/config.ts": cfg }), /config\.ts.*DOCS-BUILD-004/);
 });
 
@@ -106,7 +112,7 @@ test("a clean tree exits 0 and a problem line names the file and line and exits 
 // @spec DOCS-BUILD-006
 test("no docs task writes a markdown page", () => {
   const docs = miseTasks().filter((t) => t.name.startsWith("docs:"));
-  assert.deepEqual(docs.map((t) => t.name).sort(), ["docs:build", "docs:dev", "docs:preview"]);
+  assert.deepEqual(docs.map((t) => t.name).toSorted(), ["docs:build", "docs:dev", "docs:preview"]);
   for (const t of docs) {
     for (const step of t.run) assert.match(step.trim(), /^(vitepress (dev|build|preview) docs|node scripts\/docs-check\.mjs( --dist)?)$/, t.name);
     // the one task a docs task depends on installs the packages; it writes nothing under docs/
@@ -158,7 +164,7 @@ test("srcExclude lists the unpublished paths", async () => {
 
 // @spec DOCS-PUB-001
 test("the docs check rejects a config missing a required srcExclude pattern", () => {
-  const cfg = baseFiles()["docs/.vitepress/config.ts"].replace("'lid/**', ", "");
+  const cfg = base("docs/.vitepress/config.ts").replace("'lid/**', ", "");
   fails(check({ "docs/.vitepress/config.ts": cfg }), /DOCS-PUB-001.*lid\/\*\*/);
 });
 
@@ -222,28 +228,28 @@ test("the real sidebar lists every page of the LLD page tree under its section a
 // @spec DOCS-IA-002
 test("a page named in the tree but missing, or listed out of order, fails", () => {
   fails(check({ "docs/guide/connect/twitch.md": null }), /guide\/connect\/twitch\.md.*DOCS-IA-002/);
-  const swapped = baseFiles()["docs/.vitepress/sidebar.mjs"]
+  const swapped = base("docs/.vitepress/sidebar.mjs")
     .replace("{ text: 'What you need', link: '/guide/install/prerequisites' },\n      { text: 'Try it', link: '/guide/install/first-run' },", "{ text: 'Try it', link: '/guide/install/first-run' },\n      { text: 'What you need', link: '/guide/install/prerequisites' },");
   fails(check({ "docs/.vitepress/sidebar.mjs": swapped }), /DOCS-IA-002.*order/);
 });
 
 // @spec DOCS-IA-003
 test("a sidebar link to no published page fails", () => {
-  const bad = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("link: '/start/glossary'", "link: '/start/nowhere'");
+  const bad = base("docs/.vitepress/sidebar.mjs").replace("link: '/start/glossary'", "link: '/start/nowhere'");
   fails(check({ "docs/.vitepress/sidebar.mjs": bad }), /DOCS-IA-003.*\/start\/nowhere/);
 });
 
 // @spec DOCS-IA-003
 test("a nav link to no published page fails", () => {
-  const bad = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("link: '/project/spec-driven' },\n];", "link: '/project/nowhere' },\n];");
+  const bad = base("docs/.vitepress/sidebar.mjs").replace("link: '/project/spec-driven' },\n];", "link: '/project/nowhere' },\n];");
   fails(check({ "docs/.vitepress/sidebar.mjs": bad }), /DOCS-IA-003.*\/project\/nowhere/);
 });
 
 // @spec DOCS-IA-004
 test("a page missing from the sidebar, or listed twice, fails", () => {
-  const missing = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n", "");
+  const missing = base("docs/.vitepress/sidebar.mjs").replace("    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n", "");
   fails(check({ "docs/.vitepress/sidebar.mjs": missing }), /guide\/troubleshooting\.md.*DOCS-IA-004/);
-  const twice = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n", "    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n    { text: 'Again', link: '/guide/troubleshooting' },\n");
+  const twice = base("docs/.vitepress/sidebar.mjs").replace("    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n", "    { text: 'Troubleshooting', link: '/guide/troubleshooting' },\n    { text: 'Again', link: '/guide/troubleshooting' },\n");
   fails(check({ "docs/.vitepress/sidebar.mjs": twice }), /DOCS-IA-004.*twice|DOCS-IA-004.*2 times/);
 });
 
@@ -261,13 +267,13 @@ test("section and group collapse flags follow the design", async () => {
 
 // @spec DOCS-IA-005
 test("the docs check fails a wrong collapsed flag", () => {
-  const bad = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("{ text: 'Install', collapsed: false", "{ text: 'Install', collapsed: true");
+  const bad = base("docs/.vitepress/sidebar.mjs").replace("{ text: 'Install', collapsed: false", "{ text: 'Install', collapsed: true");
   fails(check({ "docs/.vitepress/sidebar.mjs": bad }), /DOCS-IA-005.*Install/);
 });
 
 // @spec DOCS-IA-006
 test("the glossary has no prev/next and How it works points next at What you need", () => {
-  fails(check({ "docs/start/glossary.md": baseFiles()["docs/start/glossary.md"].replace("next: false\n", "") }), /glossary\.md.*DOCS-IA-006/);
+  fails(check({ "docs/start/glossary.md": base("docs/start/glossary.md").replace("next: false\n", "") }), /glossary\.md.*DOCS-IA-006/);
   fails(check({ "docs/start/how-it-works.md": page({ title: "How it works", description: "d", track: "start" }, "# How it works") }), /how-it-works\.md.*DOCS-IA-006/);
   fails(check({ "docs/start/how-it-works.md": page({ title: "How it works", description: "d", track: "start", next: "{ text: x, link: /start/glossary }" }, "# How it works") }), /how-it-works\.md.*DOCS-IA-006/);
 });
@@ -284,13 +290,13 @@ test("the nav links the four tracks in order", async () => {
 test("the GitHub repository is a social link and the check rejects a wrong nav", async () => {
   const cfg = (await load("docs/.vitepress/config.ts")).default;
   assert.ok(cfg.themeConfig.socialLinks.some((s: any) => s.icon === "github" && s.link === "https://github.com/CoderCoco-Studios/cohost"));
-  const bad = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("{ text: 'Guide', link: '/guide/install/prerequisites' },\n  { text: 'Advanced', link: '/advanced/dev-setup' },", "{ text: 'Advanced', link: '/advanced/dev-setup' },\n  { text: 'Guide', link: '/guide/install/prerequisites' },");
+  const bad = base("docs/.vitepress/sidebar.mjs").replace("{ text: 'Guide', link: '/guide/install/prerequisites' },\n  { text: 'Advanced', link: '/advanced/dev-setup' },", "{ text: 'Advanced', link: '/advanced/dev-setup' },\n  { text: 'Guide', link: '/guide/install/prerequisites' },");
   fails(check({ "docs/.vitepress/sidebar.mjs": bad }), /DOCS-IA-007/);
 });
 
 // @spec DOCS-IA-008
 test("the home page's three entry actions link the three starting pages", () => {
-  const home = baseFiles()["docs/index.md"].replace("link: /advanced/dev-setup", "link: /advanced/nowhere");
+  const home = base("docs/index.md").replace("link: /advanced/dev-setup", "link: /advanced/nowhere");
   fails(check({ "docs/index.md": home }), /docs\/index\.md.*DOCS-IA-008/);
   passes(check());
 });
@@ -307,7 +313,7 @@ test("the real sidebar nests at most four levels, deeper only inside Architectur
 
 // @spec DOCS-IA-009
 test("a third group level outside Architecture fails", () => {
-  const bad = baseFiles()["docs/.vitepress/sidebar.mjs"].replace("{ text: 'Twitch chat', link: '/guide/connect/twitch' }", "{ text: 'Deep', collapsed: true, items: [{ text: 'Twitch chat', link: '/guide/connect/twitch' }] }");
+  const bad = base("docs/.vitepress/sidebar.mjs").replace("{ text: 'Twitch chat', link: '/guide/connect/twitch' }", "{ text: 'Deep', collapsed: true, items: [{ text: 'Twitch chat', link: '/guide/connect/twitch' }] }");
   fails(check({ "docs/.vitepress/sidebar.mjs": bad }), /DOCS-IA-009/);
 });
 
@@ -320,7 +326,7 @@ test("frontmatter title, description and a valid track are required", () => {
   fails(check({ [p]: "---\ntitle: T\ndescription: ''\ntrack: simple\n---\n\n# T\n" }), /troubleshooting\.md.*DOCS-PAGE-001.*description/);
   fails(check({ [p]: "---\ntitle: T\ndescription: d\ntrack: beginner\n---\n\n# T\n" }), /troubleshooting\.md.*DOCS-PAGE-001.*track/);
   fails(check({ [p]: "# T\n\nno frontmatter\n" }), /troubleshooting\.md.*DOCS-PAGE-001/);
-  fails(check({ "docs/index.md": baseFiles()["docs/index.md"].replace("track: start", "track: simple") }), /docs\/index\.md.*DOCS-PAGE-001/);
+  fails(check({ "docs/index.md": base("docs/index.md").replace("track: start", "track: simple") }), /docs\/index\.md.*DOCS-PAGE-001/);
 });
 
 // @spec DOCS-PAGE-002
@@ -352,14 +358,14 @@ test("previously, formerly, deprecated and legacy fail in prose unless allowed",
   for (const w of ["previously", "Formerly", "DEPRECATED", "legacy"]) fails(check({ [p]: frontmatter("T", "simple") + `# T\n\nIt was ${w} fine.\n` }), new RegExp(`troubleshooting\\.md:9.*DOCS-PAGE-004.*${w}`, "i"));
   passes(check({ [p]: frontmatter("T", "simple") + "# T\n\nIt was legacy. <!-- docs-check: allow -->\n" }));
   passes(check({ [p]: frontmatter("T", "simple", "verified: 1a2b3c4\n") + "# T\n\nA `legacy` span, a [legacy link](x.md) and a legacyfoo word.\n\n## legacy heading\n\n```sh\n# legacy\n```\n".replace("(x.md)", "(troubleshooting.md)") }));
-  fails(check({ README: null, "README.md": baseFiles()["README.md"].replace("A co-host.", "A legacy co-host.") }), /README\.md:3.*DOCS-PAGE-004/);
+  fails(check({ README: null, "README.md": base("README.md").replace("A co-host.", "A legacy co-host.") }), /README\.md:3.*DOCS-PAGE-004/);
   passes(check({ "docs/project/verification-log.md": frontmatter("Verification log", "project") + "# V\n\nFormerly deprecated legacy previously.\n" }));
 });
 
 // @spec DOCS-PAGE-005
 test("install and connect step pages carry the three headings and link troubleshooting from 'If it didn't'", () => {
   const p = "docs/guide/connect/twitch.md";
-  const good = baseFiles()[p];
+  const good = base(p);
   fails(check({ [p]: good.replace("## How you know it worked", "## It worked") }), /twitch\.md.*DOCS-PAGE-005.*How you know it worked/);
   fails(check({ [p]: good.replace("## What you need", "## Needs") }), /DOCS-PAGE-005.*What you need/);
   fails(check({ [p]: good.replace("## If it didn't", "## Problems") }), /DOCS-PAGE-005.*If it didn't/);
@@ -395,7 +401,7 @@ test("a page needs exactly one H1, fenced comment lines excepted", () => {
 
 // @spec DOCS-GLOSS-001
 test("the glossary lists unique terms with match lists and one heading per id", () => {
-  const g = baseFiles()["docs/start/glossary.md"];
+  const g = base("docs/start/glossary.md");
   fails(check({ "docs/start/glossary.md": g.replace("### redis {#redis}", "### Redis") .replace("### Redis", "### Cache") }), /glossary\.md.*DOCS-GLOSS-001.*redis/);
   fails(check({ "docs/start/glossary.md": g.replace("  - id: osc\n    match: [osc]", "  - id: osc\n    match: []") }), /DOCS-GLOSS-001.*osc/);
   fails(check({ "docs/start/glossary.md": g.replace("  - id: osc\n", "  - id: vrm\n") }), /DOCS-GLOSS-001.*vrm/);
@@ -427,18 +433,18 @@ test("the glossary itself is exempt from the link rule", () => {
 // @spec DOCS-GLOSS-003
 test("the glossary must define the required term ids", () => {
   assert.equal(REQUIRED_TERMS.length, 36);
-  const g = baseFiles()["docs/start/glossary.md"];
+  const g = base("docs/start/glossary.md");
   fails(check({ "docs/start/glossary.md": g.replace(/  - id: pgvector\n    match: \[pgvector\]\n/, "").replace("### pgvector {#pgvector}", "### nothing {#nothing}") }), /glossary\.md.*DOCS-GLOSS-003.*pgvector/);
 });
 
 // @spec DOCS-GLOSS-004
 test("relative and root-relative glossary links count, with or without .md", () => {
   const p = "docs/guide/connect/twitch.md";
-  const good = baseFiles()[p];
+  const good = base(p);
   for (const href of ["../../start/glossary.md#redis", "../../start/glossary#redis", "/start/glossary#redis", "/start/glossary.md#redis"]) {
     passes(check({ [p]: good.replace("A PC.", `[Redis](${href}) runs.`) }));
   }
-  passes(check({ "docs/start/how-it-works.md": baseFiles()["docs/start/how-it-works.md"].replace("It listens.", "[Redis](glossary#redis) runs.") }));
+  passes(check({ "docs/start/how-it-works.md": base("docs/start/how-it-works.md").replace("It listens.", "[Redis](glossary#redis) runs.") }));
   fails(check({ [p]: good.replace("A PC.", "Redis runs, see [x](../../start/glossary#docker).") }), /DOCS-GLOSS-002.*redis/);
   fails(check({ [p]: good.replace("A PC.", "Redis runs, see [x](../../start/other.md#redis).") }), /DOCS-GLOSS-002.*redis/);
 });
@@ -467,8 +473,8 @@ test("a GitHub blob or tree link to this repository must name an existing file o
   fails(check({ [p]: mk(`[a](${gh}/blob/main/nope.json)`) }), /troubleshooting\.md:9.*DOCS-LINK-002.*nope\.json/);
   fails(check({ [p]: mk(`[a](${gh}/tree/main/package.json)`) }), /DOCS-LINK-002/);
   fails(check({ [p]: mk(`[a](${gh}/blob/main/examples/modules)`) }), /DOCS-LINK-002/);
-  fails(check({ "README.md": baseFiles()["README.md"].replace("A co-host.", `A [x](${gh}/blob/main/zzz) co-host.`) }), /README\.md.*DOCS-LINK-002/);
-  fails(check({ "examples/README.md": baseFiles()["examples/README.md"] + `[x](${gh}/blob/main/zzz)\n` }), /examples\/README\.md.*DOCS-LINK-002/);
+  fails(check({ "README.md": base("README.md").replace("A co-host.", `A [x](${gh}/blob/main/zzz) co-host.`) }), /README\.md.*DOCS-LINK-002/);
+  fails(check({ "examples/README.md": base("examples/README.md") + `[x](${gh}/blob/main/zzz)\n` }), /examples\/README\.md.*DOCS-LINK-002/);
   passes(check({ [p]: mk("[o](https://github.com/OtherOrg/other/blob/main/nope)") }));
 });
 
@@ -477,11 +483,11 @@ test("README and examples links to the published site must map to a built file h
   const built = { "index.html": "<html></html>", "guide/install/real-install.html": '<h2 id="x">x</h2>', "advanced/extend/hooks.html": "<html></html>" };
   passes(check({}, ["--dist"], distRaw(built)));
   fails(check({}, ["--dist"], distRaw({ "index.html": "", "advanced/extend/hooks.html": "" })), /README\.md.*DOCS-LINK-003.*real-install/);
-  const frag = { "README.md": baseFiles()["README.md"].replace("real-install)", "real-install#nope)") };
+  const frag = { "README.md": base("README.md").replace("real-install)", "real-install#nope)") };
   fails(check(frag, ["--dist"], distRaw(built)), /DOCS-LINK-003.*#nope/);
-  passes(check({ "README.md": baseFiles()["README.md"].replace("real-install)", "real-install#x)") }, ["--dist"], distRaw(built)));
+  passes(check({ "README.md": base("README.md").replace("real-install)", "real-install#x)") }, ["--dist"], distRaw(built)));
   // path ending in / maps to index.html
-  const idx = { "examples/README.md": baseFiles()["examples/README.md"] + "[t](https://codercoco-studios.github.io/cohost/advanced/testing/)\n" };
+  const idx = { "examples/README.md": base("examples/README.md") + "[t](https://codercoco-studios.github.io/cohost/advanced/testing/)\n" };
   fails(check(idx, ["--dist"], distRaw(built)), /examples\/README\.md.*DOCS-LINK-003.*testing/);
   passes(check(idx, ["--dist"], distRaw({ ...built, "advanced/testing/index.html": "<html></html>" })));
   fails(check({}, ["--dist"], distRaw({ "index.html": "" , "advanced/extend/hooks.html": "" })), /DOCS-LINK-003/);
@@ -509,7 +515,7 @@ test("mise run and mise watch in shell fences must name a task mise.toml defines
   passes(check({ [FP]: shellPage("mise run nope\n$ mise run nope", "console") }));
   passes(check({ [FP]: shellPage("# mise run nope in a comment-first fence\nmise run nope") }));
   passes(check({ [FP]: shellPage("mise run nope", "text") }));
-  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard", "mise run dashbord") }), /README\.md.*DOCS-FACT-001/);
+  fails(check({ "README.md": base("README.md").replace("mise run dashboard", "mise run dashbord") }), /README\.md.*DOCS-FACT-001/);
   // with no mise.toml no task is defined
   fails(check({ "mise.toml": null }), /mise\.toml.*DOCS-FACT-001/);
 });
@@ -520,7 +526,7 @@ test("a command that runs pnpm or cargo fails unless it is a dependency edit, or
     fails(check({ [FP]: shellPage(cmd) }), /troubleshooting\.md:11.*DOCS-FACT-001.*runs (pnpm|cargo) directly/);
   }
   fails(check({ [FP]: shellPage("pnpm build") }), /DOCS-FACT-001.*"pnpm build"/);
-  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard", "pnpm dashboard") }), /README\.md.*DOCS-FACT-001.*pnpm dashboard/);
+  fails(check({ "README.md": base("README.md").replace("mise run dashboard", "pnpm dashboard") }), /README\.md.*DOCS-FACT-001.*pnpm dashboard/);
   passes(check({ [FP]: shellPage("pnpm add x\npnpm add -D x\npnpm --filter @cohost/bus add x\npnpm remove x\ncargo add serde\ncargo remove serde\ncargo add --manifest-path crates/cohost-bus/Cargo.toml serde") }));
   // an Extend page may run pnpm or cargo on code kept outside the checkout, but not on a path inside it
   const extSh = (cmds: string) => check(extendRepo({ [`${EXT}typescript-service.md`]: guide("Add a TypeScript service", `\`\`\`sh\n${cmds}\n\`\`\`\n`) }));
@@ -539,12 +545,12 @@ test("NAME= assignments in shell and env fences must be named on the environment
   fails(check({ [FP]: shellPage("NOPE_X=1", "env") }), /DOCS-FACT-002.*NOPE_X/);
   fails(check({ [FP]: shellPage("NOPE_X=1", "dotenv") }), /DOCS-FACT-002.*NOPE_X/);
   passes(check({ [FP]: shellPage("lowercase=1 echo hi\n# NOPE_X=1\nNOPE_X=1", "text") }));
-  fails(check({ "README.md": baseFiles()["README.md"].replace("mise run dashboard\n", "NOPE_Y=1 mise run dashboard\n") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
+  fails(check({ "README.md": base("README.md").replace("mise run dashboard\n", "NOPE_Y=1 mise run dashboard\n") }), /README\.md.*DOCS-FACT-002.*NOPE_Y/);
 });
 
 // @spec DOCS-FACT-003
 test("the environment page names every variable .env.example assigns or comments", () => {
-  const env = baseFiles()["docs/advanced/reference/env.md"];
+  const env = base("docs/advanced/reference/env.md");
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `LLM_PROVIDER`\n", "") }), /env\.md.*DOCS-FACT-003.*LLM_PROVIDER/);
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `COMPOSE_PROFILES`\n", "") }), /DOCS-FACT-003.*COMPOSE_PROFILES/);
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `LLM_PROVIDER`\n", "- LLM_PROVIDER in prose, not a code span\n") }), /DOCS-FACT-003.*LLM_PROVIDER/);
@@ -553,18 +559,18 @@ test("the environment page names every variable .env.example assigns or comments
 
 // @spec DOCS-FACT-004
 test("the environment page names every published host port with its compose default", () => {
-  const env = baseFiles()["docs/advanced/reference/env.md"];
+  const env = base("docs/advanced/reference/env.md");
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `6379`\n", "") }), /env\.md.*DOCS-FACT-004.*6379/);
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `11434`\n", "") }), /DOCS-FACT-004.*11434/);
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `3001`\n", "").replace("- `DASHBOARD_LAN_PORT`\n", "- `DASHBOARD_LAN_PORT`, nothing else\n") }), /DOCS-FACT-004.*3001/);
   fails(check({ "docs/advanced/reference/env.md": env.replace("- `3000`\n", "") }), /DOCS-FACT-004.*3000/);
-  fails(check({ "docker-compose.yml": baseFiles()["docker-compose.yml"] + '  extra:\n    ports:\n      - "8080:80"\n' }), /DOCS-FACT-004.*8080/);
-  passes(check({ "docker-compose.yml": baseFiles()["docker-compose.yml"] + '  extra:\n    ports:\n      - "127.0.0.1:6379:6379"\n' }));
+  fails(check({ "docker-compose.yml": base("docker-compose.yml") + '  extra:\n    ports:\n      - "8080:80"\n' }), /DOCS-FACT-004.*8080/);
+  passes(check({ "docker-compose.yml": base("docker-compose.yml") + '  extra:\n    ports:\n      - "127.0.0.1:6379:6379"\n' }));
 });
 
 // @spec DOCS-FACT-005
 test("the configuration page names every key path of config.example.yaml", () => {
-  const cfg = baseFiles()["docs/advanced/reference/config.md"];
+  const cfg = base("docs/advanced/reference/config.md");
   for (const path of ["llm", "llm.openai.base_url", "mouth.outputs.discord.gain_db", "mouth.list[].b"]) {
     const re = new RegExp(`- \`${path.replace(/[.[\]]/g, "\\$&")}\`\\n?`);
     fails(check({ "docs/advanced/reference/config.md": cfg.replace(re, "") }), new RegExp(`config\\.md.*DOCS-FACT-005.*${path.replace(/[.[\]]/g, "\\$&")}`));
@@ -577,9 +583,9 @@ test("the configuration page names every key path of config.example.yaml", () =>
 
 // @spec DOCS-FACT-006
 test("the bus events page names every registered event type", () => {
-  const ev = baseFiles()["docs/advanced/reference/events.md"];
+  const ev = base("docs/advanced/reference/events.md");
   fails(check({ "docs/advanced/reference/events.md": ev.replace("- `speech.heard`", "") }), /events\.md.*DOCS-FACT-006.*speech\.heard/);
-  fails(check({ "packages/bus/src/events.ts": baseFiles()["packages/bus/src/events.ts"].replace('  "speech.heard"', '  "voice.utterance": z.object({}),\n  "speech.heard"') }), /DOCS-FACT-006.*voice\.utterance/);
+  fails(check({ "packages/bus/src/events.ts": base("packages/bus/src/events.ts").replace('  "speech.heard"', '  "voice.utterance": z.object({}),\n  "speech.heard"') }), /DOCS-FACT-006.*voice\.utterance/);
 });
 
 // ---------------------------------------------------------------- Architecture excerpts
@@ -723,7 +729,7 @@ test("one decision page per decision document, whole and without frontmatter, su
   const { loadDesign } = await lib();
   await withTree(designTree(), async (dir) => {
     const d = loadDesign(dir);
-    assert.deepEqual(d.decisions.map((p: any) => p.slug).sort(), ["three", "two"]);
+    assert.deepEqual(d.decisions.map((p: any) => p.slug).toSorted(), ["three", "two"]);
     const two = d.decisions.find((p: any) => p.slug === "two");
     assert.equal(two.route, "advanced/architecture/decisions/two");
     assert.match(two.content, /# Decision: two\n\nBody of two\./);
@@ -854,11 +860,11 @@ test("every excerpt page carries track advanced, a title and a description", asy
     for (const p of [...d.design, ...d.segments, ...d.decisions]) {
       assert.equal(p.track, "advanced");
       assert.ok(p.title && p.description, p.slug);
-      const fm = /^---\n([\s\S]*?)\n---/.exec(p.content as string);
+      const fm = /^---\n([\s\S]*?)\n---/.exec(p.content as string)?.[1];
       assert.ok(fm, p.slug);
-      assert.match(fm![1], /^track: advanced$/m);
-      assert.match(fm![1], /^title: .+$/m);
-      assert.match(fm![1], /^description: .+$/m);
+      assert.match(fm, /^track: advanced$/m);
+      assert.match(fm, /^title: .+$/m);
+      assert.match(fm, /^description: .+$/m);
     }
     assert.equal(d.decisions.find((p: any) => p.slug === "three").title, "three");
   });
@@ -888,7 +894,7 @@ test("each route has a template and a *.paths.mjs loader that returns the pages'
 
 // ---------------------------------------------------------------- README
 
-const readmeWith = (fn: (t: string) => string) => ({ "README.md": fn(baseFiles()["README.md"]) });
+const readmeWith = (fn: (t: string) => string) => ({ "README.md": fn(base("README.md")) });
 
 // @spec DOCS-README-001
 test("README.md is at most 60 lines", () => {
@@ -930,7 +936,7 @@ test("README.md links the docs site", () => {
 
 // @spec DOCS-EX-001
 test("every README under examples/ is at most 30 lines and links the site", () => {
-  fails(check({ "examples/README.md": baseFiles()["examples/README.md"] + "\n".repeat(30) }), /examples\/README\.md.*DOCS-EX-001/);
+  fails(check({ "examples/README.md": base("examples/README.md") + "\n".repeat(30) }), /examples\/README\.md.*DOCS-EX-001/);
   fails(check({ "examples/README.md": "# Examples\n\n- `modules/`: a thing.\n" }), /examples\/README\.md.*DOCS-EX-001.*link/);
   fails(check({ "examples/modules/deep/README.md": "# deep\n" }), /examples\/modules\/deep\/README\.md.*DOCS-EX-001/);
 });
@@ -939,13 +945,13 @@ test("every README under examples/ is at most 30 lines and links the site", () =
 test("the examples README lists each directory with a description", () => {
   const files = { "examples/extra/run.sh": "echo\n" };
   fails(check(files), /examples\/README\.md.*DOCS-EX-003.*extra/);
-  passes(check({ ...files, "examples/README.md": baseFiles()["examples/README.md"] + "- `extra/`: a script to run.\n" }));
-  fails(check({ ...files, "examples/README.md": baseFiles()["examples/README.md"] + "- `extra/`\n" }), /DOCS-EX-003.*extra/);
+  passes(check({ ...files, "examples/README.md": base("examples/README.md") + "- `extra/`: a script to run.\n" }));
+  fails(check({ ...files, "examples/README.md": base("examples/README.md") + "- `extra/`\n" }), /DOCS-EX-003.*extra/);
 });
 
 // @spec DOCS-EX-004
 test("every examples directory holds a file other than its README", () => {
-  const files = { "examples/prose/README.md": "# p\n\n[docs](https://codercoco-studios.github.io/cohost/)\n", "examples/README.md": baseFiles()["examples/README.md"] + "- `prose/`: only prose here.\n" };
+  const files = { "examples/prose/README.md": "# p\n\n[docs](https://codercoco-studios.github.io/cohost/)\n", "examples/README.md": base("examples/README.md") + "- `prose/`: only prose here.\n" };
   fails(check(files), /examples\/prose.*DOCS-EX-004/);
   passes(check({ ...files, "examples/prose/run.sh": "echo\n" }));
 });
@@ -973,15 +979,15 @@ const setToken = (css: string, block: ":root" | ".dark", token: string, value: s
   return css.slice(0, i) + seg + css.slice(j);
 };
 const tokens = (fn: (css: string) => string) => ({ [`${T}tokens.css`]: fn(TOKENS_CSS) });
-const cfgMut = (from: string | RegExp, to: string) => ({ [CFG]: mut(baseFiles()[CFG], from, to) });
+const cfgMut = (from: string | RegExp, to: string) => ({ [CFG]: mut(base(CFG), from, to) });
 const pkgMut = (fn: (o: any) => void) => {
-  const o = JSON.parse(baseFiles()["package.json"]);
+  const o = JSON.parse(base("package.json"));
   fn(o);
   return { "package.json": JSON.stringify(o) };
 };
 const markMut = (from: string | RegExp, to: string) => ({ [`${T}components/CohostMark.vue`]: mut(MARK_VUE, from, to) });
 const indexMd = (fn: (body: string) => string) => {
-  const t = baseFiles()["docs/index.md"];
+  const t = base("docs/index.md");
   return { "docs/index.md": mut(t, FLOW_BODY, fn(FLOW_BODY)) };
 };
 
@@ -1063,9 +1069,9 @@ test("the root package.json lists no font package", () => {
 
 // @spec DOCS-THEME-009
 test("the config leaves appearance unset or true", () => {
-  passes(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: true, base:") }));
-  fails(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: false, base:") }), /config\.ts.*DOCS-THEME-009/);
-  fails(check({ [CFG]: mut(baseFiles()[CFG], "base:", "appearance: 'dark', base:") }), /DOCS-THEME-009/);
+  passes(check({ [CFG]: mut(base(CFG), "base:", "appearance: true, base:") }));
+  fails(check({ [CFG]: mut(base(CFG), "base:", "appearance: false, base:") }), /config\.ts.*DOCS-THEME-009/);
+  fails(check({ [CFG]: mut(base(CFG), "base:", "appearance: 'dark', base:") }), /DOCS-THEME-009/);
 });
 
 // @spec DOCS-THEME-011
@@ -1457,7 +1463,7 @@ test("each built hand-written page with a track carries exactly one badge of tha
 
 // @spec DOCS-THEME-025, DOCS-THEME-030, DOCS-THEME-026, DOCS-THEME-029
 test("a mermaid fence is rendered to a labelled inline SVG in a focusable figure; none is left as code; no @import survives", () => {
-  const src = (heading: string) => ({ "docs/guide/install/first-run.md": mut(baseFiles()["docs/guide/install/first-run.md"], "## What you need\n", `${heading}\n\n\`\`\`mermaid\nflowchart LR\n  A --> B\n\`\`\`\n\n## What you need\n`) });
+  const src = (heading: string) => ({ "docs/guide/install/first-run.md": mut(base("docs/guide/install/first-run.md"), "## What you need\n", `${heading}\n\n\`\`\`mermaid\nflowchart LR\n  A --> B\n\`\`\`\n\n## What you need\n`) });
   const f = "guide/install/first-run.html";
   const pageWith = (fig: string) => ({ [f]: docPage("simple", "Try it", fig) });
   const run = (heading: string, over: Record<string, string | null>) => check(src(heading), ["--dist"], site(over));
@@ -1848,7 +1854,7 @@ test("each page of the Extension guides table imports every file its Examples co
   lacks(ext({}, g("| `advanced/extend/typescript-service.md` | x | `examples/service/` | x |\n")), /DOCS-GUIDE-012/);
   fails(ext({}, g("| `advanced/extend/typescript-service.md` | x | `examples/rust-bus/` | x |\n")), /DOCS-GUIDE-012.*examples\/rust-bus\//);
   // the table is read from the LLD: a missing table is a problem
-  const noSection = baseFiles()["docs/intent/docs-site/docs-site-design.md"]!.replace(/## Extension guides[\s\S]*?(?=\n## )/, "");
+  const noSection = base("docs/intent/docs-site/docs-site-design.md")!.replace(/## Extension guides[\s\S]*?(?=\n## )/, "");
   fails(ext({ "docs/intent/docs-site/docs-site-design.md": noSection }), /DOCS-GUIDE-012.*Extension guides/);
 });
 

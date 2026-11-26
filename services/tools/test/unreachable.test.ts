@@ -25,7 +25,7 @@ test("an MCP server at a host that does not resolve is down, with the service's 
   await waitServer(s, "gone", "down");
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(lastHealth(s).deps["mcp.gone"], "down");
-  assert.match(lastHealth(s).detail, /gone down/);
+  assert.match(lastHealth(s).detail ?? "", /gone down/);
   assert.doesNotMatch(everythingOut(s), LEAKS);
   await s.stop();
 });

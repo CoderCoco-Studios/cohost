@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runService } from "../src/index.js";
+import type { Config } from "@cohost/config";
+import { runService, type BootBus, type ServiceContext } from "../src/index.js";
 
 function rig(over: Record<string, unknown> = {}) {
   const order: string[] = [];
@@ -35,15 +36,15 @@ test("the bootstrap loads config, creates the bus under the service name, starts
   const r = rig();
   let ctx: Record<string, unknown> | undefined;
   await runService({
-    service: "svc", health: (cfg) => { r.order.push("health"); assert.equal(cfg, r.cfg); return health() as never; },
-    main: async (c) => { r.order.push("main"); ctx = c as never; },
+    service: "svc", health: (cfg: Config) => { r.order.push("health"); assert.equal(cfg, r.cfg); return health() as never; },
+    main: async (c: ServiceContext<BootBus>) => { r.order.push("main"); ctx = c as never; },
     ...r.env,
   } as never);
   await new Promise((x) => setTimeout(x, 5));
   assert.deepEqual(r.order.filter((o) => o !== "onShutdown"), ["loadConfig", "createBus", "health", "main"]);
   assert.deepEqual(r.created, ["svc"]);
   assert.deepEqual(r.published, ["starting"], "the heartbeat started in `starting`");
-  assert.deepEqual(Object.keys(ctx!).sort(), ["bus", "cfg", "heartbeat", "log", "onStop"]);
+  assert.deepEqual(Object.keys(ctx!).toSorted(), ["bus", "cfg", "heartbeat", "log", "onStop"]);
   assert.equal(ctx!.cfg, r.cfg);
   assert.equal(ctx!.bus, r.bus);
   assert.deepEqual(r.exits, []);
@@ -86,7 +87,7 @@ test("shutdown runs onStop steps in reverse order, awaited, skipping ones that t
   const ran: string[] = [];
   await runService({
     service: "svc", health: health as never,
-    main: async ({ onStop }) => {
+    main: async ({ onStop }: ServiceContext<BootBus>) => {
       onStop(() => { ran.push("first"); });
       onStop(async () => { throw new Error("second broke"); });
       onStop(async () => { await new Promise((x) => setTimeout(x, 20)); ran.push("third"); });
@@ -105,7 +106,7 @@ test("steps that do not settle within the limit are abandoned: the bus is stoppe
   const r = rig();
   await runService({
     service: "svc", health: health as never, stopTimeoutMs: 50,
-    main: async ({ onStop }) => { onStop(() => new Promise<void>(() => {})); },
+    main: async ({ onStop }: ServiceContext<BootBus>) => { onStop(() => new Promise<void>(() => {})); },
     ...r.env,
   } as never);
   const t0 = performance.now();
@@ -125,7 +126,7 @@ test("a signal before main resolves runs only the steps registered so far; later
   let late!: (fn: () => void) => void;
   const done = runService({
     service: "svc", health: health as never,
-    main: async ({ onStop }) => { onStop(() => { ran.push("early"); }); late = onStop; await gate; late(() => { ran.push("late"); }); },
+    main: async ({ onStop }: ServiceContext<BootBus>) => { onStop(() => { ran.push("early"); }); late = onStop; await gate; late(() => { ran.push("late"); }); },
     ...r.env,
   } as never);
   await new Promise((x) => setTimeout(x, 5));

@@ -46,7 +46,7 @@ test("uses are the declared ones and requires is a subset of uses", () => {
 
 // @spec MOD-MAN-004
 test("pause is true for salience, cortex and affect only", () => {
-  assert.deepEqual(SERVICE_MANIFEST.filter((s) => s.pause).map((s) => s.id).sort(), ["affect", "cortex", "salience"]);
+  assert.deepEqual(SERVICE_MANIFEST.filter((s) => s.pause).map((s) => s.id).toSorted(), ["affect", "cortex", "salience"]);
 });
 
 // @spec MOD-MAN-005
@@ -80,7 +80,7 @@ test("test inputs and observed types are the declared ones and name registered b
 test("every name in a unit's isolatedEnv is an isolation override of the config package, and every override is used by a unit", () => {
   const used = new Set(SERVICE_MANIFEST.flatMap((s) => Object.keys(s.isolatedEnv)));
   for (const name of used) assert.ok(Object.hasOwn(ISOLATION_OVERRIDES, name), `${name} is in ISOLATION_OVERRIDES`);
-  assert.deepEqual([...used].sort(), Object.keys(ISOLATION_OVERRIDES).sort());
+  assert.deepEqual([...used].toSorted(), Object.keys(ISOLATION_OVERRIDES).toSorted());
 });
 
 // @spec MOD-MAN-013
@@ -126,7 +126,7 @@ test("the initial declarations: each unit lists the credentials its code reads a
     "connector-discord": ["connections.discord.token"],
     mouth: [], avatar: [],
   };
-  for (const [id, secrets] of Object.entries(want)) assert.deepEqual([...findService(id)!.secrets].sort(), [...secrets].sort(), id);
+  for (const [id, secrets] of Object.entries(want)) assert.deepEqual([...findService(id)!.secrets].toSorted(), [...secrets].toSorted(), id);
   const declared = new Set(SERVICE_MANIFEST.flatMap((s) => s.secrets));
   assert.ok(!declared.has("voice.pocket.hf_token"), "the Pocket token reaches only the tts-pocket engine container, through its own file");
   assert.ok(!SERVICE_MANIFEST.find((s) => s.id === "salience")!.secrets.includes("tools.servers.*.token"), "salience and cortex read the tools section and use no MCP token");
@@ -134,5 +134,5 @@ test("the initial declarations: each unit lists the credentials its code reads a
 
 // @spec TOOL-SVC-010
 test("the tools unit declares secrets as exactly tools.servers.*.token, chat.twitch.client_id, chat.twitch.client_secret and chat.youtube.api_key", () => {
-  assert.deepEqual([...findService("tools")!.secrets].sort(), [...TOOLS_SECRETS].sort());
+  assert.deepEqual([...findService("tools")!.secrets].toSorted(), [...TOOLS_SECRETS].toSorted());
 });

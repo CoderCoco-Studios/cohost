@@ -8,7 +8,7 @@ import { ClipCache, type FallbackClip } from "../src/clips.js";
 import { ClaimMemory, FallbackLine } from "../src/fallback.js";
 
 const OUT = { rate: 48000, channels: 2 };
-const sink = (over: Record<string, unknown> = {}) => [{ cap: "audio-out" as const, tag: "discord", format: OUT, ready: true, transport: "stream" as const, ...over }];
+const sink = (over: Record<string, unknown> = {}) => [{ cap: "audio-out" as const, tag: "discord", format: OUT, ready: true, transport: "stream" as const, flush: false, ...over }];
 /** A mono 24 kHz WAV of `ms` milliseconds of a constant tone. */
 const wavMs = (ms: number, level = 1000) => {
   const pcm = Buffer.alloc(Math.round((ms / 1000) * 24000) * 2);

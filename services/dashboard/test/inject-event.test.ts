@@ -30,7 +30,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthSt
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const event = (body: unknown, token?: string) =>
     fetch(`${base}/inject/event`, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {} });
-  const post = (path: string, body: BodyInit, type: string) => fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type } });
+  const post = (path: string, body: NonNullable<RequestInit["body"]>, type: string) => fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type } });
   return { bus, base, event, post };
 }
 

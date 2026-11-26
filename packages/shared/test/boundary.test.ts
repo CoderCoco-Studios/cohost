@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import * as shared from "../src/index.js";
 
 const pkg = (rel: string) => JSON.parse(readFileSync(new URL(`../../../${rel}/package.json`, import.meta.url), "utf8")) as { dependencies?: Record<string, string> };
-const workspaceDeps = (rel: string) => Object.entries(pkg(rel).dependencies ?? {}).filter(([, v]) => v.startsWith("workspace:")).map(([k]) => k).sort();
+const workspaceDeps = (rel: string) => Object.entries(pkg(rel).dependencies ?? {}).filter(([, v]) => v.startsWith("workspace:")).map(([k]) => k).toSorted();
 
 // @spec SHARED-BOUND-001
 test("service-only behaviour stays in its service: the lip-sync envelope, output gain and speaker capture are not exported by shared", () => {

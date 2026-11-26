@@ -33,7 +33,7 @@ function rig(fail: (url: string) => boolean = () => false, extra: Record<string,
   const fetched: string[] = [];
   const p = new Playback({
     bus, log: recordingLog().log, sink: "discord", gainDb: 0,
-    fetchAudio: async (u) => { fetched.push(u); if (fail(u)) throw new Error("fetch audio 404"); return wavWrap(Buffer.alloc(4800), 24000, 1); },
+    fetchAudio: async (u: string) => { fetched.push(u); if (fail(u)) throw new Error("fetch audio 404"); return wavWrap(Buffer.alloc(4800), 24000, 1); },
     play: () => {},
     ...extra,
   } as never);
@@ -186,7 +186,7 @@ test("a full queue drops the oldest queued line that is not open, whole, with th
   const fallback = new FallbackLine({ cache, claims: new ClaimMemory(), sink: "discord", minIntervalMs: 0, random: () => 0 });
   const p = new Playback({
     bus, log: rec.log, sink: "discord", gainDb: 0, maxQueue: 2, fallback,
-    fetchAudio: async (u) => { fetched.push(u); return wavWrap(Buffer.alloc(4800), 24000, 1); },
+    fetchAudio: async (u: string) => { fetched.push(u); return wavWrap(Buffer.alloc(4800), 24000, 1); },
     play: () => {},
   });
   await line(p).enqueue("x", url("x", 0), C("Current.", 0)); // current, never idles on its own

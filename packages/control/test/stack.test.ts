@@ -346,7 +346,7 @@ test("launch: writes the Pocket token to data/tts-pocket-secret/hf_token under t
   const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
   try {
     const { r, saw, secretDir } = await launchIn(dir, { token: "hf_abc123", engine: "pocket" });
-    assert.equal(r.ok, true, r.detail);
+    assert.equal(r.ok, true, r.detail ?? "no detail");
     assert.ok(saw.dir, "the directory existed when up ran");
     assert.equal(saw.content, "hf_abc123", "the file holds only the token");
     assert.ok(saw.order.indexOf("up") >= 0);
@@ -382,7 +382,7 @@ test("launch: a blank or whitespace-only token leaves the file absent, removing 
     assert.equal((await launchIn(dir, { token: "stale" })).saw.file, true);
     for (const token of ["", "   \n\t "]) {
       const blank = await launchIn(dir, { token });
-      assert.equal(blank.r.ok, true, blank.r.detail);
+      assert.equal(blank.r.ok, true, blank.r.detail ?? "no detail");
       assert.ok(blank.saw.dir, "the directory is created even with no token");
       assert.equal(blank.saw.file, false, `token ${JSON.stringify(token)} leaves the file absent`);
     }
@@ -410,7 +410,7 @@ test("launch: an unreadable config proceeds with a warning and removes a stale t
   try {
     assert.equal((await launchIn(dir, { token: "stale" })).saw.file, true);
     const { r, saw } = await launchIn(dir, { readError: "bad secrets.yaml\nmore" });
-    assert.equal(r.ok, true, r.detail);
+    assert.equal(r.ok, true, r.detail ?? "no detail");
     assert.equal(r.detail, "cannot read voice.pocket.hf_token: bad secrets.yaml", "the warning is reported");
     assert.ok(saw.order.includes("up"));
     assert.equal(saw.file, false, "the stale token is removed");
@@ -424,7 +424,7 @@ test("launch: a blocked token directory with the kokoro engine selected warns an
   const dir = mkdtempSync(join(tmpdir(), "cohost-stack-"));
   try {
     const { r, saw } = await launchIn(dir, { token: "hf_abc", blockDir: true });
-    assert.equal(r.ok, true, r.detail);
+    assert.equal(r.ok, true, r.detail ?? "no detail");
     assert.match(r.detail!, /^cannot write the tts-pocket token file: /);
     assert.ok(saw.order.includes("up"));
   } finally {

@@ -308,6 +308,6 @@ test("stopAll stops every source even when one stop() throws, and says which", a
   const stopped: string[] = [];
   const mk = (name: string, fail = false) => ({ name, start: async () => {}, status: () => "ok" as const, stop: async () => { stopped.push(name); if (fail) throw new Error("boom"); } });
   await stopAll([mk("a"), mk("b", true), mk("c")], rec.log);
-  assert.deepEqual(stopped.sort(), ["a", "b", "c"]);
+  assert.deepEqual(stopped.toSorted(), ["a", "b", "c"]);
   assert.equal(rec.msgs("error").length, 1);
 });

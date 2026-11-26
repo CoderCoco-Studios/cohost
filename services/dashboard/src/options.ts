@@ -69,13 +69,13 @@ const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 
 function voicesOf(body: unknown, who: string): string[] {
   const v = isObj(body) ? body["voices"] : undefined;
   if (!Array.isArray(v) || !v.every((x) => typeof x === "string")) throw new Upstream(`${who} answered a body that is not a voice list`);
-  return [...new Set(v as string[])].sort();
+  return [...new Set(v as string[])].toSorted();
 }
 
 function modelsOf(body: unknown, who: string): string[] {
   const m = isObj(body) ? body["models"] : undefined;
   if (!Array.isArray(m) || !m.every((x) => isObj(x) && typeof x["name"] === "string")) throw new Upstream(`${who} answered a body that is not a model list`);
-  return (m as { name: string }[]).map((x) => x.name).sort();
+  return (m as { name: string }[]).map((x) => x.name).toSorted();
 }
 
 /**

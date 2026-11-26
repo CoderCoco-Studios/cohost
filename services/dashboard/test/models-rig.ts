@@ -152,7 +152,7 @@ export const tick = async (n = 20): Promise<void> => { for (let i = 0; i < n; i+
 export class DashBus extends FakeBus {
   stop(): void {}
   async recent(): Promise<never[]> { return []; }
-  async tail(): Promise<void> {}
+  async tail(_handler: (ev: never) => void): Promise<void> {}
   async tailHealth(): Promise<void> {}
 }
 
@@ -267,7 +267,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
       const etag = so.etag ?? createHash("sha256").update(readFileSync(cfgFile, "utf8")).digest("hex");
       return send(port, "PUT", `/config/renderer${so.dryRun ? "?dryRun=1" : ""}`, { headers: auth, body: JSON.stringify({ etag, values }) });
     },
-    ls: () => (existsSync(models) ? readdirSync(models).sort() : []),
+    ls: () => (existsSync(models) ? readdirSync(models).toSorted() : []),
     tempOpened,
   };
 }

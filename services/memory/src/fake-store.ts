@@ -61,7 +61,7 @@ export class InMemoryStore implements MemoryBackend {
     return this.rows
       .filter((r) => r.ts.getTime() < cutoff)
       .map(({ embedding, ...m }) => ({ ...m, similarity: embedding.reduce((n, x, i) => n + x * q[i]!, 0) }))
-      .sort((a, b) => b.similarity - a.similarity)
+      .toSorted((a, b) => b.similarity - a.similarity)
       .slice(0, k)
       .filter((m) => m.similarity >= this.cfg.min_similarity);
   }
@@ -74,7 +74,7 @@ export class InMemoryStore implements MemoryBackend {
     if (!v) {
       const placeholder = [...this.viewers.values()]
         .filter((r) => r.placeholder && r.display.toLowerCase() === display.toLowerCase())
-        .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+        .toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
       if (placeholder) v = this.rekey(placeholder, key);
     }
     if (!v) {
@@ -127,7 +127,7 @@ export class InMemoryStore implements MemoryBackend {
     const want = name.toLowerCase();
     const v = [...this.viewers.values()]
       .filter((r) => admits(r) && r.display.toLowerCase() === want)
-      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
+      .toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || (a.key < b.key ? -1 : 1))[0];
     return v && { ...v };
   }
 
@@ -161,7 +161,7 @@ export class InMemoryStore implements MemoryBackend {
     const want = target.trim();
     const byKey = this.viewers.get(want);
     const t = byKey && isReadableViewer(byKey) ? byKey
-      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === want.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === want.toLowerCase()).toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!t || isVoiceKey(t.key)) return undefined;
     const voice = this.viewers.get(voiceKey(id));
     let moved = 0;
@@ -189,7 +189,7 @@ export class InMemoryStore implements MemoryBackend {
     const key = userKey;
     return [...this.links.entries()]
       .filter(([, l]) => l.userKey === key)
-      .sort(([ia, a], [ib, b]) => a.updatedAt - b.updatedAt || (ia < ib ? -1 : 1))
+      .toSorted(([ia, a], [ib, b]) => a.updatedAt - b.updatedAt || (ia < ib ? -1 : 1))
       .map(([discordId, l]) => ({ discordId, discordDisplay: l.discordDisplay }));
   }
 
@@ -200,7 +200,7 @@ export class InMemoryStore implements MemoryBackend {
     if (!v) {
       const placeholder = [...this.viewers.values()]
         .filter((r) => r.placeholder && r.display.toLowerCase() === display.toLowerCase())
-        .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+        .toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
       if (placeholder) {
         v = this.rekey(placeholder, key);
         v.display = display;
@@ -224,7 +224,7 @@ export class InMemoryStore implements MemoryBackend {
   async setRegular(keyOrName: string, regular: boolean): Promise<ViewerRow | undefined> {
     const byKey = this.viewers.get(keyOrName);
     let v = byKey && isReadableViewer(byKey) ? byKey
-      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === keyOrName.toLowerCase()).sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
+      : [...this.viewers.values()].filter((r) => isReadableViewer(r) && r.display.toLowerCase() === keyOrName.toLowerCase()).toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())[0];
     if (!v) {
       if (!regular || looksLikeKey(keyOrName)) return undefined; // MEM-REG-006: an owner placeholder is named by a display name, never a key
       // MEM-REG-003: a placeholder keyed by the lower-cased name.
@@ -268,7 +268,7 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async listNotes(userKey: string): Promise<NoteRow[]> {
-    return [...this.notes.values()].filter((n) => n.userKey === userKey).sort((a, b) => a.id - b.id).map((n) => ({ ...n }));
+    return [...this.notes.values()].filter((n) => n.userKey === userKey).toSorted((a, b) => a.id - b.id).map((n) => ({ ...n }));
   }
 
   // @spec MEM-SURF-004
@@ -302,7 +302,7 @@ export class InMemoryStore implements MemoryBackend {
     for (const n of this.notes.values()) counts.set(n.userKey, (counts.get(n.userKey) ?? 0) + 1);
     return [...this.viewers.values()]
       .filter((v) => isReadableViewer(v) && (!q || v.display.toLowerCase().includes(q)))
-      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || a.key.localeCompare(b.key))
+      .toSorted((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime() || a.key.localeCompare(b.key))
       .slice(0, opts.limit ?? 500)
       .map((v) => ({ ...v, noteCount: counts.get(v.key) ?? 0 }));
   }
@@ -324,7 +324,7 @@ export class InMemoryStore implements MemoryBackend {
 
   // @spec MEM-ADMIN-005
   async clearNotes(userKey: string, reason?: string): Promise<number> {
-    const ids = [...this.notes.values()].filter((n) => n.userKey === userKey).sort((a, b) => a.id - b.id).map((n) => n.id);
+    const ids = [...this.notes.values()].filter((n) => n.userKey === userKey).toSorted((a, b) => a.id - b.id).map((n) => n.id);
     for (const id of ids) await this.deleteNote(id, reason);
     return ids.length;
   }
@@ -334,7 +334,7 @@ export class InMemoryStore implements MemoryBackend {
   }
 
   async dirtyViewerKeys(): Promise<string[]> {
-    return [...new Set([...this.notes.values()].filter((n) => n.dirty).map((n) => n.userKey))].sort();
+    return [...new Set([...this.notes.values()].filter((n) => n.dirty).map((n) => n.userKey))].toSorted();
   }
 
   // @spec MEM-CONSOL-007, MEM-CONSOL-008, MEM-NOTE-004
@@ -387,7 +387,7 @@ export class InMemoryStore implements MemoryBackend {
     const t = new Date(after.ts).getTime();
     return this.rows
       .filter((r) => r.ts.getTime() > t || (r.ts.getTime() === t && r.id > after.id))
-      .sort((a, b) => a.ts.getTime() - b.ts.getTime() || a.id - b.id)
+      .toSorted((a, b) => a.ts.getTime() - b.ts.getTime() || a.id - b.id)
       .slice(0, limit)
       .map(({ embedding: _e, ...m }) => m);
   }

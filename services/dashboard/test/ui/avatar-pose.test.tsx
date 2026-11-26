@@ -28,7 +28,7 @@ test("the rest frame holds the documented rest values", () => {
 
 // @spec DASH-AVP-032
 test("the page's emotion list is the bus's nine canonical emotions (the page may not import zod or config)", () => {
-  assert.deepEqual([...EMOTIONS].sort(), [...Emotion.options].sort());
+  assert.deepEqual([...EMOTIONS].toSorted(), [...Emotion.options].toSorted());
 });
 
 // @spec DASH-AVP-032

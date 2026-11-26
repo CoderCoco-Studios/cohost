@@ -50,7 +50,7 @@ function workspace(operator?: string): { root: string; operator: string; units: 
 function recorder(units: string) {
   const calls: { args: string[]; units: string[]; contents: Record<string, unknown> }[] = [];
   const exec: ExecFile = async (_file, args) => {
-    const dirs = existsSync(units) ? readdirSync(units).sort() : [];
+    const dirs = existsSync(units) ? readdirSync(units).toSorted() : [];
     const contents: Record<string, unknown> = {};
     for (const d of dirs) { try { contents[d] = parse(readFileSync(join(units, d, "secrets.yaml"), "utf8")); } catch { /* not there */ } }
     calls.push({ args, units: dirs, contents });
@@ -62,7 +62,7 @@ const onPath = (n: string): boolean => n === "docker";
 
 // @spec MOD-MAN-015
 test("the manifest declares a secrets list for tools, chat, eyes, ears, the model units, voice and the Discord connector, and none for mouth, avatar and the compose-only services", () => {
-  assert.deepEqual(projected.map((s) => s.composeName).sort(), ["affect", "chat", "connector-discord", "cortex", "ears", "eyes", "memory", "salience", "tools", "voice"]);
+  assert.deepEqual(projected.map((s) => s.composeName).toSorted(), ["affect", "chat", "connector-discord", "cortex", "ears", "eyes", "memory", "salience", "tools", "voice"]);
   for (const s of SERVICE_MANIFEST.filter((x) => !projected.includes(x))) assert.deepEqual(s.secrets, [], s.id);
 });
 
@@ -78,7 +78,7 @@ test("start, both forms of restart, consolidate and reembed project every unit's
   assert.equal((await rt.reembed()).ok, true);
   assert.equal(calls.length, 5);
   for (const c of calls) {
-    assert.deepEqual(c.units, projected.map((s) => s.composeName).sort(), `before \`${c.args.join(" ")}\`: every unit directory exists`);
+    assert.deepEqual(c.units, projected.map((s) => s.composeName).toSorted(), `before \`${c.args.join(" ")}\`: every unit directory exists`);
     assert.deepEqual(c.contents.tools, { chat: { twitch: { client_id: "cid" } }, tools: { servers: { weather: { token: "w-token" } } } }, "tools holds only its declared paths that are set");
     assert.deepEqual(c.contents["connector-discord"], { connections: { discord: { token: "disc" } } });
     assert.deepEqual(c.contents.voice, {});
@@ -93,7 +93,7 @@ test("when the projection fails, none of those runtime commands runs docker and 
   const results = [await rt.start("cortex"), await rt.restart("cortex"), await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } }), await rt.consolidate(), await rt.reembed()];
   for (const r of results) {
     assert.equal(r.ok, false);
-    assert.ok(r.detail!.includes(w.operator), r.detail);
+    assert.ok(r.detail!.includes(w.operator), r.detail ?? "no detail");
     assert.ok(!r.detail!.includes(MARKER), "no value in the message");
   }
   assert.equal(calls.length, 0, "no docker compose command ran");
@@ -118,14 +118,14 @@ test("StackController.launch and rebuild project before docker compose up, and a
     await stack[kind]();
     const up = calls.find((c) => c.args[1] === "up");
     assert.ok(up, `${kind} ran docker compose up`);
-    assert.deepEqual(up.units, projected.map((s) => s.composeName).sort(), `${kind}: projected before up`);
+    assert.deepEqual(up.units, projected.map((s) => s.composeName).toSorted(), `${kind}: projected before up`);
     assert.deepEqual(up.contents.chat, { chat: { twitch: { client_id: "cid" } } });
 
     const bad = workspace(`llm:\n  openai:\n    api_key: ${MARKER}\nbroken: [unclosed\n`);
     const failing = recorder(bad.units);
     const r = await new StackController({ exec: failing.exec, onPath, cwd: bad.root, env: {}, now: () => 0, sleep: async () => {}, readPocketConfig: () => ({ token: "", engine: "kokoro" }) })[kind]();
     assert.equal(r.ok, false);
-    assert.ok(r.detail!.includes(bad.operator) && !r.detail!.includes(MARKER), r.detail);
+    assert.ok(r.detail!.includes(bad.operator) && !r.detail!.includes(MARKER), r.detail ?? "no detail");
     assert.equal(failing.calls.length, 0, `${kind}: no docker compose command ran`);
   }
 });
@@ -142,7 +142,7 @@ test("node packages/control/dist/project-secrets.js projects for the workspace r
   writeFileSync(join(w.root, "pnpm-workspace.yaml"), "packages: []\n");
   const ok = runEntry(w.root, w.operator);
   assert.equal(ok.status, 0, ok.stderr);
-  assert.deepEqual(readdirSync(w.units).sort(), projected.map((s) => s.composeName).sort());
+  assert.deepEqual(readdirSync(w.units).toSorted(), projected.map((s) => s.composeName).toSorted());
   assert.deepEqual(parse(readFileSync(join(w.units, "tools", "secrets.yaml"), "utf8")), { chat: { twitch: { client_id: "cid" } }, tools: { servers: { weather: { token: "w-token" } } } });
 
   const bad = workspace(`llm:\n  openai:\n    api_key: ${MARKER}\nbroken: [unclosed\n`);

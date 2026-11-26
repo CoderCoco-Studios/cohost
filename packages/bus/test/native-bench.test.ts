@@ -13,7 +13,7 @@ async function redisUp(): Promise<boolean> {
 const hasRedis = await redisUp();
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
-const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+const median = (a: number[]) => { const s = [...a].toSorted((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
 
 // @spec BUS-NAT-GATE-007
 test("bus-bench --runs 2 --json writes one JSON document: every run's rows and the medians of cpu% and p99ms", { skip: !hasRedis && `no Redis at ${url}`, timeout: 60_000 }, () => {

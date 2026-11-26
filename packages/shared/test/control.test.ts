@@ -111,5 +111,5 @@ test("only salience, cortex, affect and mouth read control, and only through con
       if (svc !== "dashboard" && /\.cmd\b/.test(text)) assert.fail(`${svc}/${f} reads control by hand`);
     }
   }
-  assert.deepEqual([...new Set(users)].sort(), ["affect", "cortex", "mouth", "salience"]);
+  assert.deepEqual([...new Set(users)].toSorted(), ["affect", "cortex", "mouth", "salience"]);
 });

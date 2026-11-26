@@ -58,7 +58,7 @@ test("waitForLlm: mock answers at once; a dead backend is logged and reported de
   assert.deepEqual(downs, []);
 
   let n = 0;
-  const flaky: ChatProvider = { name: "ollama", model: "q", chat: async () => "", ping: async () => ++n > 2, lastError: "cannot reach ollama" };
+  const flaky: ChatProvider = { name: "ollama", model: "q", chat: async () => "", complete: async () => { throw new Error("not used"); }, stream: () => { throw new Error("not used"); }, ping: async () => ++n > 2, lastError: "cannot reach ollama" };
   const oks: boolean[] = [];
   downs = [];
   await waitForLlm(flaky, { log: silentLog, setOk: (o) => oks.push(o), onDown: (d) => downs.push(d), sleep: async () => {} });

@@ -247,7 +247,7 @@ test("projecting an operator file that sets every path of SECRET_PATHS gives eac
   ];
   await projectSecrets(w.root, units);
   const expand = (p: string): string[] => (p === "tools.servers.*.token" ? ["tools.servers.a.token", "tools.servers.b.token"] : [p]);
-  for (const u of units) assert.deepEqual(flat(read(w, u.composeName)).sort(), u.secrets.flatMap(expand).sort(), u.composeName);
+  for (const u of units) assert.deepEqual(flat(read(w, u.composeName)).toSorted(), u.secrets.flatMap(expand).toSorted(), u.composeName);
 });
 
 // @spec DEPLOY-SECRET-007

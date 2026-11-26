@@ -254,7 +254,7 @@ test("a platform is sent only the id, the credential and fixed API parameters: n
     assert.ok(r.init.redirect === "manual" || r.init.redirect === "error", "redirects are not followed");
     assert.ok(r.init.signal, "every platform request is bounded");
     assert.equal(r.headers["cookie"], undefined);
-    if (isTwitchToken(r)) assert.deepEqual([...new URLSearchParams(r.body).keys()].sort(), ["client_id", "client_secret", "grant_type"]);
+    if (isTwitchToken(r)) assert.deepEqual([...new URLSearchParams(r.body).keys()].toSorted(), ["client_id", "client_secret", "grant_type"]);
     if (isTwitchStreams(r)) assert.deepEqual([...new URL(r.url).searchParams.keys()], ["user_login"]);
     if (isYoutube(r)) assert.ok([...new URL(r.url).searchParams.keys()].every((k) => ["part", "id"].includes(k)));
   }

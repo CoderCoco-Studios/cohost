@@ -36,7 +36,7 @@ test("flags and defaults match the spec", () => {
   assert.equal(findService("dashboard"), undefined);
   assert.equal(SERVICE_MANIFEST.length, 20);
   assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(0, 17), ["chat", "salience", "affect", "memory", "cortex", "tools", "voice", "avatar", "eyes", "ears", "mouth", "connector-discord", "redis", "postgres", "ollama", "tts", "stt"]);
-  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(17).sort(), ["stt-kyutai", "stt-nemotron", "tts-pocket"]);
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id).slice(17).toSorted(), ["stt-kyutai", "stt-nemotron", "tts-pocket"]);
   const tools = findService("tools")!;
   assert.equal(tools.composeName, "tools");
   assert.equal(tools.pnpmFilter, "@cohost/tools");

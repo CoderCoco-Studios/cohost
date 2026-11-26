@@ -79,7 +79,7 @@ export function createDirCapture(o: DirCaptureOptions): DirCapture {
       return;
     }
     up = true;
-    const wavs = entries.filter((e) => e.isFile() && /\.wav$/i.test(e.name) && !skip.has(e.name)).map((e) => e.name).sort();
+    const wavs = entries.filter((e) => e.isFile() && /\.wav$/i.test(e.name) && !skip.has(e.name)).map((e) => e.name).toSorted();
     const present = new Set(wavs);
     for (const name of [...pending.keys()]) if (!present.has(name)) pending.delete(name);
     const ready: [string, number][] = [];

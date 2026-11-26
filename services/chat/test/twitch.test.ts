@@ -172,7 +172,7 @@ test("a Twitch line reaches the service with its message id, the user id, and th
   assert.equal(sender.login, "bob_login");
   assert.equal(sender.isMod, true, "the broadcaster counts as a moderator, worked out by the source");
   assert.equal(sender.isSub, true);
-  assert.deepEqual([...sender.ignoreIdentifiers].sort(), ["Bob", "bob_login"]);
+  assert.deepEqual([...sender.ignoreIdentifiers].toSorted(), ["Bob", "bob_login"]);
 });
 
 // @spec CHAT-TW-004

@@ -440,13 +440,13 @@ test("each draft message has exactly the shape the renderer page accepts: a fres
   fireEvent.change(within(key("offset_y")).getByRole("slider", { name: "Vertical position" }), { target: { value: "-0.5" } });
   await userEvent.setup().click(screen.getByRole("radio", { name: /Kiki\.vrm/ }));
   for (const f of sent("framing")) {
-    assert.deepEqual(Object.keys(f).sort(), ["framing", "type"]);
+    assert.deepEqual(Object.keys(f).toSorted(), ["framing", "type"]);
     const fr = f.framing as Record<string, unknown>;
-    assert.deepEqual(Object.keys(fr).sort(), ["offsetY", "turn", "zoom"]);
+    assert.deepEqual(Object.keys(fr).toSorted(), ["offsetY", "turn", "zoom"]);
     for (const v of Object.values(fr)) assert.ok(typeof v === "number" && Number.isFinite(v));
     assert.ok((fr.zoom as number) > 0);
   }
-  for (const m of sent("model")) { assert.deepEqual(Object.keys(m).sort(), ["name", "type"]); assert.equal(typeof m.name, "string"); }
+  for (const m of sent("model")) { assert.deepEqual(Object.keys(m).toSorted(), ["name", "type"]); assert.equal(typeof m.name, "string"); }
 });
 
 // @spec DASH-AVS-006

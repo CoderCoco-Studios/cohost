@@ -39,7 +39,7 @@ test("each allow entry <server>__<tool> of a configured server is a mock tool: '
   await waitFor(() => s.catalogs().length > 0, "catalog");
   // The built-in tools are listed too (TOOL-CAT-001); this test is about the MCP tools of the mock servers.
   const tools = s.catalogs().at(-1)!.tools.filter((t) => t.server !== undefined);
-  assert.deepEqual(tools.map((t) => t.name).sort(), ["other__mystery", "search__post", "search__web"]);
+  assert.deepEqual(tools.map((t) => t.name).toSorted(), ["other__mystery", "search__post", "search__web"]);
   for (const t of tools) {
     assert.equal(t.description, "a mock tool");
     assert.equal(t.parameters.type, "object");

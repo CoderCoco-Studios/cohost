@@ -1,6 +1,6 @@
 /** Shared helpers for region tests: a full config, a recording bus, a silent logger. */
 import { ConfigSchema, type Config } from "@cohost/config";
-import { EventPayloads, decodeFrame, encodeFrame, type BusEvent, type EventInput, type EventType, type Frame, type Publisher, type Registration } from "@cohost/bus";
+import { EventPayloads, decodeFrame, encodeFrame, type BusEvent, type CapabilityEntry, type EventInput, type EventType, type Frame, type Publisher, type Registration } from "@cohost/bus";
 import { startHeartbeat, type HeartbeatSpec } from "@cohost/shared";
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -182,10 +182,11 @@ export class ConnectorFakeBus extends FakeBus {
   feed(dir: string, tag: string, f: Frame): void { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(encodeFrame(f)), "1-0"); }
   feedRaw(dir: string, tag: string, fields: (string | Buffer)[]): void { this.handlers.get(`${dir}.${tag}`)?.(decodeFrame(fields), "1-0"); }
   stop(): void { for (const e of this.ends) e(); }
-  /** Put a registration offering `caps` under `id`, live. */
-  register(id: string, caps: Registration["capabilities"], over: Partial<Registration> = {}): void {
+  /** Put a registration offering `caps` under `id`, live; `transport` and `flush` default as a parsed registration's do. */
+  register(id: string, caps: CapabilityEntry[], over: Partial<Registration> = {}): void {
+    const capabilities = caps.map((c) => ({ transport: "stream" as const, flush: false, ...c }));
     this.regs.set(id, {
-      v: 1, id, kind: id, version: "1", instance: `${id}-1`, pid: 1, startedAt: 0, intervalMs: 5000, state: "ready", detail: "", capabilities: caps, ...over,
+      v: 1, id, kind: id, version: "1", instance: `${id}-1`, pid: 1, startedAt: 0, intervalMs: 5000, state: "ready", detail: "", capabilities, ...over,
     });
   }
 }

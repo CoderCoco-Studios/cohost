@@ -17,7 +17,7 @@ const collapse = (s: string, max: number): string => s.replace(/\s+/g, " ").trim
 
 /** The `chat()` reply: `[happy] mock: <last user message>`, or `hello` when there is none (LLM-MOCK-001). */
 function plainText(messages: ChatMessage[]): string {
-  const last = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const last = [...messages].toReversed().find((m) => m.role === "user")?.content ?? "";
   return `[happy] mock: ${collapse(last, 80) || "hello"}`;
 }
 
@@ -84,7 +84,7 @@ function decide(messages: ChatMessage[], req: ChatRequest): Plan { // @spec LLM-
     if (call) return { result: callResult(call) };
     result = textResult(plainText(messages));
   }
-  const user = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const user = [...messages].toReversed().find((m) => m.role === "user")?.content ?? "";
   const fail = FAIL_AFTER.exec(user);
   const words = result.text === "" ? 0 : result.text.split(" ").length;
   const failAfter = fail && Number(fail[1]) < words ? Number(fail[1]) : undefined;

@@ -86,7 +86,7 @@ function refuse(e: Env, match: (type: string, data: unknown) => boolean, opts: {
   };
   return refused;
 }
-const lastSpeech = (e: Env) => [...e.s.ctx.all()].reverse().find((x) => x.kind === "speech" && !x.unfinished);
+const lastSpeech = (e: Env) => [...e.s.ctx.all()].toReversed().find((x) => x.kind === "speech" && !x.unfinished);
 
 // ---- Asking at the retraction -------------------------------------------------------------------------------------------
 
@@ -610,5 +610,7 @@ test("interject: a refused confirm makes no request, withdraws the focus, and re
 test("interject: the interjected confirm's speech focus carries the speakerId of the early transcript", async () => { // @spec SAL-FOCUS-008
   const e = setup({}, { draw: 0.1 });
   await asked(e, EARLY, "u1", 3, { speakerId: "D1" });
-  assert.deepEqual(resolves(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: EARLY, source: "discord", mention: false });
+  const resolved = resolves(e)[0];
+  assert.ok(resolved?.outcome === "confirm");
+  assert.deepEqual(resolved.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: EARLY, source: "discord", mention: false });
 });

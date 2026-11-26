@@ -1,7 +1,7 @@
 // The model list of the `avatar-model` widget (DASH-AVS-002 to DASH-AVS-004): the radio rows after None, Delete, and the upload
 // with its limit, progress, refusal and Replace question. Choosing a row is an edit of `renderer.model`; uploading and
 // deleting are gated writes that need the control token and change no setting.
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../components/Button";
 import { Dialog } from "../../components/Dialog";
 import { useApi } from "../../state/hooks";
@@ -32,7 +32,7 @@ function useModels(): [ListState, () => Promise<void>] {
   const [list, setList] = useState<ListState>({ status: "loading" });
   // Reads are numbered: an answer is taken only while no later read has been started, so an older answer cannot replace a newer one.
   const latest = useRef(0);
-  const read = async (): Promise<void> => {
+  const read = useCallback(async (): Promise<void> => {
     const mine = ++latest.current;
     const r = await api.get<{ models?: unknown; maxBytes?: unknown }>("/avatar/models");
     if (mine !== latest.current) return;
@@ -43,8 +43,8 @@ function useModels(): [ListState, () => Promise<void>] {
     } else {
       setList({ status: "error", detail: r.ok ? "the answer had an unexpected shape" : r.detail });
     }
-  };
-  useEffect(() => { void read(); }, [api]);
+  }, [api]);
+  useEffect(() => { void read(); }, [read]);
   return [list, read];
 }
 
@@ -65,7 +65,7 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
     if (etag.current === st.etag) return;
     etag.current = st.etag;
     void refresh();
-  }, [st.etag]);
+  }, [st.etag, refresh]);
   const groupName = useId();
   const reasonId = useId();
   const [busy, setBusy] = useState(false);

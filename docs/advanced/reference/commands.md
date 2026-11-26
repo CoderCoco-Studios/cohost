@@ -35,7 +35,7 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 
 | Task | What it does |
 | --- | --- |
-| `typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check |
+| `typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check, then the type check of every test directory |
 | `lint:ts` | `typecheck`, then `oxlint --type-aware --deny-warnings` with the rules in `.oxlintrc.json`; any finding fails it |
 | `lint:rust` | `cargo fmt --check`, then Clippy over the workspace with warnings denied |
 | `lint` | `lint:ts` and `lint:rust` |

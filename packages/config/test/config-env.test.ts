@@ -125,7 +125,7 @@ test("the environment-read scan finds property, call, index and dynamic reads an
     "const a = process.env.ONE; const b = env.TWO; const c = e?.THREE; const d = process.env[\"FOUR\"]; const f = envOr(\"FIVE\", \"x\"); const g = env(\"SIX\");",
     "const n = (k: string) => env[k]; const names = [\"SEVEN_EIGHT\"];",
   ].join("\n");
-  assert.deepEqual(envReads("x.ts", text).map((r) => r.split("::")[1]).sort(), ["FIVE", "FOUR", "ONE", "SEVEN_EIGHT", "SIX", "THREE", "TWO"]);
+  assert.deepEqual(envReads("x.ts", text).map((r) => r.split("::")[1]).toSorted(), ["FIVE", "FOUR", "ONE", "SEVEN_EIGHT", "SIX", "THREE", "TWO"]);
 });
 
 // @spec CFG-LOAD-007, CFG-SEC-010

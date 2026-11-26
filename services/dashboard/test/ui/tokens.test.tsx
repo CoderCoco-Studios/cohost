@@ -32,7 +32,7 @@ const lum = (hex: string): number => {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
 };
-const ratio = (a: string, b: string): number => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x! + 0.05) / (y! + 0.05); };
+const ratio = (a: string, b: string): number => { const [x, y] = [lum(a), lum(b)].toSorted((p, q) => q - p); return (x! + 0.05) / (y! + 0.05); };
 const hexes = (v: string): string[] => v.match(/#[0-9a-fA-F]{3,6}\b/g) ?? [];
 
 // @spec DASH-THEME-001
@@ -41,7 +41,7 @@ test("the token table has the Aurora values for light and dark, exactly", () => 
   const lite = { "--bg": "#f5f7ff", "--surface": "#ffffff", "--surface-2": "#e9edfb", "--line": "#d3d9f0", "--ctl": "#7480a8", "--fg": "#14162c", "--muted": "#40446b", "--faint": "#5a5e86", "--accent": "#0a6690", "--accent-fill": "#4fcbff", "--on-accent": "#04202e", "--accent-tint": "#d9f1ff", "--current": "#7a2fc4", "--current-fill": "#c77dff", "--on-current": "#24063a", "--current-tint": "#f0e2ff", "--ok": "#126a52", "--ok-tint": "#d9e7e3", "--warn": "#855600", "--warn-tint": "#ebe4d6", "--bad": "#b4232f", "--bad-tint": "#f3dcde", "--build": "#3650bd", "--build-tint": "#dfe3f4" };
   for (const [k, v] of Object.entries(dark)) { assert.equal(darkAuto[k], v, `dark auto ${k}`); assert.equal(darkManual[k], v, `dark manual ${k}`); }
   for (const [k, v] of Object.entries(lite)) assert.equal(light[k], v, `light ${k}`);
-  assert.deepEqual(Object.keys(darkAuto).sort(), Object.keys(darkManual).sort());
+  assert.deepEqual(Object.keys(darkAuto).toSorted(), Object.keys(darkManual).toSorted());
   assert.equal(darkAuto["--bg-grad"], "linear-gradient(115deg,#111a31 0%,#131530 50%,#1f1738 100%)");
   assert.equal(light["--bg-grad"], "linear-gradient(115deg,#eef6ff 0%,#f5f7ff 50%,#f6effe 100%)");
   assert.equal(darkAuto["--shadow"], "0 12px 40px rgba(4,6,20,.6)");

@@ -68,7 +68,7 @@ test("GET /avatar/renderer answers 200 no-store with exactly the documented fiel
   assert.equal(idle.status, 200);
   assert.equal(idle.headers["cache-control"], "no-store");
   assert.match(String(idle.headers["content-type"]), /^application\/json/);
-  assert.deepEqual(Object.keys(idle.json()).sort(), ["applied", "driver", "fps", "maxPages", "maxPreviews", "pages", "previews", "state"]);
+  assert.deepEqual(Object.keys(idle.json()).toSorted(), ["applied", "driver", "fps", "maxPages", "maxPreviews", "pages", "previews", "state"]);
   assert.deepEqual(idle.json(), {
     state: "waiting", driver: null, fps: null,
     applied: { model: "Aiko.vrm", configuredModel: "AIKO.vrm", zoom: 1.5, offsetY: -0.2, turn: 10 },
@@ -80,7 +80,7 @@ test("GET /avatar/renderer answers 200 no-store with exactly the documented fiel
   const s = await r.renderer();
   assert.equal(s.previews, 1);
   assert.equal(s.pages.length, 1);
-  assert.deepEqual(Object.keys(s.pages[0]).sort(), ["model", "sentFps", "since"]);
+  assert.deepEqual(Object.keys(s.pages[0]).toSorted(), ["model", "sentFps", "since"]);
   assert.equal(s.pages[0].model, null);
   assert.equal(s.pages[0].sentFps, 0);
   assert.ok(Math.abs(s.pages[0].since - connectedAt) < 5000, `since ${s.pages[0].since} is the connect time ${connectedAt}`);

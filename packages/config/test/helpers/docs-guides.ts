@@ -58,7 +58,7 @@ export function extendYamlFences(root: string): { page: string; line: number; te
   const dir = join(root, "docs/advanced/extend");
   if (!existsSync(dir)) return [];
   const out: { page: string; line: number; text: string }[] = [];
-  for (const f of readdirSync(dir).filter((n) => n.endsWith(".md")).sort()) {
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".md")).toSorted()) {
     for (const fence of fences(readFileSync(join(dir, f), "utf8"))) {
       if (fence.lang === "yaml" || fence.lang === "yml") out.push({ page: `docs/advanced/extend/${f}`, line: fence.line, text: fence.text });
     }
@@ -111,5 +111,5 @@ export function tsFilesUnder(root: string, dir: string): string[] {
     }
   };
   walk(dir);
-  return out.sort();
+  return out.toSorted();
 }

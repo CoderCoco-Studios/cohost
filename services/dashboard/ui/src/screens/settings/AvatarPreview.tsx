@@ -99,6 +99,7 @@ export function AvatarPreview({ st }: { st: SectionState }) {
     if (drafts.framing) sendFraming(drafts.framing);
     else if (!drafts.framingEdited && framingWas.current && hasDrafts) { cancelTrailing(); post({ type: "framing", framing: savedFrame }); }
     framingWas.current = drafts.framingEdited;
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed on framingKey, the framing draft's value: a re-render that leaves it unchanged must post nothing
   }, [framingKey]);
 
   // The model draft. The frame gets a model message only when the model choice itself changes, never for a framing move: a model
@@ -114,6 +115,7 @@ export function AvatarPreview({ st }: { st: SectionState }) {
       post({ type: "clear" });
       if (drafts.framing) post({ type: "framing", framing: drafts.framing });
     }
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs only when the model choice changes; a framing edit re-running it would post the model again and reload it
   }, [drafts.model]);
 
   // Save or Discard takes the drafts away: the frame is told to drop them, and nothing queued is sent after it.

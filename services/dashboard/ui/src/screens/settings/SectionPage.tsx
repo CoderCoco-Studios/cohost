@@ -128,7 +128,9 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
   // GET /egress is read again after each save: a saved engine or provider changes the destinations (DASH-SET-034).
   const saveKey = members.map((m) => sections[m.path]?.etag ?? "").join("|");
   const egress = useEgress(saveKey);
-  useEffect(() => { for (const m of members) void settings.loadSection(m.path); }, [settings, primary.path]);
+  // The members' paths as one string: `members` is a new array on each render, and the sections are loaded again only when they change.
+  const memberPaths = members.map((m) => m.path).join("|");
+  useEffect(() => { for (const path of memberPaths.split("|")) void settings.loadSection(path); }, [settings, memberPaths]);
   const st = sections[primary.path];
   const failed = members.find((m) => sections[m.path]?.status === "error" && !Object.keys(sections[m.path]!.keys).length);
   const loaded = members.every((m) => sections[m.path]?.status === "ready");

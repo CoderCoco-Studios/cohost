@@ -1,6 +1,6 @@
 {
-  // Type information for the type-aware lint (`mise run lint:ts`): tsgolint reads each file's nearest tsconfig.json, and the
-  // package's own tsconfig.json covers only src/. Not a `tsc -b` project; `typecheck` does not check the tests (DEPLOY-LINT-004).
+  // The tests' compiler options, for the type-aware lint (tsgolint reads each file's nearest tsconfig.json, and the package's
+  // own covers only src/) and for `typecheck`, which runs `tsc -p` over this file (DEPLOY-LINT-004, DEPLOY-TOOL-023).
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "noEmit": true, "composite": false, "declaration": false, "declarationMap": false, "sourceMap": false },
   "include": ["."],

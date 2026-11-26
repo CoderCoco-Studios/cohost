@@ -11,7 +11,7 @@ const NOTICE = "mise run dashboard: the docs build failed (see above); starting 
 
 // @spec DEPLOY-HOST-001, DEPLOY-HOST-006
 test("the dashboard task depends on build:native and build:ui, then runs the docs build, tsc -b services/dashboard and the dashboard", () => {
-  assert.deepEqual([...dashboard.depends].sort(), ["build:native", "build:ui"]);
+  assert.deepEqual([...dashboard.depends].toSorted(), ["build:native", "build:ui"]);
   assert.deepEqual(dashboard.run, [
     `mise run docs:build || echo '${NOTICE}' >&2`,
     "tsc -b services/dashboard",

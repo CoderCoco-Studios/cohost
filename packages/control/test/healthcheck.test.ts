@@ -42,7 +42,9 @@ async function redisUp(): Promise<boolean> {
 }
 /** Delete the health stream of the test database through the bus package's own ioredis. */
 async function dropHealthStream(): Promise<void> {
-  const { Redis } = createRequire(import.meta.resolve("@cohost/bus"))("ioredis") as typeof import("ioredis");
+  const { Redis } = createRequire(import.meta.resolve("@cohost/bus"))("ioredis") as {
+    Redis: new (url: string, opts: { maxRetriesPerRequest: number }) => { del(key: string): Promise<number>; disconnect(): void };
+  };
   const r = new Redis(url, { maxRetriesPerRequest: 1 });
   try { await r.del("cohost:health"); } finally { r.disconnect(); }
 }

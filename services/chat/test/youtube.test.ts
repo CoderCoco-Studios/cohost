@@ -39,7 +39,7 @@ test("the source runs on a transport that has only lookup, openStream and poll",
   const r = pollRig();
   const t = r.t;
   const bare = { lookup: t.lookup.bind(t), openStream: t.openStream.bind(t), poll: t.poll.bind(t) };
-  assert.deepEqual(Object.keys(bare).sort(), ["lookup", "openStream", "poll"]);
+  assert.deepEqual(Object.keys(bare).toSorted(), ["lookup", "openStream", "poll"]);
   const src = new YouTubeSource({ videoId: VIDEO, youtube: { api_key: "k", video: VIDEO, transport: "poll", poll_floor_ms: 1000, recheck_ms: 120000 }, transport: bare, clock: r.clock });
   await src.start({ emit() {}, emitRemoval() {}, log: r.rec.log, onState() {} } as never);
   await settle();
@@ -443,7 +443,7 @@ test("quota exhaustion before the stream ever opened is not one of the five atte
 // ---------------------------------------------------------------- history and duplicates
 
 /** A poll-path rig that has taken the history response and is ready for the next poll. */
-async function afterHistory(history: Item[], more: ReturnType<typeof resp>[]): Promise<Rig> {
+async function afterHistory(history: Item[], more: (ReturnType<typeof resp> | ReturnType<typeof apiErr>)[]): Promise<Rig> {
   const r = pollRig();
   r.t.poll_(resp(history), ...more);
   await r.start();
@@ -959,7 +959,7 @@ test("the source makes no call other than lookup, openStream and poll: nothing s
   r.t.lookup_(LIVE).stream_(new StreamScript().open().respond(resp([text("h", 0)])).respond(resp([banned("b1", "UCone", "permanent", 5), tombstone("t1", "m1", 6)])));
   await r.start();
   await r.clock.advance(HOUR);
-  assert.deepEqual([...new Set(r.t.calls.map((c) => c.kind))].sort(), ["lookup", "stream"]);
+  assert.deepEqual([...new Set(r.t.calls.map((c) => c.kind))].toSorted(), ["lookup", "stream"]);
 });
 
 // ---------------------------------------------------------------- stream path: backoff, quota token, close

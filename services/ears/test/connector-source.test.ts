@@ -51,7 +51,7 @@ test("one open buffer per spk: two speakers are two utterances, and a later gap 
     r.bus.feed("in", "discord", frame("b", "Bob"));
     r.bus.feed("in", "discord", frame("a", "Ann"));
     await waitFor(() => r.heard.length === 2, "both closed");
-    assert.deepEqual(r.heard.map((h) => [h.speakerId, h.clip.pcm.length]).sort(), [["a", 1280], ["b", 640]]);
+    assert.deepEqual(r.heard.map((h) => [h.speakerId, h.clip.pcm.length]).toSorted(), [["a", 1280], ["b", 640]]);
     r.bus.feed("in", "discord", frame("a", "Ann"));
     await waitFor(() => r.heard.length === 3, "new utterance after the gap");
   } finally { await r.stop(); }
@@ -64,7 +64,7 @@ test("an empty name falls back to the spk label, and a frame with no spk uses on
     r.bus.feed("in", "discord", frame("u9", ""));
     r.bus.feed("in", "discord", { epoch: 1, seq: seqNo++, rate: 16000, ch: 1, pcm: pcmMs(20) });
     await waitFor(() => r.heard.length === 2, "both closed");
-    assert.deepEqual(r.heard.map((h) => [h.speaker, h.speakerId]).sort(), [["discord", "discord"], ["u9", "u9"]]);
+    assert.deepEqual(r.heard.map((h) => [h.speaker, h.speakerId]).toSorted(), [["discord", "discord"], ["u9", "u9"]]);
   } finally { await r.stop(); }
 });
 

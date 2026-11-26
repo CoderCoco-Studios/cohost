@@ -34,7 +34,7 @@ function canonicalJson(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map((x) => (x === undefined ? "null" : canonicalJson(x))).join(",")}]`;
   if (v !== null && typeof v === "object") {
     const o = v as Record<string, unknown>;
-    return `{${Object.keys(o).sort().filter((k) => o[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(",")}}`;
+    return `{${Object.keys(o).toSorted().filter((k) => o[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`).join(",")}}`;
   }
   return JSON.stringify(v);
 }

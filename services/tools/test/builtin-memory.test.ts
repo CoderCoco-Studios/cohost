@@ -52,7 +52,7 @@ test("it publishes memory.recall.request with a fresh uuid id, the query and k, 
   const s = await startBuiltin(allow);
   const a = await lookup(s, { query: "what did Bob say", k: 5 });
   const b = await lookup(s, { query: "what did Bob say", k: 5 });
-  assert.deepEqual(Object.keys(a.req).sort(), ["id", "k", "query"]);
+  assert.deepEqual(Object.keys(a.req).toSorted(), ["id", "k", "query"]);
   assert.equal(a.req.query, "what did Bob say");
   assert.equal(a.req.k, 5);
   assert.match(a.req.id, UUID);

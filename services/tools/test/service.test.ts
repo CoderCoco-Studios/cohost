@@ -15,7 +15,8 @@ test("it runs on runService as `tools` in group tools, start mode latest, subscr
   const sub = s.bus.subscribed[0]!;
   assert.equal(sub.group, "tools");
   assert.equal(sub.start, "latest");
-  assert.deepEqual([...sub.types].sort(), ["inject.request", "memory.recall.reply", "tool.answer", "tool.request"]);
+  assert.ok(sub.types);
+  assert.deepEqual([...sub.types].toSorted(), ["inject.request", "memory.recall.reply", "tool.answer", "tool.request"]);
   assert.equal(s.bus.health[0]!.service, "tools");
   await s.stop();
 });
@@ -132,7 +133,8 @@ test("the inject.result is ok true with the status and the duration, whatever th
   await s.send("inject.request", inject(JSON.stringify({ tool: "search__web", arguments: {} }), "a"));
   await s.send("inject.request", inject(JSON.stringify({ tool: "nothing", arguments: {} }), "b"));
   await waitFor(() => s.bus.of("inject.result").length === 2, "two inject.result");
-  const [a, b] = ["a", "b"].map((id) => s.bus.of("inject.result").find((r) => r.id === id)!);
+  const [a, b] = ["a", "b"].map((id) => s.bus.of("inject.result").find((r) => r.id === id));
+  assert.ok(a && b);
   assert.equal(a.ok, true);
   assert.match(a.detail ?? "", /ok/);
   assert.match(a.detail ?? "", /\d+\s*ms/);

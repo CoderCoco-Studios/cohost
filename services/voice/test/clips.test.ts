@@ -88,7 +88,7 @@ test("a fresh store is generated one phrase at a time, in list order, after star
   assert.equal(m.clips.length, 3);
   m.clips.forEach((c: Record<string, unknown>, i: number) => {
     const bytes = readFileSync(join(dir, m.set, c.name as string));
-    assert.deepEqual(Object.keys(c).sort(), ["bytes", "durationMs", "name", "sha256", "text"]);
+    assert.deepEqual(Object.keys(c).toSorted(), ["bytes", "durationMs", "name", "sha256", "text"]);
     assert.equal(c.name, `${String(i).padStart(2, "0")}-${sha(bytes).slice(0, 8)}.wav`);
     assert.equal(c.text, ["First.", "Second.", "Third."][i]);
     assert.equal(c.durationMs, 300);

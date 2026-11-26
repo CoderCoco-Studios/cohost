@@ -66,7 +66,7 @@ export async function runService<B extends BootBus = Bus>(opts: RunServiceOption
     shuttingDown = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const teardown = (async () => {
-      for (const step of [...steps].reverse()) {
+      for (const step of [...steps].toReversed()) {
         try { await step(); } catch (err) { log.error({ err }, "onStop step failed"); }
       }
     })();

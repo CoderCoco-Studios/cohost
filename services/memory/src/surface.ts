@@ -53,7 +53,7 @@ export async function buildNotesReply(
       .map((row) => ({ row, strength: effectiveStrength(row, now, n) }))
       .filter((c) => c.strength >= n.drop_below) // faded but not yet deleted by a pass: never sent
       .filter((c) => !isSensitive(c.row) || (repliedTo && cooledDown(c.row, now, n.sensitive_cooldown_hours)))
-      .sort((a, b) => b.strength - a.strength || a.row.id - b.row.id)
+      .toSorted((a, b) => b.strength - a.strength || a.row.id - b.row.id)
       .slice(0, Math.max(0, Math.min(n.max_notes_per_viewer, budget)));
     budget -= ranked.length;
     for (const { row } of ranked) if (isSensitive(row)) surfaced.push(row.id);

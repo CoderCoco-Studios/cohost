@@ -59,7 +59,7 @@ test("listTimers returns every field as id and value, and an empty list when the
   try {
     assert.deepEqual(await bus.listTimers(), []);
     await raw.hset(key, { t1: "{\"a\":1}", t2: "{\"b\":2}" });
-    const got = (await bus.listTimers()).sort((x, y) => x.id.localeCompare(y.id));
+    const got = (await bus.listTimers()).toSorted((x, y) => x.id.localeCompare(y.id));
     assert.deepEqual(got, [{ id: "t1", json: "{\"a\":1}" }, { id: "t2", json: "{\"b\":2}" }]);
     await bus.deleteTimer("t1");
     await bus.deleteTimer("t2");

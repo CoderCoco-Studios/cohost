@@ -92,7 +92,7 @@ test("a manifest with a new fingerprint downloads every clip, verifies it, and r
   assert.deepEqual(cache.clips[0]!.wav, v.state.clips.get(cache.clips[0]!.name));
   assert.ok(v.state.requests.every((u) => u.startsWith("/fallback/")), "only voice's fallback routes are used");
   // the mirror holds the manifest and every clip, in mouth' own directory
-  assert.deepEqual(readdirSync(dir).sort(), ["manifest.json", ...cache.clips.map((c) => c.name)].sort());
+  assert.deepEqual(readdirSync(dir).toSorted(), ["manifest.json", ...cache.clips.map((c) => c.name)].toSorted());
   assert.equal(JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8")).fingerprint, "fp1");
   assert.deepEqual(readFileSync(join(dir, cache.clips[1]!.name)), cache.clips[1]!.wav);
 });
@@ -196,7 +196,7 @@ test("a failed download or a clip that fails the size, checksum or WAV check aba
     assert.equal(cache.clips, kept, what);
     assert.equal(cache.fingerprint, "fp1", what);
     assert.equal(readFileSync(join(dir, "manifest.json"), "utf8"), mirrorBefore, `${what}: mirror untouched`);
-    assert.deepEqual(readdirSync(join(dir, "..")).sort(), ["fallback-clips"], `${what}: no partial download left behind`);
+    assert.deepEqual(readdirSync(join(dir, "..")).toSorted(), ["fallback-clips"], `${what}: no partial download left behind`);
   }
   // the next poll retries and succeeds once voice serves a consistent set
   v.publish("fp2", [["One.", good], ["Two.", second]]);
@@ -327,7 +327,7 @@ test("picks uniformly among eligible clips and never the phrase it last started 
   l.started(first);
   const eligible = new Set<string>();
   for (const x of [0, 0.34, 0.67, 0.99]) { r = x; eligible.add(l.pick("u2")!.text); }
-  assert.deepEqual([...eligible].sort(), ["b", "c"], "a is excluded; b and c are both reachable");
+  assert.deepEqual([...eligible].toSorted(), ["b", "c"], "a is excluded; b and c are both reachable");
   // a lone clip is eligible even though it was the last started
   const solo = line([named("only", 1)], { minIntervalMs: 0 });
   const c = solo.line.pick("u1")!;

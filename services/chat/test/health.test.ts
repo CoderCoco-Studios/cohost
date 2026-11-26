@@ -83,9 +83,11 @@ test("idle plan (every listed source a gap): live, the listed sources down, degr
 test("the dependency of a source is read at each heartbeat, so a state change shows without rebuilding the spec", async () => {
   let state: ChatSourceStatus["state"] = "retrying";
   const spec = chatHealth(["twitch"], () => ({ twitch: { state } }) as never);
-  assert.equal(spec.deps().twitch, "down");
+  const deps = spec.deps;
+  assert.ok(typeof deps === "function", "deps is a function, read at each heartbeat");
+  assert.equal(deps().twitch, "down");
   state = "reading";
-  assert.equal(spec.deps().twitch, "ok");
+  assert.equal(deps().twitch, "ok");
 });
 
 // @spec CHAT-HEALTH-001

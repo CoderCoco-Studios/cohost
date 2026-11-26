@@ -43,7 +43,7 @@ export class EchoGate {
 
   /** Clauses whose `voice.done` never came are removed at their ceiling, as if it had been read then. */
   private sweep(t: number): void {
-    for (const [key, since] of [...this.clauses].sort((a, b) => a[1] - b[1])) {
+    for (const [key, since] of [...this.clauses].toSorted((a, b) => a[1] - b[1])) {
       if (t - since < ECHO_CLAUSE_CEILING_MS) continue;
       this.clauses.delete(key);
       this.release(since + ECHO_CLAUSE_CEILING_MS);

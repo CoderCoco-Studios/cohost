@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { themeFiles, themeSection, FLOW_BODY, THEME_CONFIG_EXTRA } from "./docs-theme-fixture.ts";
+import { themeFiles, themeSection, FLOW_BODY, THEME_CONFIG_EXTRA } from "./docs-theme-fixture.js";
 
 export const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 export const script = join(repoRoot, "scripts/docs-check.mjs");

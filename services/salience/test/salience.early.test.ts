@@ -174,7 +174,7 @@ test("early: the transcript is scored as a transient speech event beside the uns
   await e.s.onEvent(early("look at this one"));
   await flush();
   assert.equal(e.calls(), 1);
-  const texts = e.inputs[0]!.events.map((x) => `${x.kind}:${x.text}`).sort();
+  const texts = e.inputs[0]!.events.map((x) => `${x.kind}:${x.text}`).toSorted();
   assert.deepEqual(texts, ["chat:is this good?", "speech:look at this one"]);
   assert.equal(e.s.ctx.all().length, before, "the early text is not in the Context");
   const [f] = focuses(e);
@@ -623,5 +623,7 @@ test("early: a speakerId rides the provisional focus and the confirm's speech fo
   assert.deepEqual(focuses(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one", source: "discord", mention: false });
   await e.s.onEvent(heard("look at this one please", { speakerId: "D1" }));
   await flush();
-  assert.deepEqual(resolves(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one please", source: "discord", mention: false });
+  const resolved = resolves(e)[0];
+  assert.ok(resolved?.outcome === "confirm");
+  assert.deepEqual(resolved.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one please", source: "discord", mention: false });
 });

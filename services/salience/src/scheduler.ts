@@ -95,7 +95,7 @@ export class Scheduler {
     // @spec SAL-DECIDE-002, SAL-DECIDE-007, SAL-DECIDE-009, SAL-DECIDE-010, SAL-DECIDE-013, SAL-DECIDE-014, SAL-DECIDE-015, SAL-DECIDE-016
     const ranked = unseen
       .map((e, i) => ({ e, i, s: this.scoreCache.get(e) ?? 0 }))
-      .sort((a, b) => b.s - a.s || b.i - a.i);
+      .toSorted((a, b) => b.s - a.s || b.i - a.i);
     const once = createOnceCounter();
     let score = 0; // @spec SAL-DECIDE-002
     let focus: ContextEvent | undefined;

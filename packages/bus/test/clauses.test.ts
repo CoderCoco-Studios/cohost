@@ -67,7 +67,7 @@ test("brain.say accepts more only as the literal true", () => {
 // @spec BUS-EVT-038
 test("brain.clause requires id, seq of at least 1 and text, and takes last only as the literal true", () => {
   assert.ok(EVENT_TYPES.includes("brain.clause" as never), "brain.clause is catalogued");
-  assert.deepEqual([...EVENT_TYPES].sort(), Object.keys(EventPayloads).sort());
+  assert.deepEqual([...EVENT_TYPES].toSorted(), Object.keys(EventPayloads).toSorted());
   assert.equal(ok("brain.clause" as never, { id: "1", seq: 1, text: "and then" }), true);
   assert.equal(ok("brain.clause" as never, { id: "1", seq: 7, text: "x" }), true);
   assert.equal(ok("brain.clause" as never, { id: "1", seq: 0, text: "x" }), false, "seq 0 is the brain.say");

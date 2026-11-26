@@ -12,7 +12,7 @@ const catalogOf = async (s: Awaited<ReturnType<typeof startBuiltin>>) => {
 test("the built-in tools are listed under their bare names with no server and no hash, enabled or not", async () => { // @spec TOOL-CAT-001, TOOL-PIN-002
   const s = await startBuiltin({ clock: { enabled: true } });
   const c = await catalogOf(s);
-  assert.deepEqual(c.tools.slice(0, 4).map((t) => t.name).sort(), [...BUILTINS].sort(), "built-ins come first");
+  assert.deepEqual(c.tools.slice(0, 4).map((t) => t.name).toSorted(), [...BUILTINS].toSorted(), "built-ins come first");
   for (const name of BUILTINS) {
     const t = s.entry(name);
     assert.equal(t.server, undefined, `${name} has no server`);
@@ -23,10 +23,10 @@ test("the built-in tools are listed under their bare names with no server and no
   assert.equal(s.entry("clock").offered, true);
   assert.equal(s.entry("stream_info").offered, false);
   assert.equal(s.entry("stream_info").reason, "not_enabled");
-  assert.deepEqual(Object.keys(s.entry("memory_lookup").parameters.properties ?? {}).sort(), ["k", "query"]);
+  assert.deepEqual(Object.keys(s.entry("memory_lookup").parameters.properties ?? {}).toSorted(), ["k", "query"]);
   assert.deepEqual(s.entry("memory_lookup").parameters.required, ["query"]);
-  assert.deepEqual(Object.keys(s.entry("timer").parameters.properties ?? {}).sort(), ["minutes", "note"]);
-  assert.deepEqual([...s.entry("timer").parameters.required].sort(), ["minutes", "note"]);
+  assert.deepEqual(Object.keys(s.entry("timer").parameters.properties ?? {}).toSorted(), ["minutes", "note"]);
+  assert.deepEqual([...s.entry("timer").parameters.required].toSorted(), ["minutes", "note"]);
   assert.deepEqual(s.entry("stream_info").parameters.properties.platform.enum, ["twitch", "youtube"]);
   await s.stop();
 });
@@ -44,7 +44,7 @@ test("the built-in tools count first in the limits and are not cut by tools.max_
   const s = await startTools({ servers: { search }, allow: {}, max_tools: 5, max_tools_per_server: 1 }, [src], cohost);
   await waitFor(() => s.catalogs().length > 0, "catalog");
   const names = s.catalogs().at(-1)!.tools.map((t) => t.name);
-  assert.deepEqual(names.slice(0, 4).sort(), [...BUILTINS].sort());
+  assert.deepEqual(names.slice(0, 4).toSorted(), [...BUILTINS].toSorted());
   assert.deepEqual(names.slice(4), ["search__a"], "the one slot left, and the per-server limit of 1, go to the server");
   const s2 = await startTools({ servers: { search }, allow: {}, max_tools: 5 }, [new FakeSource("search", [def("a"), def("b"), def("c")])], cohost);
   await waitFor(() => s2.catalogs().length > 0, "catalog");
@@ -122,7 +122,7 @@ test("the built-in timer is not asked to confirm, and an unallowed timer is refu
 test("a source tool named like a built-in cannot shadow it: only four built-in names exist and none cancels or lists timers", async () => { // @spec TOOL-TIMER-008, TOOL-CAT-001
   const s = await startBuiltin({});
   const c = await catalogOf(s);
-  assert.deepEqual(c.tools.filter((t) => t.server === undefined).map((t) => t.name).sort(), [...BUILTINS].sort());
+  assert.deepEqual(c.tools.filter((t) => t.server === undefined).map((t) => t.name).toSorted(), [...BUILTINS].toSorted());
   for (const name of ["cancel_timer", "list_timers", "timers", "timer_cancel"]) {
     assert.equal((await callTool(s, name)).reason, "unknown_tool", name);
   }

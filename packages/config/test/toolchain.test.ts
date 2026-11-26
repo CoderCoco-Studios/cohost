@@ -15,7 +15,7 @@ const miseToml = readRepo("mise.toml");
 const workflowFiles = readdirSync(join(repoRoot, ".github/workflows")).filter((f) => /\.ya?ml$/.test(f));
 const workflows = Object.fromEntries(workflowFiles.map((f) => [`.github/workflows/${f}`, readRepo(`.github/workflows/${f}`)]));
 const services = readdirSync(join(repoRoot, "services"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
-const devServices = services.filter((s) => s !== "dashboard").sort();
+const devServices = services.filter((s) => s !== "dashboard").toSorted();
 
 /** The value of a top-level `key = "value"` line, or of `key = "value"` under `[table]`. */
 function tomlString(text: string, key: string, table?: string): string | undefined {
@@ -49,7 +49,7 @@ test("mise.toml pins Node, Zig, Python and watchexec exactly, takes pnpm and Rus
   const settings = tableText(miseToml, "settings");
   assert.match(settings, /^lockfile = true$/m);
   const idiomatic = /^idiomatic_version_file_enable_tools = \[(.*)\]$/m.exec(settings)?.[1] ?? "";
-  assert.deepEqual(idiomatic.split(",").map((s) => s.trim().replace(/"/g, "")).sort(), ["pnpm", "rust"]);
+  assert.deepEqual(idiomatic.split(",").map((s) => s.trim().replace(/"/g, "")).toSorted(), ["pnpm", "rust"]);
   assert.equal(tomlString(miseToml, "rustup_home", "settings.rust"), "~/.local/share/mise/rustup");
   assert.equal(tomlString(miseToml, "cargo_home", "settings.rust"), "~/.local/share/mise/cargo");
   const lock = readRepo("mise.lock");
@@ -276,7 +276,7 @@ test("the task dependencies are exactly the specified graph", () => {
     "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], doctor: [], "doctor:docker": [],
   };
   for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts"];
-  for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].sort(), [...deps].sort(), name);
+  for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].toSorted(), [...deps].toSorted(), name);
   // The UI bundles @cohost/shared from its dist/, so a change to the shared sources must rebuild it.
   assert.deepEqual(task("build:ui").sources.map(rel), ["services/dashboard/ui/**", "packages/shared/src/**"]);
 });
@@ -292,6 +292,25 @@ test("lint:ts runs oxlint --type-aware --deny-warnings after typecheck, with oxl
   assert.deepEqual(task("lint:ts").depends, ["typecheck"]);
   const dev = (JSON.parse(readRepo("package.json")) as { devDependencies: Record<string, string> }).devDependencies;
   assert.ok(dev.oxlint && dev["oxlint-tsgolint"], "oxlint and oxlint-tsgolint are root devDependencies");
+});
+
+// @spec DEPLOY-TOOL-023
+test("typecheck runs tsc -b, the dashboard UI's check, then tsc -p over every noEmit test tsconfig, failing when any fails", () => {
+  assert.deepEqual(task("typecheck").run, ["tsc -b", "tsc -p services/dashboard/ui --noEmit", "scripts/typecheck-tests.sh"]);
+  // A fake tsc on the path records each project and fails for one; the script checks them all and names the failure.
+  const bin = mkdtempSync(join(tmpdir(), "cohost-tsc-"));
+  const log = join(bin, "log");
+  writeFileSync(join(bin, "tsc"), `#!/usr/bin/env bash\necho "$2" >> "${log}"\n[[ "$2" != packages/config/test/* ]]\n`);
+  chmodSync(join(bin, "tsc"), 0o755);
+  const r = spawnSync(join(repoRoot, "scripts/typecheck-tests.sh"), [], { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.notEqual(r.status, 0, "a failing directory fails the run");
+  assert.match(r.stderr, /type errors in packages\/config\/test$/m);
+  const checked = readFileSync(log, "utf8").trim().split("\n");
+  const want = ["packages", "services"].flatMap((top) => readdirSync(join(repoRoot, top)).map((d) => `${top}/${d}/test/tsconfig.json`))
+    .filter((f) => existsSync(join(repoRoot, f)) && readRepo(f).includes('"noEmit": true'));
+  assert.ok(want.length > 15, "the check saw the test directories");
+  assert.deepEqual(checked.toSorted(), want.toSorted(), "every noEmit test tsconfig is checked, after the failure too");
+  assert.ok(!checked.includes("services/avatar/test/tsconfig.json"), "avatar's tests are a tsc -b project");
 });
 
 // @spec DEPLOY-TOOL-012
@@ -389,7 +408,7 @@ test("each dev:<service> runs the built service from its directory over its and 
   const m = /^MISE_JOBS=(\d+) mise watch --restart (.*)$/.exec(dev);
   assert.ok(m, dev);
   const listed = m![2]!.split(" ::: ");
-  assert.deepEqual([...listed].sort(), devServices.map((s) => `dev:${s}`), "every dev:<service>, separated by :::");
+  assert.deepEqual([...listed].toSorted(), devServices.map((s) => `dev:${s}`), "every dev:<service>, separated by :::");
   assert.equal(Number(m![1]), listed.length, "one job slot per service");
   for (const n of miseTasks().keys()) if (n.startsWith("dev:")) assert.ok(devServices.includes(n.slice(4)), `${n} is a service's dev task`);
 });
@@ -401,8 +420,8 @@ test("the infra, smoke, lid-check, hooks, bus, perf and stub tasks run their pro
   assert.deepEqual(task("smoke").run, ["scripts/compose-smoke.sh"]);
   assert.deepEqual(task("lid-check").run, ["node scripts/lid-check.mjs"]);
   assert.deepEqual(task("hooks:schemas").run, ["node scripts/gen-hook-schemas.mjs"]);
-  for (const [name, file] of [["bus:bench", "bus-bench"], ["perf:connector", "perf-connector"], ["bus:pub", "bus-pub"], ["bus:tail", "bus-tail"], ["stub:llm", "stub-llm"], ["stub:tts", "stub-tts"]]) {
-    assert.deepEqual(task(name!).run, [`tsx scripts/dev/${file}.ts`], name);
+  for (const [name, file] of [["bus:bench", "bus-bench"], ["perf:connector", "perf-connector"], ["bus:pub", "bus-pub"], ["bus:tail", "bus-tail"], ["stub:llm", "stub-llm"], ["stub:tts", "stub-tts"]] as const) {
+    assert.deepEqual(task(name).run, [`tsx scripts/dev/${file}.ts`], name);
   }
   assert.deepEqual(task("perf:baseline").run, ["scripts/dev/perf-baseline.sh"]);
   // mise appends the arguments after the task name to the task's last command: the program is that command.
@@ -633,7 +652,7 @@ test("the Dockerfile runs no cargo, pnpm, npm, corepack or tsc of its own and bu
   // versions: only ARG MISE_VERSION and the runtime node: tag (both held by DEPLOY-TOOL-002)
   const versions = [...code.matchAll(/\b\d+\.\d+\.\d+\b/g)].map((m) => m[0]);
   const min = tomlString(miseToml, "min_version"), node = tomlString(miseToml, "node", "tools");
-  assert.deepEqual([...new Set(versions)].sort(), [min, node].sort(), "no other toolchain version");
+  assert.deepEqual([...new Set(versions)].toSorted(), [min, node].toSorted(), "no other toolchain version");
 });
 
 // @spec DEPLOY-IMG-001
@@ -690,7 +709,7 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
   assert.ok(!data.startsWith(repoRoot) && !conf.startsWith(repoRoot));
   assert.equal(vars.COHOST_ENV_FILE, join(conf, ".env"));
   assert.equal(vars.COHOST_SECRETS_FILE, join(conf, "secrets", "secrets.yaml"));
-  const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).sort();
+  const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).toSorted();
   for (const f of examples) assert.ok(r.stdout.split("\n").includes(f), `${f} copied`);
   assert.equal(existsSync(data), false, "the data directory is removed");
   assert.equal(existsSync(conf), false, "the config directory is removed");

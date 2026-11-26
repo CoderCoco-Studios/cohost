@@ -2,7 +2,7 @@ import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import type { ChatMessage, ChatProvider } from "@cohost/llm";
+import type { ChatMessage, ChatProvider, ChatResult } from "@cohost/llm";
 import type { BusEvent, EventInput, EventType } from "@cohost/bus";
 import { FakeBus, event, recordingLog, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { Cortex } from "../src/cortex.js";
@@ -15,6 +15,7 @@ class FakeLlm implements ChatProvider {
   reply: (msgs: ChatMessage[]) => string | Promise<string> = () => "[happy] hey chat!";
   async chat(msgs: ChatMessage[]) { this.calls.push(msgs); return this.reply(msgs); }
   async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
+  async complete(): Promise<ChatResult> { throw new Error("the reply must be read with stream(), not complete()"); }
   async ping() { return true; }
   get system() { return this.calls.at(-1)![0]!.content; }
 }
@@ -492,7 +493,7 @@ test("llm reply log: elapsed, reason and memory count at info; the raw text only
   const { cortex, rec } = setup();
   await cortex.think(mention());
   const info = rec.lines.find((l) => l.level === "info" && l.msg === "llm reply")!;
-  assert.deepEqual(Object.keys(info.obj as object).sort(), ["memories", "ms", "reason"]);
+  assert.deepEqual(Object.keys(info.obj as object).toSorted(), ["memories", "ms", "reason"]);
   assert.equal((info.obj as { reason: string }).reason, "mentioned");
   const dbg = rec.lines.filter((l) => l.level === "debug");
   assert.ok(dbg.some((l) => (l.obj as { raw?: string }).raw === "[happy] hey chat!"));

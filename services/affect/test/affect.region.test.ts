@@ -1,5 +1,6 @@
 import { test, mock, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import type { EventInput } from "@cohost/bus";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
 import { FakeBus, event, recordingLog, silentLog, testConfig, waitFor } from "@cohost/testing";
@@ -499,7 +500,8 @@ function queued(extra: [Record<string, unknown>, Record<string, unknown>, Record
   assert.equal(s.seen.length, 1, "A is running, B and C wait");
   return s;
 }
-const removed = (data: Record<string, unknown>) => event("chat.removed", { platform: "twitch", ...data });
+type Removal = EventInput<"chat.removed">;
+const removed = (data: Omit<Removal, "platform"> & Partial<Pick<Removal, "platform">>) => event("chat.removed", { platform: "twitch", ...data });
 /** Lets the running job finish and the queue drain: releases the http stub until `settled()` resolves, failing after 5 s. */
 async function drainAll(s: ReturnType<typeof queued>) {
   let done = false;

@@ -168,7 +168,7 @@ test("a stop naming no item the output holds changes nothing and publishes nothi
   try {
     await stopOf(out)({}); // nothing held
     await stopOf(out)({ ids: [] });
-    assert.deepEqual(bus.published, []);
+    assert.equal(bus.published.length, 0);
     await enqueue(out, "a", UTT("hello there", 120));
     await stopOf(out)({ ids: ["zzz"] });
     assert.deepEqual(bus.published.map((p) => p.type), ["voice.playing"]);

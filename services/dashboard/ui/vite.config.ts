@@ -48,7 +48,7 @@ function readPackage(dir: string, name: string): BundledPackage {
   const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: string; version?: string; license?: unknown; licenses?: unknown };
   const license = manifestLicence(manifest);
   const files = existsSync(dir)
-    ? readdirSync(dir).filter((f) => isLicenceFile(f) && statSync(join(dir, f)).isFile()).sort().map((f) => ({ name: f, text: readFileSync(join(dir, f), "utf8") }))
+    ? readdirSync(dir).filter((f) => isLicenceFile(f) && statSync(join(dir, f)).isFile()).toSorted().map((f) => ({ name: f, text: readFileSync(join(dir, f), "utf8") }))
     : [];
   return { name: manifest.name ?? name, version: manifest.version ?? "0.0.0", license, workspace: false, files };
 }
@@ -95,6 +95,8 @@ export default defineConfig({
   plugins: [react(), dashboardProxy(), thirdPartyNotices()],
   server: { host: "127.0.0.1", strictPort: false }, // loopback only (DASH-BUILD-007)
   build: {
+    // The language level of the UI's tsconfig.json (`target` and `lib` ES2024), so the bundle assumes what the type check does.
+    target: "es2024",
     outDir: resolve(here, "..", "dist-ui"),
     emptyOutDir: true,
     sourcemap: false,

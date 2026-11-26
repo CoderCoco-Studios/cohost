@@ -155,7 +155,7 @@ test("Add server takes a name, URL, header name, token and External, writes the 
   await save();
   await waitFor(() => assert.equal(secretCalls(b.app).length >= 1, true));
   const servers = lastValues(b.app).servers as unknown as Record<string, Record<string, unknown>>;
-  assert.deepEqual(Object.keys(servers).sort(), ["lan", "search", "weather"], "the map keeps the servers it had");
+  assert.deepEqual(Object.keys(servers).toSorted(), ["lan", "search", "weather"], "the map keeps the servers it had");
   assert.equal(servers.search!.url, "https://mcp.example.org/v1");
   assert.equal(servers.search!.header, "X-Key");
   assert.equal(servers.search!.external, true);
@@ -400,7 +400,7 @@ test("the catalog's tools are listed under their server or Built in, each with i
     ]),
   });
   const groups = [...document.querySelectorAll<HTMLElement>("[data-tool-group]")].map((g) => g.getAttribute("data-tool-group"));
-  assert.deepEqual(groups.slice().sort(), ["Built in", "weather"]);
+  assert.deepEqual(groups.slice().toSorted(), ["Built in", "weather"]);
   const builtIn = document.querySelector<HTMLElement>('[data-tool-group="Built in"]')!;
   assert.ok(builtIn.contains(toolRow("stream_info")) && builtIn.contains(toolRow("timer")));
   assert.ok(document.querySelector('[data-tool-group="weather"]')!.contains(toolRow("weather__forecast")));

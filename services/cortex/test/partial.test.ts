@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { BusEvent } from "@cohost/bus";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import type { ChatMessage, ChatProvider } from "@cohost/llm";
+import type { ChatMessage, ChatProvider, ChatResult } from "@cohost/llm";
 import { FakeBus, silentLog, testConfig } from "@cohost/testing";
 import { Cortex } from "../src/cortex.js";
 import { startCortex } from "../src/startup.js";
@@ -15,6 +15,7 @@ class CountingLlm implements ChatProvider {
   calls = 0;
   async chat(_m: ChatMessage[]) { this.calls++; return "[happy] hi!"; }
   async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
+  async complete(): Promise<ChatResult> { throw new Error("the reply must be read with stream(), not complete()"); }
   async ping() { return true; }
 }
 
@@ -34,7 +35,7 @@ test("the cortex subscription does not include speech.partial, and speech.heard 
 test("a speech.partial handed to the cortex is not added to its window and starts no think", async () => {
   const cfg = testConfig({ brain: { memory: { recall_k: 0 } } });
   const llm = new CountingLlm();
-  const critic = new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: async () => ({ ok: true }) }, silentLog);
+  const critic = new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: () => ({ ok: true }) }, silentLog);
   const bus = new FakeBus();
   const cortex = new Cortex({ cfg, bus, llm, critic, log: silentLog, loadPersonality: () => "You are Coco." });
   const partial = { id: "1-0", type: "speech.partial", ts: Date.now(), source: "ears", data: { speaker: "Chris", source: "discord", text: "hey Coco how are you", utteranceId: "u1", seq: 0 } } as unknown as BusEvent;

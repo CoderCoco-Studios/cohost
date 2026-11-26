@@ -44,7 +44,7 @@ const putRaw = (r: Rig, body: unknown, headers: Record<string, string> = {}) =>
 const auth = { authorization: "Bearer tok" };
 
 // @spec DASH-RCV-004
-test("raw is offered only on a YAML syntax error of config.yaml or secrets.yaml", async () => {
+test("raw is offered only on a file that gives no mapping: a YAML syntax error, an empty file, a scalar or a list", async () => {
   const cfg = await rig(BROKEN);
   try {
     const p = await problems(cfg);
@@ -59,9 +59,30 @@ test("raw is offered only on a YAML syntax error of config.yaml or secrets.yaml"
   const other = await rig(EXAMPLE.replace(/^ {2}name: "Coco"/m, '  name: "${NAME}"'), { secrets: "- a list\n" });
   try {
     const p = await problems(other);
-    assert.ok(p.length >= 2, JSON.stringify(p));
-    assert.ok(p.every((x) => x.raw === undefined), "a placeholder and a secrets root that is no mapping offer no raw editor");
+    assert.deepEqual(p.map((x) => [x.file, x.path, x.raw]), [["secrets", "", true], ["config", "cohost.name", undefined]], "a secrets root that is a list is edited as text; a placeholder is a row");
   } finally { await other.close(); }
+  for (const text of ["", "# only a comment\n", "- a\n", "hello\n"]) {
+    const r = await rig(text);
+    try {
+      const p = await problems(r);
+      assert.deepEqual(p.map((x) => [x.file, x.kind, x.path, x.raw]), [["config", "schema", "", true]], JSON.stringify(text));
+      assert.equal((await getRaw(r, "config")).status, 200, "the editor stays reachable");
+    } finally { await r.close(); }
+  }
+});
+
+// @spec DASH-RCV-016, DASH-RCV-017
+test("saving an empty config.yaml through the raw editor leaves it editable as text, and the next save fixes it", async () => {
+  const r = await rig(BROKEN);
+  try {
+    let res = await putRaw(r, { file: "config", etag: etagOf(BROKEN), text: "" });
+    assert.equal(res.status, 200);
+    const body = await res.json() as Written;
+    assert.deepEqual(body.problems.map((x) => [x.path, x.raw]), [["", true]]);
+    res = await putRaw(r, { file: "config", etag: body.rawEtag, text: EXAMPLE });
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as Written).valid, true);
+  } finally { await r.close(); }
 });
 
 // @spec DASH-RCV-016, DASH-RCV-018
@@ -120,7 +141,7 @@ test("secrets.yaml text is read only with the control token, in both control mod
 });
 
 // @spec DASH-RCV-018
-test("config.yaml raw access: the token with control on; with control off an open read, and a write gated whenever a token is configured", async () => {
+test("config.yaml raw access: the token whenever one is configured, read or write; open only with control off and no token", async () => {
   const on = await rig(BROKEN, { controlEnabled: true, controlToken: "tok" });
   try {
     assert.equal((await getRaw(on, "config")).status, 401);
@@ -130,7 +151,11 @@ test("config.yaml raw access: the token with control on; with control off an ope
   } finally { await on.close(); }
   const tokenOff = await rig(BROKEN, { controlToken: "tok" });
   try {
-    assert.equal((await getRaw(tokenOff, "config")).status, 200, "a read is open with control off");
+    const read = await getRaw(tokenOff, "config");
+    assert.equal(read.status, 401, "a configured token gates the read too");
+    assert.equal(read.headers.get("www-authenticate"), "Bearer");
+    assert.ok(!(await read.text()).includes("[Coco"), "no text without the token");
+    assert.equal((await getRaw(tokenOff, "config", auth)).status, 200);
     const res = await putRaw(tokenOff, { file: "config", etag: etagOf(BROKEN), text: EXAMPLE });
     assert.equal(res.status, 401);
     assert.equal(res.headers.get("www-authenticate"), "Bearer");
@@ -185,7 +210,7 @@ test("a raw write is refused for a file without a syntax error, for a malformed 
   try {
     const res = await putRaw(r, { file: "config", etag: etagOf(text), text: EXAMPLE });
     assert.equal(res.status, 409);
-    assert.match(((await res.json()) as { detail: string }).detail, /syntax/);
+    assert.match(((await res.json()) as { detail: string }).detail, /parses as a mapping/);
     assert.equal((await putRaw(r, { file: "config", etag: etagOf(text) })).status, 400);
     assert.equal((await putRaw(r, { file: "nope", etag: etagOf(text), text: "" })).status, 400);
     assert.equal((await fetch(`${r.url}/recovery/raw`, { method: "POST", body: "not json" })).status, 400);
@@ -229,6 +254,29 @@ test("a raw write of secrets.yaml needs the token, goes through a symbolic link 
     assert.ok(r.logs.includes("info config recovery: raw edit secrets.yaml"), r.logs.join("\n"));
     assert.ok(!r.logs.some((l) => l.includes(SECRET)), "the secrets text is never logged");
     assert.ok(!JSON.stringify(body).includes(SECRET));
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-019, DASH-RCV-011
+test("a Stop running when the files become valid is answered before recovery mode is left", async () => {
+  let release: () => void = () => {};
+  const stack = { stopAll: () => new Promise<{ ok: true }>((r) => { release = () => r({ ok: true }); }) };
+  const r = await rig(BROKEN, { controlEnabled: true, controlToken: "tok", stack, lock: new LifecycleLock({ by: "dashboard", dir: mkdtempSync(join(tmpdir(), "cohost-rcv-lock-")) }) });
+  try {
+    const stopping = fetch(`${r.url}/stack/stop`, { method: "POST", headers: auth });
+    await new Promise((done) => setTimeout(done, 50));
+    writeFileSync(r.configFile, EXAMPLE);
+    assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false });
+    await new Promise((done) => setTimeout(done, 50));
+    assert.equal(r.valid(), 0, "recovery mode is not left while docker compose stop runs");
+    release();
+    const res = await stopping;
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, action: "stop" });
+    await new Promise((done) => setTimeout(done, 20));
+    assert.equal(r.valid(), 1, "then it is left");
+    const order = r.logs.filter((l) => l.includes("config recovery: stop") || l.includes("leaving config recovery mode"));
+    assert.deepEqual(order, ["info config recovery: stop", "info config recovery: the config is valid; leaving config recovery mode"]);
   } finally { await r.close(); }
 });
 
@@ -288,4 +336,15 @@ test("Stop runs docker compose stop without a valid config, behind the token and
     assert.equal(existsSync(join(failing.lockDir, "control.lock")), false, "the lock is released after a failure");
     assert.ok(failing.r.logs.some((l) => l.startsWith("error") && l.includes("Cannot connect to the Docker daemon")), failing.r.logs.join("\n"));
   } finally { await failing.r.close(); }
+});
+
+// @spec DASH-RCV-017
+test("a raw config.yaml write goes through the handler's writer with the file's mode", async () => {
+  const writes: { file: string; text: string; mode?: number }[] = [];
+  const r = await rig(BROKEN, { write: (file, text, opts) => { writes.push({ file, text, ...(opts?.mode !== undefined ? { mode: opts.mode } : {}) }); writeFileSync(file, text); } });
+  try {
+    chmodSync(r.configFile, 0o640);
+    assert.equal((await putRaw(r, { file: "config", etag: etagOf(BROKEN), text: EXAMPLE })).status, 200);
+    assert.deepEqual(writes, [{ file: r.configFile, text: EXAMPLE, mode: 0o640 }]);
+  } finally { await r.close(); }
 });

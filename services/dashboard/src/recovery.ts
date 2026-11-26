@@ -60,10 +60,17 @@ const RAW_FILES = { config: "config.yaml", secrets: "secrets.yaml" } as const;
 type RawFile = keyof typeof RAW_FILES;
 const isRawFile = (v: unknown): v is RawFile => v === "config" || v === "secrets";
 
-/** Whether `text` is not YAML at all, read as the loader reads a file: a syntax error, not a schema problem. */
-const notYaml = (text: string): boolean => {
+/**
+ * Whether `text`, read as the loader reads a file, gives no mapping at its root: a YAML syntax error, or a document that is
+ * empty, a scalar or a list. No key of such a file can be named, so it is fixed as text.
+ */
+const noMapping = (text: string): boolean => {
   const parsed = parseConfigText(text);
-  return !parsed.ok && parsed.kind === "syntax";
+  if (parsed.ok) return false;
+  if (parsed.kind === "syntax") return true;
+  if (parsed.kind !== "schema") return false;
+  const root = parsed.raw;
+  return root === null || root === undefined || typeof root !== "object" || Array.isArray(root);
 };
 
 /** The line and column a loader's syntax message names (`not valid YAML at line <l>, column <c>`). */
@@ -89,11 +96,11 @@ export function recoveryProblems(problems: readonly ConfigProblem[], text: strin
     const none: RecoveryActions = { set: false, reset: false, fallback: false };
     if (p.kind === "secrets") {
       const repair = p.path ? (secretRepair(secretsText, p.path).value === null ? "clear" : "quote") : undefined;
-      const raw = p.path === "" && notYaml(secretsText);
+      const raw = p.path === "" && noMapping(secretsText);
       return { file: "secrets", path: p.path, message: p.message, kind: p.kind, secret: true, sensitive: false, ...(p.path ? { resetPath: p.path, repair } : {}), ...(raw ? { raw: true as const } : {}), actions: { ...none, reset: p.path !== "" } };
     }
     const base = { file: "config" as const, path: p.path, message: p.message, kind: p.kind };
-    if (p.kind === "syntax") return { ...base, secret: false, sensitive: false, raw: true, actions: none };
+    if (p.kind === "syntax" || (p.path === "" && noMapping(text))) return { ...base, secret: false, sensitive: false, raw: true, actions: none };
     if (p.path === "") return { ...base, secret: false, sensitive: false, actions: none };
     const resetPath = resetPathOf(p.path);
     const secret = secretPathOf(resetPath) !== undefined;
@@ -114,12 +121,12 @@ export function recoveryProblems(problems: readonly ConfigProblem[], text: strin
  * placeholder in it, else the schema defaults.
  */
 // @spec DASH-RCV-002
-export function recoveryAddress(text: string | undefined): { port: number; allowedHosts: string[] } {
+export function recoveryAddress(text: string | undefined): { port: number; allowedHosts: string[]; fromFile: boolean } {
   const schema = ConfigSchema.shape.dashboard;
   const raw = text === undefined ? undefined : rawSection(text, "dashboard");
   const parsed = raw === undefined ? undefined : schema.safeParse(raw);
   const d = parsed?.success ? parsed.data : schema.parse({});
-  return { port: d.port, allowedHosts: [...d.allowed_hosts] };
+  return { port: d.port, allowedHosts: [...d.allowed_hosts], fromFile: parsed?.success === true };
 }
 
 export interface RecoveryHandlerDeps {
@@ -131,8 +138,11 @@ export interface RecoveryHandlerDeps {
   advanced?: boolean;
   /** The control token whenever one is configured, in either control mode. */
   controlToken?: string;
-  /** Replaces `config.yaml` atomically; `writeFileAtomic` by default. */
-  write?: (file: string, text: string) => void;
+  /**
+   * Replaces `config.yaml` atomically, with `mode` as the new file's permission bits when given; `writeFileAtomic` by default.
+   * `secrets.yaml` is never written through it: `updateSecrets` and the raw editor write it with `writeFileAtomic` at mode 0600.
+   */
+  write?: (file: string, text: string, opts?: { mode?: number }) => void;
   /** The built UI; defaults to the one beside the server. */
   uiDir?: string;
   /** The port the recovery listener is bound to; a valid answer says `moved` when the normal dashboard will listen elsewhere. */
@@ -163,7 +173,7 @@ const RECOVERY_DETAIL = "the dashboard is in config recovery mode: fix the confi
  * everything else is a 503. The Host and Origin checks wrap it at the listener.
  */
 // @spec DASH-RCV-003, DASH-RCV-004, DASH-RCV-005, DASH-RCV-006, DASH-RCV-007, DASH-RCV-009, DASH-RCV-010, DASH-RCV-012, DASH-RCV-015
-// @spec DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019
+// @spec DASH-RCV-011, DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019
 export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListener {
   const write = d.write ?? writeFileAtomic;
   const uiDir = d.uiDir ?? locateUiDir();
@@ -171,15 +181,23 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   const check = (configText?: string): ConfigProblem[] => checkConfig({ configFile, secretsFile, ...(configText !== undefined ? { configText } : {}) });
   let left = false;
   let fired = false;
-  /** Leaves recovery mode once the answer is sent, or its client has gone, so a dropped page cannot strand the server. */
+  /** Each running Stop, settled once its answer is sent or its client has gone; leaving recovery mode waits for them all. */
+  const stops = new Set<Promise<void>>();
+  /**
+   * Leaves recovery mode once the answer is sent, or its client has gone, so a dropped page cannot strand the server; a Stop
+   * still running is waited for first, so `docker compose stop` finishes and is answered before the listener closes.
+   */
   const leave = (res: http.ServerResponse): void => {
     if (left) return;
     left = true;
     const go = (): void => {
       if (fired) return;
       fired = true;
-      d.log.info("config recovery: the config is valid; leaving config recovery mode");
-      d.onValid();
+      void (async () => {
+        while (stops.size) await Promise.all(stops);
+        d.log.info("config recovery: the config is valid; leaving config recovery mode");
+        d.onValid();
+      })();
     };
     res.once("finish", go);
     res.once("close", go);
@@ -216,14 +234,14 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   const rawPath = (file: RawFile): string => (file === "config" ? configFile : secretsFile);
   const readRaw = (file: RawFile): string => (file === "config" ? readFileSync(configFile, "utf8") : readSecrets());
 
-  /** The problem that offers the raw editor for `file`, read fresh; undefined when the file has no YAML syntax error. */
+  /** The problem that offers the raw editor for `file`, read fresh; undefined when the file parses as a mapping. */
   const rawProblem = (file: RawFile): RecoveryProblem | undefined =>
     recoveryProblems(check(), readFileSync(configFile, "utf8"), readSecrets()).find((p) => p.file === file && p.raw === true);
 
   /**
    * Whether the caller may read (`write` false) or replace `file` as text (DASH-RCV-018), answering the refusal when not:
-   * `secrets.yaml` only with the token, in both control modes; `config.yaml` with the token when control is on, and with control
-   * off its write whenever a token is configured, since the file it replaces does not parse and any key may change.
+   * `secrets.yaml` only with the token, in both control modes; `config.yaml` with the token whenever one is configured (a raw
+   * write may change any key, and the text can hold a credential typed at a secret path), open only with control off and no token.
    */
   const rawAccess = (res: http.ServerResponse, file: RawFile, write: boolean, tokenOk: boolean): boolean => {
     if (tokenOk) return true;
@@ -235,7 +253,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       }
       return false;
     }
-    if (d.controlEnabled || (write && d.controlToken !== undefined)) {
+    if (d.controlEnabled || d.controlToken !== undefined) {
       json(res, 401, { ok: false, detail: `${write ? "changing" : "reading"} config.yaml as text needs the control token (Authorization: Bearer)` }, { "www-authenticate": "Bearer" });
       return false;
     }
@@ -248,7 +266,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (!isRawFile(file)) { json(res, 400, { ok: false, detail: "file must be config or secrets" }); return; }
     if (!rawAccess(res, file, false, tokenOk)) return;
     const p = rawProblem(file);
-    if (!p) { json(res, 409, { ok: false, detail: `${RAW_FILES[file]} has no YAML syntax error: fix it with the rows of the recovery screen` }); return; }
+    if (!p) { json(res, 409, { ok: false, detail: `${RAW_FILES[file]} parses as a mapping: fix it with the rows of the recovery screen` }); return; }
     const text = readRaw(file);
     json(res, 200, { ok: true, file, path: rawPath(file), text, etag: etagOf(text), message: p.message, ...positionOf(p.message) });
   };
@@ -271,12 +289,12 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     // From here to the write nothing is awaited, so no other request can change the file in between.
     const current = etagOf(readRaw(file));
     if (body.etag !== current) { json(res, 409, { ok: false, etag: current }); return; }
-    if (!rawProblem(file)) { json(res, 409, { ok: false, detail: `${RAW_FILES[file]} has no YAML syntax error: fix it with the rows of the recovery screen` }); return; }
+    if (!rawProblem(file)) { json(res, 409, { ok: false, detail: `${RAW_FILES[file]} parses as a mapping: fix it with the rows of the recovery screen` }); return; }
     let target = rawPath(file);
     try { if (lstatSync(target).isSymbolicLink()) target = realpathSync(target); } catch { /* no such file: it is written where it is named */ }
     let mode = 0o600;
     if (file === "config") { try { mode = statSync(target).mode & 0o777; } catch { mode = 0o644; } }
-    writeFileAtomic(target, body.text, { mode });
+    if (file === "config") write(target, body.text, { mode }); else writeFileAtomic(target, body.text, { mode });
     // The creation mode passes through the umask; the file keeps exactly the bits it had.
     if ((statSync(target).mode & 0o777) !== mode) chmodSync(target, mode);
     written(res, `raw edit ${RAW_FILES[file]}`, { rawEtag: etagOf(body.text) });
@@ -287,6 +305,9 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
    * the lifecycle lock, answered with its result since this mode has no feed to carry it (DASH-RCV-019).
    */
   const stop = async (res: http.ServerResponse): Promise<void> => {
+    const answered = new Promise<void>((r) => { res.once("finish", r); res.once("close", r); });
+    stops.add(answered);
+    void answered.then(() => stops.delete(answered));
     const held = (d.lock ?? new LifecycleLock({ by: "dashboard" })).tryAcquire("stop");
     if (!held.ok) { json(res, 409, { ok: false, detail: held.detail }); return; }
     d.log.info("config recovery: stop");
@@ -451,7 +472,7 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const { bind, cfg } = fullSurfaceBind(o.env);
   let text: string | undefined;
   try { text = readFileSync(files.configFile, "utf8"); } catch { text = undefined; }
-  const { port, allowedHosts } = recoveryAddress(text);
+  const { port, allowedHosts, fromFile } = recoveryAddress(text);
   let resolveValid: () => void = () => {};
   const valid = new Promise<void>((r) => { resolveValid = r; });
   const handler = createRecoveryHandler({
@@ -460,7 +481,12 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   });
   const server = http.createServer(guardFullSurface(handler, { loopback: isLoopback(bind), controlEnabled: cfg.enabled, allowedHosts }));
   const listening = await new Promise<boolean>((resolve) => {
-    server.once("error", (err: NodeJS.ErrnoException) => { o.log.fatal({ err }, `dashboard cannot listen on ${bind}:${port} (config recovery): ${err.message}`); resolve(false); });
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      // A broken dashboard section leaves nothing but the default port: say so, so the operator knows what to free or fix.
+      const why = fromFile ? "" : `; the dashboard section of config.yaml could not be read, so the default port ${port} was used: free that port, or fix config.yaml by hand`;
+      o.log.fatal({ err }, `dashboard cannot listen on ${bind}:${port} (config recovery): ${err.message}${why}`);
+      resolve(false);
+    });
     server.listen(port, bind, () => { server.removeAllListeners("error"); resolve(true); });
   });
   if (!listening) { exit(1); return false; }

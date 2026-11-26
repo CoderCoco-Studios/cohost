@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -112,6 +112,8 @@ const portFree = (port: number): Promise<boolean> => new Promise((resolve) => {
 test("the built dashboard on a config.yaml syntax error stops the stack and is fixed through the raw editor", async (t) => {
   if (!(await portFree(3000))) { t.skip("port 3000, the recovery default for a file that does not parse, is in use"); return; }
   const root = mkdtempSync(join(tmpdir(), "cohost-dash-raw-"));
+  // A workspace root of its own, so the Stop's lifecycle lock (data/control.lock under the workspace root) is never the repo's.
+  writeFileSync(join(root, "pnpm-workspace.yaml"), "packages: []\n");
   const config = join(root, "config");
   const data = join(root, "data");
   mkdirSync(config);
@@ -129,7 +131,7 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
   writeFileSync(docker, `#!/bin/sh\necho "$@" >> '${calls}'\nif [ "$1 $2" = "compose ps" ]; then echo '[]'; fi\nexit 0\n`, { mode: 0o755 });
 
   const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], {
-    cwd: repo,
+    cwd: root, // the workspace root findWorkspaceRoot resolves: the lifecycle lock is taken in this temp root, never in the repo's data/
     env: {
       PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: secretsFile,
       REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: docker, CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
@@ -152,6 +154,7 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
     assert.equal(stop.status, 200);
     assert.deepEqual(await stop.json(), { ok: true, action: "stop" });
     assert.equal(readFileSync(calls, "utf8"), "compose stop\n");
+    assert.equal(existsSync(join(root, "data", "control.lock")), false, "the lifecycle lock, taken in the temp workspace root, is released");
 
     assert.equal((await fetch(`${base}/recovery/raw?file=config`)).status, 401);
     const raw = await (await fetch(`${base}/recovery/raw?file=config`, { headers: auth })).json() as { text: string; etag: string; message: string; line: number };

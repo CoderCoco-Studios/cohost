@@ -2032,21 +2032,21 @@ test("the Connector protocol page says no SDK, not a supported route, and names 
 });
 
 // @spec DOCS-EX-002
-test("the modules README names its seven files as code spans and the three run commands in a shell fence", () => {
+test("the modules README names its seven files as code spans and the three servers' mise tasks in a shell fence", () => {
   const p = "examples/modules/README.md";
   const site = "[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)";
   const names = "`server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`";
-  const runs = "```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```";
+  const runs = "```sh\nmise run example:hook-server:py\nmise run example:hook-server:ts\nmise run example:hook-server:rust\n```";
   passes(check({ [p]: `# M\n\n${names}.\n\n${runs}\n\n${site}\n` }));
   for (const n of ["server.py", "server.ts", "rust/", "try.sh", "try.expected.txt", "fixtures/", "schemas/"]) {
     fails(check({ [p]: `# M\n\n${names.replace(`\`${n}\``, n)}.\n\n${runs}\n\n${site}\n` }), new RegExp(`modules/README\\.md.*DOCS-EX-002.*${n.replace(/[./]/g, "\\$&")}`));
   }
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("python3 examples/modules/server.py\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*python3/);
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("node examples/modules/server.ts\n", "")}\n\n${site}\n` }), /DOCS-EX-002.*node/);
-  fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace(/cargo run.*\n/, "cargo build\n")}\n\n${site}\n` }), /DOCS-EX-002.*cargo run/);
+  for (const lang of ["py", "ts", "rust"]) {
+    fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace(`mise run example:hook-server:${lang}\n`, "")}\n\n${site}\n` }), new RegExp(`DOCS-EX-002.*example:hook-server:${lang}`));
+  }
   fails(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("```sh", "```text")}\n\n${site}\n` }), /DOCS-EX-002/);
   fails(check({ [p]: `# M\n\n${names}.\n\n${runs}\n` }), /DOCS-EX-002.*hooks/);
-  passes(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("-p cohost-example-hook-server", "--package cohost-example-hook-server")}\n\n${site}\n` }));
+  passes(check({ [p]: `# M\n\n${names}.\n\n${runs.replace("mise run example:hook-server:py", "mise run -q example:hook-server:py")}\n\n${site}\n` }));
 });
 
 // @spec DOCS-EX-005

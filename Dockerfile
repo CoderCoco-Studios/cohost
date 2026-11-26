@@ -9,11 +9,12 @@
 
 # mise itself: the release mise.toml's min_version names, signature- and checksum-verified before it is unpacked.
 # Debian 13 (trixie) is the release the runtime's node image is built on. No C toolchain: Zig links the addon.
+# libatomic1: the official Node binary links it dynamically (the node: runtime image already carries it).
 # @spec DEPLOY-TOOL-020
 FROM debian:13.8-slim AS toolchain
 ARG MISE_VERSION=2026.11.14
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/fetch-mise.sh scripts/mise-release-key.asc /tmp/fetch-mise/
 RUN /tmp/fetch-mise/fetch-mise.sh "$MISE_VERSION" /usr/local/bin/mise && rm -rf /tmp/fetch-mise

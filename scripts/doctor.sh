@@ -4,7 +4,7 @@
 # command that installs or fixes it. It installs nothing. It exits non-zero when any check fails; the glibc
 # check only warns.
 #   scripts/doctor.sh                 # every check (the doctor task)
-#   scripts/doctor.sh docker|gpu|fetch|glibc   # one check (the doctor:<check> tasks)
+#   scripts/doctor.sh docker|gpu|fetch|libatomic|glibc   # one check (the doctor:<check> tasks)
 # @spec DEPLOY-TOOL-017
 set -u
 
@@ -73,6 +73,22 @@ check_fetch() {
   done
 }
 
+# The official Node binary mise installs links libatomic.so.1 dynamically; mise cannot provide a system library.
+has_libatomic() {
+  if command -v ldconfig >/dev/null 2>&1; then ldconfig -p 2>/dev/null | grep -q 'libatomic\.so\.1 '; return; fi
+  if [ -x /sbin/ldconfig ]; then /sbin/ldconfig -p 2>/dev/null | grep -q 'libatomic\.so\.1 '; return; fi
+  for d in /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /lib64 /usr/lib64; do [ -e "$d/libatomic.so.1" ] && return 0; done
+  return 1
+}
+
+check_libatomic() {
+  if has_libatomic; then
+    pass "libatomic.so.1 is installed (the Node binary links it)"
+  else
+    fail "libatomic.so.1 is not installed; the Node binary mise installs links it" "sudo apt install libatomic1"
+  fi
+}
+
 # version_lt <a> <b>: true when dotted version a is older than b.
 version_lt() {
   [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$1" ]
@@ -89,14 +105,15 @@ check_glibc() {
   fi
 }
 
-if [ $# -eq 0 ]; then set -- docker gpu fetch glibc; fi
+if [ $# -eq 0 ]; then set -- docker gpu fetch libatomic glibc; fi
 for check do
   case $check in
     docker) check_docker ;;
     gpu) check_gpu ;;
     fetch) check_fetch ;;
+    libatomic) check_libatomic ;;
     glibc) check_glibc ;;
-    *) echo "usage: $0 [docker|gpu|fetch|glibc]..." >&2; exit 2 ;;
+    *) echo "usage: $0 [docker|gpu|fetch|libatomic|glibc]..." >&2; exit 2 ;;
   esac
 done
 exit "$failed"

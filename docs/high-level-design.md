@@ -395,9 +395,11 @@ Each tenet is a test a reviewer can apply to a design or a pull request.
     scoped to one project. The exceptions are Docker Engine or Docker Desktop
     with the Compose plugin (a system daemon), the NVIDIA driver and container
     toolkit (kernel and Docker-runtime level), mise itself (the bootstrap, a
-    single verified per-user binary), and `git`, `curl`, `ca-certificates`
+    single verified per-user binary), `git`, `curl`, `ca-certificates`
     and `gnupg` (needed to fetch the repository, mise and Docker's repository
-    key before any project toolchain exists). Reject a setup step that
+    key before any project toolchain exists), and `libatomic1` (a system
+    shared library the official Node binary links dynamically, which mise
+    installs Node beside but cannot provide). Reject a setup step that
     installs anything else globally (`npm install -g`, `corepack enable`, a
     system Node, a user-wide rustup default, `build-essential` or a system
     `-dev` library), a version written in a second place without a check that

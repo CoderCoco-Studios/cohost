@@ -39,7 +39,7 @@ organisation, open an issue first so a suitable agreement can be arranged.
 - Changes start from the design: read [How specs work](spec-driven.md), then walk
   the arrow of intent (design, specs, tests, code) for the part you are changing.
 - Mark code and tests with `@spec` comments naming the spec lines they cover.
-- Run the tests with `pnpm test` before you push.
+- Run the tests with `mise run test` before you push.
 
 The terms themselves are in
 [CONTRIBUTING.md](https://github.com/CoderCoco-Studios/cohost/blob/main/CONTRIBUTING.md).

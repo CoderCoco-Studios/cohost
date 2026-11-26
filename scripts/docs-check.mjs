@@ -1382,9 +1382,9 @@ export async function runSource(root) {
     const ma = analyze(modules);
     for (const name of ['server.py', 'server.ts', 'rust/', 'try.sh', 'try.expected.txt', 'fixtures/', 'schemas/']) if (!ma.spans.includes(name)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must name ${name} as a code span`);
     const cmds = ma.fences.filter((f) => SHELL_LANGS.has(f.lang)).flatMap((f) => logicalLines(f).flatMap((l) => shellCommands(l.text).map((w) => w.slice(commandStart(w)))));
-    if (!cmds.some((w) => w[0] === 'python3')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Python server: a python3 command in a shell fence');
-    if (!cmds.some((w) => w[0] === 'node')) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the TypeScript server: a node command in a shell fence');
-    if (!cmds.some((w) => w[0] === 'cargo' && w.includes('run') && w.some((x) => x === '-p' || x === '--package' || x.startsWith('--package=') || /^-p./.test(x)))) add('examples/modules/README.md', 0, 'DOCS-EX-002', 'must show how to run the Rust server: a cargo run -p command in a shell fence');
+    for (const [lang, what] of [['py', 'Python'], ['ts', 'TypeScript'], ['rust', 'Rust']]) {
+      if (!cmds.some((w) => w[0] === 'mise' && w[1] === 'run' && w.includes(`example:hook-server:${lang}`))) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must show how to run the ${what} server: mise run example:hook-server:${lang} in a shell fence`);
+    }
     if (!ma.links.some((l) => l.href.replace(/[#?].*$/, '').replace(/\/$/, '') === `${SITE}advanced/extend/hooks`)) add('examples/modules/README.md', 0, 'DOCS-EX-002', `must link the Brain hooks page ${SITE}advanced/extend/hooks`);
   }
   const exReadme = readIf(join(exDir, 'README.md'));

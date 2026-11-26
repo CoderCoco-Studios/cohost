@@ -16,16 +16,16 @@ React 19 + TypeScript + Vite. Design and specs: `docs/intent/dashboard/dashboard
 ## Running things (always bounded)
 
 ```sh
-source ~/.nvm/nvm.sh && nvm use 26
+# Node comes from mise.toml; run these in a shell where mise is active.
 # one test file, capped on real memory and time (from services/dashboard):
 systemd-run --user --scope --quiet -p MemoryMax=4G -p MemorySwapMax=0 -- env TSX_TSCONFIG_PATH=../../tsconfig.test.json \
   timeout 120 node --import tsx --test --test-timeout=30000 --test-concurrency=2 test/ui/<name>.test.tsx
 node_modules/.bin/tsc -p services/dashboard/ui --noEmit   # from the repo root: typechecks src and test/ui
-pnpm --filter @cohost/dashboard build:ui                  # writes services/dashboard/dist-ui
-pnpm dashboard:ui                                         # dev server with the proxy (loopback only)
+mise run build:ui                                         # writes services/dashboard/dist-ui
+mise run dashboard:ui                                     # dev server with the proxy (loopback only)
 ```
 
-`TSX_TSCONFIG_PATH=...tsconfig.test.json` is required: tsx takes its JSX settings from it, and without it a `.tsx` file fails with "React is not defined". The root `pnpm test` and `pnpm test:only` set it.
+`TSX_TSCONFIG_PATH=...tsconfig.test.json` is required: tsx takes its JSX settings from it, and without it a `.tsx` file fails with "React is not defined". The `test`, `test:only` and `test:file` tasks of `mise.toml` set it.
 
 ## Add a screen
 

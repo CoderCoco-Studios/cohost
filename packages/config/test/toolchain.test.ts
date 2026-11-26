@@ -176,7 +176,7 @@ test("mise.toml [env] links every x86_64-unknown-linux-gnu build through the Zig
 
 // ---------------------------------------------------------------------------------------------- the installer installs only prerequisites (DEPLOY-TOOL-004)
 
-const ALLOWED_SYSTEM = new Set(["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin", "nvidia-container-toolkit", "ca-certificates", "curl", "gnupg"]);
+const ALLOWED_SYSTEM = new Set(["docker-ce", "docker-ce-cli", "containerd.io", "docker-buildx-plugin", "docker-compose-plugin", "nvidia-container-toolkit", "ca-certificates", "curl", "gnupg", "libatomic1"]);
 function systemInstallProblems(installSh: string): string[] {
   const code = nonComment(installSh);
   const out: string[] = [];
@@ -191,7 +191,7 @@ function systemInstallProblems(installSh: string): string[] {
 }
 
 // @spec DEPLOY-TOOL-004
-test("the installer installs system-wide only Docker, the NVIDIA container toolkit, ca-certificates, curl and gnupg", () => {
+test("the installer installs system-wide only Docker, the NVIDIA container toolkit, ca-certificates, curl, gnupg and libatomic1", () => {
   const sh = readRepo("scripts/install.sh");
   assert.deepEqual(systemInstallProblems(sh), []);
   assert.match(systemInstallProblems(`${sh}\nsudo apt-get install -y build-essential\n`).join("\n"), /installs build-essential.*\n.*names build-essential/);
@@ -206,7 +206,7 @@ test("the installer installs system-wide only Docker, the NVIDIA container toolk
 // @spec DEPLOY-TOOL-005
 test("mise.toml defines every task of the command surface, one dev:<service> per service but the dashboard", () => {
   const names = new Set(miseTasks().keys());
-  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", "secrets:project", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:glibc"]) {
+  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:file", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", "secrets:project", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:libatomic", "doctor:glibc"]) {
     assert.ok(names.has(n), `task ${n}`);
   }
   for (const s of devServices) assert.ok(names.has(`dev:${s}`), `dev:${s}`);
@@ -273,7 +273,7 @@ test("the task dependencies are exactly the specified graph", () => {
     "bus:pub": ["build:native", "build:ts"], "bus:tail": ["build:native", "build:ts"], "bus:bench": ["build:native", "build:ts"], "perf:connector": ["build:native", "build:ts"],
     "perf:baseline": ["build:native", "build:ts", "doctor:docker"], "hooks:schemas": ["build:ts"], cohostctl: ["build:native", "install"], dashboard: ["build:native", "build:ui"],
     "infra:up": ["doctor:docker"], "infra:down": ["doctor:docker"], smoke: ["doctor:docker"],
-    install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], doctor: [], "doctor:docker": [],
+    "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], doctor: [], "doctor:docker": [],
   };
   for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts"];
   for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].sort(), [...deps].sort(), name);
@@ -301,6 +301,8 @@ test("test:rust runs the Rust tests and the Windows check; test and test:only ru
     assert.match(JSON.stringify(task(name).env), /TSX_TSCONFIG_PATH\W+tsconfig\.test\.json/, name);
   }
   assert.deepEqual(task("test:only").depends, []);
+  assert.deepEqual(task("test:file").run, ["node --import tsx --test"], "the files given after the task name are its arguments");
+  assert.match(JSON.stringify(task("test:file").env), /TSX_TSCONFIG_PATH\W+tsconfig\.test\.json/);
 });
 
 // ---------------------------------------------------------------------------------------------- task names in build files (DEPLOY-TOOL-013)
@@ -448,6 +450,7 @@ const healthy = {
   "nvidia-smi": 'echo "GPU 0: NVIDIA (UUID: x)"',
   git: "exit 0", curl: "exit 0",
   getconf: 'echo "glibc 2.39"',
+  ldconfig: 'echo "	libatomic.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libatomic.so.1"',
 };
 
 // @spec DEPLOY-TOOL-017
@@ -456,7 +459,7 @@ test("doctor prints one ✓ line per passing check and exits 0 when every prereq
   assert.equal(r.status, 0, r.stdout);
   const lines = r.stdout.trim().split("\n");
   assert.ok(lines.every((l) => l.startsWith("✓")), r.stdout);
-  for (const what of [/docker is on the path/, /docker compose works/, /daemon answers/, /NVIDIA runtime/, /git is on the path/, /curl is on the path/, /glibc 2\.39/]) assert.match(r.stdout, what);
+  for (const what of [/libatomic\.so\.1 is installed/, /docker is on the path/, /docker compose works/, /daemon answers/, /NVIDIA runtime/, /git is on the path/, /curl is on the path/, /glibc 2\.39/]) assert.match(r.stdout, what);
 });
 
 // @spec DEPLOY-TOOL-017
@@ -476,6 +479,9 @@ test("each failing check prints ✗ and the command that fixes it, installs noth
   const fetch = doctor(["fetch"], { git: "exit 0" });
   assert.notEqual(fetch.status, 0);
   assert.match(fetch.stdout, /^✗ curl is not on the path\n {4}fix: sudo apt-get install -y curl$/m);
+  const noAtomic = doctor(["libatomic"], { ldconfig: 'echo "	libc.so.6 (libc6,x86-64) => /lib/x86_64-linux-gnu/libc.so.6"' });
+  assert.notEqual(noAtomic.status, 0);
+  assert.match(noAtomic.stdout, /^✗ libatomic\.so\.1 is not installed.*\n {4}fix: sudo apt install libatomic1$/m);
   const src = readRepo("scripts/doctor.sh").split("\n").filter((l) => !/^\s*(#|fail |.*fail ")/.test(l)).join("\n");
   assert.doesNotMatch(src, /apt-get install|sudo |systemctl start|usermod/, "doctor only prints fixes, it runs none");
 });
@@ -491,9 +497,9 @@ test("a glibc below the supported floor is a warning, not a failure", () => {
 // @spec DEPLOY-TOOL-017
 test("doctor:<check> runs one check of doctor with the same output, and the tasks that need Docker depend on doctor:docker", () => {
   assert.deepEqual(task("doctor").run, ["scripts/doctor.sh"]);
-  for (const c of ["docker", "gpu", "fetch", "glibc"]) assert.deepEqual(task(`doctor:${c}`).run, [`scripts/doctor.sh ${c}`]);
+  for (const c of ["docker", "gpu", "fetch", "libatomic", "glibc"]) assert.deepEqual(task(`doctor:${c}`).run, [`scripts/doctor.sh ${c}`]);
   const all = doctor([], healthy).stdout;
-  for (const c of ["docker", "gpu", "fetch", "glibc"]) assert.ok(all.includes(doctor([c], healthy).stdout), c);
+  for (const c of ["docker", "gpu", "fetch", "libatomic", "glibc"]) assert.ok(all.includes(doctor([c], healthy).stdout), c);
 });
 
 // ---------------------------------------------------------------------------------------------- partial installs (DEPLOY-TOOL-018)
@@ -633,7 +639,7 @@ test("the Dockerfile's stages: toolchain from debian with mise, native with Rust
   };
   const toolchain = stage("toolchain");
   assert.match(toolchain, /^FROM debian:13\.\d+-slim AS toolchain$/m);
-  assert.match(toolchain, /apt-get install -y --no-install-recommends ca-certificates curl gnupg/);
+  assert.match(toolchain, /apt-get install -y --no-install-recommends ca-certificates curl gnupg libatomic1/);
   assert.match(toolchain, /fetch-mise\.sh "\$MISE_VERSION" \/usr\/local\/bin\/mise/);
   assert.doesNotMatch(toolchain, /build-essential|gcc|clang/);
   const native = stage("native");

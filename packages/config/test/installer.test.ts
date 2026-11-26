@@ -339,6 +339,19 @@ test("the installer appends the mise activate line to the login shell's rc file 
   assert.match(fish.stdout, /eval "\$\(~\/\.local\/bin\/mise activate <shell>\)"/, "the line is printed");
 });
 
+// @spec DEPLOY-INST-008, DEPLOY-INST-016
+test("next steps also give the line that activates mise in the current shell", () => {
+  assert.match(nextSteps(MINIMAL_YAML, { SHELL: "/usr/bin/zsh" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate zsh\)"/);
+  assert.match(nextSteps(MINIMAL_YAML, { SHELL: "/usr/bin/fish" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate <shell>\)"/);
+});
+
+// @spec DEPLOY-TOOL-004
+test("the installer installs libatomic1 when the dynamic loader does not find libatomic.so.1, as it does curl and gnupg", () => {
+  const line = code.split("\n").find((l) => l.includes("need_apt+=(libatomic1)"));
+  assert.ok(line, "libatomic1 joins the apt list");
+  assert.ok(line!.includes("ldconfig -p") && line!.includes("libatomic\\.so\\.1"), "only when the loader lacks it");
+});
+
 // ---------------------------------------------------------------------------------------------- the mise fetch (DEPLOY-TOOL-020)
 
 const fetchScript = join(repo, "scripts", "fetch-mise.sh");
@@ -346,7 +359,7 @@ const V = "2026.11.14";
 const TARBALL = `mise-v${V}-linux-x64.tar.gz`;
 
 /** A signing key of the test's own, a release tarball holding mise/bin/mise, and its clearsigned checksums. */
-function release(o: { sums?: (line: string) => string; signWith?: "own" | "other" } = {}) {
+function release(o: { sums?: (line: string) => string; signWith?: "own" | "other"; keyFileHolds?: "own" | "both"; tarball?: "ok" | "not-gzip" | "no-binary" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "mise-release-"));
   const gnupg = join(dir, "gnupg");
   mkdirSync(gnupg, { mode: 0o700 });
@@ -356,13 +369,15 @@ function release(o: { sums?: (line: string) => string; signWith?: "own" | "other
   const fpr = (uid: string) => gpg("--with-colons", "--list-keys", uid).split("\n").find((l) => l.startsWith("fpr:"))!.split(":")[9]!;
   const own = fpr("release@example.invalid");
   const keyFile = join(dir, "key.asc");
-  writeFileSync(keyFile, gpg("--armor", "--export", own));
+  writeFileSync(keyFile, o.keyFileHolds === "both" ? gpg("--armor", "--export", own, fpr("other@example.invalid")) : gpg("--armor", "--export", own));
   const files = join(dir, "files");
   mkdirSync(join(files, "mise", "bin"), { recursive: true });
-  writeFileSync(join(files, "mise", "bin", "mise"), "#!/bin/sh\necho mise\n");
+  if (o.tarball === "no-binary") writeFileSync(join(files, "mise", "README"), "no binary\n");
+  else writeFileSync(join(files, "mise", "bin", "mise"), "#!/bin/sh\necho mise\n");
   const dl = join(dir, "dl");
   mkdirSync(dl);
-  execFileSync("tar", ["-czf", join(dl, TARBALL), "-C", files, "mise"]);
+  if (o.tarball === "not-gzip") writeFileSync(join(dl, TARBALL), "this is not a gzip archive\n");
+  else execFileSync("tar", ["-czf", join(dl, TARBALL), "-C", files, "mise"]);
   const sum = execFileSync("sha256sum", [TARBALL], { cwd: dl, encoding: "utf8" }).split(/\s+/)[0]!;
   const line = `${sum}  ./${TARBALL}`;
   writeFileSync(join(dir, "sums"), `${o.sums ? o.sums(line) : `deadbeef  ./mise-v${V}-macos-arm64.tar.gz\n${line}`}\n`);
@@ -409,6 +424,10 @@ test("fetch-mise installs nothing and names the failed step for a failed downloa
     ["tampered tarball", () => fetchMise(release(), { corrupt: true }), /sha256 of mise-v.* does not match/],
     ["no line", () => fetchMise(release({ sums: () => "deadbeef  ./other.tar.gz" })), /name mise-v.*\.tar\.gz 0 times, not once/],
     ["two lines", () => fetchMise(release({ sums: (l) => `${l}\n${l}` })), /name mise-v.*\.tar\.gz 2 times, not once/],
+    ["a name that matches only as a pattern", () => fetchMise(release({ sums: (l) => l.replace(`./${TARBALL}`, `./${TARBALL.replace(/\./g, "X")}`) })), /name mise-v.*\.tar\.gz 0 times, not once/],
+    ["a valid signature by another key in the key file", () => fetchMise(release({ keyFileHolds: "both", signWith: "other" })), /not signed by the mise release key/],
+    ["a tarball tar cannot unpack", () => fetchMise(release({ tarball: "not-gzip" })), /unpacking mise-v.*\.tar\.gz failed/],
+    ["a tarball with no mise/bin/mise", () => fetchMise(release({ tarball: "no-binary" })), /holds no mise\/bin\/mise/],
   ];
   for (const [name, run, re] of cases) {
     const r = run();

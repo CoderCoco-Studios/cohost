@@ -74,12 +74,14 @@ if [[ $HAS_NVIDIA -eq 1 ]] && ! docker info 2>/dev/null | grep -qi nvidia; then
 fi
 
 # ---------------------------------------------------------------- system prerequisites  @spec DEPLOY-TOOL-004
-# curl and ca-certificates fetch mise; gnupg verifies its signed checksums. Nothing else is installed system-wide
+# curl and ca-certificates fetch mise; gnupg verifies its signed checksums; libatomic1 is loaded by the Node binary. Nothing else is installed system-wide
 # for the project's toolchains: those come from mise.toml, per project.
 need_apt=()
 command -v curl >/dev/null 2>&1 || need_apt+=(curl)
 command -v gpg >/dev/null 2>&1 || need_apt+=(gnupg)
 [[ -f /etc/ssl/certs/ca-certificates.crt ]] || need_apt+=(ca-certificates)
+# The official Node binary mise installs links libatomic.so.1 dynamically, and mise cannot provide a system library.
+{ /sbin/ldconfig -p 2>/dev/null || ldconfig -p 2>/dev/null; } | grep -q 'libatomic\.so\.1 ' || need_apt+=(libatomic1)
 if [[ ${#need_apt[@]} -gt 0 ]]; then
   log "Installing ${need_apt[*]}"
   sudo apt-get update -qq
@@ -244,7 +246,9 @@ print_next_steps() {
   # The dashboard's port is dashboard.port as the built config loader returns it: the one parser every service uses, run
   # by node from the repository root. config.yaml is never parsed as text here and never executed. When the load fails
   # the loader's first error line goes to stderr and the URL carries no port.
-  local url="http://localhost" port_note="" port
+  local url="http://localhost" port_note="" port shell_name
+  shell_name=$(basename "${SHELL:-}")
+  case "$shell_name" in zsh|bash) ;; *) shell_name="<shell>" ;; esac
   if port=$(cd "$ROOT" && node --input-type=module -e '
     try {
       const config = await import("./packages/config/dist/index.js");
@@ -261,7 +265,8 @@ print_next_steps() {
   cat <<EOF
 
 Done. Next:
-  0. Open a new shell, so the mise activate line applies and the project's tools and tasks are on its path.
+  0. Open a new shell, so the mise activate line applies and the project's tools and tasks are on its path,
+     or activate mise in this one:  eval "\$(~/.local/bin/mise activate ${shell_name})"
   1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and secrets/secrets.yaml (API keys,
      tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
   2. mise run dashboard                # start the dashboard on this machine (it brings up the stack)

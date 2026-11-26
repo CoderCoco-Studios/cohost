@@ -138,7 +138,7 @@ export default defineConfig({
 ${THEME_CONFIG_EXTRA}});
 `;
 
-export const MODULES_README = "# Modules\n\nFiles: `server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`.\n\n```sh\npython3 examples/modules/server.py\nnode examples/modules/server.ts\ncargo run --manifest-path examples/Cargo.toml -p cohost-example-hook-server\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n";
+export const MODULES_README = "# Modules\n\nFiles: `server.py`, `server.ts`, `rust/`, `try.sh`, `try.expected.txt`, `fixtures/`, `schemas/`.\n\n```sh\nmise run example:hook-server:py\nmise run example:hook-server:ts\nmise run example:hook-server:rust\n```\n\n[Brain hooks](https://codercoco-studios.github.io/cohost/advanced/extend/hooks)\n";
 
 /** The tasks the fixture repository defines; a page's `mise run` and `mise watch` commands must name one (DOCS-FACT-001). */
 export const MISE_TOML = `[tools]

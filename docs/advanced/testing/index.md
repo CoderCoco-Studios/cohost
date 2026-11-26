@@ -47,13 +47,13 @@ A skipped test is not a failed one, but a run with skips is not a full pass. The
 
 ## Run one package, one service or one test
 
-No task runs part of the suite; call Node's runner directly, in a shell where mise is active so `node` and `tsx` are the checkout's. Run `mise run build` first: the packages a test imports resolve to their built `dist/` and the native addon.
+`mise run test:file` runs Node's test runner over the files you give it after the task name. It builds first, because the packages a test imports resolve to their built `dist/` and the native addon; flags for the runner go before the files.
 
 ```bash
-node --import tsx --test services/salience/test/*.test.ts       # one service
-node --import tsx --test packages/bus/test/*.test.ts            # one package
-node --import tsx --test services/voice/test/wav.test.ts        # one file
-node --import tsx --test --test-name-pattern="mention" services/salience/test/*.test.ts   # by test name
+mise run test:file -- services/salience/test/*.test.ts       # one service
+mise run test:file -- packages/bus/test/*.test.ts            # one package
+mise run test:file -- services/voice/test/wav.test.ts        # one file
+mise run test:file -- --test-name-pattern="mention" services/salience/test/*.test.ts   # by test name
 ```
 
 Where the tests live:

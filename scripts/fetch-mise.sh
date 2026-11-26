@@ -46,9 +46,12 @@ signer=$(printf '%s\n' "$status" | awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { p
 [[ "$signer" == "$fingerprint" ]] \
   || fail "SHASUMS256.asc is not signed by the mise release key $fingerprint (VALIDSIG: ${signer:-none})"
 
-count=$(grep -c -- " ./$tarball\$" "$tmp/sums")
+# The lines ending in exactly " ./<tarball>", compared as text (no pattern), so a dot in the version matches only a dot.
+awk -v want=" ./$tarball" 'length($0) >= length(want) && substr($0, length($0) - length(want) + 1) == want' "$tmp/sums" >"$tmp/line" \
+  || fail "reading the signed checksums failed"
+count=$(wc -l <"$tmp/line" | tr -d ' ')
 [[ "$count" == 1 ]] || fail "the signed checksums name $tarball $count times, not once"
-grep -- " ./$tarball\$" "$tmp/sums" | (cd "$tmp/dl" && sha256sum -c --quiet -) \
+(cd "$tmp/dl" && sha256sum -c --quiet - <"$tmp/line") \
   || fail "the sha256 of $tarball does not match the signed checksum"
 
 tar -xzf "$tmp/dl/$tarball" -C "$tmp/x" || fail "unpacking $tarball failed"

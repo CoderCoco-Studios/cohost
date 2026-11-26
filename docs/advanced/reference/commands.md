@@ -42,6 +42,7 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 | `test:rust` | `cargo test --workspace`, then the desktop audio helper's Windows check |
 | `test` | `test:rust` and `build`, then every `test/*.test.ts` under `packages/*` and `services/*` (and the dashboard UI's `.test.tsx` files) with Node's runner through `tsx` |
 | `test:only` | The same TypeScript tests with no build first |
+| `test:file` | Builds, then runs the test files given after the task name (`mise run test:file -- services/voice/test/wav.test.ts`); runner flags such as `--test-name-pattern` go before the files |
 | `test:launch` | `build` and `doctor:docker`, then the launch end-to-end test against Docker |
 | `test:rust-example` | The Rust bus example's round trip against Redis; fails when the round trip is skipped |
 | `lid-check` | Every `@spec` ID in code and tests exists and is defined once |
@@ -99,8 +100,8 @@ Each program under `examples/` that a page tells you to run has a task; the [Ext
 | `docs:build` | Checks and builds the documentation site; skipped while its sources are unchanged |
 | `docs:dev` | Starts the documentation site's dev server |
 | `docs:preview` | Serves the built site |
-| `doctor` | Checks the host's system prerequisites (Docker with Compose, the NVIDIA runtime when a GPU is present, `git`, `curl`, and the glibc floor), printing the fix for each that fails; installs nothing |
-| `doctor:docker`, `doctor:gpu`, `doctor:fetch`, `doctor:glibc` | One of those checks each |
+| `doctor` | Checks the host's system prerequisites (Docker with Compose, the NVIDIA runtime when a GPU is present, `git`, `curl`, `libatomic1`, and the glibc floor), printing the fix for each that fails; installs nothing |
+| `doctor:docker`, `doctor:gpu`, `doctor:fetch`, `doctor:libatomic`, `doctor:glibc` | One of those checks each |
 
 ## cohostctl
 

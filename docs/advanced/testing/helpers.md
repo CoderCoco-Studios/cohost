@@ -46,10 +46,10 @@ test("a mention makes salience publish attention.focus", async () => {
 });
 ```
 
-Run it from the repository root, after `mise run build` and in a shell where mise is active ([Running the tests](index.md#run-one-package-one-service-or-one-test) says why):
+Run it from the repository root ([Running the tests](index.md#run-one-package-one-service-or-one-test) has the other forms):
 
 ```bash
-node --import tsx --test services/salience/test/<file>.test.ts
+mise run test:file -- services/salience/test/<file>.test.ts
 ```
 
 The existing `services/*/test/*.region.test.ts` files are the best templates for your own.

@@ -1,4 +1,4 @@
-//! The CI workflow carries the helper's build prerequisites and its Windows compile check.
+//! CI builds the helper with its prerequisites and compiles its Windows back end (through mise.toml's test:rust task).
 use std::path::Path;
 
 fn read(rel: &str) -> String {
@@ -33,18 +33,27 @@ fn the_linux_runner_installs_libpulse_dev_and_pkg_config() {
 // @spec EARS-SRC-023
 #[test]
 fn the_windows_back_end_is_compiled_with_cargo_check() {
-    let found = workflow_lines().iter().any(|l| {
-        [
-            "cargo check",
-            "x86_64-pc-windows-msvc",
-            "cohost-desktop-audio",
-        ]
-        .iter()
-        .all(|p| l.contains(p))
-    });
+    // mise.toml's test:rust task runs the check; test.yml runs it through `mise run test`, which depends on test:rust.
+    let mise = read("../../mise.toml");
+    let task = mise
+        .split("\n[")
+        .find(|t| t.starts_with("tasks.\"test:rust\"]"))
+        .expect("mise.toml has no test:rust task");
     assert!(
-        found,
-        "test.yml has no Windows cargo check step for cohost-desktop-audio"
+        task.contains("cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"),
+        "test:rust has no Windows cargo check of cohost-desktop-audio"
+    );
+    let test = mise
+        .split("\n[")
+        .find(|t| t.starts_with("tasks.test]"))
+        .expect("mise.toml has no test task");
+    assert!(
+        test.contains("\"test:rust\""),
+        "the test task does not depend on test:rust"
+    );
+    assert!(
+        workflow_lines().iter().any(|l| l == "- run: mise run test"),
+        "test.yml does not run mise run test"
     );
 }
 

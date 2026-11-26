@@ -12,15 +12,17 @@ critic) over HTTP, all with the same toy judgements on port 8900.
 | `fixtures/` | `contracts.json`, sample requests and replies for the three endpoints |
 | `schemas/` | JSON Schema of each reply: `schemas/salience.json`, `schemas/affect.json`, `schemas/critic.json` |
 
-From the checkout, run one with `mise run example:hook-server:py`, `:ts` or
-`:rust`, then `mise run example:hook-try` in another terminal. A copy kept
-outside the checkout runs with its own tool, from the copy's folder:
+From the checkout, run one server, then `mise run example:hook-try` in
+another terminal:
 
 ```shell
-python3 server.py
-node server.ts
-cargo run -p cohost-example-hook-server
+mise run example:hook-server:py
+mise run example:hook-server:ts
+mise run example:hook-server:rust
 ```
+
+A copy kept outside the checkout runs with its own tool, from the copy's folder:
+`python3 server.py`, `node server.ts` or `cargo run -p cohost-example-hook-server`.
 
 The contracts, every hook kind and a guide for each language are on the
 [Brain hooks page](https://codercoco-studios.github.io/cohost/advanced/extend/hooks).

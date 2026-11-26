@@ -15,9 +15,13 @@ x-gpu: &gpu  # @spec DEPLOY-COMPOSE-010
 services:
   ollama:
     <<: *gpu
-  tts:
+  tts:  # @spec DEPLOY-ENG-017
     <<: *gpu
-    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0}
+    # The CUDA 12.8 build: the Kokoro-FastAPI amd64 GPU build with kernels for RTX 50-series (Blackwell, sm_120) cards,
+    # on which the CUDA 12.6 build (plain v0.10.0 / v0.10.0-cu126) crash-loops. It needs a CUDA 12.8 driver (R570+).
+    # Tag looked up in ghcr.io on 2026-11-26 (newest release v0.10.0; the same image index as the floating cu128 tag).
+    # GTX 9xx/10xx cards (dropped by the cu128 build), older drivers and arm64 hosts: set KOKORO_IMAGE=ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu126 in .env.
+    image: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128}
   stt:
     <<: *gpu
     image: ${SPEACHES_IMAGE:-ghcr.io/speaches-ai/speaches:0.8.3-cuda}

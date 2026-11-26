@@ -32,8 +32,8 @@ esac
 export COMPOSE_PATH_SEPARATOR=:
 export COMPOSE_FILE=docker-compose.yml
 if nvidia-smi >/dev/null 2>&1; then COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml; echo "GPU overlay on"; else echo "no GPU: numbers will not be representative"; fi
-# The Kokoro GPU image (PyTorch) has no kernels for Blackwell cards (RTX 50xx: "no kernel image is available") and
-# crash-loops, so TTS runs on the CPU image. The tts stage is therefore slower than a working GPU Kokoro would be.
+# TTS runs on the Kokoro CPU image, as in the recorded baseline (docs/high-level-design.md), so runs stay comparable.
+# The GPU overlay's CUDA 12.8 build is unconfirmed on the owner's RTX 5080 (#235); set KOKORO_IMAGE to measure it.
 export KOKORO_IMAGE="${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:v0.10.0}"
 export COMPOSE_PROFILES=ears,mouth
 export COHOST_ISOLATION

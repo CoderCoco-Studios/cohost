@@ -4,7 +4,7 @@
 // repository and against fixtures that break them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -295,10 +295,11 @@ test("lint:ts runs oxlint --type-aware --deny-warnings after typecheck, with oxl
 });
 
 // @spec DEPLOY-TOOL-023
-test("typecheck runs tsc -b, the dashboard UI's check, then tsc -p over every noEmit test tsconfig, failing when any fails", () => {
+test("typecheck runs tsc -b, the dashboard UI's check, then tsc -p over every noEmit test tsconfig, failing when any fails", (t) => {
   assert.deepEqual(task("typecheck").run, ["tsc -b", "tsc -p services/dashboard/ui --noEmit", "scripts/typecheck-tests.sh"]);
   // A fake tsc on the path records each project and fails for one; the script checks them all and names the failure.
   const bin = mkdtempSync(join(tmpdir(), "cohost-tsc-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
   const log = join(bin, "log");
   writeFileSync(join(bin, "tsc"), `#!/usr/bin/env bash\necho "$2" >> "${log}"\n[[ "$2" != packages/config/test/* ]]\n`);
   chmodSync(join(bin, "tsc"), 0o755);

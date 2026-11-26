@@ -912,8 +912,8 @@ no `endpoint` stage. A person heard on a connector source adds the wait of
 of the utterance; the Discord connector's 500 ms `AfterSilence` only frees its
 capture slot, holds no frames and adds nothing to that wait. No figure for the
 connector path has been measured. Cold start is about 63 s (LLM load about 42 s, STT about
-18 s). The Kokoro GPU image has no Blackwell (RTX 50xx) kernels, so TTS runs
-on CPU on that hardware, and `tts` is the largest stage. The bus is not a
+18 s). TTS ran on the Kokoro CPU image, as the GPU image's CUDA 12.6 build
+has no Blackwell (RTX 50xx) kernels, so `tts` is the largest stage. The bus is not a
 bottleneck: on `scripts/dev/bus-bench.ts` the TypeScript bus holds p99 under
 4 ms at 8 sources and uses at most 11% of one core.
 

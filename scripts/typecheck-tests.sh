@@ -8,6 +8,8 @@ set -uo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+command -v tsc >/dev/null || { echo "typecheck: tsc not on PATH" >&2; exit 1; }
+
 failed=()
 for cfg in packages/*/test/tsconfig.json services/*/test/tsconfig.json; do
   grep -q '"noEmit": true' "$cfg" || continue

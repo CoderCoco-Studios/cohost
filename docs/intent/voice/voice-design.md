@@ -382,7 +382,7 @@ voice parses the WAV it assembles from an engine's audio with the shared `parseW
 ## Open Questions & Future Decisions
 
 - **A stopped line holds a one-at-a-time engine.** A line that `voice.stop` discards is not aborted: its request runs to the end (VOICE-STOP-004) and holds its place in the concurrency gate, so with `pocket` (concurrency 1) the reply to the interrupter waits for the rest of that request. Aborting it through the contract's signal is possible; the gate would still wait for the response to end or the connection to close. Decision wanted once Pocket has been timed live.
-- **Kokoro on RTX 50-series.** The Blackwell image tag is published; that Kokoro-FastAPI runs on an RTX 5080 is unverified ([deployment](../deployment/deployment-design.md) Speech engine servers).
+- **Kokoro on RTX 50-series.** The GPU overlay runs Kokoro-FastAPI's CUDA 12.8 build, the one with Blackwell kernels; that it synthesises on the GPU of an RTX 5080 is unverified ([deployment](../deployment/deployment-design.md) Speech engine servers).
 - **A failure in the middle of Pocket's stream.** What it looks like on the wire is unverified. The adapter treats a connection that ends early or a chunk gap past `voice.timeout_ms` as a failed line, and either outcome is the same under any answer: a failed line, no partial use of the audio. A server that ends a broken stream normally would yield truncated audio the adapter cannot detect.
 
 ## References

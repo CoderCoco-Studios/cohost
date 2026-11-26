@@ -93,7 +93,7 @@ test("when the projection fails, none of those runtime commands runs docker and 
   const results = [await rt.start("cortex"), await rt.restart("cortex"), await rt.restart("cortex", { env: { LLM_PROVIDER: "mock" } }), await rt.consolidate(), await rt.reembed()];
   for (const r of results) {
     assert.equal(r.ok, false);
-    assert.ok(r.detail!.includes(w.operator), r.detail);
+    assert.ok(r.detail!.includes(w.operator), r.detail ?? "no detail");
     assert.ok(!r.detail!.includes(MARKER), "no value in the message");
   }
   assert.equal(calls.length, 0, "no docker compose command ran");
@@ -125,7 +125,7 @@ test("StackController.launch and rebuild project before docker compose up, and a
     const failing = recorder(bad.units);
     const r = await new StackController({ exec: failing.exec, onPath, cwd: bad.root, env: {}, now: () => 0, sleep: async () => {}, readPocketConfig: () => ({ token: "", engine: "kokoro" }) })[kind]();
     assert.equal(r.ok, false);
-    assert.ok(r.detail!.includes(bad.operator) && !r.detail!.includes(MARKER), r.detail);
+    assert.ok(r.detail!.includes(bad.operator) && !r.detail!.includes(MARKER), r.detail ?? "no detail");
     assert.equal(failing.calls.length, 0, `${kind}: no docker compose command ran`);
   }
 });

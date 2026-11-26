@@ -6,7 +6,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { ModuleSchema, type ModuleConfig as ConfigModuleConfig } from "@cohost/config";
-import type { ChatMessage, ChatOptions, ChatProvider } from "@cohost/llm";
+import type { ChatEvent, ChatMessage, ChatOptions, ChatProvider, ChatResult } from "@cohost/llm";
 import {
   HOOK_COOLOFF_AFTER, HOOK_COOLOFF_MS, Module, hookHealth, type ModuleConfig, type ModuleImpl,
 } from "../src/index.js";
@@ -41,6 +41,8 @@ class FakeProvider implements ChatProvider {
     this.calls.push({ messages, opts });
     return this.behave(opts);
   }
+  async complete(): Promise<ChatResult> { throw new Error("a hook reads its reply with chat(), not complete()"); }
+  stream(): AsyncGenerator<ChatEvent> { throw new Error("a hook reads its reply with chat(), not stream()"); }
   async ping(): Promise<boolean> { this.lastError = this.pingResult ? undefined : "unreachable"; return this.pingResult; }
 }
 

@@ -1,4 +1,4 @@
-import { page, REQUIRED_TERMS, LLD, SIDEBAR } from "./docs-fixture.ts";
+import { page, REQUIRED_TERMS, LLD, SIDEBAR } from "./docs-fixture.js";
 
 /** Fixture for the Extend group (DOCS-GUIDE-*): a repository whose Extend pages, examples and tables all agree. */
 
@@ -123,7 +123,7 @@ export function extendRepo(over: Record<string, string | null> = {}, tables: { g
     "packages/bus/fixtures/contract/constants.json": JSON.stringify(CONSTANTS, null, 2),
     ...over,
   };
-  const extend = Object.entries(all).filter(([k, v]) => k.startsWith(EXT) && k.endsWith(".md") && v !== null).map(([k, v]) => [k.slice(EXT.length), titleOf(v as string)]);
+  const extend = Object.entries(all).filter(([k, v]) => k.startsWith(EXT) && k.endsWith(".md") && v !== null).map(([k, v]): [string, string] => [k.slice(EXT.length), titleOf(v as string)]);
   extend.sort((a, b) => (a[0] === "index.md" ? -1 : b[0] === "index.md" ? 1 : a[0] < b[0] ? -1 : 1));
   const rows = extend.map(([f, t]) => `| Extend | ${t} | \`advanced/extend/${f}\` | x |`).join("\n");
   const lld = LLD

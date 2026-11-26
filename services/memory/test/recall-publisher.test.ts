@@ -14,6 +14,8 @@ function setup() {
     remember: async () => {},
     forgetChat: async () => {},
     recall: async (...args: [string, number?]) => { recalls.push(args); return heard; },
+    getViewer: async () => undefined, getLinkedViewer: async () => undefined, findNameKeyedViewerByDisplay: async () => undefined,
+    listNotes: async () => [], markSurfaced: async () => {},
   };
   const bus = new FakeBus();
   const log = { warn() {}, info() {}, error() {}, debug() {} } as never;

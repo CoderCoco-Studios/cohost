@@ -6,7 +6,7 @@ import type { BusEvent } from "@cohost/bus";
 import { createMouth, type MouthBus, type MouthOptions } from "../src/mouth.js";
 
 type Outputs = Record<string, Record<string, unknown>>;
-const SINK = [{ cap: "audio-out" as const, tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream" as const }];
+const SINK = [{ cap: "audio-out" as const, tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream" as const, flush: false }];
 
 /** The whole service run by `runService` against a fake bus with a connector registry and a faked clip refresh. */
 function rig(outputs: Outputs, over: { connector?: boolean; opts?: Partial<MouthOptions> } = {}) {

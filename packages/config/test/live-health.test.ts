@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { repoRoot } from "./helpers/docs-fixture.ts";
+import { repoRoot } from "./helpers/docs-fixture.js";
 
 // The component's behaviour lives in docs/.vitepress/theme/live-health.mjs, a plain module with no Vue import; fetch, the
 // timers and the document come in as arguments, so it runs here under stubs with no browser.

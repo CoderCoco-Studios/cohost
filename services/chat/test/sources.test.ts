@@ -74,7 +74,7 @@ function rig(over: Record<string, unknown>, stubs: Partial<Record<ChatSourceName
   });
   const last = () => bus.health[bus.health.length - 1];
   const readyHeartbeats = () => bus.health.filter((h) => h.state === "ready" || h.state === "degraded");
-  return { bus, rec, exits, made, clock, start, last, readyHeartbeats, deps: () => svc.health(cfg).deps(), stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
+  return { bus, rec, exits, made, clock, start, last, readyHeartbeats, deps: () => { const d = svc.health(cfg).deps; return typeof d === "function" ? d() : d; }, stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
 }
 
 const twitchStub = (b: SvcBus) => new StubSource("twitch", b);
@@ -370,7 +370,7 @@ test("shutdown stops every started source once and the bus; a gap source that ne
 // @spec CHAT-PLAN-006
 test("shutdown stops all runnable sources even when one stop throws", async () => {
   const r = rig({ chat: { sources: ["twitch", "youtube"], youtube: YT } }, {
-    twitch: (b) => Object.assign(new StubSource("twitch", b), { stop() { this.stops++; throw new Error("stuck"); } }),
+    twitch: (b) => Object.assign(new StubSource("twitch", b), { stop(this: StubSource): void { this.stops++; throw new Error("stuck"); } }),
     youtube: youtubeStub,
   });
   await r.start();

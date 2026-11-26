@@ -85,7 +85,7 @@ test("the control reader hands set_routing to the handler, which applies it and 
 test("mute and pause change nothing in mouth: it still queues every utterance", async () => {
   const r = running();
   const queued: string[] = [];
-  const out: MouthOutput = { name: "discord", isReady: () => true, playback: { enqueue: async (id) => { queued.push(id); } } };
+  const out: MouthOutput = { name: "discord", isReady: () => true, closeLine() {}, refuse: async () => {}, stop: async () => {}, playback: { enqueue: async (id) => { queued.push(id); } } };
   const reader = controlFor("mouth", { set_routing: setRoutingHandler(r, { heartbeat: { setDetail() {} }, log: recordingLog().log }) });
   const h = createMouthHandler({ outputs: [out], log: recordingLog().log, bus: new FakeBus(), enabled: (n) => r.isEnabled(n), control: reader });
   await h(event("control", { cmd: "mute" }));
@@ -98,7 +98,7 @@ test("mute and pause change nothing in mouth: it still queues every utterance", 
 test("an output switched off live skips later utterances without queueing, claiming or failing; switched on it queues again", async () => {
   const r = running();
   const queued: string[] = [];
-  const mk = (name: string): MouthOutput => ({ name, isReady: () => true, playback: { enqueue: async (id) => { queued.push(`${name}:${id}`); } } });
+  const mk = (name: string): MouthOutput => ({ name, isReady: () => true, closeLine() {}, refuse: async () => {}, stop: async () => {}, playback: { enqueue: async (id) => { queued.push(`${name}:${id}`); } } });
   const reader = controlFor("mouth", { set_routing: setRoutingHandler(r, { heartbeat: { setDetail() {} }, log: recordingLog().log }) });
   const h = createMouthHandler({ outputs: [mk("discord"), mk("dryrun")], log: recordingLog().log, bus: new FakeBus(), enabled: (n) => r.isEnabled(n), control: reader });
   const utt = (id: string) => event("voice.utterance", { id, seq: 0, text: "hi", emotion: "neutral", durationMs: 100, envelopeHz: 50, envelope: [0], audioUrl: `http://voice/${id}.wav`, sampleRate: 24000 });

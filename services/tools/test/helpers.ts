@@ -10,7 +10,7 @@
  */
 import { after } from "node:test";
 import { event, FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
-import type { EventType, Handler, SubscribeOptions } from "@cohost/bus";
+import type { EventData, EventType, Handler, SubscribeOptions } from "@cohost/bus";
 import { runTools, type ToolsBus } from "../src/main.js";
 import type { SourceCallResult, SourceTool, ToolSource } from "../src/source.js";
 import { definitionHash, labelOf } from "../src/catalog.js";
@@ -99,7 +99,7 @@ export interface Started {
   send: <T extends EventType>(type: T, data: Parameters<typeof event<T>>[1]) => Promise<void>;
   request: (over?: Record<string, unknown>) => Promise<string>;
   answer: (id: string, allow: boolean) => Promise<void>;
-  results: () => ReturnType<ToolsFakeBus["of"]> & Record<string, unknown>[];
+  results: () => EventData<"tool.result">[];
   catalogs: () => { servers: any[]; tools: any[]; mode: string; intervalMs: number }[];
   /** The latest catalog's entry for a tool. */
   entry: (name: string) => any;
@@ -141,7 +141,7 @@ export async function startTools(
       return id;
     },
     answer: (id, allow) => s.send("tool.answer", { id, allow }),
-    results: () => bus.of("tool.result") as never,
+    results: () => bus.of("tool.result"),
     catalogs: () => bus.of("tool.catalog") as never,
     entry: (name) => s.catalogs().at(-1)!.tools.find((t) => t.name === name),
     stop: async () => {

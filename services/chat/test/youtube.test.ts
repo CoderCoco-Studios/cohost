@@ -443,7 +443,7 @@ test("quota exhaustion before the stream ever opened is not one of the five atte
 // ---------------------------------------------------------------- history and duplicates
 
 /** A poll-path rig that has taken the history response and is ready for the next poll. */
-async function afterHistory(history: Item[], more: ReturnType<typeof resp>[]): Promise<Rig> {
+async function afterHistory(history: Item[], more: (ReturnType<typeof resp> | ReturnType<typeof apiErr>)[]): Promise<Rig> {
   const r = pollRig();
   r.t.poll_(resp(history), ...more);
   await r.start();

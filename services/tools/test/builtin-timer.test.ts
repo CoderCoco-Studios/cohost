@@ -77,8 +77,10 @@ test("a timer started in live mode is stored under its id as JSON with exactly i
   const r = await set(s, 10, "check the oven");
   assert.equal(r.status, "ok");
   assert.equal(s.bus.timers.size, 1);
-  const [[field, json]] = [...s.bus.timers];
-  const body = JSON.parse(json!) as Record<string, unknown>;
+  const [stored] = [...s.bus.timers];
+  assert.ok(stored);
+  const [field, json] = stored;
+  const body = JSON.parse(json) as Record<string, unknown>;
   assert.deepEqual(Object.keys(body).toSorted(), ["dueAt", "id", "note", "setAt"]);
   assert.equal(body.id, field, "the field is the timer's id");
   assert.equal(body.note, "check the oven");

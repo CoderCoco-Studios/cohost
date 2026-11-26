@@ -51,7 +51,7 @@ test("startup: ready waits for the group; a failed resetGroup never reports read
 });
 
 const llmWith = (chat: () => Promise<string>): ChatProvider =>
-  ({ name: "fake", model: "m", chat, ping: async () => true, lastError: "boom", pingIsNominal: true });
+  ({ name: "fake", model: "m", chat, complete: async () => { throw new Error("not used"); }, stream: () => { throw new Error("not used"); }, ping: async () => true, lastError: "boom", pingIsNominal: true });
 
 // @spec CTX-HEALTH-003
 test("trackLlm: every chat outcome feeds the dependency: failure down, success ok again", async () => {

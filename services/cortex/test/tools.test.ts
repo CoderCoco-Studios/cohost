@@ -196,7 +196,7 @@ async function ready(o: SetupOpts = {}): Promise<S> {
   return s;
 }
 
-type FocusInput = EventInput<"attention.focus">;
+type FocusInput = Focus;
 const speech = (over: Partial<NonNullable<FocusInput["focus"]>> = {}, top: Partial<FocusInput> = {}): FocusInput => ({
   reason: "mentioned", score: 1, focus: { kind: "speech", source: "mic", who: "Chris", text: "what time is it?", mention: false, ...over }, ...top,
 });

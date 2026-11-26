@@ -294,6 +294,25 @@ test("lint:ts runs oxlint --type-aware --deny-warnings after typecheck, with oxl
   assert.ok(dev.oxlint && dev["oxlint-tsgolint"], "oxlint and oxlint-tsgolint are root devDependencies");
 });
 
+// @spec DEPLOY-TOOL-023
+test("typecheck runs tsc -b, the dashboard UI's check, then tsc -p over every noEmit test tsconfig, failing when any fails", () => {
+  assert.deepEqual(task("typecheck").run, ["tsc -b", "tsc -p services/dashboard/ui --noEmit", "scripts/typecheck-tests.sh"]);
+  // A fake tsc on the path records each project and fails for one; the script checks them all and names the failure.
+  const bin = mkdtempSync(join(tmpdir(), "cohost-tsc-"));
+  const log = join(bin, "log");
+  writeFileSync(join(bin, "tsc"), `#!/usr/bin/env bash\necho "$2" >> "${log}"\n[[ "$2" != packages/config/test/* ]]\n`);
+  chmodSync(join(bin, "tsc"), 0o755);
+  const r = spawnSync(join(repoRoot, "scripts/typecheck-tests.sh"), [], { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.notEqual(r.status, 0, "a failing directory fails the run");
+  assert.match(r.stderr, /type errors in packages\/config\/test$/m);
+  const checked = readFileSync(log, "utf8").trim().split("\n");
+  const want = ["packages", "services"].flatMap((top) => readdirSync(join(repoRoot, top)).map((d) => `${top}/${d}/test/tsconfig.json`))
+    .filter((f) => existsSync(join(repoRoot, f)) && readRepo(f).includes('"noEmit": true'));
+  assert.ok(want.length > 15, "the check saw the test directories");
+  assert.deepEqual(checked.toSorted(), want.toSorted(), "every noEmit test tsconfig is checked, after the failure too");
+  assert.ok(!checked.includes("services/avatar/test/tsconfig.json"), "avatar's tests are a tsc -b project");
+});
+
 // @spec DEPLOY-TOOL-012
 test("test:rust runs the Rust tests and the Windows check; test and test:only run the TypeScript suite with the test tsconfig", () => {
   assert.deepEqual(task("test:rust").run, ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]);
@@ -401,8 +420,8 @@ test("the infra, smoke, lid-check, hooks, bus, perf and stub tasks run their pro
   assert.deepEqual(task("smoke").run, ["scripts/compose-smoke.sh"]);
   assert.deepEqual(task("lid-check").run, ["node scripts/lid-check.mjs"]);
   assert.deepEqual(task("hooks:schemas").run, ["node scripts/gen-hook-schemas.mjs"]);
-  for (const [name, file] of [["bus:bench", "bus-bench"], ["perf:connector", "perf-connector"], ["bus:pub", "bus-pub"], ["bus:tail", "bus-tail"], ["stub:llm", "stub-llm"], ["stub:tts", "stub-tts"]]) {
-    assert.deepEqual(task(name!).run, [`tsx scripts/dev/${file}.ts`], name);
+  for (const [name, file] of [["bus:bench", "bus-bench"], ["perf:connector", "perf-connector"], ["bus:pub", "bus-pub"], ["bus:tail", "bus-tail"], ["stub:llm", "stub-llm"], ["stub:tts", "stub-tts"]] as const) {
+    assert.deepEqual(task(name).run, [`tsx scripts/dev/${file}.ts`], name);
   }
   assert.deepEqual(task("perf:baseline").run, ["scripts/dev/perf-baseline.sh"]);
   // mise appends the arguments after the task name to the task's last command: the program is that command.

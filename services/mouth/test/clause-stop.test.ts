@@ -29,7 +29,7 @@ function dry(ms: Record<string, number> = {}, opts: { clips?: FallbackClip[]; ga
   const fallback = new FallbackLine({ cache, claims: new ClaimMemory(), sink: "dryrun", minIntervalMs: 0, random: () => 0 });
   const out = createDryrunOutput({
     bus, log: recordingLog().log, failEvery: 0, fallback, now: () => clock.t,
-    fetchAudio: async (u) => { await opts.gate?.(u); const key = /\/([^/]+)\.wav$/.exec(u)![1]!; return wav(ms[key] ?? 5000); },
+    fetchAudio: async (u: string) => { await opts.gate?.(u); const key = /\/([^/]+)\.wav$/.exec(u)![1]!; return wav(ms[key] ?? 5000); },
   } as never);
   return { out, bus, clock };
 }
@@ -116,7 +116,7 @@ test("a stop reports an open line whose next clause is still being fetched as be
 test("file output and an interrupted fallback clip set neither spokenText nor unsaidText on a later clause's interrupted done", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mouth-clause-stop-"));
   const bus = new FakeBus();
-  const file = createFileOutput({ bus, log: recordingLog().log, dir, maxFiles: 5, fetchAudio: async (u) => wav(u.includes("-0") ? 10 : 2000) });
+  const file = createFileOutput({ bus, log: recordingLog().log, dir, maxFiles: 5, fetchAudio: async (u: string) => wav(u.includes("-0") ? 10 : 2000) });
   try {
     await put(file, "f", 0, U("One.", 10, 0, true));
     await new Promise((r) => setTimeout(r, 40));

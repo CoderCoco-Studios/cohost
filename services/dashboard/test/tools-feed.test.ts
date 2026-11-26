@@ -4,7 +4,7 @@ import net from "node:net";
 import { WebSocket } from "ws";
 import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
-import type { BusEvent } from "@cohost/bus";
+import type { BusEvent, EventType } from "@cohost/bus";
 import type { StackService, StackOps } from "../src/stack.js";
 import { dashboardService } from "../src/service.js";
 
@@ -78,7 +78,7 @@ async function rig(env: NodeJS.ProcessEnv, replay: BusEvent[] = []) {
 
 const SECRET = "SECRET-RECALLED-MEMORY";
 let seq = 0;
-const ev = (type: string, data: Record<string, unknown>): BusEvent => ({ id: `${Date.now()}-${++seq}`, type, ts: 1_700_000_000_000 + seq, source: "tools", data }) as unknown as BusEvent;
+const ev = <T extends EventType>(type: T, data: Record<string, unknown>): BusEvent<T> => ({ id: `${Date.now()}-${++seq}`, type, ts: 1_700_000_000_000 + seq, source: "tools", data }) as unknown as BusEvent<T>;
 
 const request = () => ev("tool.request", { id: "c1", tool: "recall", arguments: { query: SECRET, nested: { a: SECRET } }, origin: "speech", round: 1, listed: true, injected: true });
 const confirm = () => ev("tool.confirm", { id: "c2", tool: "weather__post", arguments: { text: SECRET }, origin: "dashboard", expiresAt: 1_700_000_020_000 });

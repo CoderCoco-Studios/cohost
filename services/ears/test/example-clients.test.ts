@@ -132,7 +132,7 @@ for (const c of clients) {
       await run(c.cmd, argsFor(c, clipPath, "--url", url, "--speaker", "Ann & Bo", "--source", "desktop"));
       await run(c.cmd, argsFor(c, "--speaker", "x y", "--url", url, clipPath));
       assert.equal(new URL(urls[0]!, "http://h").searchParams.get("speaker"), "Ann & Bo");
-      assert.ok(!urls[0]!.includes(" ") && !urls[0]!.includes("&Bo"), urls[0]);
+      assert.ok(!urls[0]!.includes(" ") && !urls[0]!.includes("&Bo"), urls[0]!);
       assert.equal(new URL(urls[0]!, "http://h").searchParams.get("source"), "desktop");
       assert.equal(new URL(urls[1]!, "http://h").searchParams.get("speaker"), "x y");
       assert.equal(new URL(urls[1]!, "http://h").searchParams.has("source"), false);

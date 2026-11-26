@@ -45,13 +45,13 @@ test("launch brings a health-checked container to running and healthy, stopAll s
   const bin = (resolveDockerBin(env) as { bin: string }).bin;
   try {
     const launched = await stack.launch();
-    assert.equal(launched.ok, true, launched.detail);
+    assert.equal(launched.ok, true, launched.detail ?? "no detail");
     const probe = launched.services?.find((c) => c.service === "probe");
     assert.equal(probe?.status, "running");
     assert.equal(probe?.health, "healthy");
 
     const stopped = await stack.stopAll();
-    assert.equal(stopped.ok, true, stopped.detail);
+    assert.equal(stopped.ok, true, stopped.detail ?? "no detail");
     const after = await stack.statusWithRestarts();
     assert.equal(after.docker.ok, true);
     assert.equal(after.services.find((c) => c.service === "probe")?.status, "exited");

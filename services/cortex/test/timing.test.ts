@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import type { ChatMessage, ChatProvider } from "@cohost/llm";
+import type { ChatMessage, ChatProvider, ChatResult } from "@cohost/llm";
 import { FakeBus, event, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { Cortex } from "../src/cortex.js";
 import type { CriticInput, CriticOutput } from "../src/critic.js";
@@ -12,13 +12,17 @@ class FakeLlm implements ChatProvider {
   readonly model = "fake";
   async chat(_m: ChatMessage[]) { await new Promise((r) => setTimeout(r, 15)); return "[happy] hey chat!"; }
   async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
+  async complete(): Promise<ChatResult> { throw new Error("the reply must be read with stream(), not complete()"); }
   async ping() { return true; }
 }
 
 function setup(critic: (i: CriticInput) => CriticOutput | Promise<CriticOutput> = () => ({ ok: true }), module?: Module<CriticInput, CriticOutput>) {
   const cfg = testConfig({ brain: { memory: { recall_k: 0 }, cortex: { recall_timeout_ms: 100 } } });
   const bus = new FakeBus();
-  const m = module ?? new Module<CriticInput, CriticOutput>("critic", ModuleSchema.parse({}), {} as never, { rules: async (i) => critic(i) }, silentLog);
+  // A rules critic whose verdict may take time: `rules` itself must answer synchronously, so the wait sits in `run`.
+  const m = module ?? new (class extends Module<CriticInput, CriticOutput> {
+    override async run(i: CriticInput): Promise<CriticOutput> { return critic(i); }
+  })("critic", ModuleSchema.parse({}), {} as never, { rules: () => ({ ok: true }) }, silentLog);
   const cortex = new Cortex({ cfg, bus, llm: new FakeLlm(), critic: m, log: silentLog, loadPersonality: () => "You are Coco." });
   return { cortex, bus };
 }
@@ -79,7 +83,7 @@ test("criticEndedAt is set when the critic ran, after llmEndedAt and covering th
 
 // @spec CTX-SAY-008
 test("criticEndedAt is set when the critic hook falls back, and absent when it did not run", async () => {
-  const failing: ChatProvider = { name: "fake", model: "fake", chat: async () => { throw new Error("critic llm down"); }, ping: async () => true };
+  const failing: ChatProvider = { name: "fake", model: "fake", chat: async () => { throw new Error("critic llm down"); }, complete: async () => { throw new Error("not used"); }, stream: () => { throw new Error("not used"); }, ping: async () => true };
   const llmCritic = new Module<CriticInput, CriticOutput>(
     "critic", ModuleSchema.parse({ kind: "llm" }), testConfig().llm,
     { rules: () => ({ ok: true }), llm: { system: "s", user: () => "u", validate: () => undefined } }, silentLog, { provider: failing },

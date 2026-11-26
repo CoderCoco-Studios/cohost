@@ -27,6 +27,7 @@ function fakeOps(initial: StackStatus = none) {
     stopAll: async () => { calls.push("stop"); return hold(); },
     restartAll: async (c) => { calls.push("restart"); restarter = c; return hold(); },
     consolidate: async () => { calls.push("consolidate"); return hold(); },
+    rebuild: async () => { calls.push("rebuild"); return hold(); },
   };
   return { ops, calls, setStatus: (s: StackStatus) => { status = s; }, finish: (r: StackResult) => release(r), get restarter() { return restarter; } };
 }

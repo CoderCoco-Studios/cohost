@@ -65,8 +65,8 @@ test("arguments that do not parse exit 2 with the usage before any runtime, bus 
 test("consolidate, launch, rebuild and stop-all never open the bus", async () => {
   for (const argv of [["consolidate"], ["launch"], ["rebuild"], ["stop-all"]]) {
     const h = wiring();
-    assert.equal(await executeCli(argv, h.w), 0, argv[0]);
-    assert.equal(h.built.bus, 0, argv[0]);
+    assert.equal(await executeCli(argv, h.w), 0, argv.join(" "));
+    assert.equal(h.built.bus, 0, argv.join(" "));
     assert.deepEqual(h.published, []);
   }
 });
@@ -137,8 +137,8 @@ test("status with Docker unavailable prints the heartbeat-derived rows unchanged
 test("every lifecycle command holds the lifecycle lock for the whole command and releases it afterwards; status takes none", async () => {
   for (const argv of [["start", "voice"], ["stop", "voice"], ["restart", "voice"], ["consolidate"], ["reembed"], ["launch"], ["rebuild"], ["stop-all"], ["restart-all"]]) {
     const h = wiring();
-    assert.equal(await executeCli(argv, h.w), 0, argv[0]);
-    assert.deepEqual(h.lockLog, [`acquired ${argv[0]}`, `released ${argv[0]}`], argv[0]);
+    assert.equal(await executeCli(argv, h.w), 0, argv.join(" "));
+    assert.deepEqual(h.lockLog, [`acquired ${argv[0]}`, `released ${argv[0]}`], argv.join(" "));
   }
   const s = wiring();
   assert.equal(await executeCli(["status"], s.w), 0);
@@ -149,8 +149,8 @@ test("every lifecycle command holds the lifecycle lock for the whole command and
 test("a refused lock runs nothing, prints 'refused: <detail>' and exits 1", async () => {
   for (const argv of [["launch"], ["stop-all"], ["start", "voice"], ["consolidate"]]) {
     const h = wiring({ refuse: "busy: launch held by dashboard (pid 7)" });
-    assert.equal(await executeCli(argv, h.w), 1, argv[0]);
-    assert.deepEqual(h.err, ["refused: busy: launch held by dashboard (pid 7)"], argv[0]);
+    assert.equal(await executeCli(argv, h.w), 1, argv.join(" "));
+    assert.deepEqual(h.err, ["refused: busy: launch held by dashboard (pid 7)"], argv.join(" "));
     assert.deepEqual(h.stacks, []);
     assert.deepEqual(h.published, []);
     assert.equal(h.built.bus, 0);

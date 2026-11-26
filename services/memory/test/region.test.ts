@@ -25,6 +25,8 @@ function setup(viewer = { msgCount: 1, isNew: true, regular: false }, recalled: 
     remember: async (...args: unknown[]) => { calls.push({ op: "remember", args }); },
     forgetChat: async (...args: unknown[]) => { calls.push({ op: "forgetChat", args }); if (opts.forgetFails) throw new Error("db down"); },
     recall: async (...args: [string, number?]) => { calls.push({ op: "recall", args }); return recalled; },
+    getViewer: async () => undefined, getLinkedViewer: async () => undefined, findNameKeyedViewerByDisplay: async () => undefined,
+    listNotes: async () => [], markSurfaced: async () => {},
   };
   const bus = new FakeBus();
   const onEvent = createMemoryHandler({ cfg: testConfig(opts.cfg), bus, store, log, onBrainStatus: opts.onBrainStatus as never });
@@ -173,6 +175,7 @@ test("without an admin store a viewers request is ignored", async () => {
 test("memory.notes.request is answered with the same id; a store error answers an empty list and logs a warning", async () => {
   const store = {
     touchViewer: async () => ({ msgCount: 1, isNew: true, regular: false }), remember: async () => {}, recall: async () => [],
+    touchSpeaker: async () => { throw new Error("not used"); }, forgetChat: async () => {}, getViewer: async () => undefined, getLinkedViewer: async () => undefined,
     findNameKeyedViewerByDisplay: async (name: string) => {
       if (name === "Boom") throw new Error("db down");
       return { key: "u1", display: "Alice", msgCount: 40, regular: true, regularManual: false, isSub: true, placeholder: false, firstSeen: new Date(), lastSeen: new Date() };

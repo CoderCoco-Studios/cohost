@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { testConfig } from "@cohost/testing";
 import { startMemory, type StartupDeps } from "../src/startup.js";
 import { DimensionMismatchError } from "../src/store.js";
 
-function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[]; readyOrder?: "auto" | "manual" } = {}) {
+function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedder?: "ollama" | "hash"; pings?: boolean[]; initFailures?: unknown[]; readyOrder?: "auto" | "manual"; onStarted?: () => Promise<void> } = {}) {
   const events: string[] = [];
   const subs: Record<string, unknown>[] = [];
   const warnings: string[] = [];
@@ -12,7 +13,7 @@ function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedde
   const failures = [...(over.initFailures ?? [])];
   let inits = 0;
   const deps: StartupDeps = {
-    cfg: { store: over.store ?? "postgres", embedder: over.embedder ?? "ollama", recall_k: 6, min_similarity: 0.35 },
+    cfg: { ...testConfig().brain.memory, store: over.store ?? "postgres", embedder: over.embedder ?? "ollama", recall_k: 6, min_similarity: 0.35 },
     log: { warn: (_o: unknown, m?: string) => warnings.push(m ?? String(_o)), info() {}, error() {}, debug() {} } as never,
     bus: { subscribe: (opts: Record<string, unknown>) => {
       subs.push(opts); events.push(`subscribe:${String(opts.group)}`);

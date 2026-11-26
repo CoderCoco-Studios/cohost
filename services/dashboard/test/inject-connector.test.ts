@@ -26,7 +26,7 @@ async function boot(states: Record<string, HealthState> = {}) {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const post = (path: string, type = "audio/wav", body: BodyInit = Buffer.from("RIFFDATA")) =>
+  const post = (path: string, type = "audio/wav", body: NonNullable<RequestInit["body"]> = Buffer.from("RIFFDATA")) =>
     fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type } });
   return { bus, post };
 }

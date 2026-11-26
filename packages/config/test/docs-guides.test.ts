@@ -4,8 +4,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join, posix, relative } from "node:path";
-import { repoRoot } from "./helpers/docs-fixture.ts";
-import { extendYamlFences, fences, fragmentProblem, layer, lockMismatches, tsFilesUnder, workspaceMembers } from "./helpers/docs-guides.ts";
+import { repoRoot } from "./helpers/docs-fixture.js";
+import { extendYamlFences, fences, fragmentProblem, layer, lockMismatches, tsFilesUnder, workspaceMembers } from "./helpers/docs-guides.js";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 // The package's `bin` entry: TypeScript 7 exports only `package.json` and the library entry points, not its internal files.

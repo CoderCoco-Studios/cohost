@@ -623,5 +623,7 @@ test("early: a speakerId rides the provisional focus and the confirm's speech fo
   assert.deepEqual(focuses(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one", source: "discord", mention: false });
   await e.s.onEvent(heard("look at this one please", { speakerId: "D1" }));
   await flush();
-  assert.deepEqual(resolves(e)[0]!.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one please", source: "discord", mention: false });
+  const resolved = resolves(e)[0];
+  assert.ok(resolved?.outcome === "confirm");
+  assert.deepEqual(resolved.focus, { kind: "speech", who: "Chris", speakerId: "D1", text: "look at this one please", source: "discord", mention: false });
 });

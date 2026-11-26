@@ -56,7 +56,7 @@ test("connectorKey is built by the crate (synchronously) and audioStream by the 
   assert.equal(b.audioStream("out", "mouth-out"), "p1:audio.out.mouth-out");
   assert.equal(typeof (native as Record<string, unknown>).connectorKey, "function", "the connector key is built by the binding");
   assert.equal(native.connectorKey("p1", "disc"), "p1:connector:disc");
-  assert.ok(!(native.connectorKey("p1", "disc") instanceof Promise));
+  assert.equal(typeof native.connectorKey("p1", "disc"), "string");
   await b.stop();
 });
 

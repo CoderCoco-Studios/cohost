@@ -196,7 +196,7 @@ test("http: an empty url logs an error naming the key, keeps the output not read
   const { out, rec, calls } = rig({ url: "" });
   try {
     assert.equal(out.isReady(), false);
-    assert.ok(rec.msgs("error").some((m) => m.includes("mouth.outputs.http.url")), rec.msgs("error").join());
+    assert.ok(rec.msgs("error").some((m) => m?.includes("mouth.outputs.http.url")), rec.msgs("error").join());
     assert.equal(calls.length, 0);
   } finally {
     out.close();

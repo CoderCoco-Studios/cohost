@@ -11,7 +11,7 @@ const filters = { twitch: createChatFilter(cfg, "twitch"), youtube: createChatFi
 
 /** Starts a FakeSource with an env that runs each line through the filter, as the service does. */
 function run(extra: { stdin?: PassThrough & { isTTY?: boolean } } = {}) {
-  const published: { user: string; text: string; platform: string; mentionsCohost: boolean; userId?: string }[] = [];
+  const published: NonNullable<ReturnType<(typeof filters)["twitch"]>>[] = [];
   const states: string[] = [];
   const src = new FakeSource({ cohostName: cfg.cohost.name, intervalMs: cfg.chat.fake.interval_ms, ...extra });
   const env: ChatSourceStartEnv = {

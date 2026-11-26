@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import type { MemoryBackend } from "../src/store.js";
+import type { ChatPlatform, MemoryBackend } from "../src/store.js";
 import { cosine } from "../src/notes.js";
 import { viewerKey } from "@cohost/shared/untrusted";
 import { testConfig } from "@cohost/testing";
@@ -30,7 +30,7 @@ export interface Harness {
 /** Fresh viewer key per test, so a shared database needs no cleanup. */
 export const uid = (name = "viewer"): string => `${name}-${randomUUID().slice(0, 8)}`;
 /** A fresh chat viewer key in the `viewerKey` format (MEM-VIEWER-008): `twitch:id:<unique id>`. */
-export const vkey = (name = "viewer"): string => viewerKey({ platform: "twitch", userId: uid(name) });
+export const vkey = (name = "viewer"): string => viewerKey({ platform: "twitch", userId: uid(name), user: name });
 
 export function registerStoreContract(label: string, make: () => Promise<Harness>, opts: { regular_messages: number }): void {
   const t = (name: string, fn: (h: Harness) => Promise<void>): void => void test(`${label}: ${name}`, async () => fn(await make()));
@@ -654,7 +654,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
   // @spec MEM-FORGET-002
   t("a message removal deletes the chat rows with that platform and message id, and no other", async (h) => {
     const w = uid("w").replace(/-/g, "");
-    const ids = (messageId: string, platform = "twitch") => ({ platform, userId: `u${w}`, messageId });
+    const ids = (messageId: string, platform: ChatPlatform = "twitch") => ({ platform, userId: `u${w}`, messageId });
     await h.store.remember("chat", `a${w}`, `gone ${w}`, ids(`m1${w}`));
     await h.store.remember("chat", `a${w}`, `kept same-platform ${w}`, ids(`m2${w}`));
     await h.store.remember("chat", `a${w}`, `kept other-platform ${w}`, ids(`m1${w}`, "youtube"));

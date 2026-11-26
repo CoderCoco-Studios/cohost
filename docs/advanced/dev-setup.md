@@ -65,7 +65,7 @@ You never run a separate addon build before a host program. `@cohost/bus` loads 
 | Command | What it does |
 | --- | --- |
 | `mise run build` | The native addon, the TypeScript workspace and the dashboard UI |
-| `mise run typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check |
+| `mise run typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check, then the type check of every test directory |
 | `mise run lint` | The type check and oxlint's type-aware rules (`.oxlintrc.json`), then `cargo fmt --check` and Clippy; any finding fails it |
 | `mise run test:rust` | The Rust tests |
 | `mise run clean` | Removes every `dist/` |

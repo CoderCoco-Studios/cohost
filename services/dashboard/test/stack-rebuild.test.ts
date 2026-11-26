@@ -11,6 +11,8 @@ import { StackService, type StackOps } from "../src/stack.js";
 const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
 const restarter = { restart: async () => ({ ok: true }) };
+/** A FakeBus the control plane can reset consumer groups on. */
+class CtlBus extends FakeBus { async resetGroup(): Promise<void> {} }
 
 /** A StackOps that records calls; `statusWithRestarts` is the one the probe should prefer. */
 function ops(withRestarts: StackStatus) {
@@ -58,7 +60,7 @@ test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and
   const f = ops(crashed);
   svc.attach(f.o);
   await svc.probe();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], ...(control ? { control } : {}), stack: svc,
@@ -117,7 +119,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
 // @spec DASH-HTTP-014, MOD-MAN-007
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new FakeBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),

@@ -355,7 +355,7 @@ test("seq gaps within an epoch are added to a loss counter reported in the heart
 test("a tag another live connector serves is left out of the registration: degraded with the conflict named, that dependency down", async () => {
   const other: Registration = {
     v: 1, id: "other", kind: "x", version: "1", instance: "i", pid: 1, startedAt: 1, intervalMs: 5000, state: "ready", detail: "",
-    capabilities: [{ cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream" }],
+    capabilities: [{ cap: "audio-out", tag: "discord", format: { rate: 48000, channels: 2 }, ready: true, transport: "stream", flush: false }],
   };
   const s = rig({ others: [other] });
   await s.done;

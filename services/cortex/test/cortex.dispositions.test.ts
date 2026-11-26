@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ModuleSchema } from "@cohost/config";
 import { Module } from "@cohost/modules";
-import type { ChatMessage, ChatProvider } from "@cohost/llm";
+import type { ChatMessage, ChatProvider, ChatResult } from "@cohost/llm";
 import { FakeBus, event, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { Cortex } from "../src/cortex.js";
 import type { CriticInput, CriticOutput } from "../src/critic.js";
@@ -14,6 +14,7 @@ class FakeLlm implements ChatProvider {
   reply: (msgs: ChatMessage[]) => string | Promise<string> = () => "[happy] hey chat!";
   async chat(msgs: ChatMessage[]) { this.calls.push(msgs); return this.reply(msgs); }
   async *stream(msgs: ChatMessage[]) { const text = await this.chat(msgs); yield { type: "text" as const, delta: text }; yield { type: "done" as const, result: { text, toolCalls: [], finish: "stop" as const, message: { role: "assistant" as const, content: text } } }; }
+  async complete(): Promise<ChatResult> { throw new Error("the reply must be read with stream(), not complete()"); }
   async ping() { return true; }
   get system() { return this.calls.at(-1)![0]!.content; }
 }

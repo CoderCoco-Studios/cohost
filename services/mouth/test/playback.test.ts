@@ -17,7 +17,7 @@ function playback(fail: (url: string) => boolean = () => false) {
   const p = new Playback({
     bus, log: rec.log, sink: "discord", gainDb: 0,
     fetchAudio: async (url) => { fetched.push(url); if (fail(url)) throw new Error("fetch audio 404"); return wavWrap(Buffer.alloc(4800), 24000, 1); },
-    play: (pcm) => played.push(pcm.length),
+    play: (pcm) => { played.push(pcm.length); },
   });
   return { p, bus, rec, played, fetched };
 }
@@ -329,7 +329,7 @@ test("routing: two outputs have independent queues, so a give-up or a stall on o
   await b.p.enqueue("u1", "http://voice/u1.wav"); // b plays at once, whatever a is doing
   assert.equal(a.played.length, 1, "a holds u2 behind its fallback clip");
   assert.equal(b.played.length, 1, "b played u1 immediately");
-  assert.deepEqual(bus.published.filter((e) => e.data.sink === "second"), [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "second" } }]);
+  assert.deepEqual(bus.published.filter((e) => (e.data as { sink?: string }).sink === "second"), [{ type: "voice.playing", data: { id: "u1", seq: 0, sink: "second" } }]);
   await b.p.onIdle();
   assert.deepEqual(bus.of("voice.done").map((d) => d.sink), ["second"], "only b finished anything");
   await a.p.onIdle();

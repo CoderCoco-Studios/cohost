@@ -156,7 +156,7 @@ test("chat(): a tool message or an assistant toolCalls is a TypeError before any
 
 // @spec LLM-ERR-007
 test("a non-2xx answer is a ChatError of kind http with the status and the existing message, from chat() and complete()", async () => {
-  const ChatError = (llmApi as any).ChatError;
+  const { ChatError } = llmApi;
   assert.equal(typeof ChatError, "function", "ChatError is exported");
   const b = await recorder(() => ({ status: 503, text: "overloaded" }));
   const o = new Ollama(llmCfg({ provider: "ollama" }), b.url) as any;
@@ -236,7 +236,7 @@ test("a failed chat() or complete() leaves lastError unchanged", async () => {
   ] as const) {
     p.lastError = "earlier ping failure";
     for (const call of ["chat", "complete"] as const) {
-      await assert.rejects(p[call](hello), undefined, label);
+      await assert.rejects(p[call](hello), label);
       assert.equal(p.lastError, "earlier ping failure", `${p.name} ${call}`);
     }
   }

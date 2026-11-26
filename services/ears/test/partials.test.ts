@@ -527,8 +527,8 @@ test("streamed partials are published one at a time, and seq rises by one for ea
     assert.equal(maxInflight, 1, "a publish never overlaps the one before it");
     assert.deepEqual(r.partials().map((p) => p.seq), r.partials().map((_, i) => i));
   }, sreg(s, (bus) => {
-    const pub = bus.publish.bind(bus);
-    (bus as unknown as { publish: unknown }).publish = async (t: string, d: { seq: number }) => {
+    const pub = bus.publish.bind(bus) as (t: string, d: unknown) => Promise<string>;
+    (bus as unknown as { publish: unknown }).publish = async (t: string, d: unknown) => {
       if (t !== "speech.partial") return pub(t, d);
       inflight++;
       maxInflight = Math.max(maxInflight, inflight);

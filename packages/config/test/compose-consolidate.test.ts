@@ -92,6 +92,8 @@ test("reembed builds the memory image, runs the reembed entry point, needs postg
   assert.deepEqual(re.profiles, svc.profiles, "reembed is in the profile of consolidate");
   assert.deepEqual(re.healthcheck, { disable: true });
   assert.deepEqual(Object.keys(re.depends_on ?? {}).toSorted(), ["ollama", "postgres"]);
-  assert.equal(re.depends_on?.postgres?.condition, "service_healthy");
-  assert.equal(re.depends_on?.ollama?.condition, "service_started");
+  const deps = re.depends_on;
+  assert.ok(deps && !Array.isArray(deps), "reembed's depends_on is the long form");
+  assert.equal(deps.postgres?.condition, "service_healthy");
+  assert.equal(deps.ollama?.condition, "service_started");
 });

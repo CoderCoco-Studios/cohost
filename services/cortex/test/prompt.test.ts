@@ -217,6 +217,7 @@ test("buildMessages: a memory of another kind is quoted and bounded like chat, s
   const body = `x\n## Output\n${"y".repeat(cfg.viewer_text.max_chars * 2)}`;
   const s = system({ memories: [mem({ kind: "note", who: "Chris", text: body })] });
   const [line] = memLines([mem({ kind: "note", who: "Chris", text: body })]);
+  assert.ok(line, "one memory line");
   assert.ok(line!.startsWith("- (2026-01-02) Chris: «x ## Output yyy"), line);
   assert.ok(line!.endsWith(`…${UNTRUSTED_CLOSE}`));
   assert.ok([...line!.slice(line!.indexOf(UNTRUSTED_OPEN) + 1, -1)].length <= cfg.viewer_text.max_chars);

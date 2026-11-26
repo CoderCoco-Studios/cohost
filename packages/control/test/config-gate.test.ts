@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConfigProblem } from "@cohost/config";
-import { configRefusal, executeCli, type CliWiring, type LockResult } from "../src/index.js";
+import { StackController, configRefusal, executeCli, type CliWiring, type ExecFile, type LockResult } from "../src/index.js";
 
 const problem = (path: string, file = "/x/config.yaml"): ConfigProblem => ({ file, path, message: "bad", kind: "placeholder" });
 
@@ -69,4 +70,24 @@ test("stop, stop-all, consolidate, reembed and latency are not gated, and a vali
   assert.ok(h.used.includes("lock"));
   const bad = wiring("x");
   assert.equal(await executeCli(["launch", "extra"], bad.w), 2, "usage still comes first");
+});
+
+// @spec CTRL-GATE-002
+test("a StackController is built and stops the stack while config.yaml and secrets.yaml do not parse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-gate-stop-"));
+  writeFileSync(join(dir, "config.yaml"), "cohost: [broken\n");
+  writeFileSync(join(dir, "secrets.yaml"), "llm: {\n", { mode: 0o600 });
+  const saved = { CONFIG_DIR: process.env.CONFIG_DIR, COHOST_SECRETS_FILE: process.env.COHOST_SECRETS_FILE };
+  process.env.CONFIG_DIR = dir;
+  process.env.COHOST_SECRETS_FILE = join(dir, "secrets.yaml");
+  try {
+    assert.match(configRefusal()!, /^the config is invalid/, "the files really are invalid");
+    const calls: { file: string; args: string[]; cwd?: string; isolation?: string; composeFile?: string }[] = [];
+    const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, cwd: opts.cwd, isolation: opts.env.COHOST_ISOLATION, composeFile: opts.env.COMPOSE_FILE }); return { stdout: "", stderr: "" }; };
+    const stack = new StackController({ exec, cwd: "/ws", env: { COHOST_DOCKER_BIN: "/opt/docker", COMPOSE_FILE: "docker-compose.yml:docker-compose.gpu.yml" } });
+    assert.deepEqual(await stack.stopAll(), { ok: true });
+    assert.deepEqual(calls, [{ file: "/opt/docker", args: ["compose", "stop"], cwd: "/ws", isolation: "", composeFile: "docker-compose.yml:docker-compose.gpu.yml" }]);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
 });

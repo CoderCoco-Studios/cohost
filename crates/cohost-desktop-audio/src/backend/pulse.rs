@@ -1,7 +1,12 @@
 //! The Linux capture back end: the monitor of the default sink, or a named PulseAudio or PipeWire
 //! source, recorded through the pure-Rust `pulseaudio` client over the server's unix socket, so
 //! the helper needs no `libpulse` to build or run (EARS-SRC-023). A second connection subscribes
-//! to server and sink events, which report default-sink changes (EARS-SRC-019).
+//! to server, sink and source events, which report default-sink changes and a captured source that
+//! went away (EARS-SRC-019).
+//!
+//! The client does not report a stream the server killed, so a stream that delivers nothing for
+//! [`STALL_AFTER`] also counts as a read failure: the session then asks whether the default moved
+//! (a re-open) and otherwise stops on a device failure (EARS-SRC-019).
 //!
 //! The client's API is async; its own reactor thread drives the socket, so each call here is
 //! waited on with a plain `block_on` on the capture thread.
@@ -10,12 +15,12 @@ use std::ffi::CString;
 use std::io::BufReader;
 use std::net::Shutdown;
 use std::os::unix::net::UnixStream;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, TryRecvError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures::executor::block_on;
-use pulseaudio::protocol::stream::BufferAttr;
+use pulseaudio::protocol::stream::{BufferAttr, StreamFlags};
 use pulseaudio::protocol::{
     self, ChannelMap, RecordStreamParams, SampleFormat, SampleSpec, SubscriptionEventFacility,
     SubscriptionMask,
@@ -23,33 +28,39 @@ use pulseaudio::protocol::{
 use pulseaudio::{Client, ClientError, RecordStream};
 
 use crate::pulse_server::{
-    Facility, FrameDecoder, ServerEnv, default_changed, monitor_of, server_socket, wakes_follower,
+    Facility, FrameDecoder, STALL_AFTER, ServerEnv, Wake, default_changed, monitor_of,
+    server_sockets, stalled, wake_for,
 };
 use crate::source::{Capture, DeviceEvent, Format, SourceChoice};
 
 const APP: &std::ffi::CStr = c"cohost-desktop-audio";
+/// The stream's `media.name`, which mixers such as `pavucontrol` show.
+const MEDIA_NAME: &std::ffi::CStr = c"desktop audio";
 /// Capture format asked of the server, which converts to it: 48 kHz little-endian float stereo.
 /// The resampler takes it to 16 kHz mono.
 const RATE: u32 = 48_000;
 const CHANNELS: u8 = 2;
 /// The server sends 100 ms of audio per fragment.
 const FRAGMENT_BYTES: u32 = RATE * (CHANNELS as u32) * 4 / 10;
-/// How long one `read` waits for audio, so a stop is seen within 100 ms even when the source is
-/// silent and the server sends nothing.
+/// How long one `read` waits for audio, so a stop is seen within 100 ms even when the server
+/// sends nothing.
 const READ_WAIT: Duration = Duration::from_millis(100);
 const LOST: &str = "the PulseAudio connection was lost";
 
-/// The socket the environment names (`PULSE_SERVER`, `PULSE_RUNTIME_PATH`, `XDG_RUNTIME_DIR`).
-fn socket_from_env() -> Result<std::path::PathBuf, String> {
+/// The candidate sockets the environment names (`PULSE_SERVER`, `PULSE_RUNTIME_PATH`,
+/// `XDG_RUNTIME_DIR`, `/etc/machine-id`).
+fn sockets_from_env() -> Result<Vec<PathBuf>, String> {
     let (server, runtime, xdg) = (
         std::env::var("PULSE_SERVER").ok(),
         std::env::var("PULSE_RUNTIME_PATH").ok(),
         std::env::var("XDG_RUNTIME_DIR").ok(),
     );
-    server_socket(&ServerEnv {
+    let machine_id = std::fs::read_to_string("/etc/machine-id").ok();
+    server_sockets(&ServerEnv {
         pulse_server: server.as_deref(),
         pulse_runtime_path: runtime.as_deref(),
         xdg_runtime_dir: xdg.as_deref(),
+        machine_id: machine_id.as_deref(),
     })
 }
 
@@ -70,14 +81,32 @@ fn describe(e: &ClientError) -> String {
     }
 }
 
-fn connect_client(path: &Path) -> Result<Client, String> {
-    Client::new_unix(APP, open_socket(path)?, cookie())
-        .map_err(|e| format!("could not connect to PulseAudio: {}", describe(&e)))
+/// Connects to the first candidate socket that answers, returning the client and that socket.
+fn connect_client() -> Result<(Client, PathBuf), String> {
+    let mut failures = Vec::new();
+    for path in sockets_from_env()? {
+        let attempt = open_socket(&path).and_then(|socket| {
+            Client::new_unix(APP, socket, cookie()).map_err(|e| {
+                format!(
+                    "could not connect to PulseAudio at {}: {}",
+                    path.display(),
+                    describe(&e)
+                )
+            })
+        });
+        match attempt {
+            Ok(client) => return Ok((client, path)),
+            Err(message) => failures.push(message),
+        }
+    }
+    Err(failures.join("; "))
 }
 
 /// The names of the sources the server offers.
 pub fn list_sources() -> Result<Vec<String>, String> {
-    let client = connect_client(&socket_from_env()?)?;
+    // The client's reactor thread stays blocked on its socket after the client is dropped, until
+    // the process exits. That is harmless: this runs once, at start.
+    let (client, _) = connect_client()?;
     let sources = block_on(client.list_sources())
         .map_err(|e| format!("could not list the PulseAudio sources: {}", describe(&e)))?;
     Ok(sources
@@ -92,8 +121,9 @@ enum Notice {
     Lost,
 }
 
-/// A connection that subscribes to server and sink events and forwards them from its own thread.
-/// The thread ends when the connection closes; dropping this shuts the socket down to end it.
+/// A connection that subscribes to server, sink and source events and forwards them from its own
+/// thread. The thread ends when the connection closes; dropping this shuts the socket down to end
+/// it.
 struct Subscription {
     socket: UnixStream,
     notices: Receiver<Notice>,
@@ -131,10 +161,11 @@ impl Subscription {
         .map_err(fail)?;
         protocol::read_reply_message::<protocol::SetClientNameReply>(&mut reader, version)
             .map_err(fail)?;
+        let mask = SubscriptionMask::SERVER | SubscriptionMask::SINK | SubscriptionMask::SOURCE;
         protocol::write_command_message(
             reader.get_mut(),
             2,
-            &protocol::Command::Subscribe(SubscriptionMask::SERVER | SubscriptionMask::SINK),
+            &protocol::Command::Subscribe(mask),
             version,
         )
         .map_err(fail)?;
@@ -148,6 +179,7 @@ impl Subscription {
                         let facility = match event.event_facility {
                             SubscriptionEventFacility::Server => Facility::Server,
                             SubscriptionEventFacility::Sink => Facility::Sink,
+                            SubscriptionEventFacility::Source => Facility::Source,
                             _ => Facility::Other,
                         };
                         if tx.send(Notice::Event(facility)).is_err() {
@@ -177,6 +209,10 @@ struct Recording {
     /// Held so the stream lives; dropping it deletes the stream on the server.
     _stream: RecordStream,
     data: Receiver<Vec<u8>>,
+    /// The source recorded.
+    device: String,
+    /// When the stream last delivered audio (or was opened).
+    last_data: Instant,
 }
 
 pub struct PulseCapture {
@@ -186,12 +222,13 @@ pub struct PulseCapture {
     followed_sink: Option<String>,
     recording: Option<Recording>,
     decoder: FrameDecoder,
+    /// The last read failed on a stall; the next `event` asks whether the default moved.
+    stalled: bool,
 }
 
 impl PulseCapture {
     pub fn connect() -> Result<Self, String> {
-        let path = socket_from_env()?;
-        let client = connect_client(&path)?;
+        let (client, path) = connect_client()?;
         let subscription = Subscription::start(&path)?;
         Ok(Self {
             client,
@@ -199,6 +236,7 @@ impl PulseCapture {
             followed_sink: None,
             recording: None,
             decoder: FrameDecoder::default(),
+            stalled: false,
         })
     }
 
@@ -213,12 +251,22 @@ impl PulseCapture {
             .default_sink_name
             .map(|n| n.to_string_lossy().into_owned()))
     }
+
+    /// An error naming the captured source when the server no longer has it.
+    fn source_gone(&self) -> Option<String> {
+        let device = &self.recording.as_ref()?.device;
+        let name = CString::new(device.as_str()).ok()?;
+        block_on(self.client.source_info_by_name(name))
+            .err()
+            .map(|e| format!("the source {device} went away: {}", describe(&e)))
+    }
 }
 
 impl Capture for PulseCapture {
     fn open(&mut self, choice: &SourceChoice) -> Result<Format, String> {
         self.recording = None;
         self.decoder.reset();
+        self.stalled = false;
         let (device, followed) = match choice {
             SourceChoice::DefaultMonitor => {
                 let sink = self
@@ -233,6 +281,8 @@ impl Capture for PulseCapture {
         };
         let source_name = CString::new(device.clone())
             .map_err(|_| format!("the source name {device} holds a NUL byte"))?;
+        let mut props = protocol::Props::new();
+        props.set(protocol::Prop::MediaName, MEDIA_NAME);
         let params = RecordStreamParams {
             sample_spec: SampleSpec {
                 format: SampleFormat::Float32Le,
@@ -245,6 +295,14 @@ impl Capture for PulseCapture {
                 fragment_size: FRAGMENT_BYTES,
                 ..BufferAttr::default()
             },
+            // The server never moves the stream to another source: a named source has no fallback
+            // (EARS-SRC-018), and a followed default is re-opened by the helper itself.
+            flags: StreamFlags {
+                no_move: true,
+                adjust_latency: true,
+                ..StreamFlags::default()
+            },
+            props,
             ..RecordStreamParams::default()
         };
         let (tx, data) = mpsc::channel();
@@ -263,6 +321,8 @@ impl Capture for PulseCapture {
         self.recording = Some(Recording {
             _stream: stream,
             data,
+            device,
+            last_data: Instant::now(),
         });
         self.followed_sink = followed;
         Ok(Format {
@@ -272,12 +332,23 @@ impl Capture for PulseCapture {
     }
 
     fn read(&mut self, out: &mut Vec<f32>) -> Result<(), String> {
-        let recording = self.recording.as_ref().ok_or("the capture is not open")?;
+        let recording = self.recording.as_mut().ok_or("the capture is not open")?;
         match recording.data.recv_timeout(READ_WAIT) {
             Ok(chunk) => self.decoder.push(&chunk, out),
-            Err(RecvTimeoutError::Timeout) => return Ok(()),
+            Err(RecvTimeoutError::Timeout) => {
+                if stalled(recording.last_data.elapsed()) {
+                    self.stalled = true;
+                    return Err(format!(
+                        "the source {} sent no audio for {} s",
+                        recording.device,
+                        STALL_AFTER.as_secs()
+                    ));
+                }
+                return Ok(());
+            }
             Err(RecvTimeoutError::Disconnected) => return Err(LOST.into()),
         }
+        recording.last_data = Instant::now();
         // Take whatever else has arrived, so the reader keeps up with the server.
         loop {
             match recording.data.try_recv() {
@@ -290,26 +361,34 @@ impl Capture for PulseCapture {
 
     fn event(&mut self) -> Option<DeviceEvent> {
         // Drain the events that arrived since the last call, without blocking.
-        let mut woken = false;
+        let mut wake = Wake::default();
         loop {
             match self.subscription.notices.try_recv() {
-                Ok(Notice::Event(facility)) => woken |= wakes_follower(facility),
+                Ok(Notice::Event(facility)) => wake = wake.merge(wake_for(facility)),
                 Ok(Notice::Lost) | Err(TryRecvError::Disconnected) => {
                     return Some(DeviceEvent::Error(LOST.into()));
                 }
                 Err(TryRecvError::Empty) => break,
             }
         }
-        if !woken {
-            return None;
-        }
-        let followed = self.followed_sink.as_deref()?;
-        match self.default_sink() {
-            Ok(now) if default_changed(Some(followed), now.as_deref()) => {
-                Some(DeviceEvent::DefaultChanged)
+        // A followed monitor that went away or stalled most likely went with its sink, so the
+        // default is asked first: a new default is a re-open, not a failure.
+        // A stall that is not a default change stays the read failure the session stops on.
+        let stall = std::mem::take(&mut self.stalled);
+        if let Some(followed) = self.followed_sink.as_deref()
+            && (wake.default || wake.source || stall)
+        {
+            match self.default_sink() {
+                Ok(now) if default_changed(Some(followed), now.as_deref()) => {
+                    return Some(DeviceEvent::DefaultChanged);
+                }
+                Ok(_) => {}
+                Err(message) => return Some(DeviceEvent::Error(message)),
             }
-            Ok(_) => None,
-            Err(message) => Some(DeviceEvent::Error(message)),
         }
+        if wake.source {
+            return self.source_gone().map(DeviceEvent::Error);
+        }
+        None
     }
 }

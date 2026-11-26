@@ -265,7 +265,7 @@ test("a workflow step that runs anything else fails, naming the file and line", 
 });
 
 // @spec DEPLOY-CI-012
-test("no step is held: the desktop helper's former libpulse install fails in the test workflow too", () => {
+test("the desktop helper's former libpulse install fails in every workflow", () => {
   const formerlyHeld = "      - name: held\n        run: sudo apt-get update && sudo apt-get install -y libpulse-dev pkg-config";
   for (const wf of [".github/workflows/test.yml", ".github/workflows/other.yml"]) {
     const r = run({ [wf]: workflow(formerlyHeld) });

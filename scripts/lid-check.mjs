@@ -86,11 +86,6 @@ export function checkPins(root, files) {
 const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 /** One `mise run <task>` command: optional leading NAME=value assignments, `mise run`, its flags, one task, the task's arguments. */
 const ONE_MISE_RUN = /^(?:[A-Z_][A-Z0-9_]*=[^\s;&|<>`$()]*\s+)*mise\s+run\s+(?:-\S+\s+)*[A-Za-z0-9][\w:.-]*(?:\s+[^\s;&|<>`$()]+)*$/;
-/**
- * Steps held until another spec lands, each `{ file, run, until }`: the workflow file, the step's exact `run:` text
- * and the spec whose implementation removes it. None is held.
- */
-const HELD_STEPS = [];
 
 /** The steps of every `steps:` list in a workflow: their keys and the line each starts on. Reads YAML as text (no install). */
 function workflowSteps(text) {
@@ -138,18 +133,14 @@ function blockValue(lines, at, keyIndent, inline) {
 }
 
 // @spec DEPLOY-CI-012
-export function checkWorkflowSteps(root, files, markers = new Map()) {
+export function checkWorkflowSteps(root, files) {
   const problems = [];
-  for (const h of HELD_STEPS) {
-    if (markers.get(h.until) === "x") problems.push(`${h.file}: the step "${h.run}" is held only until ${h.until}, which is implemented; remove the step and its entry in HELD_STEPS (scripts/lid-check.mjs)`);
-  }
   for (const f of files.filter((x) => WORKFLOW.test(x))) {
     for (const step of workflowSteps(readFileSync(join(root, f), "utf8"))) {
       const { uses, run } = step.keys;
       if (uses !== undefined && run === undefined) continue;
       if (run !== undefined && uses === undefined) {
         if (!run.includes("\n") && ONE_MISE_RUN.test(run)) continue;
-        if (HELD_STEPS.some((h) => h.file === f && h.run === run)) continue;
       }
       problems.push(`${f}:${step.line}: a workflow step must be a uses: action or a run: of exactly one mise run <task>`);
     }
@@ -232,7 +223,6 @@ export function check(root) {
   const specFiles = files.filter((f) => f.endsWith("-specs.md"));
   const problems = [];
   const defined = new Map(); // id -> "file:line"
-  const markers = new Map(); // id -> "x", " " or "D"
   const mentions = []; // { id, file, line, text }
 
   for (const f of specFiles) {
@@ -241,7 +231,6 @@ export function check(root) {
       const def = DEFINITION.exec(text);
       if (def) {
         const id = def[1];
-        markers.set(id, /- \[(.)\]/.exec(text)[1]);
         if (defined.has(id)) problems.push(`${f}:${i + 1}: ${id} is defined twice (first at ${defined.get(id)})`);
         else defined.set(id, `${f}:${i + 1}`);
       }
@@ -268,7 +257,7 @@ export function check(root) {
       }
     });
   }
-  problems.push(...checkPins(root, files), ...checkWorkflowSteps(root, files, markers), ...checkBuildContexts(root, files), ...checkDockerfiles(root, files));
+  problems.push(...checkPins(root, files), ...checkWorkflowSteps(root, files), ...checkBuildContexts(root, files), ...checkDockerfiles(root, files));
   return { problems, defined: defined.size };
 }
 

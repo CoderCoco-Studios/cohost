@@ -32,7 +32,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (150 specs, prefix `DEPLOY`: 145 `[x]`, 5 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (150 specs, prefix `DEPLOY`: 147 `[x]`, 3 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts

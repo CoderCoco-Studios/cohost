@@ -91,11 +91,11 @@ While `config.yaml` or `secrets.yaml` does not validate, the dashboard runs one 
 | Route | Auth | What it does |
 | --- | --- | --- |
 | `GET /recovery` | none | `{"active": false}` in normal mode. In recovery mode `{"active": true, "file", "secretsFile", "etag", "problems"}`: each problem is `{file, path, message, kind, secret, sensitive, section?, fallback?, resetPath?, actions: {set, reset, fallback}}`, `kind` one of `placeholder`, `schema`, `syntax`, `secrets`. Answers `{"active": false}` and starts the normal dashboard once nothing fails |
-| `POST /recovery/set` | token with control on; in both modes for a sensitive key | Body `{"etag", "path", "value"}`. Sets one key (a string value is read as YAML when the key accepts that), keeping the rest of the file. `400 {"ok": false, "issues"}` for a value the key refuses, a credential or a list entry |
-| `POST /recovery/reset` | token with control on | Body `{"etag", "path"}`. Removes the key (a whole list for a path inside one) so its default applies, or clears a broken `secrets.yaml` path |
-| `POST /recovery/reset-all` | token with control on | Body `{"etag"}`. Writes each placeholder's fallback where it has one the key accepts, resets the rest, in rounds, then writes each file once |
+| `POST /recovery/set` | token with control on; in both modes for a sensitive key | Body `{"etag", "path", "value"}`. Sets one key (a string value is read as YAML when the key accepts that), keeping the rest of the file. `400 {"ok": false, "issues"}` for a value the key refuses, a credential or an entry inside a list entry; a single-value list entry `key[i]` can be set |
+| `POST /recovery/reset` | token with control on; in both modes when it changes `secrets.yaml` | Body `{"etag", "path"}`. Removes the key (a whole list for a path inside one) so its default applies, or repairs a broken `secrets.yaml` path: a plain value that is not a string is rewritten quoted, anything else is cleared |
+| `POST /recovery/reset-all` | token with control on; the `secrets.yaml` part needs it in both modes | Body `{"etag"}`. Writes each placeholder's fallback where it has one the key accepts (a single-value list entry included), resets the rest, in rounds, then writes each file once. Without the token `secrets.yaml` is left alone and the answer lists its paths as `tokenNeeded` |
 
-Every write answers `200 {"ok": true, "etag", "problems", "valid"}` with the problems still left, or `409 {"ok": false, "etag"}` when the file changed since the `etag` was read; when `valid` is true the normal dashboard starts in the same process. In normal mode the three writes answer `409`.
+Every write answers `200 {"ok": true, "etag", "problems", "valid", "port"?, "tokenNeeded"?}` with the problems still left (`port`, once valid, is the port the normal dashboard listens on), or `409 {"ok": false, "etag"}` when the file changed since the `etag` was read; when `valid` is true the normal dashboard starts in the same process. In normal mode the three writes answer `409`.
 
 ## Dashboard: avatar models
 

@@ -18,13 +18,25 @@ export interface RecoveryProblem {
   section?: { path: string; title: string };
   fallback?: unknown;
   resetPath?: string;
+  repair?: "quote" | "clear";
   actions: { set: boolean; reset: boolean; fallback: boolean };
 }
 
 /** `GET /recovery` in recovery mode. */
 export interface RecoveryState { active: true; file: string; secretsFile: string; etag: string; problems: RecoveryProblem[] }
 
-type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean };
+type WriteResult = { ok: true; etag: string; problems: RecoveryProblem[]; valid: boolean; port?: number; tokenNeeded?: string[] };
+
+/** Where the page is: the parts the wait for the normal dashboard compares and builds addresses from. */
+export interface PageLocation { protocol: string; hostname: string; port: string }
+
+const defaultReload = (): void => location.reload();
+const defaultNavigate = (url: string): void => location.assign(url);
+/** Resolves when anything answers at `url` (an opaque answer is enough), rejects on a network error. */
+const defaultProbe = async (url: string): Promise<void> => { await fetch(url, { mode: "no-cors", cache: "no-store" }); };
+
+/** Polls that fail before the screen names the address it is waiting for. */
+export const WAIT_NOTICE_AFTER = 10;
 
 /**
  * Asks `GET /recovery` before anything else loads: the recovery state when the dashboard is in config recovery mode, else null
@@ -41,7 +53,7 @@ const KIND: Record<RecoveryProblem["kind"], string> = { placeholder: "Placeholde
 const shown = (v: unknown): string => (typeof v === "string" ? v : JSON.stringify(v));
 
 function resetLabel(p: RecoveryProblem): string {
-  if (p.file === "secrets") return "Clear in secrets.yaml";
+  if (p.file === "secrets") return p.repair === "quote" ? "Quote it in secrets.yaml" : "Clear in secrets.yaml";
   if (p.secret) return "Remove from config.yaml";
   return p.path.includes("[") ? "Reset the list" : "Reset to default";
 }
@@ -59,29 +71,52 @@ function failure(r: Extract<ApiResult<unknown>, { ok: false }>): string {
  * actions, Reset all, Check again, and, once the files validate, a wait for the normal dashboard and a reload.
  */
 // @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015
-export function RecoveryScreen({ initial, reload = () => location.reload(), pollMs = 1000 }: { initial: RecoveryState; reload?: () => void; pollMs?: number }) {
+export function RecoveryScreen({ initial, reload = defaultReload, navigate = defaultNavigate, probe = defaultProbe, here = location, pollMs = 1000 }: {
+  initial: RecoveryState;
+  reload?: () => void;
+  navigate?: (url: string) => void;
+  probe?: (url: string) => Promise<void>;
+  here?: PageLocation;
+  pollMs?: number;
+}) {
   const api = useApi();
   const [state, setState] = useState(initial);
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [valid, setValid] = useState(false);
+  const [tokenNeeded, setTokenNeeded] = useState<string[]>([]);
+  // Set once the files are valid: the port the normal dashboard comes up on (undefined: this page's own).
+  const [valid, setValid] = useState<{ port?: number } | null>(null);
+  const [misses, setMisses] = useState(0);
 
+  const ownPort = here.port || (here.protocol === "https:" ? "443" : "80");
+  const moved = valid?.port !== undefined && String(valid.port) !== ownPort;
+  const target = moved ? `${here.protocol}//${here.hostname}:${valid.port}/` : undefined;
+
+  // The wait for the normal dashboard: on this origin, until GET /recovery answers inactive, then a reload; on a new port,
+  // until anything answers there, then a move to it.
   useEffect(() => {
     if (!valid) return;
     let done = false;
     const id = setInterval(() => {
-      void api.get<{ active: boolean }>("/recovery").then((r) => {
-        if (!done && r.ok && !r.data.active) { done = true; clearInterval(id); reload(); }
+      const tick = target
+        ? probe(`${target}health`).then(() => true, () => false)
+        : api.get<{ active: boolean }>("/recovery").then((r) => r.ok && !r.data.active);
+      void tick.then((up) => {
+        if (done) return;
+        if (!up) { setMisses((m) => m + 1); return; }
+        done = true;
+        clearInterval(id);
+        if (target) navigate(target); else reload();
       });
     }, pollMs);
     return () => { done = true; clearInterval(id); };
-  }, [valid, api, reload, pollMs]);
+  }, [valid, target, api, reload, navigate, probe, pollMs]);
 
   const refresh = async (): Promise<void> => {
-    const r = await api.get<RecoveryState | { active: false }>("/recovery");
+    const r = await api.get<RecoveryState | { active: false; port?: number }>("/recovery");
     if (!r.ok) { setErrors({ all: failure(r) }); return; }
-    if (!r.data.active) { setValid(true); return; }
+    if (!r.data.active) { setValid({ ...(r.data.port !== undefined ? { port: r.data.port } : {}) }); return; }
     setState(r.data);
     setErrors({});
   };
@@ -93,7 +128,8 @@ export function RecoveryScreen({ initial, reload = () => location.reload(), poll
     if (r.ok) {
       setState((s) => ({ ...s, etag: r.data.etag, problems: r.data.problems }));
       setErrors({});
-      if (r.data.valid) setValid(true);
+      setTokenNeeded(r.data.tokenNeeded ?? []);
+      if (r.data.valid) setValid({ ...(r.data.port !== undefined ? { port: r.data.port } : {}) });
       return;
     }
     if (r.status === 409 && typeof (r.data as { etag?: unknown } | undefined)?.etag === "string") {
@@ -109,7 +145,10 @@ export function RecoveryScreen({ initial, reload = () => location.reload(), poll
     return (
       <main id="main" className="page" tabIndex={-1}>
         <PageHeading>Config recovery</PageHeading>
-        <Banner tone="ok" title="The config is valid. Starting the dashboard…">The page reloads as soon as the dashboard is up.</Banner>
+        <Banner tone="ok" title="The config is valid. Starting the dashboard…">
+          {target ? `The dashboard moves to ${target}; the page goes there as soon as it is up.` : "The page reloads as soon as the dashboard is up."}
+        </Banner>
+        {misses >= WAIT_NOTICE_AFTER ? <Banner tone="warn">Still waiting for the dashboard at {target ?? `${here.protocol}//${here.hostname}:${ownPort}/`}. Check the terminal it runs in; you can open that address yourself once it is up.</Banner> : null}
       </main>
     );
   }
@@ -123,6 +162,7 @@ export function RecoveryScreen({ initial, reload = () => location.reload(), poll
           <Button disabled={busy !== null} onClick={() => void refresh()}>Check again</Button>
         </div>
         {errors.all ? <Banner tone="bad">{errors.all}</Banner> : null}
+        {tokenNeeded.length ? <Banner tone="warn">The keys in config.yaml are fixed. {tokenNeeded.join(", ")} in secrets.yaml need the control token: use the button on {tokenNeeded.length === 1 ? "its row" : "their rows"} and enter the token when the page asks.</Banner> : null}
         <ul className="recovery-list" aria-label="Failing keys">
           {state.problems.map((p, i) => {
             const key = `${p.file}:${p.path}:${i}`;

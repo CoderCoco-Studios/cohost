@@ -6,7 +6,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 265 specs: 265 implemented, 0 deferred, 0 gaps (#360 built the structured `ConfigError`, `checkConfig` and the recovery editor, CFG-RCV-001 to 005, in `packages/config/src/errors.ts`, `index.ts` and `editor.ts`; #349 built the logging design: CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, and the rewritten CFG-URL-004 and CFG-ENV-012, in `packages/config/src/logging.ts`, `log-pretty.ts` and `log-file.ts`; #318 built: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets` in `packages/config/src/project.ts`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 266 specs: 266 implemented, 0 deferred, 0 gaps (#360 built the structured `ConfigError`, `checkConfig` and the recovery editor, CFG-RCV-001 to 006, in `packages/config/src/errors.ts`, `index.ts`, `editor.ts` and `secrets.ts`; #349 built the logging design: CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, and the rewritten CFG-URL-004 and CFG-ENV-012, in `packages/config/src/logging.ts`, `log-pretty.ts` and `log-file.ts`; #318 built: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets` in `packages/config/src/project.ts`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
 
 Orientation:
 
@@ -23,7 +23,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (265 specs, prefix `CFG`: 265 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (266 specs, prefix `CFG`: 266 `[x]`, 0 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -92,9 +92,9 @@ Orientation:
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
 | User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
-| Structured errors and recovery editing | CFG-RCV-001 to CFG-RCV-005 | 5 | 0 | 0 |
+| Structured errors and recovery editing | CFG-RCV-001 to CFG-RCV-006 | 6 | 0 | 0 |
 
-**Summary:** 265 specs: 265 implemented, 0 gaps, 0 deferred. The logging design of #349 (readable terminal lines, a rotated JSON log file per program, the `logging` section replacing `LOG_LEVEL`) is built and pinned by packages/config/test/logging.test.ts, with the owner's case (an invalid config.yaml under the dashboard) in services/dashboard/test/logging.test.ts (#318 built: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012). CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
+**Summary:** 266 specs: 266 implemented, 0 gaps, 0 deferred. The logging design of #349 (readable terminal lines, a rotated JSON log file per program, the `logging` section replacing `LOG_LEVEL`) is built and pinned by packages/config/test/logging.test.ts, with the owner's case (an invalid config.yaml under the dashboard) in services/dashboard/test/logging.test.ts (#318 built: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012). CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 
 ## Coverage notes
 

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,7 +66,7 @@ test("GET /recovery lists every failing key with its kind and the actions it all
 });
 
 // @spec DASH-RCV-004
-test("a syntax error has no action, a secrets.yaml problem is cleared, a list entry resets the list", async () => {
+test("a syntax error has no action, a secrets.yaml value is quoted or cleared, a list entry is set alone or resets the list", async () => {
   const r = await rig("cohost: [x\n");
   try {
     const s = await state(r);
@@ -74,16 +75,24 @@ test("a syntax error has no action, a secrets.yaml problem is cleared, a list en
   const sec = await rig(EXAMPLE, { secrets: "llm:\n  openai:\n    api_key: 12345\n" });
   try {
     const s = await state(sec);
-    assert.deepEqual(s.problems.map((p) => [p.file, p.kind, p.path, p.actions.reset]), [["secrets", "secrets", "llm.openai.api_key", true]]);
+    assert.deepEqual(s.problems.map((p) => [p.file, p.kind, p.path, p.actions.reset, p.repair]), [["secrets", "secrets", "llm.openai.api_key", true, "quote"]]);
   } finally { await sec.close(); }
-  const list = await rig(EXAMPLE.replace(/^ {2}ignore_users: .*$/m, '  ignore_users: [nightbot, "${BOT}"]'));
+  const list = await rig(EXAMPLE.replace(/^ {2}ignore_users: .*$/m, '  ignore_users: [nightbot, "${BOT}", "${OTHER:-moobot}"]'));
   try {
     const s = await state(list);
-    const p = s.problems.find((x) => x.path.startsWith("chat.ignore_users"))!;
+    const p = s.problems.find((x) => x.path === "chat.ignore_users[1]")!;
     assert.ok(p, JSON.stringify(s.problems));
     assert.equal(p.resetPath, "chat.ignore_users");
-    assert.deepEqual(p.actions, { set: false, reset: true, fallback: false });
+    assert.deepEqual(p.actions, { set: true, reset: true, fallback: false });
+    const q = s.problems.find((x) => x.path === "chat.ignore_users[2]")!;
+    assert.deepEqual([q.actions, q.fallback], [{ set: true, reset: true, fallback: true }, "moobot"]);
   } finally { await list.close(); }
+  const one = await rig(EXAMPLE.replace(/^ {2}ignore_users: .*$/m, '  ignore_users: [nightbot, "${OTHER:-moobot}"]   # bots'));
+  try {
+    const all = await post(one, "reset-all", { etag: (await state(one)).etag });
+    assert.equal(((await all.json()) as { valid: boolean }).valid, true);
+    assert.match(readFileSync(one.configFile, "utf8"), /^ {2}ignore_users: \[nightbot, "moobot"\] {3}# bots$/m, "the fallback goes into its entry; the list stays");
+  } finally { await one.close(); }
 });
 
 // @spec DASH-RCV-005, DASH-RCV-009, DASH-RCV-012, DASH-RCV-015
@@ -131,9 +140,10 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
     assert.deepEqual(s.problems.map((p) => p.path), ["llm.claude.api_key"]);
     const res = await post(r, "reset", { etag: s.etag, path: "llm.claude.api_key" });
     assert.equal(res.status, 200);
-    const body = await res.json() as { valid: boolean; problems: unknown[] };
+    const body = await res.json() as { valid: boolean; problems: unknown[]; port?: number };
     assert.equal(body.valid, true);
     assert.deepEqual(body.problems, []);
+    assert.equal((body as { port?: number }).port, 3000, "the valid answer names the normal dashboard's port");
     const text = readFileSync(r.configFile, "utf8");
     assert.doesNotMatch(text, /LLM_API_KEY|pasted from the old/);
     assert.match(text, /^ {2}claude: .*\n {4}effort: low/m, "the rest of the mapping stays");
@@ -144,10 +154,14 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
     assert.ok(r.logs.some((l) => /leaving config recovery mode/.test(l)));
   } finally { await r.close(); }
 
-  const sec = await rig(EXAMPLE, { secrets: "# mine\nllm:\n  openai:\n    api_key: [a]\nvoice:\n  openai:\n    api_key: \"keep\"\n" });
+  const sec = await rig(EXAMPLE, { controlToken: "tok", secrets: "# mine\nllm:\n  openai:\n    api_key: [a]\nvoice:\n  openai:\n    api_key: \"keep\"\n" });
   try {
     const s = await state(sec);
-    const res = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" });
+    assert.equal(s.problems[0]!.repair, "clear");
+    const locked = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" });
+    assert.equal(locked.status, 401, "a secrets.yaml change needs the token with control off");
+    assert.match(readFileSync(sec.secretsFile, "utf8"), /\[a\]/);
+    const res = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" }, { authorization: "Bearer tok" });
     assert.equal(res.status, 200);
     const secrets = readFileSync(sec.secretsFile, "utf8");
     assert.match(secrets, /# mine/);
@@ -234,7 +248,7 @@ test("GET /recovery on a file fixed by hand answers inactive and leaves recovery
   const r = await rig(STALE);
   try {
     writeFileSync(r.configFile, EXAMPLE);
-    assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false });
+    assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false, port: 3000 });
     await new Promise((d) => setTimeout(d, 20));
     assert.equal(r.valid(), 1);
   } finally { await r.close(); }
@@ -279,4 +293,63 @@ test("startDashboard hands a valid configuration to run, and leaves a load failu
   }
   assert.equal(seen.length, 2);
   assert.equal(seen[1], undefined);
+});
+
+// @spec DASH-RCV-003, DASH-RCV-006, DASH-RCV-007
+test("a secrets.yaml repair needs the control token in both modes; reset-all fixes config.yaml without it and names the secrets left", async () => {
+  const none = await rig(STALE, { secrets: "llm:\n  openai:\n    api_key: 0123\n" });
+  try {
+    const s = await state(none);
+    const reset = await post(none, "reset", { etag: s.etag, path: "llm.openai.api_key" });
+    assert.equal(reset.status, 403);
+    assert.match(((await reset.json()) as { detail: string }).detail, /CONTROL_TOKEN/);
+    const all = await post(none, "reset-all", { etag: s.etag });
+    assert.equal(all.status, 200);
+    const body = await all.json() as { valid: boolean; problems: RecoveryProblem[]; tokenNeeded?: string[] };
+    assert.deepEqual(body.tokenNeeded, ["llm.openai.api_key"]);
+    assert.ok(body.problems.every((p) => p.file === "secrets" || p.path === "llm.model"), JSON.stringify(body.problems.map((p) => p.path)));
+    assert.match(readFileSync(none.secretsFile, "utf8"), /api_key: 0123/, "secrets.yaml untouched");
+    assert.doesNotMatch(readFileSync(none.configFile, "utf8"), /COHOST_NAME/, "config.yaml repaired");
+  } finally { await none.close(); }
+
+  const tok = await rig(EXAMPLE, { controlToken: "tok", secrets: "llm:\n  openai:\n    api_key: 0123\n" });
+  try {
+    const s = await state(tok);
+    const all = await post(tok, "reset-all", { etag: s.etag }, { authorization: "Bearer tok" });
+    assert.equal(((await all.json()) as { valid: boolean }).valid, true);
+    assert.match(readFileSync(tok.secretsFile, "utf8"), /api_key: "0123"/, "an all-digit token is quoted, never cleared");
+  } finally { await tok.close(); }
+});
+
+// @spec DASH-RCV-004, DASH-RCV-005
+test("paths that name an object's own properties are refused as unknown keys, never a 500", async () => {
+  const r = await rig(STALE);
+  try {
+    const s = await state(r);
+    for (const path of ["__proto__", "constructor", "llm.toString", "llm.__proto__"]) {
+      const set = await post(r, "set", { etag: s.etag, path, value: "x" });
+      assert.equal(set.status, 400, path);
+      const reset = await post(r, "reset", { etag: s.etag, path });
+      assert.equal(reset.status, 400, path);
+    }
+    assert.equal(readFileSync(r.configFile, "utf8"), STALE);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-011
+test("recovery mode is left once when the client of the answer that found the files valid goes away before the answer finishes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
+  writeFileSync(join(dir, "config.yaml"), EXAMPLE);
+  let valid = 0;
+  const handler = createRecoveryHandler({ log: { info() {}, error() {} } as never, files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "s.yaml") }, controlEnabled: false, uiDir: join(dir, "ui"), onValid: () => { valid++; } });
+  const req = Object.assign(new EventEmitter(), { method: "GET", url: "/recovery", headers: {} });
+  const res = Object.assign(new EventEmitter(), { headersSent: false, writeHead() { return this; }, end() { return this; } });
+  handler(req as never, res as never);
+  return new Promise<void>((done) => setImmediate(() => {
+    assert.equal(valid, 0);
+    res.emit("close");
+    res.emit("finish");
+    assert.equal(valid, 1);
+    done();
+  }));
 });

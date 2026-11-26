@@ -1,5 +1,5 @@
 import { readFileSync, statSync, realpathSync, lstatSync } from "node:fs";
-import { parseDocument, Document, isMap } from "yaml";
+import { parseDocument, Document, isMap, isScalar } from "yaml";
 import { secretPathOf, isSecretPrefix } from "./schema.js";
 import { writeFileAtomic } from "./atomic.js";
 import type { SecretValues } from "./pipeline.js";
@@ -122,4 +122,20 @@ export function updateSecrets(linkOrFile: string, changes: Readonly<Record<strin
     }
   }
   writeFileAtomic(file, doc.toString({ lineWidth: 0 }), { mode: 0o600 });
+}
+
+/**
+ * The value that repairs a secret path `loadSecrets` refuses in `text`: a plain scalar that is not a string (an all-digit token,
+ * `true`) is kept as its source text, to be written back quoted as a string; anything else (a list, a mapping, a value that spans
+ * lines, text that does not parse) cannot be kept and is `null`, to be cleared. The value is returned to the caller to write and
+ * is never logged.
+ */
+// @spec CFG-RCV-006
+export function secretRepair(text: string, path: string): { value: string | null } {
+  const doc = parseDocument(text);
+  if (doc.errors.length) return { value: null };
+  const node = doc.getIn(path.split("."), true);
+  if (!isScalar(node) || node.value === null || typeof node.value === "string" || !node.range) return { value: null };
+  const source = text.slice(node.range[0], node.range[1]).trim();
+  return { value: source !== "" && !/[\r\n]/.test(source) ? source : null };
 }

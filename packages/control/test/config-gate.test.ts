@@ -59,8 +59,8 @@ test("launch, rebuild, start, restart and restart-all print the refusal and exit
 });
 
 // @spec CTRL-CLI-018
-test("stop, stop-all, consolidate and reembed are not gated, and a valid config lets a gated command run", async () => {
-  for (const argv of [["stop", "voice"], ["stop-all"], ["consolidate"], ["reembed"]]) {
+test("stop, stop-all, consolidate, reembed and latency are not gated, and a valid config lets a gated command run", async () => {
+  for (const argv of [["stop", "voice"], ["stop-all"], ["consolidate"], ["reembed"], ["latency"]]) {
     const h = wiring("refused");
     assert.equal(await executeCli(argv, h.w), 0, argv.join(" "));
   }

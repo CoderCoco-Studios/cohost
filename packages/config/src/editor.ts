@@ -39,7 +39,9 @@ export function schemaAt(path: string): z.ZodType | undefined {
   for (const seg of path.split(".")) {
     const u = unwrap(cur).schema;
     if (!(u instanceof z.ZodObject)) return undefined;
-    const next = shapeOf(u)[seg];
+    const shape = shapeOf(u);
+    if (!Object.hasOwn(shape, seg)) return undefined;
+    const next = shape[seg];
     if (!next) return undefined;
     cur = next;
   }
@@ -124,7 +126,8 @@ function leafAt(root: z.ZodType, keys: string[]): z.ZodType | undefined {
   for (const key of keys) {
     const obj: z.ZodType | undefined = cur ? unwrap(cur).schema : undefined;
     if (!(obj instanceof z.ZodObject)) return undefined;
-    cur = shapeOf(obj)[key];
+    const shape = shapeOf(obj);
+    cur = Object.hasOwn(shape, key) ? shape[key] : undefined;
   }
   return cur;
 }
@@ -341,7 +344,7 @@ function quoteLike(value: string, type: string | undefined): string {
 }
 
 /** Replaces the existing node at `path` with `value`, keeping the quote style of a replaced string. */
-function replaceNode(text: string, doc: Document, path: string[], value: unknown): string {
+function replaceNode(text: string, doc: Document, path: (string | number)[], value: unknown): string {
   const node = doc.getIn(path, true) as { range?: [number, number, number] | null; type?: string; flow?: boolean } | undefined;
   if (!node?.range) throw new Error(`no node at ${path.join(".")}`);
   const start = node.range[0];
@@ -490,12 +493,28 @@ export const resetPathOf = (path: string): string => path.split("[")[0]!;
 
 /** Why the key at `path` cannot be set on its own (a list entry, a credential, no such key, a whole section), or undefined. */
 function settableRefusal(path: string): string | undefined {
-  if (path.includes("[")) return "a list entry cannot be set on its own: reset the list, or edit it on the Settings screen";
-  if (secretPathOf(path) !== undefined || isSecretPrefix(path)) return "a credential: it belongs in secrets.yaml, set through its masked field on the Settings screen";
-  const schema = path === "" ? undefined : schemaAt(path);
+  const target = settableSchema(path);
+  return typeof target === "string" ? target : undefined;
+}
+
+/** The schema a value set at `path` must satisfy (a key's own, or a list's element for `key[i]`), or why nothing can be set there. */
+function settableSchema(path: string): z.ZodType | string {
+  const entry = /^(.+)\[(\d+)\]$/.exec(path);
+  const key = entry ? entry[1]! : path;
+  if (key.includes("[")) return "an entry inside a list entry cannot be set on its own: reset the list, or edit it on the Settings screen";
+  if (secretPathOf(key) !== undefined || isSecretPrefix(key)) return "a credential: it belongs in secrets.yaml, set through its masked field on the Settings screen";
+  const schema = key === "" ? undefined : schemaAt(key);
   if (!schema) return "not a key config.yaml defines";
-  if (unwrap(schema).schema instanceof z.ZodObject) return "a section, not a key: set its keys one at a time";
-  return undefined;
+  const inner = unwrap(schema).schema;
+  if (entry) {
+    if (!(inner instanceof z.ZodArray)) return "not a list";
+    const element = inner.element as z.ZodType;
+    const u = unwrap(element).schema;
+    if (u instanceof z.ZodObject || u instanceof z.ZodArray || u instanceof z.ZodRecord) return "a list entry that is not a single value cannot be set on its own: reset the list, or edit it on the Settings screen";
+    return element;
+  }
+  if (inner instanceof z.ZodObject) return "a section, not a key: set its keys one at a time";
+  return schema;
 }
 
 /** True when `setConfigKey` can set the key at `path` given a value its schema accepts. */
@@ -506,7 +525,8 @@ export const canSetKey = (path: string): boolean => settableRefusal(path) === un
  * (`3000` a number, `[a, b]` a list), else the text itself (`qwen2.5:7b`, `null` for a string key).
  */
 export function inputValue(path: string, input: string): unknown {
-  const schema = canSetKey(path) ? schemaAt(path) : undefined;
+  const target = settableSchema(path);
+  const schema = typeof target === "string" ? undefined : target;
   let parsed: unknown;
   try { parsed = parseYaml(input); } catch { return input; }
   if (schema && schema.safeParse(parsed).success) return parsed;
@@ -533,26 +553,27 @@ export function rawSection(text: string, section: string): Record<string, unknow
 // @spec CFG-RCV-003
 export function setConfigKey(text: string, path: string, value: unknown): RecoveryEdit {
   const fail = (message: string): RecoveryEdit => ({ ok: false, issues: [{ path, message }] });
-  const refused = settableRefusal(path);
-  if (refused) return fail(refused);
-  const schema = schemaAt(path)!;
+  const schema = settableSchema(path);
+  if (typeof schema === "string") return fail(schema);
+  const entry = path.includes("[");
   if (value === null || value === undefined) return fail("a value is required");
   if (PLACEHOLDER_IN.test(JSON.stringify(value))) return fail("a value cannot contain a ${NAME} placeholder; config.yaml holds literals only");
   const check = schema.safeParse(value);
   if (!check.success) return fail(check.error.issues.map((i) => i.message).join("; "));
   const doc = parseDocument(text);
   if (doc.errors.length) return fail("config.yaml is not valid YAML: fix the syntax error by hand first");
-  const segs = path.split(".");
+  const segs = pathSegments(path);
   let out: string;
   try {
     const node = doc.getIn(segs, true);
     const present = node !== undefined && node !== null && !(isScalar(node) && node.value === null);
-    out = present ? replaceNode(text, doc, segs, value) : insertKey(text, doc, segs, value);
+    if (entry && !isScalar(node)) return fail("the list does not hold a single value at this entry");
+    out = present ? replaceNode(text, doc, segs, value) : insertKey(text, doc, segs as string[], value);
   } catch (e) {
     return fail((e as Error).message);
   }
   let readBack: unknown;
-  try { readBack = getPath(coerceEmptyNumbers(parseYaml(out)), segs); } catch { return fail("that value cannot be written to config.yaml as given"); }
+  try { readBack = segs.reduce<unknown>((o, k) => (o !== null && typeof o === "object" ? (o as Record<string | number, unknown>)[k] : undefined), coerceEmptyNumbers(parseYaml(out))); } catch { return fail("that value cannot be written to config.yaml as given"); }
   if (!sameValue(readBack, value)) return fail("that value cannot be written to config.yaml as given");
   return { ok: true, text: out };
 }

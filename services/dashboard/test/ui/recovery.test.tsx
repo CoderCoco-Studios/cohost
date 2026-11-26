@@ -10,12 +10,15 @@ const PROBLEMS: RecoveryProblem[] = [
   { file: "config", path: "llm.claude.api_key", message: "uses the placeholder ${KEY}; write the credential in secrets.yaml", kind: "placeholder", secret: true, sensitive: false, section: { path: "llm", title: "Language model" }, resetPath: "llm.claude.api_key", actions: { ...none, reset: true } },
   { file: "config", path: "chat.ignore_users[1]", message: "uses the placeholder ${BOT}", kind: "placeholder", secret: false, sensitive: false, resetPath: "chat.ignore_users", actions: { ...none, reset: true } },
   { file: "secrets", path: "", message: "not valid YAML at line 2, column 1", kind: "secrets", secret: true, sensitive: false, actions: none },
+  { file: "secrets", path: "voice.openai.api_key", message: "must be a string (write a value made only of digits in quotes)", kind: "secrets", secret: true, sensitive: false, resetPath: "voice.openai.api_key", repair: "quote", actions: { ...none, reset: true } },
 ];
 const STATE: RecoveryState = { active: true, file: "/cohost/config/config.yaml", secretsFile: "/cohost/secrets/secrets.yaml", etag: "e1", problems: PROBLEMS };
 
-function open(initial: RecoveryState = STATE, reload: () => void = () => {}) {
+const HERE = { protocol: "http:", hostname: "localhost", port: "3000" };
+
+function open(initial: RecoveryState = STATE, reload: () => void = () => {}, o: { navigate?: (url: string) => void; probe?: (url: string) => Promise<void> } = {}) {
   const app = makeApp();
-  const r = renderApp(<RecoveryScreen initial={initial} reload={reload} pollMs={5} />, app);
+  const r = renderApp(<RecoveryScreen initial={initial} reload={reload} navigate={o.navigate ?? (() => {})} probe={o.probe ?? (async () => {})} here={HERE} pollMs={5} />, app);
   return { ...r, app };
 }
 
@@ -54,6 +57,7 @@ test("the recovery screen lists every failing key with its kind, message and onl
   assert.ok(within(file).getByText("Secrets file"));
   assert.equal(within(file).queryAllByRole("button").length, 0);
   assert.match(file.textContent ?? "", /Fix this by hand in \/cohost\/secrets\/secrets\.yaml/);
+  assert.ok(within(row("voice.openai.api_key")).getByRole("button", { name: "Quote it in secrets.yaml" }));
 });
 
 // @spec DASH-RCV-013
@@ -98,10 +102,44 @@ test("when a write says valid the screen says the dashboard is starting, polls G
 // @spec DASH-RCV-013
 test("Check again replaces the list from GET /recovery, and a 401 asks for the control token", async () => {
   const b = open();
-  b.app.fetch.on("GET /recovery", { json: { ...STATE, etag: "e5", problems: PROBLEMS.slice(3) } });
+  b.app.fetch.on("GET /recovery", { json: { ...STATE, etag: "e5", problems: PROBLEMS.slice(3, 4) } });
   await userEvent.click(screen.getByRole("button", { name: "Check again" }));
   await waitFor(() => assert.equal(screen.getAllByRole("listitem").length, 1));
   b.app.fetch.on("POST /recovery/reset-all", { status: 401, text: "unauthorized" });
   await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
   await screen.findByRole("dialog", { name: "Access" });
+});
+
+// @spec DASH-RCV-013, DASH-RCV-015
+test("when the valid answer names another port the page waits for the dashboard there and goes to it, naming it after ten misses", async () => {
+  const went: string[] = [];
+  let up = false;
+  const probed: string[] = [];
+  const b = open(STATE, () => assert.fail("no reload on a new port"), { navigate: (u) => went.push(u), probe: async (u) => { probed.push(u); if (!up) throw new TypeError("down"); } });
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true, port: 3100 } });
+  await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
+  await screen.findByText(/The dashboard moves to http:\/\/localhost:3100\//);
+  await screen.findByText(/Still waiting for the dashboard at http:\/\/localhost:3100\//);
+  assert.ok(probed.length >= 10 && probed.every((u) => u === "http://localhost:3100/health"));
+  assert.deepEqual(went, []);
+  up = true;
+  await waitFor(() => assert.deepEqual(went, ["http://localhost:3100/"]));
+});
+
+// @spec DASH-RCV-015
+test("on its own port the page names the address it waits for after ten unanswered polls", async () => {
+  const b = open(STATE);
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e9", problems: [], valid: true, port: 3000 } });
+  b.app.fetch.fail("GET /recovery");
+  b.app.fetch.on("GET /recovery", { status: 503, text: "starting" });
+  await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
+  await screen.findByText(/Still waiting for the dashboard at http:\/\/localhost:3000\//);
+});
+
+// @spec DASH-RCV-013
+test("reset-all without the token says which secrets.yaml keys wait for it", async () => {
+  const b = open();
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e2", problems: PROBLEMS.slice(3), valid: false, tokenNeeded: ["voice.openai.api_key"] } });
+  await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
+  await screen.findByText(/voice\.openai\.api_key in secrets\.yaml need the control token/);
 });

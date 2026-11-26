@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigError, checkConfig, loadConfig, parseConfigText, placeholderFallback, resetConfigKey, setConfigKey, type ConfigProblem } from "../src/index.js";
+import { ConfigError, canSetKey, checkConfig, loadConfig, parseConfigText, placeholderFallback, resetConfigKey, schemaAt, secretRepair, setConfigKey, type ConfigProblem } from "../src/index.js";
 import { MINIMAL_YAML, captureWarnings, isolateEnv, repo, sandbox, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
@@ -139,7 +139,9 @@ test("setConfigKey refuses an unknown key, a list entry, a secret path, a placeh
     return !r.ok ? r.issues.map((i) => i.message).join("; ") : "";
   };
   assert.match(refused("cohost.nmae", "x"), /not a key/);
-  assert.match(refused("ears.sources[0]", "discord"), /list/);
+  assert.match(refused("brain.salience.reflexes[0].match", "x"), /list/);
+  assert.match(refused("cohost.name[0]", "x"), /not a list/);
+  for (const path of ["__proto__", "constructor", "llm.toString", "llm.__proto__.model"]) assert.match(refused(path, "x"), /not a key/, path);
   assert.match(refused("llm.openai.api_key", "sk-1"), /secrets\.yaml/);
   assert.match(refused("cohost.name", "${OTHER}"), /placeholder/);
   assert.match(refused("dashboard.port", "not a port"), /./);
@@ -213,4 +215,32 @@ test("the stale example of the ${...} era is brought to a valid file by its fall
   const r = parseConfigText(text);
   assert.ok(r.ok, r.ok ? "" : JSON.stringify(r.issues));
   assert.ok(text.includes("# "), "comments survive");
+});
+
+// @spec CFG-RCV-003
+test("setConfigKey sets one scalar entry of a list in place, keeping the rest of the list and the file", () => {
+  const text = "# notes\nchat:\n  twitch: {}\n  ignore_users: [nightbot, \"${BOT:-moobot}\"]   # bots\n";
+  const fb = placeholderFallback(text, "chat.ignore_users[1]");
+  assert.deepEqual(fb, { value: "moobot" });
+  const r = setConfigKey(text, "chat.ignore_users[1]", fb!.value);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.text, text.replace('"${BOT:-moobot}"', '"moobot"'));
+  assert.equal(canSetKey("chat.ignore_users[1]"), true);
+  assert.equal(setConfigKey(text, "chat.ignore_users[5]", "x").ok, false, "no entry there");
+});
+
+// @spec CFG-RCV-003
+test("schemaAt names only the schema's own keys", () => {
+  for (const path of ["__proto__", "constructor", "llm.toString", "llm.hasOwnProperty"]) assert.equal(schemaAt(path), undefined, path);
+  assert.ok(schemaAt("llm.model"));
+});
+
+// @spec CFG-RCV-006
+test("secretRepair keeps a plain non-string scalar as its source text and clears what cannot be kept", () => {
+  const text = "llm:\n  openai:\n    api_key: 0123456\nvoice:\n  openai:\n    api_key: [a, b]\nears:\n  http:\n    token: true\n";
+  assert.deepEqual(secretRepair(text, "llm.openai.api_key"), { value: "0123456" }, "leading zeros survive");
+  assert.deepEqual(secretRepair(text, "ears.http.token"), { value: "true" });
+  assert.deepEqual(secretRepair(text, "voice.openai.api_key"), { value: null });
+  assert.deepEqual(secretRepair("a: |\n  x\n  y\n", "a"), { value: null });
+  assert.deepEqual(secretRepair("a: [x\n", "a"), { value: null });
 });

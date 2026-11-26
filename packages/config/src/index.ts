@@ -14,7 +14,7 @@ export {
   unknownKeys, parseConfigText, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
   type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
 } from "./pipeline.js";
-export { updateSecrets } from "./secrets.js";
+export { updateSecrets, secretRepair } from "./secrets.js";
 export { ConfigError, type ConfigProblem, type ConfigProblemKind } from "./errors.js";
 export { projectSecrets, type SecretUnit } from "./project.js";
 export { writeFileAtomic } from "./atomic.js";

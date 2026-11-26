@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { readFileSync } from "node:fs";
 import {
   ConfigError, ConfigSchema, PRESENTATION, SECTION_PATHS, canSetKey, checkConfig, ensureFromExample, etagOf, inputValue, loadConfig,
-  placeholderFallback, rawSection, resetConfigKey, resetPathOf, secretPathOf, secretsPath, setConfigKey, updateSecrets, writeFileAtomic,
+  placeholderFallback, rawSection, resetConfigKey, resetPathOf, secretPathOf, secretRepair, secretsPath, setConfigKey, updateSecrets, writeFileAtomic,
   type Config, type ConfigIssue, type ConfigProblem, type Logger,
 } from "@cohost/config";
 import { bearerOk, configRefusal, isLoopback } from "@cohost/control";
@@ -31,8 +31,10 @@ export interface RecoveryProblem {
   section?: { path: string; title: string };
   /** The value a `${NAME:-fallback}` placeholder declares, when the key's schema accepts it. */
   fallback?: unknown;
-  /** The key a reset removes (or, for a secrets problem, clears). */
+  /** The key a reset removes (or, for a secrets problem, repairs). */
   resetPath?: string;
+  /** For a `secrets.yaml` problem at a path: `quote` rewrites the value as a quoted string, `clear` empties it. */
+  repair?: "quote" | "clear";
   actions: RecoveryActions;
 }
 
@@ -48,14 +50,15 @@ function sectionOf(path: string): { path: string; title: string } | undefined {
 
 /**
  * The problems of the files as the recovery screen shows them: each loader problem with what can be done about it, computed
- * on `text`, the current text of `config.yaml`.
+ * on `text`, the current text of `config.yaml`, and `secretsText`, the current text of `secrets.yaml`.
  */
 // @spec DASH-RCV-004, DASH-RCV-008
-export function recoveryProblems(problems: readonly ConfigProblem[], text: string): RecoveryProblem[] {
+export function recoveryProblems(problems: readonly ConfigProblem[], text: string, secretsText = ""): RecoveryProblem[] {
   return problems.map((p): RecoveryProblem => {
     const none: RecoveryActions = { set: false, reset: false, fallback: false };
     if (p.kind === "secrets") {
-      return { file: "secrets", path: p.path, message: p.message, kind: p.kind, secret: true, sensitive: false, ...(p.path ? { resetPath: p.path } : {}), actions: { ...none, reset: p.path !== "" } };
+      const repair = p.path ? (secretRepair(secretsText, p.path).value === null ? "clear" : "quote") : undefined;
+      return { file: "secrets", path: p.path, message: p.message, kind: p.kind, secret: true, sensitive: false, ...(p.path ? { resetPath: p.path, repair } : {}), actions: { ...none, reset: p.path !== "" } };
     }
     const base = { file: "config" as const, path: p.path, message: p.message, kind: p.kind };
     if (p.kind === "syntax" || p.path === "") return { ...base, secret: false, sensitive: false, actions: none };
@@ -99,7 +102,7 @@ export interface RecoveryHandlerDeps {
   write?: (file: string, text: string) => void;
   /** The built UI; defaults to the one beside the server. */
   uiDir?: string;
-  /** Called once a response has found the files valid and been sent. */
+  /** Called once a response that found the files valid has been sent, or its client has gone. */
   onValid: () => void;
 }
 
@@ -124,20 +127,39 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   const { configFile, secretsFile } = d.files;
   const check = (configText?: string): ConfigProblem[] => checkConfig({ configFile, secretsFile, ...(configText !== undefined ? { configText } : {}) });
   let left = false;
+  let fired = false;
+  /** Leaves recovery mode once the answer is sent, or its client has gone, so a dropped page cannot strand the server. */
   const leave = (res: http.ServerResponse): void => {
     if (left) return;
     left = true;
-    res.once("finish", () => { d.log.info("config recovery: the config is valid; leaving config recovery mode"); d.onValid(); });
+    const go = (): void => {
+      if (fired) return;
+      fired = true;
+      d.log.info("config recovery: the config is valid; leaving config recovery mode");
+      d.onValid();
+    };
+    res.once("finish", go);
+    res.once("close", go);
   };
+  const readSecrets = (): string => { try { return readFileSync(secretsFile, "utf8"); } catch { return ""; } };
+  /** The port the normal dashboard binds once the file is valid: the validated `dashboard.port`. */
+  const nextPort = (text: string): number => recoveryAddress(text).port;
 
   /** Answers a write that has been carried out: the fresh problem list, and leaving recovery mode when it is empty. */
-  const written = (res: http.ServerResponse, what: string): void => {
+  const written = (res: http.ServerResponse, what: string, extra: Record<string, unknown> = {}): void => {
     const text = readFileSync(configFile, "utf8");
     const problems = check();
     d.log.info(`config recovery: ${what}`);
     if (problems.length) d.log.info(`config recovery: ${problems.length} problem${problems.length === 1 ? "" : "s"} remain${problems.length === 1 ? "s" : ""}`);
     else leave(res);
-    json(res, 200, { ok: true, etag: etagOf(text), problems: recoveryProblems(problems, text), valid: problems.length === 0 });
+    const valid = problems.length === 0;
+    json(res, 200, { ok: true, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()), valid, ...(valid ? { port: nextPort(text) } : {}), ...extra });
+  };
+
+  /** The refusal of a `secrets.yaml` change without the control token (DASH-SECRET-003): 403 when none is configured, else 401. */
+  const refuseSecrets = (res: http.ServerResponse, paths: string[]): void => {
+    if (d.controlToken === undefined) { json(res, 403, { ok: false, detail: `changing secrets.yaml (${paths.join(", ")}) needs the control token, and none is configured: set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard`, secrets: paths }); return; }
+    json(res, 401, { ok: false, detail: `changing secrets.yaml (${paths.join(", ")}) needs the control token (Authorization: Bearer)`, secrets: paths }, { "www-authenticate": "Bearer" });
   };
 
   const refuse = (res: http.ServerResponse, issues: ConfigIssue[]): void => json(res, 400, { ok: false, issues });
@@ -154,8 +176,8 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (method === "GET" && url.pathname === "/recovery") {
       const text = readFileSync(configFile, "utf8");
       const problems = check();
-      if (problems.length === 0) { leave(res); json(res, 200, { active: false }); return; }
-      json(res, 200, { active: true, file: configFile, secretsFile, etag: etagOf(text), problems: recoveryProblems(problems, text) });
+      if (problems.length === 0) { leave(res); json(res, 200, { active: false, port: nextPort(text) }); return; }
+      json(res, 200, { active: true, file: configFile, secretsFile, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()) });
       return;
     }
     if (method === "POST" && (STACK_POST.test(url.pathname) || LIFECYCLE.test(url.pathname))) {
@@ -201,12 +223,15 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       return;
     }
 
-    const problems = recoveryProblems(check(), text);
+    const secretsText = readSecrets();
+    const problems = recoveryProblems(check(), text, secretsText);
     if (op === "reset") {
       const p = problems.find((x) => x.actions.reset && (x.path === path || x.resetPath === path));
       if (!p) { refuse(res, [{ path, message: "no failing key at this path can be reset" }]); return; }
-      if (p.file === "secrets") updateSecrets(secretsFile, { [p.path]: null });
-      else {
+      if (p.file === "secrets") {
+        if (!tokenOk) { refuseSecrets(res, [p.path]); return; }
+        updateSecrets(secretsFile, { [p.path]: secretRepair(secretsText, p.path).value });
+      } else {
         const edit = resetConfigKey(text, p.resetPath!);
         if (!edit.ok) { refuse(res, edit.issues); return; }
         write(configFile, edit.text);
@@ -216,14 +241,18 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     }
 
     // reset-all: rounds on the text in memory, then one write per file.
+    // A secrets.yaml change needs the control token in both modes (DASH-SECRET-003): without it only config.yaml is repaired, and
+    // the secrets paths are reported as waiting for the token.
     let next = text;
-    const clear = new Set<string>();
+    const repairs = new Map<string, string | null>();
+    const tokenNeeded: string[] = [];
     let edits = 0;
     for (let round = 0; round < 10; round++) {
       let changed = false;
-      for (const p of recoveryProblems(check(next), next)) {
+      for (const p of recoveryProblems(check(next), next, secretsText)) {
         if (p.file === "secrets") {
-          if (p.actions.reset && !clear.has(p.path)) { clear.add(p.path); edits++; }
+          if (!p.actions.reset || repairs.has(p.path) || tokenNeeded.includes(p.path)) continue;
+          if (tokenOk) { repairs.set(p.path, secretRepair(secretsText, p.path).value); edits++; } else tokenNeeded.push(p.path);
           continue;
         }
         if (p.actions.fallback) {
@@ -238,8 +267,8 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       if (!changed) break;
     }
     if (next !== text) write(configFile, next);
-    if (clear.size) updateSecrets(secretsFile, Object.fromEntries([...clear].map((k) => [k, null])));
-    written(res, `reset all (${edits} key${edits === 1 ? "" : "s"})`);
+    if (repairs.size) updateSecrets(secretsFile, Object.fromEntries(repairs));
+    written(res, `reset all (${edits} key${edits === 1 ? "" : "s"})`, tokenNeeded.length ? { tokenNeeded } : {});
   };
 
   return (req, res) => {
@@ -247,7 +276,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       if (err instanceof BodyTooLarge) { if (!res.headersSent) { res.writeHead(413); res.end("body too large"); } return; }
       d.log.error({ err, url: req.url }, "config recovery: request failed");
       if (res.headersSent) res.destroy();
-      else { res.writeHead(500); res.end(String(err)); }
+      else json(res, 500, { ok: false, detail: "the request failed; the dashboard's log has the details" });
     });
   };
 }

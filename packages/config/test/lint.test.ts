@@ -2,7 +2,7 @@
 // give tsgolint the project's compiler options for test files, the inline-disable rule, and that a finding fails the lint.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -139,7 +139,7 @@ test("the workspace, the dashboard UI's type check and its bundle are on ES2024,
 });
 
 // @spec DEPLOY-LINT-010
-test("the dashboard UI is linted with the react plugin and the two react-hooks rules as errors", () => {
+test("the dashboard UI is linted with the react plugin and the two react-hooks rules as errors", (t) => {
   const ui = (rc.overrides ?? []).filter((o) => o.plugins?.includes("react"));
   assert.equal(ui.length, 1, "one override adds the react plugin");
   const o = ui[0]!;
@@ -148,6 +148,7 @@ test("the dashboard UI is linted with the react plugin and the two react-hooks r
   for (const r of ["react-hooks/rules-of-hooks", "react-hooks/exhaustive-deps"]) assert.equal(o.rules?.[r] && severity(o.rules[r]), "error", r);
   // The rule names resolve: an effect that reads a value its dependency list leaves out fails under the same settings.
   const dir = mkdtempSync(join(tmpdir(), "cohost-lint-react-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
   writeFileSync(join(dir, ".oxlintrc.json"), JSON.stringify({ plugins: o.plugins, categories: {}, rules: o.rules }));
   writeFileSync(join(dir, "c.tsx"), 'import { useEffect } from "react";\nexport function C({ a }: { a: number }) {\n  useEffect(() => { console.log(a); }, []);\n  return null;\n}\n');
   const r = spawnSync(join(repoRoot, "node_modules/.bin/oxlint"), ["--deny-warnings", "-c", join(dir, ".oxlintrc.json"), join(dir, "c.tsx")], { cwd: dir, encoding: "utf8" });

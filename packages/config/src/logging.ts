@@ -89,7 +89,9 @@ export function redact(value: unknown, memo: Map<object, unknown> = new Map()): 
 
 /**
  * A copy of an object with its prototype and own properties. An error's `message` and `stack` are read out as plain values
- * (V8 keeps the stack behind an accessor bound to the original).
+ * (V8 keeps the stack behind an accessor bound to the original). A `toJSON` the copy inherits or owns is replaced by an
+ * own, non-enumerable wrapper that calls it on the copy and, when it throws (the copy is not a real instance, so a
+ * `toJSON` that reads a `#private` field fails on it), falls back to the copy's own enumerable fields.
  */
 function copyObject(obj: object): Record<string, unknown> {
   const proto = Object.getPrototypeOf(obj) as object | null;

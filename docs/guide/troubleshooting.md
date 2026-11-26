@@ -45,6 +45,13 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 - **Cause:** `CONTROL_ENABLED=1` is set but `CONTROL_TOKEN` is empty. The dashboard refuses to run its controls without a token. The same refusal happens if `DASHBOARD_HOST` is set to something other than `127.0.0.1` without a token.
 - **Fix:** put a long random value on the `CONTROL_TOKEN=` line in `.env`. The installer fills one in; to make one by hand, run `openssl rand -hex 24`. Then start the dashboard again.
 
+### The dashboard says the config is invalid
+
+The page shows **Config recovery** instead of the usual screens, and the terminal shows `Invalid <path>/config.yaml:` followed by the failing keys and `config recovery mode: <n> problems; fix them at http://127.0.0.1:3000`.
+
+- **Cause:** `config/config.yaml` or `secrets/secrets.yaml` does not pass the checks every program makes when it starts. The usual reasons: a file from an older cohost still holds `${NAME}` placeholders (cohost substitutes none; every value is written as it is), a value is out of range, or the file is not valid YAML. Every other program refuses to start with such a file, so the dashboard starts in recovery mode to let you fix it; Launch, Rebuild and every service start or restart are refused until the file is valid, and so are `cohostctl launch`, `rebuild`, `start`, `restart` and `restart-all`.
+- **Fix:** open the page at the address in the log (the usual one, or `http://localhost:3000` when the `dashboard` section itself is broken). Each failing key has its own row: type a value and press **Set**, press **Use** to keep the value an old placeholder fell back to, or press **Reset to default**. **Reset all failing keys** does that for every key it can, using each placeholder's fallback when it has one; what is left needs a value from you (a model name, for example). A credential written into `config.yaml` is removed there: set it afterwards in **Settings**, in the section the row names, with its masked field. A syntax error has no button: fix that line by hand in a text editor and press **Check again**. Nothing changes in the file until you press a button, and your comments are kept. When the last key is fixed the page says the dashboard is starting and reloads into the normal screens; there is nothing to restart.
+
 ### The address is already in use
 
 - **Cause:** something else on your PC uses port 3000 or 3001.

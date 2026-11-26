@@ -141,6 +141,18 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (await handleOptions(options, req, res, url)) return;
       // @spec DASH-EGR-001, DASH-EGR-002, DASH-EGR-003, DASH-EGR-004
       if (handleEgress(req, res, url)) return;
+      // @spec DASH-RCV-004, DASH-RCV-010
+      if (url.pathname === "/recovery" && req.method === "GET") {
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ active: false }));
+        return;
+      }
+      if (req.method === "POST" && /^\/recovery\/(set|reset|reset-all)$/.test(url.pathname)) {
+        req.resume();
+        res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" });
+        res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the config is valid" }));
+        return;
+      }
       // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, DASH-CTRL-009, DASH-CTRL-010
       if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006

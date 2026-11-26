@@ -166,7 +166,7 @@ export type SecretValues = Readonly<Record<string, string>>;
 
 export type ParsedConfigText =
   | { ok: true; config: Config; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: string[] }
-  | { ok: false; issues: ConfigIssue[]; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: [] };
+  | { ok: false; kind: "syntax" | "placeholder" | "schema"; issues: ConfigIssue[]; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: [] };
 
 /**
  * The loader's pipeline on a text: YAML parse, the placeholder check, null dropping, the discarding of any value `config.yaml`
@@ -187,10 +187,10 @@ export function parseConfigText(text: string, secrets: SecretValues = {}, overri
     const pos = err.linePos?.[0];
     const where = pos ? ` at line ${pos.line}, column ${pos.col}` : "";
     const code = typeof err.code === "string" ? ` (${err.code})` : "";
-    return { ok: false, issues: [{ path: "", message: `not valid YAML${where}${code}` }], raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
+    return { ok: false, kind: "syntax", issues: [{ path: "", message: `not valid YAML${where}${code}` }], raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
   }
   const placeholders = placeholderIssues(parsed);
-  if (placeholders.length) return { ok: false, issues: placeholders, raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
+  if (placeholders.length) return { ok: false, kind: "placeholder", issues: placeholders, raw: undefined, ignoredSecrets: [], unmergedSecrets: [] };
 
   const raw = coerceEmptyNumbers(parsed);
   const ignoredSecrets: string[] = [];
@@ -209,7 +209,7 @@ export function parseConfigText(text: string, secrets: SecretValues = {}, overri
   if (isObj(tree)) applyIsolation(tree, overrides);
 
   const result = ConfigSchema.safeParse(tree);
-  if (!result.success) return { ok: false, issues: result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })), raw, ignoredSecrets, unmergedSecrets: [] };
+  if (!result.success) return { ok: false, kind: "schema", issues: result.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })), raw, ignoredSecrets, unmergedSecrets: [] };
   const config = result.data;
   // A credential at a wildcard path merges only into an entry the validated config holds; any other is reported by path (CFG-SEC-017).
   const unmergedSecrets: string[] = [];

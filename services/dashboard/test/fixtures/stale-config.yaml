@@ -1,0 +1,305 @@
+# Behavioural config: models, hooks, timings, voice, avatar. Copy to config.yaml
+# (install.sh does this); config.yaml is git-ignored and is the one that's read.
+# ${VAR} is substituted from .env, ${VAR:-default} falls back when VAR is unset.
+# Secrets (API keys, tokens) stay in .env; everything else belongs here.
+
+cohost:
+  name: "Coco"                 # how the co-host refers to itself / is addressed in chat
+  streamer: "Chris"            # your name as the LLM should know it
+  timezone: "America/New_York"
+
+llm:
+  # Who answers for the co-host. Everything else in the stack stays local whichever you pick.
+  #   ollama     local GPU (default). Model tag comes from LLM_MODEL in .env so `docker compose up models` can pull it.
+  #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
+  #   anthropic  Claude via the Claude API           (ANTHROPIC_API_KEY in .env)
+  #   bedrock    Claude via Amazon Bedrock            (AWS_* credentials in .env)
+  # Recipes for each: the "Choose a model" page of the docs site (docs/guide/tune/model.md)
+  #   mock       deterministic offline replies only; for isolated runs (LLM_PROVIDER=mock), never a default.
+  #              Memory's embedder is chosen separately by brain.memory.embedder (MEMORY_EMBEDDER), not by this provider.
+  provider: "${LLM_PROVIDER:-ollama}"
+  model: "${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"  # ollama tag (LLM_MODEL in .env overrides); for other providers write the id here,
+                               # e.g. claude-opus-5-5, anthropic.claude-opus-5-5, meta-llama/Llama-3.3-70B-Instruct
+  num_ctx: 8192                # ollama: context window; raise with VRAM
+  temperature: 0.9             # ollama + openai
+  max_tokens: 120              # ollama + openai: short replies read better as speech
+  timeout_ms: 60000            # request timeout for chat / embed / ping when the caller sets none
+  embed_model: "${EMBED_MODEL:-nomic-embed-text}" # always Ollama, whatever `provider` is: memory vectors must not change size
+  openai:
+    base_url: "https://api.openai.com/v1"   # e.g. http://my-gpu-box:8000/v1 or https://openrouter.ai/api/v1
+    api_key: "${LLM_API_KEY}"
+  claude:                      # provider: anthropic or bedrock
+    api_key: "${ANTHROPIC_API_KEY}"
+    effort: low                # thinking depth; low is right for one-liners
+    max_tokens: 2048           # caps thinking + reply together
+    fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
+  bedrock:
+    region: ""                 # empty = AWS_REGION / AWS_DEFAULT_REGION from the environment
+
+vision:
+  enabled: ${VISION_ENABLED:-false}  # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
+  model: "${VISION_MODEL:-qwen2.5vl:3b}"
+  engine: "${VISION_ENGINE:-ollama}"  # ollama = ask the vision model; stub = fixed text, no model (isolated runs)
+  interval_ms: 8000            # how often to look at the game
+  temperature: 0.2             # vision model sampling temperature (0 to 2)
+  num_predict: 60              # longest description the model may write, in tokens
+  jpeg_quality: 70             # JPEG quality of the OBS screenshot (1 to 100)
+  # prompt: "..."              # system prompt; blank = built-in default. Keep its "reply exactly: SAME" rule or every reply counts as a change
+  timeout_ms: 30000            # give up on a describe call after this long
+  upload_timeout_ms: 10000     # injected uploads: timeout reading the image from Redis
+  upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)
+  obs:
+    host: "${OBS_HOST}"
+    port: ${OBS_PORT}
+    password: "${OBS_PASSWORD}"
+    source: "${OBS_SOURCE}"
+    width: 896                 # downscale before sending to the VLM
+
+chat:
+  source: "${CHAT_SOURCE:-twitch}"  # twitch | fake (scripted/stdin messages, no channel needed)
+  fake:
+    interval_ms: 8000          # source=fake: gap between scripted messages
+  twitch:
+    channel: "${TWITCH_CHANNEL}"
+  ignore_users: ["nightbot", "streamelements", "moobot"]
+  ignore_prefixes: ["!"]       # bot commands
+
+brain:
+  # The brain is four containers ("regions") that only talk over the bus:
+  #   salience  when to speak + reflexes       affect  mood (valence/arousal)
+  #   memory    Postgres + recall (hippocampus) cortex  the LLM call
+  working_memory_events: 24    # recent events each region keeps / the prompt window
+
+  salience:
+    tick_ms: 1500              # the poll: a decision every this often (fallback for trigger_on_speech; chat, vision, idle chatter)
+    trigger_on_speech: true    # decide at once when a final speech line arrives, not at the next poll
+    barge_in: false            # stop the voice when someone speaks over the co-host (off until live-tested)
+    barge_in_sources: [discord] # sources whose speech may interrupt (http, dir or a connector tag); echo from others is not filtered here
+    barge_in_min_words: 2      # words a line needs to interrupt ("mm-hm" does not)
+    cooldown_ms: 6000          # min gap between utterances
+    thinking_timeout_ms: 60000 # stop treating the cortex as busy after this long without a reply
+    idle_chatter_ms: 90000     # speak unprompted if quiet this long and there's fresh context
+    reply_on_mention: true     # always respond when its name is used
+    speak_threshold: 0.6       # summed event score needed to speak (mention=1.0, question=0.55 ...)
+    arousal_bias: 0.2          # an excited mood lowers the threshold by up to this much
+    # Hook: how events are scored. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    module:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/salience
+      timeout_ms: 8000
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+    # Reflexes: canned reactions that fire the instant a matching event lands, no LLM.
+    # `match` is a case-insensitive regex; `on` picks senses (chat | speech | vision).
+    reflexes: []
+    # reflexes:
+    #   - match: "\\b(you died|game over|wasted)\\b"
+    #     on: [vision]
+    #     say: ["Oof.", "Welp.", "That one hurt."]
+    #     emotion: surprised
+    #     cooldown_ms: 45000
+    #   - match: "\\braid\\b"
+    #     on: [chat]
+    #     say: ["Oh hey, welcome in everyone!"]
+    #     emotion: happy
+    #     cooldown_ms: 120000
+
+  affect:
+    publish_ms: 2000           # how often affect.state goes out while it's moving
+    half_life_ms: 45000        # a mood swing fades halfway back to baseline in this long
+    baseline_valence: 0.15     # resting mood; a sunny co-host sits above 0
+    baseline_arousal: 0.1      # resting energy, 0..1
+    republish_ms: 15000        # an unchanged mood is sent again this often
+    short_line_chars: 4        # llm/http only: shorter lines (no mention) are judged by the built-in rules
+    nudge_sub_valence: 0.05    # nudge per event (0..1): a subscriber's chat line ...
+    nudge_sub_arousal: 0.05
+    nudge_screen_arousal: 0.08 # ... a changed screen ...
+    nudge_said_valence: 0.08   # ... the co-host's own happy (+) or sad/angry (-) line ...
+    nudge_said_arousal: 0.05   # ... and any line she says
+    # Hook: how a line of chat/voice moves the mood. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    module:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/affect
+      timeout_ms: 8000
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+
+  memory:
+    store: "${MEMORY_STORE:-postgres}"      # postgres (pgvector + Ollama embeddings) | memory (in-process fake, lost on exit; dev/CI/isolated runs)
+    embedder: "${MEMORY_EMBEDDER:-ollama}"  # ollama | hash (deterministic, offline)
+    recall_k: 6                # memories pulled per prompt (0 disables recall)
+    min_similarity: 0.35
+    regular_messages: 25       # lifetime messages above which a viewer counts as a regular (the owner can also flag one)
+    # Viewer notes: short, fading notes the co-host keeps about each viewer. Every number below is a default.
+    notes:
+      dirty_threshold: 20            # unconsolidated notes that start a consolidation pass (also run once after you shut the AI down)
+      recent_half_life_days: 7       # a recent note loses half its strength this often
+      core_half_life_days: 60        # a core note does too, more slowly
+      reinforce: 0.6                 # a repeat mention closes this fraction of the gap to full strength
+      promote_mentions: 3            # mentions that turn a recent note into a core one
+      demote_below: 0.3              # a core note weaker than this falls back to recent
+      drop_below: 0.1                # a recent note weaker than this is forgotten
+      returning_strength: 0.3        # a topic you deleted without a reason comes back this weak
+      suppress_similarity: 0.8       # similarity at which a note matches a deletion that had a reason
+      capture_min_chars: 8           # chat lines shorter than this are not considered for notes
+      max_notes_per_viewer: 5        # notes the cortex is shown per viewer
+      max_notes_total: 15            # notes the cortex is shown in all
+      sensitive_cooldown_hours: 24   # health and family notes are surfaced at most this often
+      deleted_retention_days: 30     # deletions without a reason are forgotten after this long
+      # Hook: live capture, run on every chat line (rules | llm | http). A very small model on its own slot, never the cortex's,
+      # through local Ollama so chat lines and health or family notes stay on your LAN (name a provider here to change that).
+      # Failure = no note for that line. The compose `models` service pulls NOTES_MODEL (.env; default gemma3:4b).
+      capture:
+        kind: llm
+        url: ""
+        timeout_ms: 20000
+        llm:
+          provider: ollama
+          model: "${NOTES_MODEL:-gemma3:4b}"
+      # Hook: the quality pass over new notes (merge duplicates, fix wording, recheck sensitivity). rules | llm | http.
+      # Runs only while the cortex is idle, on the cortex's own model through local Ollama. Failure = no changes.
+      consolidator:
+        kind: llm
+        url: ""
+        timeout_ms: 60000
+        llm:
+          provider: ollama
+          model: "${LLM_MODEL:-qwen2.5:7b-instruct-q4_K_M}"
+
+  cortex:
+    recall_timeout_ms: 2500    # answer without memories if the memory region is slow/down
+    speaking_timeout_ms: 20000 # stop waiting on a voice sink that never reports done
+    fallback_ack_chance: 0.25  # base chance she riffs on a line that failed to play: a nudge stated to the model, not an enforced rate
+    # Hook: inhibition, a check on every reply before it's spoken. rules (built in) | llm (ask a model) | http (POST to your own model).
+    # Any failure falls back to rules. Contracts and recipes: examples/modules/README.md
+    critic:
+      kind: rules
+      url: ""                  # http: e.g. http://host.docker.internal:8900/critic
+      timeout_ms: 2500
+      llm:                     # kind=llm only. Empty = same provider/model as llm.* above;
+        provider: ""           # set e.g. ollama + qwen2.5:3b-instruct to keep hooks on a small local model
+        model: ""              # while the cortex talks through something bigger.
+
+voice:
+  engine: "${VOICE_ENGINE:-kokoro}"  # kokoro | stub (silent WAV sized from the text; isolated runs)
+  voice: "af_heart"            # kokoro voice id
+  speed: 1.05                  # 0.25 to 4
+  # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
+  # voice also accepts a mix, e.g. "af_bella(2)+af_sky".
+  # lang_code: "b"             # a b e f h i j p z; blank derives it from the voice name
+  # volume_multiplier: 1.0     # 0 to 10
+  # normalization:             # text clean-up before synthesis; any of: normalize, unit_normalization,
+  #   remove_emoji: true       # url_normalization, email_normalization, optional_pluralization_normalization,
+  #                            # phone_normalization, caps_normalization, replace_remaining_symbols, remove_emoji
+  sample_rate: 24000
+  fallback:
+    # Said aloud when a line fails to play. Edit freely; voice regenerates the clips on its next start.
+    lines:
+      - "Error: unable to play line."
+      - "Sorry, that thought got lost somewhere between my brain and my mouth."
+      - "Uh. I had something really good there. It's gone now."
+      - "Line not found. Please insert witty remark and try again."
+      - "My voice just blue-screened. Pretend I said something clever."
+      - "Buffering. Buffering. Nope."
+      - "That was going to be hilarious. You'll have to trust me."
+      - "Packet loss. Emotional packet loss."
+      - "Hold on, my mouth is still loading."
+      - "I swear I was talking. The audio was not."
+      - "Speech module has left the chat."
+      - "Insert profound statement here."
+      - "Well, that line went straight into the void."
+      - "Technical difficulties. Please enjoy this awkward pause."
+      - "Error four oh four: words not found."
+
+avatar:
+  driver: "${AVATAR_DRIVER:-null}"   # vtube-studio | vmc | null
+  fps: 30
+  smoothing: 0.25              # 0..1, higher = snappier
+  idle_motion: true            # gentle head/eye drift when idle
+  vtube_studio:
+    host: "${VTS_HOST}"
+    port: ${VTS_PORT}
+    plugin_name: "cohost"
+    plugin_developer: "${TWITCH_CHANNEL}"
+  vmc:
+    host: "${VMC_HOST}"
+    port: ${VMC_PORT}
+
+ears:
+  # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
+  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord, DISCORD_TOKEN)
+  #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
+  #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
+  #   <tag>    any other connector's source tag, such as desktop
+  # An empty list idles with nothing heard (isolated runs). EARS_SOURCES overrides the whole list in flow syntax, for
+  # example `EARS_SOURCES=[http, dir]` or `EARS_SOURCES=[]`.
+  # http and dir work with stt_engine: stub, so they run with no accounts and no STT server.
+  sources: ${EARS_SOURCES:-[discord]}
+  # The `http` source's listener. Example: curl -X POST -H 'Content-Type: audio/wav' --data-binary @clip.wav 'http://127.0.0.1:8765/audio?speaker=Chris'
+  # In Docker, bind 0.0.0.0 and publish the port yourself; the default is local only. Bodies are capped at 25 MiB.
+  http:
+    host: 127.0.0.1
+    port: 8765
+    # Bearer token POST /audio must carry (Authorization: Bearer <token>); empty requires none. Set it when the port is reachable by others.
+    # A clip names its source with ?source=<tag> (default http).
+    token: "${EARS_HTTP_TOKEN:-}"
+  # The `dir` source: the directory to watch (created if missing) and how often to look. Empty path = not configured (ears idles degraded).
+  dir:
+    path: ""
+    poll_ms: 1000
+  silence_ms: 700              # end-of-utterance detection
+  echo_suppress_sources: [desktop] # sources deaf while the co-host's voice plays (a loopback capture hears it); discord already filters its own
+  echo_tail_ms: 1500           # keep them deaf this long after a line ends (room echo)
+  vad:
+    engine: silero             # silero (Silero VAD v5 model run by onnxruntime-node, shipped in services/ears/models; default) | gap (frame gap alone, for connectors that send frames only while speaking)
+    threshold: 0.5             # speech probability a frame needs, 0 to 1
+  max_utterance_ms: 15000      # an utterance is cut at this length; the speaker's next speech opens a new one
+  partials: off                # on | off: publish speech.partial while a connector utterance is open (costs STT calls)
+  stt_gpu: false               # true when the STT backend runs on a GPU (only silences the partials warning)
+  partial_step_ms: 1000
+  min_speech_ms: 400
+  stt_model: "${STT_MODEL}"
+  stt_engine: "${EARS_STT_ENGINE:-speaches}"  # speaches | stub (fixed text, no STT server; isolated runs)
+  # Live transcripts equal to one of these (case and edge punctuation ignored) are dropped: Whisper's usual
+  # hallucinations on silence. Empty by default; uncomment to use.
+  drop_phrases: []
+  #  - "Thank you."
+  #  - "Thanks for watching!"
+  #  - "you"
+
+# External connectors that attach to the bus. The Discord connector (service `connector-discord`, DISCORD_TOKEN) holds the
+# bot's one voice connection: it publishes what people say as source `discord` and plays sink `discord` into the channel.
+connections:
+  discord:
+    enabled: ${CONNECTIONS_DISCORD_ENABLED:-true}  # false = the connector idles and holds no connection (isolated runs)
+    guild_id: "${DISCORD_GUILD_ID}"
+    voice_channel_id: "${DISCORD_VOICE_CHANNEL_ID}"
+
+# The co-host's speaking module (service `mouth`): where her voice goes, and how loud. Each key under `outputs` is one output.
+mouth:
+  outputs:
+    discord:                   # sink `discord`: her voice goes to the Discord connector, into the channel set under connections.discord
+      enabled: ${MOUTH_DISCORD_ENABLED:-true}  # false = mouth plays nothing on it (isolated runs)
+      gain_db: 0               # loudness on this output only, -40..12 dB; 0 = unchanged
+    dryrun:                    # a test output: accepts each line, plays nothing, reports voice.done (isolated runs)
+      enabled: ${MOUTH_DRYRUN_ENABLED:-false}
+      fail_every: 0            # 0 = never fail; N = fail every Nth line, to exercise the fallback path
+    file:                      # appends each line's WAV to a folder under the data directory; the newest max_files are kept
+      enabled: ${MOUTH_FILE_ENABLED:-false}
+      dir: mouth/outputs       # relative to the data directory (no absolute path, no "..")
+      max_files: 100
+    http:                      # POSTs each line's WAV (audio/wav) to a URL; retried with backoff, then dropped
+      enabled: ${MOUTH_HTTP_ENABLED:-false}
+      url: "${MOUTH_HTTP_URL:-}"  # an http(s) URL; empty while enabled = the output is down
+      timeout_ms: 5000         # per attempt
+      retries: 3               # attempts after the first
+      max_queue: 20            # undelivered lines held; the oldest is dropped past this
+  fallback:
+    min_interval_ms: 20000     # at most one fallback line per 20 s on an output when many lines fail at once
+
+dashboard:
+  port: 3000

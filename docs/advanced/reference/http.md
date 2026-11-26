@@ -84,6 +84,19 @@ The secret routes are served on the full dashboard only, never on the second lis
 
 The two `GET /options/...` routes are served on the full dashboard only. They fetch the addresses `TTS_URL` and `OLLAMA_URL` name (nothing in the request changes them), read at most 1 MiB, wait at most 3 seconds, never cache, and answer `502 {"ok": false, "detail": "..."}` naming the cause (unreachable, a non-2xx status, no answer in time, too large, or a body of the wrong shape) when the server is down or answers badly.
 
+### Config recovery mode
+
+While `config.yaml` or `secrets.yaml` does not validate, the dashboard runs one listener (the usual address, or port 3000 when the `dashboard` section itself is broken) that serves the page, `/health`, `GET /services/control` and the routes below. The stack and service routes answer `409 {"ok": false, "detail": "the config is invalid (...)"}` with control on and `404` with it off; every other route answers `503`.
+
+| Route | Auth | What it does |
+| --- | --- | --- |
+| `GET /recovery` | none | `{"active": false}` in normal mode. In recovery mode `{"active": true, "file", "secretsFile", "etag", "problems"}`: each problem is `{file, path, message, kind, secret, sensitive, section?, fallback?, resetPath?, actions: {set, reset, fallback}}`, `kind` one of `placeholder`, `schema`, `syntax`, `secrets`. Answers `{"active": false}` and starts the normal dashboard once nothing fails |
+| `POST /recovery/set` | token with control on; in both modes for a sensitive key or an entry of a sensitive list | Body `{"etag", "path", "value"}`. Sets one key (a string value is read as YAML when the key accepts that), keeping the rest of the file. `400 {"ok": false, "issues"}` for a value the key refuses, a credential or an entry inside a list entry; a single-value list entry `key[i]` can be set |
+| `POST /recovery/reset` | token with control on; in both modes when it changes `secrets.yaml` | Body `{"etag", "path"}`. Removes the key (a whole list for a path inside one) so its default applies, or repairs a broken `secrets.yaml` path: a plain value that is not a string is rewritten quoted, anything else is cleared |
+| `POST /recovery/reset-all` | token with control on; the `secrets.yaml` part needs it in both modes | Body `{"etag"}`. Writes each placeholder's fallback where it has one the key accepts (a single-value list entry included), resets the rest, in rounds, then writes each file once. Without the token `secrets.yaml` is left alone and the answer lists its paths as `tokenNeeded` |
+
+Every write answers `200 {"ok": true, "etag", "problems", "valid", "moved"?, "port"?, "tokenNeeded"?}` with the problems still left (`moved` and `port`, once valid, say the normal dashboard listens on another port than the recovery listener), or `409 {"ok": false, "etag"}` when the file changed since the `etag` was read; when `valid` is true the normal dashboard starts in the same process. In normal mode the three writes answer `409`.
+
 ## Dashboard: avatar models
 
 The model store holds the `.vrm` files the browser renderer draws. Its files live in the dashboard's data folder, `dashboard/avatar-models/`, and the store lists only regular files whose names follow the `renderer.model` grammar (at most 80 characters, letters, digits, space, `_`, `.` and `-`, starting with a letter or digit, ending in a lower-case `.vrm`). Names compare without regard to ASCII case.

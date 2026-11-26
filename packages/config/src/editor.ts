@@ -39,7 +39,9 @@ export function schemaAt(path: string): z.ZodType | undefined {
   for (const seg of path.split(".")) {
     const u = unwrap(cur).schema;
     if (!(u instanceof z.ZodObject)) return undefined;
-    const next = shapeOf(u)[seg];
+    const shape = shapeOf(u);
+    if (!Object.hasOwn(shape, seg)) return undefined;
+    const next = shape[seg];
     if (!next) return undefined;
     cur = next;
   }
@@ -124,7 +126,8 @@ function leafAt(root: z.ZodType, keys: string[]): z.ZodType | undefined {
   for (const key of keys) {
     const obj: z.ZodType | undefined = cur ? unwrap(cur).schema : undefined;
     if (!(obj instanceof z.ZodObject)) return undefined;
-    cur = shapeOf(obj)[key];
+    const shape = shapeOf(obj);
+    cur = Object.hasOwn(shape, key) ? shape[key] : undefined;
   }
   return cur;
 }
@@ -341,7 +344,7 @@ function quoteLike(value: string, type: string | undefined): string {
 }
 
 /** Replaces the existing node at `path` with `value`, keeping the quote style of a replaced string. */
-function replaceNode(text: string, doc: Document, path: string[], value: unknown): string {
+function replaceNode(text: string, doc: Document, path: (string | number)[], value: unknown): string {
   const node = doc.getIn(path, true) as { range?: [number, number, number] | null; type?: string; flow?: boolean } | undefined;
   if (!node?.range) throw new Error(`no node at ${path.join(".")}`);
   const start = node.range[0];
@@ -463,4 +466,186 @@ export function applySection(text: string, section: string, values: Record<strin
     if (ports.length) warnings.push(`dashboard: the dashboard's page address changes to ${ports.map((e) => `${e.leaf.key === "port" ? "port" : "LAN port"} ${String(e.value)}`).join(" and ")} once it is restarted`);
   }
   return { ok: true, text: out, warnings };
+}
+
+// ---------- recovery editing: one key at a time in a file that does not validate (the dashboard's config recovery mode)
+
+/** The result of a recovery edit: the new text, or the issues that refused it (nothing is edited then). */
+export type RecoveryEdit = { ok: true; text: string } | { ok: false; issues: ConfigIssue[] };
+
+const PLACEHOLDER_IN = /\$\{[A-Z0-9_]+(?::-[^}]*)?\}/;
+const PLACEHOLDERS = /\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g;
+
+/** A dotted path with `[i]` list indexes as segments of their own: `a.b[0].c` is `["a", "b", 0, "c"]`. */
+export function pathSegments(path: string): (string | number)[] {
+  const out: (string | number)[] = [];
+  for (const part of path.split(".")) {
+    const m = /^([^[]*)((?:\[\d+\])*)$/.exec(part);
+    if (!m) { out.push(part); continue; }
+    if (m[1]) out.push(m[1]);
+    for (const idx of m[2]!.matchAll(/\[(\d+)\]/g)) out.push(Number(idx[1]));
+  }
+  return out;
+}
+
+/** The key a problem at `path` is reset through: the path before its first list index (a list is reset whole). */
+export const resetPathOf = (path: string): string => path.split("[")[0]!;
+
+/** Why the key at `path` cannot be set on its own (a list entry, a credential, no such key, a whole section), or undefined. */
+function settableRefusal(path: string): string | undefined {
+  const target = settableSchema(path);
+  return typeof target === "string" ? target : undefined;
+}
+
+/** The schema a value set at `path` must satisfy (a key's own, or a list's element for `key[i]`), or why nothing can be set there. */
+function settableSchema(path: string): z.ZodType | string {
+  const entry = /^(.+)\[(\d+)\]$/.exec(path);
+  const key = entry ? entry[1]! : path;
+  if (key.includes("[")) return "an entry inside a list entry cannot be set on its own: reset the list, or edit it on the Settings screen";
+  if (secretPathOf(key) !== undefined || isSecretPrefix(key)) return "a credential: it belongs in secrets.yaml, set through its masked field on the Settings screen";
+  const schema = key === "" ? undefined : schemaAt(key);
+  if (!schema) return "not a key config.yaml defines";
+  const inner = unwrap(schema).schema;
+  if (entry) {
+    if (!(inner instanceof z.ZodArray)) return "not a list";
+    const element = inner.element as z.ZodType;
+    const u = unwrap(element).schema;
+    if (u instanceof z.ZodObject || u instanceof z.ZodArray || u instanceof z.ZodRecord) return "a list entry that is not a single value cannot be set on its own: reset the list, or edit it on the Settings screen";
+    return element;
+  }
+  if (inner instanceof z.ZodObject) return "a section, not a key: set its keys one at a time";
+  return schema;
+}
+
+/** True when `setConfigKey` can set the key at `path` given a value its schema accepts. */
+export const canSetKey = (path: string): boolean => settableRefusal(path) === undefined;
+
+/**
+ * What an operator typed for the key at `path`, as the value to set: the text read as YAML when that satisfies the key's schema
+ * (`3000` a number, `[a, b]` a list), else the text itself (`qwen2.5:7b`, `null` for a string key).
+ */
+export function inputValue(path: string, input: string): unknown {
+  const target = settableSchema(path);
+  const schema = typeof target === "string" ? undefined : target;
+  let parsed: unknown;
+  try { parsed = parseYaml(input); } catch { return input; }
+  if (schema && schema.safeParse(parsed).success) return parsed;
+  return schema && schema.safeParse(input).success ? input : parsed ?? input;
+}
+
+/**
+ * The tree of one section of the file text on its own, nulls dropped as the loader drops them, or undefined when the text does
+ * not parse, the section is absent or not a mapping, or a `${NAME}` placeholder appears in it: the dashboard's recovery mode
+ * reads its address from it while the rest of the file fails.
+ */
+export function rawSection(text: string, section: string): Record<string, unknown> | undefined {
+  let tree: unknown;
+  try { tree = parseYaml(text); } catch { return undefined; }
+  const node = getPath(coerceEmptyNumbers(tree), section.split("."));
+  if (!isObj(node) || PLACEHOLDER_IN.test(JSON.stringify(node))) return undefined;
+  return node;
+}
+
+/**
+ * Sets one key of `config.yaml` by its dotted path from the root, with the settings editor's splicing (every other byte kept),
+ * checking the key alone: the rest of the file may fail, which is why this exists beside `applySection`.
+ */
+// @spec CFG-RCV-003
+export function setConfigKey(text: string, path: string, value: unknown): RecoveryEdit {
+  const fail = (message: string): RecoveryEdit => ({ ok: false, issues: [{ path, message }] });
+  const schema = settableSchema(path);
+  if (typeof schema === "string") return fail(schema);
+  const entry = path.includes("[");
+  if (value === null || value === undefined) return fail("a value is required");
+  if (PLACEHOLDER_IN.test(JSON.stringify(value))) return fail("a value cannot contain a ${NAME} placeholder; config.yaml holds literals only");
+  const check = schema.safeParse(value);
+  if (!check.success) return fail(check.error.issues.map((i) => i.message).join("; "));
+  const doc = parseDocument(text);
+  if (doc.errors.length) return fail("config.yaml is not valid YAML: fix the syntax error by hand first");
+  const segs = pathSegments(path);
+  let out: string;
+  try {
+    const node = doc.getIn(segs, true);
+    const present = node !== undefined && node !== null && !(isScalar(node) && node.value === null);
+    if (entry && !isScalar(node)) return fail("the list does not hold a single value at this entry");
+    out = present ? replaceNode(text, doc, segs, value) : insertKey(text, doc, segs as string[], value);
+  } catch (e) {
+    return fail((e as Error).message);
+  }
+  let readBack: unknown;
+  try { readBack = segs.reduce<unknown>((o, k) => (o !== null && typeof o === "object" ? (o as Record<string | number, unknown>)[k] : undefined), coerceEmptyNumbers(parseYaml(out))); } catch { return fail("that value cannot be written to config.yaml as given"); }
+  if (!sameValue(readBack, value)) return fail("that value cannot be written to config.yaml as given");
+  return { ok: true, text: out };
+}
+
+type Ranged = { range?: [number, number, number] | null };
+
+/** The position just after the `:` that follows a mapping key ending at `keyEnd`. */
+const colonAfter = (text: string, keyEnd: number): number => text.indexOf(":", keyEnd) + 1;
+
+/**
+ * Removes the key at `path` (cut before its first `[`, so a list is reset whole) from the text, so its schema default applies:
+ * the key's lines with their comments, every other byte kept; a block mapping it leaves empty is written `{}` and a key of a flow
+ * mapping is cut out with its separator. Refused when the text does not hold the key or does not parse.
+ */
+// @spec CFG-RCV-004
+export function resetConfigKey(text: string, path: string): { ok: true; text: string; path: string } | { ok: false; issues: ConfigIssue[] } {
+  const keyPath = resetPathOf(path);
+  const fail = (message: string) => ({ ok: false as const, issues: [{ path: keyPath, message }] });
+  const doc = parseDocument(text);
+  if (doc.errors.length) return fail("config.yaml is not valid YAML: fix the syntax error by hand first");
+  const segs = keyPath.split(".");
+  const parentPath = segs.slice(0, -1);
+  const parent = parentPath.length ? doc.getIn(parentPath, true) : doc.contents;
+  const last = segs[segs.length - 1]!;
+  const idx = isMap(parent) ? parent.items.findIndex((p) => isScalar(p.key) && String(p.key.value) === last) : -1;
+  if (!isMap(parent) || idx < 0) return fail("config.yaml does not hold this key: it already has its default");
+  const pair = parent.items[idx]!;
+  const key = pair.key as Ranged;
+  const valueEnd = ((pair.value as Ranged | null)?.range ?? key.range!)[1];
+
+  if (parent.flow) {
+    if (parent.items.length === 1) { const r = parent.range!; return { ok: true, text: `${text.slice(0, r[0])}{}${text.slice(r[1])}`, path: keyPath }; }
+    const next = parent.items[idx + 1];
+    if (next) return { ok: true, text: text.slice(0, key.range![0]) + text.slice((next.key as Ranged).range![0]), path: keyPath };
+    const prev = parent.items[idx - 1]!;
+    const prevEnd = ((prev.value as Ranged | null)?.range ?? (prev.key as Ranged).range!)[1];
+    return { ok: true, text: text.slice(0, prevEnd) + text.slice(valueEnd), path: keyPath };
+  }
+
+  const start = lineStart(text, key.range![0]);
+  let end = endOfContentLine(text, valueEnd);
+  if (text[end] === "\n") end++;
+  let out = text.slice(0, start) + text.slice(end);
+  // The last key of a block mapping: the mapping stays, written `{}`, so its own defaults apply instead of the section going missing.
+  if (parent.items.length === 1 && parentPath.length) {
+    const grand = parentPath.length > 1 ? doc.getIn(parentPath.slice(0, -1), true) : doc.contents;
+    const owner = isMap(grand) ? grand.items.find((p) => isScalar(p.key) && String(p.key.value) === parentPath[parentPath.length - 1]) : undefined;
+    const ownerKey = owner?.key as Ranged | undefined;
+    if (ownerKey?.range && ownerKey.range[1] <= start) {
+      const at = colonAfter(out, ownerKey.range[1]);
+      if (at > 0) out = `${out.slice(0, at)} {}${out.slice(at)}`;
+    }
+  }
+  return { ok: true, text: out, path: keyPath };
+}
+
+/**
+ * The value a `${NAME:-fallback}` placeholder at `path` declares: an unquoted value that is exactly the placeholder gives the
+ * fallback read as YAML, any other gives the string with each placeholder replaced by its fallback. Undefined when a placeholder
+ * there has no fallback, the key holds none, or the text does not parse.
+ */
+// @spec CFG-RCV-005
+export function placeholderFallback(text: string, path: string): { value: unknown } | undefined {
+  const doc = parseDocument(text);
+  if (doc.errors.length) return undefined;
+  const node = doc.getIn(pathSegments(path), true);
+  if (!isScalar(node) || typeof node.value !== "string") return undefined;
+  const str = node.value;
+  const found = [...str.matchAll(PLACEHOLDERS)];
+  if (found.length === 0 || found.some((m) => m[2] === undefined)) return undefined;
+  if (node.type === "PLAIN" && found.length === 1 && found[0]![0] === str) {
+    try { return { value: parseYaml(found[0]![2]!) as unknown }; } catch { return { value: found[0]![2]! }; }
+  }
+  return { value: str.replace(PLACEHOLDERS, (_m, _name: string, fb: string) => fb) };
 }

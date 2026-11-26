@@ -143,8 +143,22 @@ The dashboard has a lot of buttons. Only one of them says **Mute co-host**. Lear
 - The header shows the co-host status and a `Stack:` status, and the **Activity** feed scrolls.
 - Typing a line into **Say a line** and pressing **Say** makes the co-host speak it (after you turn audio on).
 
+## Config recovery
+
+When `config/config.yaml` or `secrets/secrets.yaml` does not validate, for example a file from an older cohost that still holds `${NAME}` placeholders, the dashboard still starts, but only to fix it. The page shows **Config recovery** in place of the usual screens: one row per failing key with the reason, and the buttons that apply to it.
+
+- **Set** writes the value you type (`3000` is a number, other text a string).
+- **Use** writes the value an old `${NAME:-value}` placeholder fell back to.
+- **Reset to default** removes the key so its default applies; for a key inside a list it resets the whole list.
+- **Remove from config.yaml** takes a credential out of `config.yaml`. Credentials live in `secrets/secrets.yaml`: set it in **Settings**, in the section the row names, once the dashboard is back.
+- **Reset all failing keys** does the above for every key it can. Keys that have no default and no fallback stay in the list for you to set.
+- **Check again** reads the files again after you edit one by hand (a YAML syntax error is fixed that way).
+
+Every write keeps the rest of the file and its comments, needs the control token where every other change does, and is checked at once. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file. See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
+
 ## If it didn't
 
+- The page shows **Config recovery**: a setting does not validate; fix it there ([Config recovery](#config-recovery)).
 - The page does not load, or a banner says live updates stopped: the dashboard is not running. Start it again with `mise run dashboard`. If that command stops with a build error instead of starting, the dashboard is deliberately not started; fix the error and run it again.
 - The Stack card says service control is off: check that `CONTROL_ENABLED=1` is set in `.env`, restart the dashboard, and see [Troubleshooting](../troubleshooting.md).
 - The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`.

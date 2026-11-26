@@ -1,0 +1,4 @@
+/* Config recovery mode's one screen (DASH-RCV-013). */
+.recovery-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.recovery-list .card-h h2 { overflow-wrap: anywhere; }
+.recovery-list form.row { align-items: flex-end; flex-wrap: wrap; }

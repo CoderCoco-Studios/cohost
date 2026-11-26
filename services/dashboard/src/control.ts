@@ -15,6 +15,20 @@ export interface ControlSetup {
 
 const nonEmpty = (v: string | undefined): string | undefined => (v !== undefined && v.trim() !== "" ? v.trim() : undefined);
 
+/**
+ * The full-surface address (`DASHBOARD_HOST`, else loopback) and the control configuration, shared by normal mode and config
+ * recovery mode. Throws when control is enabled without a token, and when the address is not loopback while control is off.
+ */
+// @spec DASH-CTRL-003, DASH-HOST-007
+export function fullSurfaceBind(env: NodeJS.ProcessEnv): { bind: string; cfg: ReturnType<typeof loadControlConfig> } {
+  const bind = nonEmpty(env.DASHBOARD_HOST) ?? LOOPBACK_BIND;
+  const cfg = loadControlConfig(env);
+  if (!cfg.enabled && !isLoopback(bind)) {
+    throw new Error(`DASHBOARD_HOST is ${bind}, which other machines can reach: that needs CONTROL_ENABLED=1 with a CONTROL_TOKEN, so every stack, lifecycle and viewer route is token-protected`);
+  }
+  return { bind, cfg };
+}
+
 // @spec DASH-CTRL-001, DASH-CTRL-002, DASH-CTRL-003, DASH-CTRL-008, DASH-HOST-007, CTRL-STACK-001
 /**
  * Reads CONTROL_* and DASHBOARD_HOST env and builds the controller. Throws (so startup fails) when CONTROL_ENABLED=1
@@ -27,14 +41,8 @@ export function setupControl(
   log: Logger,
   runtime?: Runtime,
 ): ControlSetup {
-  const bind = nonEmpty(env.DASHBOARD_HOST) ?? LOOPBACK_BIND;
-  const cfg = loadControlConfig(env);
-  if (!cfg.enabled) {
-    if (!isLoopback(bind)) {
-      throw new Error(`DASHBOARD_HOST is ${bind}, which other machines can reach: that needs CONTROL_ENABLED=1 with a CONTROL_TOKEN, so every stack, lifecycle and viewer route is token-protected`);
-    }
-    return { bind };
-  }
+  const { bind, cfg } = fullSurfaceBind(env);
+  if (!cfg.enabled) return { bind };
   if (!isLoopback(bind)) log.warn({ bind }, "the dashboard is bound to a non-loopback address: CONTROL_TOKEN and VIEWERS_TOKEN travel in cleartext over plain HTTP; use a reverse proxy or SSH tunnel");
   if (cfg.advanced) log.warn("CONTROL_ADVANCED=1: redis/postgres can be stopped from the dashboard");
   const rt = runtime ?? new ComposeRuntime({ cwd: findWorkspaceRoot() ?? process.cwd(), warn: (msg) => log.warn(msg) });

@@ -220,7 +220,7 @@ export function ToolList({ section, km, st }: { section: SectionModel; km: KeyMo
   const catalog = useCatalog();
   const allow = mapOf(st, km.key);
   const servers = Object.keys(mapOf(st, "servers"));
-  const write = (name: string, patch: Entry): void => settings.edit(section.path, km.key, { ...allow, [name]: { ...(allow[name] ?? {}), ...patch } });
+  const write = (name: string, patch: Entry): void => settings.edit(section.path, km.key, { ...allow, [name]: { ...allow[name], ...patch } });
   const drop = (name: string): void => { const { [name]: _gone, ...rest } = allow; settings.edit(section.path, km.key, rest); };
 
   const listed: Row[] = catalog

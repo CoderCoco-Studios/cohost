@@ -41,7 +41,7 @@ function rawStatus(port: number, text: string): Promise<number> {
     let buf = "";
     s.on("data", (d) => { buf += d.toString("latin1"); const m = /^HTTP\/1\.[01] (\d{3})/.exec(buf); if (m) { s.destroy(); resolve(Number(m[1])); } });
     s.on("error", reject);
-    s.on("close", () => { if (!/^HTTP/.test(buf)) resolve(0); });
+    s.on("close", () => { if (!buf.startsWith("HTTP")) resolve(0); });
   });
 }
 

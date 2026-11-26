@@ -102,7 +102,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
-  return async (req, res) => {
+  const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
       // @spec DASH-HTTP-001, DASH-BUILD-003, DASH-BUILD-004, DASH-BUILD-005
@@ -259,6 +259,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       sendUnlessStarted(res, 500, String(err));
     }
   };
+  return (req, res) => { void handle(req, res).catch((err: unknown) => d.log.error({ err, url: req.url }, "request handler failed")); };
 }
 
 function unauthorized(res: http.ServerResponse): void {

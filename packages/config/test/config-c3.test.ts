@@ -165,7 +165,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
   for (const n of want) {
     const i = lines.findIndex((l) => new RegExp(`^#?\\s*${n}=`).test(l));
     assert.ok(i > 0, n);
-    assert.ok(/#/.test(lines[i]!) || /^#/.test(lines[i - 1]!), `${n} has a comment`);
+    assert.ok(/#/.test(lines[i]!) || lines[i - 1]!.startsWith("#"), `${n} has a comment`);
   }
   for (const n of ["COMPOSE_FILE", "CONTROL_ENABLED", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
   for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
@@ -175,7 +175,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
 test("the shipped example writes the former per-machine values as literals, holds no placeholder and no secret key", () => {
   const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{/);
-  const cfg = parse(text) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const cfg = parse(text) as Record<string, any>;
   assert.equal(cfg.chat.twitch.channel, "");
   assert.deepEqual([cfg.vision.obs.host, cfg.vision.obs.port, cfg.vision.obs.source], ["host.docker.internal", 4455, "Game Capture"]);
   assert.deepEqual([cfg.avatar.vtube_studio.host, cfg.avatar.vmc.host, cfg.avatar.vtube_studio.port, cfg.avatar.vmc.port], ["host.docker.internal", "host.docker.internal", 8001, 39539]);

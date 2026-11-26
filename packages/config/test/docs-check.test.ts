@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { check, baseFiles, page, repoRoot, script, REQUIRED_TERMS, writeTree } from "./helpers/docs-fixture.ts";
 import { extendRepo, guide, INDEX, RUST_BUS, CONNECTOR, GUIDES_TABLE, TESTED_TABLE, LAYOUT_TABLE, SERVICE_README, RUST_README, CONSTANTS, FIXTURES_URL, EXT, SITE } from "./helpers/docs-extend-fixture.ts";
-import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HEALTH_BUILT, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
+import { shell, badge, themeDist, THEME_INDEX_TS, LIVE_HEALTH_VUE, LIVE_HEALTH_MJS, LIVE_NOTE, HEALTH_BODY, HOME_BODY, docPage, FIGURE, NAV, NAV_MARK, NOT_FOUND_BODY, STYLE_CSS, TOKENS_CSS, MARK_VUE, FAVICON_SVG, MERMAID_FENCE_MJS, FLOW_BODY, PALETTE } from "./helpers/docs-theme-fixture.ts";
 
 const read = (p: string) => readFileSync(join(repoRoot, p), "utf8");
 const load = (p: string): Promise<any> => import(pathToFileURL(join(repoRoot, p)).href);

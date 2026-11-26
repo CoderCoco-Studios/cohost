@@ -11,7 +11,7 @@ const DIED = { match: "you died", say: ["Oof."], emotion: "surprised", gesture: 
 /** A Salience on a controllable monotonic clock; the scorer defaults to the rules weights and records every input. */
 function setup(salience: Record<string, unknown> = {}, opts: { zeros?: boolean; extra?: Record<string, unknown> } = {}) {
   let clock = 1_000_000;
-  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0, ...salience } }, ...(opts.extra ?? {}) });
+  const cfg = testConfig({ brain: { salience: { cooldown_ms: 0, idle_chatter_ms: 0, ...salience } }, ...opts.extra });
   const bus = new FakeBus();
   const inputs: ScoreInput[] = [];
   const scorer = new Module<ScoreInput, ScoreOutput>("s", ModuleSchema.parse({}), cfg.llm, {

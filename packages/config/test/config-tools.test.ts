@@ -14,7 +14,6 @@ const base = () => ({
 });
 const parse = (tools?: unknown, brain: Record<string, unknown> = {}) =>
   ConfigSchema.safeParse({ ...base(), brain, ...(tools === undefined ? {} : { tools }) });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ok = (tools?: unknown): any => { const r = parse(tools); assert.ok(r.success, JSON.stringify(r.error?.issues)); return (r.data as any).tools; };
 const failPaths = (tools: unknown): string[] => { const r = parse(tools); return r.success ? [] : r.error.issues.map((i) => i.path.join(".")); };
 const failsAt = (tools: unknown, path: string): boolean => failPaths(tools).some((p) => p === path || p.startsWith(`${path}.`));
@@ -194,7 +193,6 @@ test("tools.reply.filler_lines is a list of non-empty strings of at most 200 cha
 // @spec CFG-SCH-096
 test("brain.salience.reminder_expiry_ms is a positive integer defaulting to 1800000", () => {
   const r = (v?: unknown) => parse(undefined, { salience: v === undefined ? {} : { reminder_expiry_ms: v } });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const get = (res: any) => res.data.brain.salience.reminder_expiry_ms;
   assert.equal(get(r()), 1800000);
   assert.equal(get(r(60000)), 60000);
@@ -217,8 +215,8 @@ test("the shipped config.example.yaml writes the tools section as literals and l
   for (const [k, v] of Object.entries({ max_rounds: 3, max_calls: 3, budget_ms: 30000, filler_after_ms: 1500, max_tokens: 512 })) assert.equal(raw.tools.reply?.[k], v, k);
   // a comment on each literal line of the section
   const lines = text.split("\n");
-  const start = lines.findIndex((l) => /^tools:/.test(l));
-  const end = lines.findIndex((l, i) => i > start && /^\S/.test(l) && !/^#/.test(l));
+  const start = lines.findIndex((l) => l.startsWith("tools:"));
+  const end = lines.findIndex((l, i) => i > start && /^\S/.test(l) && !l.startsWith("#"));
   const block = lines.slice(start + 1, end < 0 ? undefined : end).filter((l) => /^\s+[a-z_]+:\s*\S/.test(l) && !/^\s+-/.test(l));
   assert.ok(block.length >= 8);
   for (const l of block) assert.match(l, /#/, `comment on: ${l.trim()}`);

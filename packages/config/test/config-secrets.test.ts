@@ -330,7 +330,6 @@ test("chat.youtube.api_key is a secret path (owned by CFG-SEC-003): listed, defa
   assert.equal(getPath(cfg, "chat.youtube.api_key"), "");
   sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": "chat:\n  youtube:\n    api_key: yt-key\n" });
   assert.equal(loadConfig(true).chat.youtube.api_key, "yt-key");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   assert.equal((sectionJsonSchema("chat") as any).properties.youtube.properties.api_key["x-secret"], true);
 });
 

@@ -182,7 +182,7 @@ test("in mock mode timers live in the service's memory, touch no Redis key, and 
   assert.equal(r.mock, true);
   assert.equal((await callTool(s, "timer", { minutes: 3, note: "second" })).reason, "limit", "the limit applies in mock mode");
   assert.equal((await callTool(s, "timer", { minutes: 0, note: "x" })).reason, "invalid_arguments");
-  assert.deepEqual(bus.calls.filter((c) => /Timer$/.test(c)), [], "no hash call at all");
+  assert.deepEqual(bus.calls.filter((c) => c.endsWith("Timer")), [], "no hash call at all");
   assert.equal(bus.timers.size, 1, "the hash is neither read nor written");
   const wait = clock.longer(9000);
   assert.equal(wait.length, 1);
@@ -191,7 +191,7 @@ test("in mock mode timers live in the service's memory, touch no Redis key, and 
   await waitFor(() => fired(s).length === 1, "mock timer fired");
   assert.equal(fired(s)[0]!.note, "mock reminder");
   assert.equal(fired(s)[0]!.dueAt, NOW + 3 * MIN);
-  assert.deepEqual(bus.calls.filter((c) => /Timer$/.test(c)), []);
+  assert.deepEqual(bus.calls.filter((c) => c.endsWith("Timer")), []);
   await s.stop();
 });
 

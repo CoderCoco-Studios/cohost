@@ -27,6 +27,7 @@ test("a refusal before the body is answered with the connection closed, and the 
   let written = 0;
   const chunk = Buffer.alloc(256 * 1024);
   const pump = (async () => {
+    // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `closed` is set by the socket's close handler while the loop awaits drain
     while (!closed && written < total) {
       written += chunk.length;
       if (!sock.write(chunk)) await new Promise<void>((ok) => { sock.once("drain", ok); sock.once("close", ok); });

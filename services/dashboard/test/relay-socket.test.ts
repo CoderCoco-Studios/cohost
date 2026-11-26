@@ -8,7 +8,6 @@ import { connect, join_, relay, eventually, externalAddress } from "./relay-rig.
 // The relay's socket layer: its own server on both listeners, the Origin/Host rules, the page and preview caps, ping and
 // terminate, the message cap and the shutdown path (DASH-AVR-001..004, 030, DASH-HTTP-010, DASH-HTTP-016).
 
-const EVIL = { origin: "http://evil.example" };
 
 // @spec DASH-AVR-001
 test("/avatar/ws upgrades on both listeners, sends only view then status, and a /ws feed client never sees an avatar message", async (t) => {

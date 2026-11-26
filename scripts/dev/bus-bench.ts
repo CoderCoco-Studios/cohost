@@ -57,6 +57,7 @@ async function phase(path: "events" | "frames", sources: number, prefix: string)
   const eld = monitorEventLoopDelay({ resolution: 1 }); eld.enable();
   const cpu0 = process.cpuUsage(), t0 = performance.now();
   const pubs = Array.from({ length: sources }, async (_, i) => {
+    // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- `stop` is set once the run's duration has elapsed, while the publishers await their pacing
     for (let k = 0; !stop; k++) {
       const wait = t0 + (k * 1000) / RATE - performance.now();
       if (wait > 0) await sleep(wait);
@@ -78,7 +79,7 @@ async function phase(path: "events" | "frames", sources: number, prefix: string)
     p99: pct(lat, 99), max: lat[got - 1] ?? NaN, cpu: ((cu.user + cu.system) / 1000 / wall) * 100, eld99: eld.percentile(99) / 1e6,
   });
   if (sent !== got) (JSON_OUT ? console.error : console.log)(`  ${path} x${sources}: sent ${sent}, received ${got}`);
-  bus.stop(); await Promise.race([Promise.allSettled(readers), sleep(1000)]);
+  void bus.stop(); await Promise.race([Promise.allSettled(readers), sleep(1000)]);
 }
 
 const prefix = `bench${process.pid}`;

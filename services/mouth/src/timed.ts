@@ -26,9 +26,9 @@ export interface TimedDeps {
 export interface TimedPlayback {
   playback: Playback;
   /** Cancel the pending release timer and the watchdog; for shutdown. */
-  close(): void;
-  closeLine(id: string, through: number): void;
-  refuse(id: string, seq: number): Promise<void>;
+  close: () => void;
+  closeLine: (id: string, through: number) => void;
+  refuse: (id: string, seq: number) => Promise<void>;
 }
 
 // @spec MOUTH-DRY-002, MOUTH-FILE-001, MOUTH-HTTP-001

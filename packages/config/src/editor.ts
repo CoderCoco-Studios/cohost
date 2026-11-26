@@ -396,8 +396,10 @@ function insertKey(text: string, doc: Document, path: string[], value: unknown):
   return `${text.slice(0, at)}\n${indentLines(dump(nest(rest, value)), col)}${text.slice(at)}`;
 }
 
+/** A YAML scalar: what a value that is not an object can be. */
+type Scalar = string | number | boolean | null | undefined;
 const sameValue = (a: unknown, b: unknown): boolean =>
-  typeof a === "object" || typeof b === "object" ? JSON.stringify(a) === JSON.stringify(b) : String(a) === String(b);
+  typeof a === "object" || typeof b === "object" ? JSON.stringify(a) === JSON.stringify(b) : String(a as Scalar) === String(b as Scalar);
 
 /**
  * Applies `values` (key of the section to new value) to the file text and validates the result with the loader's pipeline,

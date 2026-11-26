@@ -157,7 +157,7 @@ export class VTubeStudioDriver implements AvatarDriver {
       this.activeExpr = undefined; // @spec AVATAR-VTS-013
       const ws = new WebSocket(url, { handshakeTimeout: this.opts.handshakeTimeoutMs ?? DEFAULT_TIMING_MS }); // @spec AVATAR-VTS-016
       this.ws = ws;
-      ws.on("open", async () => {
+      const onOpen = async (): Promise<void> => {
         this.ctx.log.info({ url }, "vts socket open");
         try {
           await this.authenticate();
@@ -169,7 +169,8 @@ export class VTubeStudioDriver implements AvatarDriver {
           ws.close();
         }
         resolve();
-      });
+      };
+      ws.on("open", () => { void onOpen().catch((err: unknown) => this.ctx.log.error({ err }, "vts open handler failed")); });
       ws.on("message", (raw) => this.onMessage(String(raw)));
       ws.on("close", () => { // @spec AVATAR-VTS-007
         this.ready = false;

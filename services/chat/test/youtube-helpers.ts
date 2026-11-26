@@ -84,7 +84,7 @@ export function text(id: string, sec: number | undefined, body = id, author: Aut
 }
 
 /** A `tombstone` resource deleting `deletedId`. */
-export function tombstone(id: string, deletedId: string | undefined, sec: number | undefined = undefined): Item {
+export function tombstone(id: string, deletedId: string | undefined, sec?: number): Item {
   return {
     id,
     snippet: { type: "tombstone", ...(sec === undefined ? {} : { publishedAt: at(sec) }), ...(deletedId === undefined ? {} : { messageDeletedDetails: { deletedMessageId: deletedId } }) },
@@ -93,7 +93,7 @@ export function tombstone(id: string, deletedId: string | undefined, sec: number
 }
 
 /** A `userBannedEvent` resource. */
-export function banned(id: string, channelId: string | undefined, banType: "permanent" | "temporary" = "permanent", sec: number | undefined = undefined): Item {
+export function banned(id: string, channelId: string | undefined, banType: "permanent" | "temporary" = "permanent", sec?: number): Item {
   return {
     id,
     snippet: {
@@ -127,7 +127,7 @@ export class StreamScript {
   get aborted(): boolean { return this.signal?.aborted === true; }
   iterable(signal: AbortSignal | undefined): AsyncIterable<StreamChunk> {
     this.signal = signal;
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    // oxlint-disable-next-line typescript/no-this-alias -- the returned iterator's methods read the fake stream through `self`, since their own `this` is the iterator
     const self = this;
     return {
       [Symbol.asyncIterator]() {

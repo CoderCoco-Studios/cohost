@@ -26,6 +26,7 @@ test("the connections section is optional: absent or partial, it loads with the 
 // @spec CFG-SCH-040
 test("an unquoted numeric guild or channel id fails the load naming the key and saying to write it in quotes", () => {
   for (const key of ["guild_id", "voice_channel_id"]) {
+    // oxlint-disable-next-line eslint/no-loss-of-precision -- the unquoted snowflake that loses precision is the input under test
     const r = ConfigSchema.safeParse({ ...baseCfg(), connections: { discord: { [key]: 1234567890123456789 } } });
     assert.ok(!r.success);
     const issue = r.error.issues.find((i) => i.path.join(".") === `connections.discord.${key}`);

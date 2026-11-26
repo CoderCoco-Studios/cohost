@@ -12,7 +12,6 @@ import { entryProblem, OWN_BOOTSTRAP } from "../../testing/src/unit-contract.js"
 // registry and each unit's entry file (module-contract MOD-MAN-008, MOD-MAN-009).
 
 const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
-const unitIds = units.map((u) => u.id);
 const rootPath = (rel: string) => fileURLToPath(new URL(`../../../${rel}`, import.meta.url));
 
 interface ComposeFile { services: Record<string, { profiles?: string[]; build?: { args?: { SERVICE?: string } } }> }

@@ -467,7 +467,7 @@ test("claude/bedrock: ending a stream() loop early closes the SDK stream, quietl
     let closed = false;
     const b = await serve(async (o) => {
       o.write(cStart + cBlock + cText("one "));
-      o.closed.then(() => { closed = true; });
+      void o.closed.then(() => { closed = true; });
       await Promise.race([o.closed, sleep(2000)]);
     });
     for await (const e of claudeMake(kind, b.url, { timeout_ms: 5000 }).stream(hello)) if (e.type === "text") break;

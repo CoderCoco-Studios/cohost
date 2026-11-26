@@ -87,18 +87,18 @@ export function createInjectHandler(o: InjectHandlerOptions): InjectHandler {
   async function handle(ev: BusEvent<"inject.request">): Promise<void> {
     const r = ev.data;
     try {
-      if (now() - ev.ts > staleMs) return void (await result(r.id, false, "stale"));
+      if (now() - ev.ts > staleMs) return await result(r.id, false, "stale");
       const kind = r.kind;
       const fn = o.kinds[kind];
-      if (!fn) return void (await result(r.id, false, `${o.target} cannot handle kind '${kind}'`));
+      if (!fn) return await result(r.id, false, `${o.target} cannot handle kind '${kind}'`);
       let outcome: InjectOutcome;
       if (kind === "text") {
         outcome = await o.kinds.text!(r);
       } else {
-        if (!r.uploadId || !UPLOAD_ID.test(r.uploadId)) return void (await result(r.id, false, "request carries no upload id"));
-        if (!o.takeUpload) return void (await result(r.id, false, `${o.target} has no upload store`));
+        if (!r.uploadId || !UPLOAD_ID.test(r.uploadId)) return await result(r.id, false, "request carries no upload id");
+        if (!o.takeUpload) return await result(r.id, false, `${o.target} has no upload store`);
         const got = await readUpload(r.uploadId, o.maxBytes[kind]);
-        if ("fail" in got) return void (await result(r.id, false, got.fail));
+        if ("fail" in got) return await result(r.id, false, got.fail);
         outcome = await (fn as NonNullable<InjectKinds["image"]>)(got.bytes, r, { contentType: r.contentType ?? null });
       }
       await result(r.id, outcome?.ok ?? true, outcome?.detail);
@@ -121,6 +121,7 @@ export function createInjectHandler(o: InjectHandlerOptions): InjectHandler {
     queue.push(ev);
     if (!active) { active = true; running = pump(); }
   }) as InjectHandler;
+  // oxlint-disable-next-line eslint/no-unmodified-loop-condition -- the pump clears `active` when it ends and a new request starts another `running`, while drain awaits
   callback.drain = async () => { while (active && running) await running; };
   return callback;
 }

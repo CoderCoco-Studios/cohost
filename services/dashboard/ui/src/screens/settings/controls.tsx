@@ -45,7 +45,7 @@ export const isLabelable = (c: Control): boolean => ["select", "number", "text",
 /** Whether a control brings its own label and help (the shared pickers and the secret field). */
 export const isEmbedded = (c: Control): boolean => ["model", "voice", "secret", "mcp-servers", "tool-list", "avatar-model"].includes(c.kind);
 
-const asString = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : String(v));
+const asString = (v: unknown): string => (typeof v === "string" ? v : v === undefined || v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v as number | boolean));
 const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : []);
 const lc = (s: string) => s.toLowerCase();
 
@@ -76,7 +76,7 @@ function NumberBox({ value, onChange, wiring, step, unit, schema }: { value: unk
 function LinesBox({ value, onChange, wiring, rows = 4 }: { value: unknown; onChange: (v: string[]) => void; wiring: Wiring; rows?: number }) {
   const list = asList(value);
   const [text, setText] = useState(list.join("\n"));
-  useEffect(() => { setText((t) => (JSON.stringify(fromLines(t)) === JSON.stringify(list) ? t : list.join("\n"))); }, [list.join("\n")]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setText((t) => (JSON.stringify(fromLines(t)) === JSON.stringify(list) ? t : list.join("\n"))); }, [list.join("\n")]);
   return (
     <textarea id={wiring.id} className="field" rows={rows} spellCheck={false} value={text} aria-describedby={wiring.describedBy} aria-invalid={wiring.invalid || undefined}
       onChange={(e) => { setText(e.target.value); onChange(fromLines(e.target.value)); }} />
@@ -88,7 +88,7 @@ function JsonBox({ value, onChange, wiring }: { value: unknown; onChange: (v: un
   const pretty = JSON.stringify(value ?? null, null, 2);
   const [text, setText] = useState(pretty);
   const [bad, setBad] = useState<string | undefined>();
-  useEffect(() => { if (!bad) setText((t) => { try { return JSON.stringify(JSON.parse(t)) === JSON.stringify(value ?? null) ? t : pretty; } catch { return pretty; } }); }, [pretty]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!bad) setText((t) => { try { return JSON.stringify(JSON.parse(t)) === JSON.stringify(value ?? null) ? t : pretty; } catch { return pretty; } }); }, [pretty]);
   const errId = useId();
   return (
     <>

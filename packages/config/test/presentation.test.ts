@@ -122,7 +122,7 @@ test("a widget is one of the closed set, a model widget is on a string key, opti
         if (w.step !== undefined) assert.ok(Number.isFinite(w.step) && w.step > 0, `${k}: a slider step is finite and above 0`);
         break;
       case "model":
-        assert.ok(KINDS.includes(w.kind), `${k}: model kind ${String(w.kind)}`);
+        assert.ok(KINDS.includes(w.kind), `${k}: model kind ${w.kind}`);
         assert.equal(node.type, "string", `${k}: a model widget is on a string key`);
         break;
       case "options": {

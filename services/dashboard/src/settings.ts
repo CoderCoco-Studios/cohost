@@ -31,7 +31,8 @@ export interface SettingsDeps {
 function rendererFraming(text: string, secrets: readonly string[]): Framing {
   const keys = readSection(text, "renderer", [...secrets]).keys;
   const v = (k: string) => keys[k]?.value;
-  return { model: String(v("model") ?? ""), zoom: Number(v("zoom")), offset_y: Number(v("offset_y")), turn: Number(v("turn")) };
+  const model = v("model");
+  return { model: typeof model === "string" ? model : "", zoom: Number(v("zoom")), offset_y: Number(v("offset_y")), turn: Number(v("turn")) };
 }
 
 export const defaultWrite = writeFileAtomic;
@@ -162,7 +163,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     const issue = framing && modelIssue(models, framing.model);
     if (issue) { json(res, 400, { ok: false, issues: [{ path: "renderer.model", message: issue }] }); return; }
     if (dryRun) { json(res, 200, { ok: true, dryRun: true, warnings }); return; }
-    try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(String((e as Error).message ?? e)); return; }
+    try { d.write(file, edit.text); } catch (e) { res.writeHead(500, { "content-type": "text/plain; charset=utf-8" }); res.end(e instanceof Error ? e.message : String(e)); return; }
     if (framing && d.models) d.models.applied.apply(framing, models);
 
     const stack = d.stack();

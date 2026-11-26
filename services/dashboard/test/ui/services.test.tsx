@@ -11,7 +11,6 @@ const rowOf = (name: string): HTMLElement => {
   assert.ok(row !== undefined, `no row for ${name}`);
   return row;
 };
-const hasRow = (name: string): boolean => within(table()).getAllByRole("row").some((r) => within(r).queryByRole("rowheader", { name }) !== null);
 const names = (): string[] => within(table()).getAllByRole("rowheader").map((h) => h.textContent ?? "");
 // the row's own button comes first in the DOM; a dialog it opened sits after it in the same cell and may repeat the name
 const btn = (row: HTMLElement, name: string): HTMLElement | null => within(row).queryAllByRole("button", { name })[0] ?? null;

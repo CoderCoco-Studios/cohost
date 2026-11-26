@@ -85,7 +85,7 @@ function versionSourceProblems(f: BuildFiles): string[] {
     for (const job of Object.values(wf.jobs ?? {})) {
       for (const step of job.steps ?? []) {
         if (!step.uses?.startsWith("jdx/mise-action@")) continue;
-        const v = step.with?.version === undefined ? undefined : String(step.with.version);
+        const v = step.with?.version === undefined ? undefined : String(step.with.version as string | number);
         if (v !== min) out.push(`${file}: jdx/mise-action version is ${v ?? "unset"}, mise.toml min_version is ${min}`);
         if (step.with && "sha256" in step.with) out.push(`${file}: jdx/mise-action is given a sha256 input`);
       }
@@ -287,8 +287,8 @@ test("lint:rust checks formatting, then runs Clippy with warnings denied", () =>
 });
 
 // @spec DEPLOY-TOOL-011
-test("lint:ts runs oxlint --type-aware after typecheck, with oxlint and oxlint-tsgolint as workspace devDependencies", () => {
-  assert.deepEqual(task("lint:ts").run, ["oxlint --type-aware"]);
+test("lint:ts runs oxlint --type-aware --deny-warnings after typecheck, with oxlint and oxlint-tsgolint as workspace devDependencies", () => {
+  assert.deepEqual(task("lint:ts").run, ["oxlint --type-aware --deny-warnings"]);
   assert.deepEqual(task("lint:ts").depends, ["typecheck"]);
   const dev = (JSON.parse(readRepo("package.json")) as { devDependencies: Record<string, string> }).devDependencies;
   assert.ok(dev.oxlint && dev["oxlint-tsgolint"], "oxlint and oxlint-tsgolint are root devDependencies");
@@ -445,7 +445,7 @@ function doctor(args: string[], fakes: Record<string, string>): { status: number
   const bin = mkdtempSync(join(tmpdir(), "doctor-bin-"));
   for (const tool of ["sh", "grep", "awk", "sort", "head", "printf", "cat", "dirname"]) {
     const found = spawnSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).stdout.trim();
-    if (found.startsWith("/")) writeFileSync(join(bin, tool), `#!/bin/sh\nexec ${found} "$@"\n`), chmodSync(join(bin, tool), 0o755);
+    if (found.startsWith("/")) { writeFileSync(join(bin, tool), `#!/bin/sh\nexec ${found} "$@"\n`); chmodSync(join(bin, tool), 0o755); }
   }
   for (const [name, body] of Object.entries(fakes)) {
     writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);

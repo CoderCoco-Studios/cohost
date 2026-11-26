@@ -93,6 +93,7 @@ test("vmc: each frame sends head pose, mouth/blink for VRM 0.x and 1.0, then App
     "/VMC/Ext/Bone/Pos", "/VMC/Ext/Blend/Val", "/VMC/Ext/Blend/Val", "/VMC/Ext/Blend/Val", "/VMC/Ext/Blend/Val", "/VMC/Ext/Blend/Apply", "/VMC/Ext/OK",
   ]);
   // yaw 90° → quaternion (0, sin 45°, 0, cos 45°)
+  // oxlint-disable-next-line oxc/approx-constant -- the driver sends four decimal places: cos 45° as sent, not Math.SQRT1_2
   assert.deepEqual(got[0]!.args, ["Head", 0, 0, 0, 0, 0.7071, 0, 0.7071]);
   assert.deepEqual(got.slice(1, 5).map((m) => m.args), [["A", 0.5], ["aa", 0.5], ["Blink", 1], ["blink", 1]]);
   assert.deepEqual(got[6]!.args, [1]); // OK is the one int32
@@ -243,7 +244,7 @@ test("vts: hotkey expressions toggle off the old one and on the new one; .exp3.j
   const d = vts(s.port);
   await d.connect(ctx());
   s.reqs.length = 0;
-  const sent = () => s.reqs.map((r) => r.data.hotkeyID ?? `${r.data.expressionFile}:${r.data.active}`);
+  const sent = () => s.reqs.map((r) => r.data.hotkeyID ?? `${String(r.data.expressionFile)}:${String(r.data.active)}`);
 
   d.setExpression("happy", 1);
   d.setExpression("happy", 0.8); // already active: nothing to do
@@ -293,7 +294,7 @@ test("vts: a closed and re-established connection forgets the active expression,
   s.reqs.length = 0;
   d.setExpression("happy", 1); // would be skipped as "already active" if the old record survived
   await waitFor(() => s.reqs.length >= 1, "smile on again");
-  assert.deepEqual(s.reqs.map((r) => `${r.messageType}:${r.data.hotkeyID}`), ["HotkeyTriggerRequest:hk-smile"]);
+  assert.deepEqual(s.reqs.map((r) => `${r.messageType}:${String(r.data.hotkeyID)}`), ["HotkeyTriggerRequest:hk-smile"]);
   await d.disconnect();
 });
 

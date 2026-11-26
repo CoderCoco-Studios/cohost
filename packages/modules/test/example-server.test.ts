@@ -159,7 +159,7 @@ async function liveAssertions(port: number): Promise<void> {
   // error naming the missing field, not a framing error from reading the body.
   const empty = await post("/critic");
   assert.equal(empty.status, 500);
-  const emptyError = String((await empty.json() as { error: string }).error);
+  const emptyError = (await empty.json() as { error: string }).error;
   assert.match(emptyError, /text/);
   assert.doesNotMatch(emptyError, /bytes|integer/);
   const zero = await new Promise<{ status: number; body: string }>((resolve, reject) => {

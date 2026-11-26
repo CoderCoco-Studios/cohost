@@ -1,4 +1,4 @@
-import { test, afterEach } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderApp, makeApp, screen, userEvent, act, within, waitFor, type TestApp } from "./helpers/render";
 import { FakeClock } from "./helpers/fakes";
@@ -73,6 +73,7 @@ test("a microphone record button is offered only where MediaRecorder and getUser
   first.unmount();
   const g = globalThis as unknown as { MediaRecorder?: unknown };
   const nav = navigator as unknown as { mediaDevices?: unknown };
+  // oxlint-disable-next-line typescript/no-extraneous-class -- a constructor that exists is all the page checks for
   g.MediaRecorder = class {};
   Object.defineProperty(nav, "mediaDevices", { configurable: true, value: { getUserMedia: async () => ({}) } });
   try {

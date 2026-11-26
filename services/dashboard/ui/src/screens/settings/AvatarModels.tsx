@@ -44,7 +44,7 @@ function useModels(): [ListState, () => Promise<void>] {
       setList({ status: "error", detail: r.ok ? "the answer had an unexpected shape" : r.detail });
     }
   };
-  useEffect(() => { void read(); }, [api]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void read(); }, [api]);
   return [list, read];
 }
 
@@ -65,7 +65,7 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
     if (etag.current === st.etag) return;
     etag.current = st.etag;
     void refresh();
-  }, [st.etag]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [st.etag]);
   const groupName = useId();
   const reasonId = useId();
   const [busy, setBusy] = useState(false);
@@ -75,8 +75,9 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
   const [replacing, setReplacing] = useState<Replacing | undefined>();
 
   const edit = st.edits[km.key];
-  const choice = edit ? String(edit.value ?? "") : String(st.keys[km.key]?.value ?? "");
-  const saved = String(st.keys[km.key]?.value ?? "");
+  const savedValue = st.keys[km.key]?.value;
+  const saved = typeof savedValue === "string" ? savedValue : "";
+  const choice = edit ? (typeof edit.value === "string" ? edit.value : "") : saved;
   const pick = (name: string) => settings.edit(section.path, km.key, name);
 
   /** One upload runs at a time; a second file picked meanwhile is not sent. */
@@ -85,7 +86,7 @@ export function AvatarModels({ section, km, st }: { section: SectionModel; km: K
     setBusy(true);
     setUploadError(undefined);
     const query = `name=${encodeURIComponent(file.name)}${replace ? "&replace=1" : ""}`;
-    const r = await api.post<unknown>(`/avatar/models?${query}`, file, { auth: "control", action: `Upload ${file.name}`, contentType: "application/octet-stream" });
+    const r = await api.post(`/avatar/models?${query}`, file, { auth: "control", action: `Upload ${file.name}`, contentType: "application/octet-stream" });
     inFlight.current = false;
     setBusy(false);
     if (r.ok) { void refresh(); return; }

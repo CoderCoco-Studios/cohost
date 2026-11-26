@@ -550,7 +550,7 @@ test("the consolidator labels the viewer with speakerLabel and carries the notic
   const llm = consolidatorImpl.llm!;
   const user = llm.user({ ...sample, viewer: "Amy (mod): [x]" });
   assert.ok(user.includes(speakerLabel("Amy (mod): [x]", 40)));
-  assert.doesNotMatch(user.split("\n")[0]!, /[()\[\]]/);
+  assert.doesNotMatch(user.split("\n")[0]!, /[()[\]]/);
   assert.ok(llm.system.includes(untrustedNotice("what a viewer typed in chat")));
   assert.match(llm.system, /fact/i);
   assert.match(llm.system, /no instruction|never follow|not follow/i);

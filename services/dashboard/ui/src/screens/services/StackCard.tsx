@@ -46,7 +46,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
   const submit = async () => {
     if (!asking) return;
     const kind = asking;
-    const r = await act.run(() => api.stackAction(kind, `${KIND_LABEL[kind]}`), STARTED[kind]);
+    const r = await act.run(() => api.stackAction(kind, KIND_LABEL[kind]), STARTED[kind]);
     if (r.ok) setAsking(null);
   };
   // While a dialog is open its failure shows inside it; the card shows only a failure that outlived the dialog.

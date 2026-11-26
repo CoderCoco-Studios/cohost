@@ -93,7 +93,7 @@ export function createDiscordVoiceSession(o: DiscordVoiceSessionOptions): Discor
     ready = true;
     log.info({ channel: channel.name }, "joined voice");
     // @spec SHARED-DVS-003
-    conn.on(VoiceConnectionStatus.Disconnected, async () => {
+    const onDisconnected = async (): Promise<void> => {
       try {
         await Promise.race([
           enters(conn, VoiceConnectionStatus.Signalling, RECOVER_TIMEOUT_MS),
@@ -107,7 +107,8 @@ export function createDiscordVoiceSession(o: DiscordVoiceSessionOptions): Discor
         conn.destroy();
         void run(REJOIN_DELAY_MS);
       }
-    });
+    };
+    conn.on(VoiceConnectionStatus.Disconnected, () => { void onDisconnected().catch((err: unknown) => log.error({ err }, "voice reconnect failed")); });
     try { o.onConnected(conn, { client, channel }); } catch (err) { log.error({ err }, "onConnected failed"); }
   }
 

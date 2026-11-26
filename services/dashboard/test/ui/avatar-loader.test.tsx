@@ -82,11 +82,11 @@ function rig() {
   let failBuild: string | null = null;
   const loader = createModelLoader<Fake>({
     fetchModel: (url, opts) => new Promise<Response>((resolve, reject) => {
-      const p: Pending = { url, signal: opts.signal, bypassCache: opts.bypassCache === true, respond: resolve, reject };
+      const p: Pending = { url, signal: opts.signal, bypassCache: opts.bypassCache, respond: resolve, reject };
       opts.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
       fetches.push(p);
     }),
-    build: async (bytes, signal) => {
+    build: async (bytes) => {
       if (holdBuild) await new Promise<void>((r) => buildGate.push({ resolve: r }));
       // No abort check here: a build that finishes after its request was superseded must be disposed by the loader.
       if (failBuild !== null) throw new Error(failBuild);

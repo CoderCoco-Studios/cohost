@@ -24,9 +24,9 @@ export interface ObsLinkDeps {
 
 export interface ObsLink {
   /** Connect with retry; concurrent calls share one loop. Resolves once identified (or once stopped). */
-  connect(): Promise<void>;
+  connect: () => Promise<void>;
   /** Stop reconnecting and close the socket. */
-  stop(): Promise<void>;
+  stop: () => Promise<void>;
 }
 
 /**

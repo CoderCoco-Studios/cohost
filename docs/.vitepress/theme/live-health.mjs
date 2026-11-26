@@ -123,13 +123,13 @@ export function createLiveHealth({ fetch, setTimeout, clearTimeout, document, on
       listen(false);
       return;
     }
-    if (visible()) timer = setTimeout(() => { timer = null; if (visible()) request(); }, INTERVAL_MS);
+    if (visible()) timer = setTimeout(() => { timer = null; if (visible()) void request(); }, INTERVAL_MS);
   }
 
   function onVisibility() {
     if (stopped || halted) return;
     if (visible()) {
-      if (!inFlight) request();
+      if (!inFlight) void request();
     } else clearNext();
   }
 
@@ -137,7 +137,7 @@ export function createLiveHealth({ fetch, setTimeout, clearTimeout, document, on
     start() {
       if (stopped) return;
       listen(true);
-      if (visible()) request();
+      if (visible()) void request();
     },
     stop() {
       stopped = true;

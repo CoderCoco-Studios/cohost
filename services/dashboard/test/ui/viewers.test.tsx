@@ -37,7 +37,7 @@ const CONFIG = {
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 const authed = (reply: (c: Call) => Plain | Promise<Plain>, good = "tok"): ((c: Call) => Plain | Promise<Plain>) => (c) => c.headers.authorization === `Bearer ${good}` ? reply(c) : { status: 401, text: "unauthorized" };
 
-interface Boot { list?: unknown; details?: Record<string, unknown>; config?: unknown | false; token?: string | false; access?: boolean }
+interface Boot { list?: unknown; details?: Record<string, unknown>; config?: unknown; token?: string | false; access?: boolean }
 function boot(o: Boot = {}) {
   const app: TestApp = makeApp();
   if (o.token !== false) app.rt.access.setToken("viewers", o.token ?? "tok", "tab");

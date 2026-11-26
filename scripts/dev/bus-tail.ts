@@ -32,6 +32,6 @@ if (replay > 0) {
   past.forEach(show);
   from = past.at(-1)?.id ?? "$";
 }
-process.on("SIGINT", () => { bus.stop(); process.exit(0); });
+process.on("SIGINT", () => { void bus.stop(); process.exit(0); });
 console.error(`tailing ${types.size ? [...types].join(",") : "all events"} (ctrl-c to stop)`);
 await bus.tail(show, from);

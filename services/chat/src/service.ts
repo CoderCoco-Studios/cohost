@@ -10,8 +10,7 @@
  * hands it fake sources, a fake Twitch client and an injected clock.
  */
 import type { Readable } from "node:stream";
-import type { Bus } from "@cohost/bus";
-import type { Config, Logger } from "@cohost/config";
+import type { Config } from "@cohost/config";
 import { parseVideoValue, startIdle, subscribeInject, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { channelName, createChatFilter, type ChatSender } from "./filter.js";
 import { chatHealth } from "./health.js";
@@ -54,7 +53,7 @@ const systemClock: ChatClock = {
 
 const defaultPlatform = (name: ChatSourceName): ChatPlatform => (name === "youtube" ? "youtube" : "twitch");
 
-export function chatService(deps: ChatServiceDeps = {}): { health(cfg: Config): HeartbeatSpec; main(ctx: ServiceContext<Bus>): Promise<void> } {
+export function chatService(deps: ChatServiceDeps = {}): { health: (cfg: Config) => HeartbeatSpec; main: (ctx: ServiceContext) => Promise<void> } {
   // Each listed source's latest reported state, read by the heartbeat.
   const states = new Map<ChatSourceName, ChatSourceStatus>();
 

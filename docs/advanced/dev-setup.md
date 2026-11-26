@@ -66,7 +66,7 @@ You never run a separate addon build before a host program. `@cohost/bus` loads 
 | --- | --- |
 | `mise run build` | The native addon, the TypeScript workspace and the dashboard UI |
 | `mise run typecheck` | `tsc -b`, which type-checks every project and writes the build output, then the dashboard UI's type check |
-| `mise run lint` | The type check and oxlint, then `cargo fmt --check` and Clippy with warnings denied |
+| `mise run lint` | The type check and oxlint's type-aware rules (`.oxlintrc.json`), then `cargo fmt --check` and Clippy; any finding fails it |
 | `mise run test:rust` | The Rust tests |
 | `mise run clean` | Removes every `dist/` |
 
@@ -127,8 +127,10 @@ Every service meets the same four obligations (the [module contract](https://git
 | Command | What it checks |
 | --- | --- |
 | `mise run test` | The Rust tests, the build, then every TypeScript test; see [Running the tests](testing/index.md) |
-| `mise run lint` | The type check, oxlint, `cargo fmt --check` and Clippy |
+| `mise run lint` | The type check, oxlint, `cargo fmt --check` and Clippy; a warning fails it like an error |
 | `mise run lid-check` | Every `@spec` ID in code and tests exists and is defined once |
 | `mise run docs:build` | The documentation site, including its link and fact checks |
+
+The TypeScript lint rules are in `.oxlintrc.json` at the repository root. A rule that is wrong for the project is turned off there, with a comment giving the reason; a single line that is a real exception gets `// oxlint-disable-next-line <rule> -- <reason>` above it.
 
 Changes flow through the specs first: [How specs work](../project/spec-driven.md) explains the order.

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { FakeTransport, FakeFrameTransport } from "../../testing/src/fake-transport.js";
 import {
   Bus, ConnectorRegistrar, ConnectorRegistry, FrameSequencer, FrameTracker, watchConnectors, encodeFrame, decodeFrame, parseRegistration, findReady, findOffer,
-  tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type AudioDirection, type EntryFields, type EventStream, type Frame, type Registration, type CapabilityEntry,
+  tagProblem, AUDIO_MAXLEN, MAX_FRAME_BYTES, type AudioDirection, type EntryFields, type EventStream, type Frame, type CapabilityEntry,
 } from "../src/index.js";
 
 /** A `FakeTransport` whose registry and audio streams keep state, so the registrar, registry and tails run end to end. */

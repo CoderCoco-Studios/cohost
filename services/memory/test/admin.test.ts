@@ -14,7 +14,7 @@ function setup() {
   const ask = (req: Record<string, unknown>) => answerViewersRequest(store, cfg.notes, { id: "r1", ...req } as never, now);
   return { store, ask, advance: (ms: number) => { now += ms; } };
 }
-type Data = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Data = Record<string, any>;
 
 // @spec MEM-ADMIN-001
 test("list: viewers newest first, filtered by display substring, with the owner flag and counts", async () => {

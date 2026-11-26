@@ -20,7 +20,6 @@ export function usePickLists(wantModels: boolean, wantVoices: boolean, openedFor
     if (wantVoices) void api.get<{ voices: string[] }>("/options/voices").then((r) => { if (live) setVoices(r.ok && Array.isArray(r.data?.voices) ? r.data.voices : null); });
     return () => { live = false; };
     // Once per opening of a page: the deps are the page and what it wants, not the api object.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openedFor, wantModels, wantVoices]);
   return { models, voices };
 }

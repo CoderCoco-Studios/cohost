@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Bus } from "./index.js";
 import {
-  DEFAULT_CONNECTOR_INTERVAL_MS, REGISTRATION_VERSION, CONNECTOR_ID_PATTERN, findOffer, findReady, tagProblem,
+  DEFAULT_CONNECTOR_INTERVAL_MS, CONNECTOR_ID_PATTERN, findOffer, findReady, tagProblem,
   type Capability, type CapabilityEntry, type ConnectorSpec, type Registration,
 } from "./connector.js";
 

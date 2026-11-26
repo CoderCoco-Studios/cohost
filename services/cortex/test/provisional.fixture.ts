@@ -114,10 +114,10 @@ export function setup(o: SetupOpts = {}) {
       cortex: {
         recall_timeout_ms: 30, clause_min_chars: 10, clause_max_chars: 60, max_clauses: 8, hold_limit_ms: 5000,
         ...(kind === "rules" ? {} : { critic: kind === "llm" ? { kind } : { kind, url: "http://critic.invalid" } }),
-        ...(o.cortex ?? {}),
+        ...o.cortex,
       },
     },
-    tools: { timeout_ms: 200, confirm_timeout_ms: 400, reply: { filler_after_ms: 60_000 }, ...(o.tools ?? {}) },
+    tools: { timeout_ms: 200, confirm_timeout_ms: 400, reply: { filler_after_ms: 60_000 }, ...o.tools },
   });
   const bus = new ProvBus();
   const llm = new ProvLlm();

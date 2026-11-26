@@ -392,7 +392,7 @@ test("brain.memory.notes defaults to the documented numbers and rejects out-of-r
     ["returning_strength", [-0.1, 1.1]], ["suppress_similarity", [-0.1, 1.1]], ["capture_min_chars", [-1, 1.5]],
     ["max_notes_per_viewer", [0, 1.5]], ["max_notes_total", [0, 1.5]], ["sensitive_cooldown_hours", [-1]], ["deleted_retention_days", [0, -1]],
   ];
-  for (const [k, vs] of bad) for (const v of vs) assert.equal(with_(k, v).success, false, `${k}=${v}`);
+  for (const [k, vs] of bad) for (const v of vs) assert.equal(with_(k, v).success, false, `${k}=${String(v)}`);
   assert.equal(with_("capture_min_chars", 0).success, true);
   assert.equal(with_("sensitive_cooldown_hours", 0).success, true);
   assert.equal(with_("recent_half_life_days", 0.5).success, true);
@@ -438,7 +438,7 @@ test("brain.cortex.fallback_ack_chance defaults to 0.25, accepts 0 to 1 inclusiv
   assert.equal(ConfigSchema.parse(baseCfg()).brain.cortex.fallback_ack_chance, 0.25);
   const with_ = (v: unknown) => ConfigSchema.safeParse({ ...baseCfg(), brain: { cortex: { fallback_ack_chance: v } } });
   for (const v of [0, 0.5, 1]) assert.equal(with_(v).data!.brain.cortex.fallback_ack_chance, v);
-  for (const v of [-0.01, 1.01, "x", Number.NaN]) assert.equal(with_(v).success, false, `${String(v)}`);
+  for (const v of [-0.01, 1.01, "x", Number.NaN]) assert.equal(with_(v).success, false, String(v));
 });
 
 // @spec CFG-USR-010

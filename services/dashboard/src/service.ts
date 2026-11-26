@@ -1,5 +1,4 @@
 import { WebSocketServer } from "ws";
-import type { Bus } from "@cohost/bus";
 import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
 import { loadPersonality, savePersonality, urls } from "@cohost/config";
@@ -44,7 +43,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
   const env = deps.env ?? process.env;
   return {
     health: (): HeartbeatSpec => dashboardHealth,
-    async main({ cfg, bus, log, heartbeat, onStop }: ServiceContext<Bus>): Promise<void> {
+    main: async ({ cfg, bus, log, heartbeat, onStop }: ServiceContext): Promise<void> => {
       const tracker = new HealthTracker();
       // @spec DASH-HTTP-009, DASH-HOST-001
       const { port: PORT, lanPort: LAN_PORT } = resolvePorts(cfg.dashboard);
@@ -80,7 +79,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken: controlTokenFromEnv(env), loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
-      const redacted = new WeakSet<object>(); // sockets that arrived beyond loopback (DASH-FEED-011)
+      const redacted = new WeakSet(); // sockets that arrived beyond loopback (DASH-FEED-011)
       const feed = createFeed({ bus, tracker, decorate, clients: () => wss.clients, redacts: (ws) => redacted.has(ws), stack, log, onBusChange: () => stack.refresh(), onViewersReply: (ev) => viewers.onReply(ev), onAvatarState: (driver) => relay.observeState(driver) });
       wss.on("connection", (ws, _req, conn?: FeedConnection) => { if (conn?.redact) redacted.add(ws); void serveClient(feed, ws, log); }); // @spec DASH-HTTP-012
       void startFeed(feed, log); // @spec DASH-HTTP-012

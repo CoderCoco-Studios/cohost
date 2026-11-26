@@ -270,7 +270,7 @@ test("a ping that never answers is bounded by ears.stt_timeout_ms, and no second
 test("a ping that answers after the bound is not ok, and the next probe after it settles can bring deps.stt ok", async () => {
   let n = 0;
   const s = fakeStt(() => "x");
-  const eng = fakeStreaming({ ping: async (signal) => { n++; if (n === 1) { await new Promise((r) => setTimeout(r, 250)); return true; } return true; } });
+  const eng = fakeStreaming({ ping: async () => { n++; if (n === 1) { await new Promise((r) => setTimeout(r, 250)); return true; } return true; } });
   await run(cfg({ stt_engine: "nemotron", stt_timeout_ms: 100 }), s, async (r) => {
     await waitFor(() => stt(r) === "ok", "ok after the second ping", 3000);
     assert.equal(eng.stats.pings, 2, "a second ping followed the first once it settled");

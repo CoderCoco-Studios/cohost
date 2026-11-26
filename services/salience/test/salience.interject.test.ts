@@ -439,7 +439,7 @@ test("interject: a short final held for a request that is then spoken decides no
   assert.equal(stops(e).length, 0);
   assert.equal(focuses(e).length, 1);
   const entry = lastSpeech(e);
-  assert.ok(entry && entry.kind === "speech" && entry.seen === true);
+  assert.ok(entry && entry.kind === "speech" && entry.seen);
 });
 
 test("interject: a final held for a request that is dropped takes the ordinary path", async () => { // @spec SAL-INTJ-023

@@ -8,11 +8,6 @@ const pcm16 = (samples: number[]): Buffer => {
   samples.forEach((s, i) => b.writeInt16LE(s, i * 2));
   return b;
 };
-const samplesOf = (b: Buffer, from = 0): number[] => {
-  const out: number[] = [];
-  for (let i = from; i + 1 < b.length; i += 2) out.push(b.readInt16LE(i));
-  return out;
-};
 
 // @spec SHARED-AUDIO-001
 test("readWavHeader reads a wavWrap header back", () => {

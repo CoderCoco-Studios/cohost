@@ -63,7 +63,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       if (results.current.size > KEEP) results.current.delete(results.current.keys().next().value as string);
       if (ours.current.has(id)) add(ev);
     } else if (observe.includes(ev.type)) add(ev);
-  }), [feed, add, observe.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [feed, add, observe.join("|")]);
 
   const track = (id: string) => { ours.current.add(id); const early = results.current.get(id); if (early) add(early); };
   const gate = { auth: "control" as const };

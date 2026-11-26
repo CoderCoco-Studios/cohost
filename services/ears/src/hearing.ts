@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { Publisher } from "@cohost/bus";
 import type { Config, Logger } from "@cohost/config";
 import { resample, wavWrap } from "@cohost/shared";
-import { wavDurationMs } from "./audio.js";
 import type { Clip, HearOutcome } from "./capture.js";
 import type { EchoGate } from "./echo.js";
 import { NO_BATCH_ENGINE } from "./engines.js";

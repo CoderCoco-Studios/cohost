@@ -66,7 +66,7 @@ export class FakeStorage implements Storage {
   getItem(k: string): string | null { this.check(); return this.m.get(k) ?? null; }
   key(i: number): string | null { this.check(); return [...this.m.keys()][i] ?? null; }
   removeItem(k: string): void { this.check(); this.m.delete(k); }
-  setItem(k: string, v: string): void { this.check(); this.m.set(k, String(v)); }
+  setItem(k: string, v: string): void { this.check(); this.m.set(k, v); }
 }
 
 /** An `Audio` stand-in: `play()` resolves (or rejects when `refuse` is set); `end()` and `fail()` fire the events. */

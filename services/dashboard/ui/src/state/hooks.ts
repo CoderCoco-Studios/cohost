@@ -54,7 +54,7 @@ export interface Action {
    * Resolves with the result so the caller can react (reload a list after a 2xx).
    */
   run<T>(request: () => Promise<ApiResult<T>>, success: string | ((data: T) => string)): Promise<ApiResult<T>>;
-  dismiss(): void;
+  dismiss: () => void;
 }
 
 /** One action's feedback state. Pair it with `<ActionStatus state={action.state} onDismiss={action.dismiss} />`. */

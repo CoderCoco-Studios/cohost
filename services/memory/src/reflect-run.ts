@@ -74,7 +74,7 @@ async function reflectOnce({ cfg, llm, memory, log, loadPersonality, savePersona
   const addition = learnedBlock(bullets, now().toISOString().slice(0, 10));
   savePersonality(appendLearned(personality, addition));
   const last = rows[rows.length - 1]!;
-  await memory.setMeta("last_reflection", formatCursor({ ts: last.tsText ?? last.ts.toISOString(), id: Number(last.id) }));
+  await memory.setMeta("last_reflection", formatCursor({ ts: last.tsText ?? last.ts.toISOString(), id: last.id }));
   log.info({ bullets: bullets.length, read: rows.length }, "personality updated");
   print(addition);
 }

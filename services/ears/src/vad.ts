@@ -59,8 +59,8 @@ class SileroSpeaker implements SpeechDetector {
  */
 export async function loadSilero(modelPath: string = SILERO_MODEL_PATH): Promise<() => SpeechDetector> {
   let ort: Ort;
-  try { ort = await import("onnxruntime-node"); } catch (err) { throw new Error(`onnxruntime-node did not load: ${err instanceof Error ? err.message : String(err)}`); }
+  try { ort = await import("onnxruntime-node"); } catch (err) { throw new Error(`onnxruntime-node did not load: ${err instanceof Error ? err.message : String(err)}`, { cause: err }); }
   let session: Session;
-  try { session = await ort.InferenceSession.create(modelPath); } catch (err) { throw new Error(`Silero model ${modelPath} did not load: ${err instanceof Error ? err.message : String(err)}`); }
+  try { session = await ort.InferenceSession.create(modelPath); } catch (err) { throw new Error(`Silero model ${modelPath} did not load: ${err instanceof Error ? err.message : String(err)}`, { cause: err }); }
   return () => new SileroSpeaker(ort, session);
 }

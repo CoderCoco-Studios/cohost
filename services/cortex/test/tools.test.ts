@@ -156,11 +156,11 @@ function setup(o: SetupOpts = {}) {
       cortex: {
         recall_timeout_ms: 100, clause_min_chars: 10, clause_max_chars: 60, max_clauses: 8,
         ...(kind === "rules" ? {} : { critic: kind === "llm" ? { kind } : { kind, url: "http://critic.invalid" } }),
-        ...(o.cortex ?? {}),
+        ...o.cortex,
       },
       salience: o.salience ?? {},
     },
-    tools: { timeout_ms: 20, confirm_timeout_ms: 40, reply: { filler_after_ms: 60_000 }, ...(o.tools ?? {}) },
+    tools: { timeout_ms: 20, confirm_timeout_ms: 40, reply: { filler_after_ms: 60_000 }, ...o.tools },
   });
   const bus = new ToolBus();
   const llm = new ToolLlm();

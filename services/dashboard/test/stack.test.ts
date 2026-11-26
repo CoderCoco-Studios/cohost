@@ -69,7 +69,7 @@ test("the probe runs at startup and every 5000 ms, and never two at once", async
   const { svc, f } = service();
   let gate!: () => void;
   const slow = new Promise<void>((r) => { gate = r; });
-  const real = f.ops.status;
+  const real = f.ops.status.bind(f.ops);
   f.ops.status = async () => { await slow; return real(); };
   svc.start();
   assert.equal(f.calls.length, 0); // the first probe is in flight, parked on the gate

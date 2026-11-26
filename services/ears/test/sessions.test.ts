@@ -260,7 +260,7 @@ test("an outage-class session failure with no batch engine drops the utterance w
     assert.equal(r.heard().length, 0);
     assert.equal(stt.calls.length, 0);
     assert.ok(warns(r) > before, "a warning");
-    await waitFor(() => r.lastHeartbeat()?.deps.stt === "down" && /no fallback engine, utterances dropped$/.test(r.lastHeartbeat()?.detail ?? ""), "stt down, no fallback engine", 4000);
+    await waitFor(() => r.lastHeartbeat()?.deps.stt === "down" && (r.lastHeartbeat()?.detail ?? "").endsWith("no fallback engine, utterances dropped"), "stt down, no fallback engine", 4000);
   });
 });
 

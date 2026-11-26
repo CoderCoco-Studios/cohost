@@ -23,8 +23,8 @@ export interface Harness {
   /** The stored rows whose text contains `text`, read from the backing store (no recency cutoff, no similarity filter). */
   memories(text: string): Promise<StoredRow[]>;
   /** Move the store's clock (and the caller's) forward. */
-  advance(ms: number): void;
-  now(): number;
+  advance: (ms: number) => void;
+  now: () => number;
 }
 
 /** Fresh viewer key per test, so a shared database needs no cleanup. */
@@ -33,7 +33,7 @@ export const uid = (name = "viewer"): string => `${name}-${randomUUID().slice(0,
 export const vkey = (name = "viewer"): string => viewerKey({ platform: "twitch", userId: uid(name) });
 
 export function registerStoreContract(label: string, make: () => Promise<Harness>, opts: { regular_messages: number }): void {
-  const t = (name: string, fn: (h: Harness) => Promise<void>) => test(`${label}: ${name}`, async () => fn(await make()));
+  const t = (name: string, fn: (h: Harness) => Promise<void>): void => void test(`${label}: ${name}`, async () => fn(await make()));
 
   // @spec MEM-REG-001, MEM-VIEWER-001
   t("regular is the owner's flag or a lifetime message count above regular_messages; counts never reset", async ({ store }) => {
@@ -397,7 +397,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     const mine = async (after: { ts: string; id: number }) => (await store.recentSince(after, 1_000_000)).filter((m) => m.text.startsWith(tag));
     const all = await mine(epoch);
     assert.deepEqual(all.map((m) => m.text.slice(-1)), ["a", "b", "c"]);
-    const cursorOf = (m: (typeof all)[number]) => ({ ts: m.tsText ?? m.ts.toISOString(), id: Number(m.id) });
+    const cursorOf = (m: (typeof all)[number]) => ({ ts: m.tsText ?? m.ts.toISOString(), id: m.id });
     assert.deepEqual((await mine(cursorOf(all[0]!))).map((m) => m.text.slice(-1)), ["b", "c"], "the cursor row itself is not read again");
     assert.deepEqual(await mine(cursorOf(all[2]!)), []);
     assert.equal((await store.recentSince(epoch, 2)).length, 2, "the limit caps the page");
@@ -660,7 +660,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await h.store.remember("chat", `a${w}`, `kept other-platform ${w}`, ids(`m1${w}`, "youtube"));
     await h.store.remember("speech", `a${w}`, `kept speech ${w}`, ids(`m1${w}`));
     await h.store.forgetChat({ platform: "twitch", scope: "message", messageId: `m1${w}` });
-    const texts = (await recallAll(h, `${w}`)).map((m) => m.text);
+    const texts = (await recallAll(h, w)).map((m) => m.text);
     assert.ok(!texts.includes(`gone ${w}`));
     assert.ok(texts.includes(`kept same-platform ${w}`) && texts.includes(`kept other-platform ${w}`) && texts.includes(`kept speech ${w}`), texts.join("|"));
   });
@@ -674,7 +674,7 @@ export function registerStoreContract(label: string, make: () => Promise<Harness
     await h.store.remember("chat", `a${w}`, `kept other platform ${w}`, { platform: "twitch", userId: `UC${w}` });
     await h.store.remember("chat", `a${w}`, `kept no ids ${w}`);
     await h.store.forgetChat({ platform: "youtube", scope: "user", userId: `UC${w}` });
-    const texts = (await recallAll(h, `${w}`)).map((m) => m.text).sort();
+    const texts = (await recallAll(h, w)).map((m) => m.text).sort();
     assert.deepEqual(texts, [`kept no ids ${w}`, `kept other platform ${w}`, `kept other user ${w}`].sort());
   });
 

@@ -235,7 +235,7 @@ export class Playback {
       }
     }
     for (const r of reports) {
-      await this.publish("voice.done", { id: r.id, seq: r.seq, sink: this.d.sink, interrupted: true, ...(r.split ?? {}) });
+      await this.publish("voice.done", { id: r.id, seq: r.seq, sink: this.d.sink, interrupted: true, ...r.split });
     }
     void this.pump(); // the stop itself does not wait for the next item to start
   }

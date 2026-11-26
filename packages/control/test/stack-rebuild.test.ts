@@ -134,6 +134,7 @@ test("statusWithRestarts: an entry that is not a JSON object leaves that contain
 // @spec CTRL-STACK-014, CTRL-STACK-016
 test("statusWithRestarts: the inspect output never reaches a detail, a status field or a log line, whether it parsed or the command failed", async () => {
   const logged: string[] = [];
+  // oxlint-disable-next-line typescript/unbound-method -- the originals are saved only to be put back as they were
   const realWrite = process.stdout.write, realErr = process.stderr.write;
   const spy = (chunk: unknown): boolean => { logged.push(String(chunk)); return true; };
   process.stdout.write = spy as typeof process.stdout.write; process.stderr.write = spy as typeof process.stderr.write;

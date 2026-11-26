@@ -21,6 +21,7 @@ export type ClipTarget = { playout: Playout; off: boolean } | { blocked: string 
 /** A player that sends nothing: the playout runs as for a real player and every frame is consumed. */
 export function nullPlayout(): Playout {
   const player = { play() {}, stop() {}, state: { status: AudioPlayerStatus.Idle } } as unknown as Pick<AudioPlayer, "play" | "stop" | "state">;
+  // oxlint-disable-next-line typescript/no-unsafe-class-instance-assignment -- the null player never reads the resource it is given
   return new Playout({ player, createResource: (stream: Readable) => { stream.resume(); return {} as AudioResource; } });
 }
 

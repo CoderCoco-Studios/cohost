@@ -357,19 +357,19 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
     if (cap) {
       // EARLY-025: retract an unresolved transcript first, discard a call in flight, transcribe the whole clip anew
       if (h) h.discard = true;
-      if (h?.publishing) return void track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
+      if (h?.publishing) return track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
       const u = o.unresolved;
       o.unresolved = undefined;
       if (u) {
         retract(o, u);
-        return void track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
+        return track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
       }
       return hearClip(clip, spk, o.name, false);
     }
     if (h && h.discard) {
       // a discarded call is neither waited for nor late-published: the clip is transcribed anew
-      if (h.publishing) return void track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
-      return void track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
+      if (h.publishing) return track(h.promise.then(() => hearClip(clip, spk, o.name, false)));
+      return track(o.pubChain.then(() => hearClip(clip, spk, o.name, false)));
     }
     if (h) {
       // EARLY-018, 019: wait for the call; a publish that landed reuses its transcript, a failure falls back, a result is the late final
@@ -696,7 +696,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       if (transport() === "http") return;
       // @spec EARS-VAD-006
       if (d.vad) {
-        try { makeDetector = await d.vad.load(); } catch (err) { throw new Error(`vad unavailable: ${err instanceof Error ? err.message : String(err)}`); }
+        try { makeDetector = await d.vad.load(); } catch (err) { throw new Error(`vad unavailable: ${err instanceof Error ? err.message : String(err)}`, { cause: err }); }
       }
       // The stream is read from the end for the whole run; a connector that appears later is picked up by the same read.
       tailing = true;
@@ -729,7 +729,7 @@ export function createConnectorSource(d: ConnectorSourceDeps): ConnectorSource {
       }
       speakers.clear();
       // a late fallback or a cap path can start new tracked work while these settle, so wait until none is left
-      while (inflight.size > 0) await Promise.allSettled([...inflight]);
+      while (inflight.size > 0) await Promise.allSettled(inflight);
     },
   };
 }

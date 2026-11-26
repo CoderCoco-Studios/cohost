@@ -19,6 +19,7 @@ const docker = resolveDockerBin(env);
 
 const sh = (args: string[]) => new Promise<string>((resolve, reject) => {
   if (!docker.ok) return reject(new Error(docker.detail));
+  // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- `err` is node's ExecFileException, an Error
   execFile(docker.bin, args, { env, cwd: root, timeout: 30_000, maxBuffer: 64 << 20 }, (err, stdout) => (err ? reject(err) : resolve(stdout)));
 });
 const skip = process.env.COHOST_LIVE_STACK !== "1" ? "set COHOST_LIVE_STACK=1 to run the live stack test"

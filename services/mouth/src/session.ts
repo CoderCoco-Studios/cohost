@@ -55,7 +55,7 @@ export function createMouthHandler({ outputs, log, bus, onUnknownRoute, claims, 
       const { ids } = (ev.data as BusEvent<"voice.stop">["data"]);
       for (const output of outputs) {
         try {
-          await output.stop({ ...(ids ? { ids } : {}) });
+          await output.stop(ids ? { ids } : {});
         } catch (err) {
           log.warn({ err: String(err), output: output.name }, "voice.stop failed on an output");
         }

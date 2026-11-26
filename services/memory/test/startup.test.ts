@@ -15,10 +15,10 @@ function setup(over: { capture?: boolean; store?: "postgres" | "memory"; embedde
     cfg: { store: over.store ?? "postgres", embedder: over.embedder ?? "ollama", recall_k: 6, min_similarity: 0.35 },
     log: { warn: (_o: unknown, m?: string) => warnings.push(m ?? String(_o)), info() {}, error() {}, debug() {} } as never,
     bus: { subscribe: (opts: Record<string, unknown>) => {
-      subs.push(opts); events.push(`subscribe:${opts.group}`);
+      subs.push(opts); events.push(`subscribe:${String(opts.group)}`);
       const ready = opts.onReady as (() => void) | undefined;
-      if (over.readyOrder !== "manual") queueMicrotask(() => { events.push(`group:${opts.group}`); ready?.(); });
-      else readies.push(() => { events.push(`group:${opts.group}`); ready?.(); });
+      if (over.readyOrder !== "manual") queueMicrotask(() => { events.push(`group:${String(opts.group)}`); ready?.(); });
+      else readies.push(() => { events.push(`group:${String(opts.group)}`); ready?.(); });
       return new Promise<void>(() => {});
     } } as never,
     store: { init: async () => { inits++; events.push("init"); if (failures.length) throw failures.shift(); } } as never,

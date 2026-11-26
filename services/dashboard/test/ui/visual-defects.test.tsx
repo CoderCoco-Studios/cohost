@@ -3,7 +3,7 @@
 import "./helpers/dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { act, fireEvent, render, renderApp, makeApp, screen, within } from "./helpers/render";
+import { act, fireEvent, render, renderApp, makeApp, screen } from "./helpers/render";
 import { App } from "../../ui/src/app/App";
 import { Meter } from "../../ui/src/components/Meter";
 import { Status } from "../../ui/src/components/Status";

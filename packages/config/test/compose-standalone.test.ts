@@ -94,7 +94,7 @@ test("the in-network addresses are literals in each application service's enviro
     assert.equal(compose.services[name]!.env_file, ".env", `${name}: .env is still loaded`);
     for (const [k, v] of Object.entries(IN_NETWORK)) {
       assert.equal(env[k], v, `${name}: ${k} is set in environment`);
-      assert.ok(!String(env[k]).includes("${"), `${name}: ${k} is not read from .env through substitution`);
+      assert.ok(!env[k].includes("${"), `${name}: ${k} is not read from .env through substitution`);
     }
   }
 });
@@ -290,7 +290,7 @@ test("compose-smoke.sh fails the run when salience resolves from tools, when red
   assert.notEqual(cut.r.status, 0, "a redis that does not resolve means tools cannot reach the bus");
   const sick = smoke({ TOOLS_STATE: "running unhealthy restarts=0" });
   assert.notEqual(sick.r.status, 0);
-  assert.ok(!sick.log.some((l) => /^compose exec/.test(l)), "no lookup runs against an unhealthy tools");
+  assert.ok(!sick.log.some((l) => l.startsWith("compose exec")), "no lookup runs against an unhealthy tools");
   const restarted = smoke({ TOOLS_STATE: "running healthy restarts=2" });
   assert.notEqual(restarted.r.status, 0, "a restart of tools fails the run");
 });

@@ -81,7 +81,7 @@ test("a listener that cannot bind exits 1 and the dashboard is never ready", asy
   const first = await rig({});
   t.after(() => first.stop());
   await first.start();
-  const addr = first.rec.lines.find((l) => String(l.msg).startsWith("dashboard online:"))!.obj as { url: string };
+  assert.ok(first.rec.lines.some((l) => String(l.msg).startsWith("dashboard online:")), "the first dashboard is online");
   const second = await rig({}, { port: first.dashboard.port });
   t.after(() => second.stop());
   await second.start();

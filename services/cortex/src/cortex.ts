@@ -625,6 +625,7 @@ export class Cortex {
       // A held think is in flight until it is released or ended (CTX-PROV-028).
       if (hold !== undefined) await hold.settled;
       // A publish that failed during the release reaches here as the think's failure (CTX-REL-010).
+      // oxlint-disable-next-line typescript/only-throw-error -- rethrows the caught failure as it was thrown
       if (hold?.error !== undefined) throw hold.error;
     } catch (err) {
       log.error({ err }, "think failed");
@@ -1160,6 +1161,7 @@ export class Cortex {
         // @spec CTX-CTRL-008, CTX-STREAM-031, CTX-TOOL-031, CTX-TOOL-040
         if (out.failed !== undefined) {
           if (!line.waited) {
+            // oxlint-disable-next-line typescript/only-throw-error -- rethrows the caught failure as it was thrown
             if (!this.lineOut(line)) throw out.failed; // a think that fails before its first clause is the think's error (CTX-STREAM-030)
             log.warn({ err: out.failed, reason: r.focus.reason }, "the model stream failed after a clause; the line closes failed");
             await this.closeLine(line, "failed");

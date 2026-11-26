@@ -101,7 +101,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
    `host.docker.internal` is how a [container](../../start/glossary.md#container) reaches OBS running on the same machine. If OBS is on a second PC, put that PC's address in `vision.obs.host` instead, and make sure obs-websocket listens on the network and the firewall allows port 4455.
 
-   The OBS WebSocket password is a credential, so it goes in the **OBS password** secret field of **Settings**, **Vision** (saving from another machine needs your control token), or in `secrets/secrets.yaml` by hand:
+   The OBS WebSocket password is a credential, so it goes in the **OBS password** secret field of **Settings**, **Vision** (saving needs your control token), or in `secrets/secrets.yaml` by hand:
 
    ```yaml
    vision:

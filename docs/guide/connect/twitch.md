@@ -38,7 +38,7 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Logging in (optional)
 
-Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into the secret fields of **Settings**, **Twitch chat** (each shows **Set** or **Not set**; saving from another machine needs your control token), or into `secrets/secrets.yaml` by hand:
+Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into the secret fields of **Settings**, **Twitch chat** (each shows **Set** or **Not set**; saving needs your control token), or into `secrets/secrets.yaml` by hand:
 
 ```yaml
 chat:

@@ -22,7 +22,7 @@ You start, stop and restart the co-host from the dashboard with a click, or from
    mise run dashboard
    ```
 
-2. Open `http://localhost:<dashboard.port>` (3000 by default), and open the **Services** screen. On this PC nothing asks for a token; from another machine, enter the `CONTROL_TOKEN` from `.env` in the [Access dialog](dashboard.md#the-access-dialog) when it asks.
+2. Open `http://localhost:<dashboard.port>` (3000 by default), open the **Services** screen, and enter the `CONTROL_TOKEN` from `.env` in the [Access dialog](dashboard.md#the-access-dialog) when it asks.
 3. Press **Launch** and confirm.
 
 Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), starts every [container](../../start/glossary.md#container) of the stack, and waits until they are ready. The **Stack** card shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.

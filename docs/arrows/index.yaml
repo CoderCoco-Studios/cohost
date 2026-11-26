@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "451 specs: 440 [x], 11 [ ]: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The control token is required only beyond loopback (DASH-CTRL-011, #366)."
+    next: "448 specs: 437 [x], 11 [ ]: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 021, #360, #362: the raw editor and the config-free Stop are DASH-RCV-016 to 021) is built."
     drift: null
 
   control-plane:

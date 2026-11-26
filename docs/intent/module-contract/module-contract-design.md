@@ -123,7 +123,7 @@ Each section entry carries its `title`, `group` (one of `groups`), `about` and, 
 | `help` | One sentence for the operator; present for every key. It is also the key's JSON Schema `description` |
 | `label` | Display name where the key name is not plain; the page falls back to the key name |
 | `unit` | `ms`, `bytes`, `days` and the like, shown beside the input |
-| `sensitive` | `true` on a key that decides where a credential or the co-host's private context goes (config CFG-PRES-011); the page notes it beside the key, and a save refused for want of the control token (from another machine) names it |
+| `sensitive` | `true` on a key that decides where a credential or the co-host's private context goes (config CFG-PRES-011); the page asks for the control token before it saves a change to one |
 | `items` | For an array of objects, a map from each item property to `{ help, label?, unit? }` |
 | `widget` | A hint from a closed set: `{ type: "timezone" }`, `{ type: "voice" }`, `{ type: "sources" }`, `{ type: "textarea" }`, `{ type: "model", kind: chat \| small \| vision \| embed \| stt }`, `{ type: "options", options: [{ value, label }] }`, `{ type: "mcp-servers" }`, `{ type: "tool-list" }` |
 

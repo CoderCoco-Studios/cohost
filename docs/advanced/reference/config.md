@@ -68,7 +68,7 @@ The `eyes` service: OBS screenshots described by a vision model.
 | `vision` | map | The eyes service |
 | `vision.enabled` | `false` | `false` makes `eyes` idle and never touch OBS |
 | `vision.model` | `qwen2.5vl:3b` | The vision model the describer asks. Ollama pulls it while `provider` is `ollama`. Blank is a configuration gap: eyes stays up, makes no describe call, and reports `vision` down with `vision.model is not set` while `enabled` is true |
-| `vision.provider` | `ollama` | The chat provider that describes frames: `ollama` (your Ollama server, `OLLAMA_URL`), `openai` (the OpenAI-compatible server at `llm.openai.base_url`, which defaults to the hosted `https://api.openai.com/v1`), `anthropic` or `bedrock` (hosted, with the `llm.claude.*` and `llm.bedrock.*` keys), or `stub` for fixed text and no model. Frames leave the LAN for `anthropic`, `bedrock`, and an off-LAN `openai` or `ollama` URL; eyes logs one warning at start. Sensitive: changing it from another machine needs the control token |
+| `vision.provider` | `ollama` | The chat provider that describes frames: `ollama` (your Ollama server, `OLLAMA_URL`), `openai` (the OpenAI-compatible server at `llm.openai.base_url`, which defaults to the hosted `https://api.openai.com/v1`), `anthropic` or `bedrock` (hosted, with the `llm.claude.*` and `llm.bedrock.*` keys), or `stub` for fixed text and no model. Frames leave the LAN for `anthropic`, `bedrock`, and an off-LAN `openai` or `ollama` URL; eyes logs one warning at start. Sensitive: changing it needs the control token |
 | `vision.interval_ms` | `8000` | How often to look at the game |
 | `vision.temperature` | `0.2` | Vision model sampling temperature, 0 to 2 |
 | `vision.num_predict` | `60` | The longest description the model may write, in tokens |
@@ -426,7 +426,7 @@ The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` a
 | `dashboard` | map | The dashboard |
 | `dashboard.port` | `3000` | The port of the dashboard's full surface (page, controls, Launch and Stop). Read at the dashboard's next start |
 | `dashboard.lan_port` | `3001` | The port of the LAN listener (the sink page and audio for a second PC's OBS). Must differ from `dashboard.port`. Read at the dashboard's next start |
-| `dashboard.allowed_hosts` | `[]` | Machine names the dashboard accepts when another PC opens it by name instead of by IP address, such as `streampc` in the address of the second PC's OBS sink page. IP addresses and `localhost` always work. Read at the dashboard's next start. Changing it from the settings screen on another machine needs the control token, because it widens who may reach the dashboard |
+| `dashboard.allowed_hosts` | `[]` | Machine names the dashboard accepts when another PC opens it by name instead of by IP address, such as `streampc` in the address of the second PC's OBS sink page. IP addresses and `localhost` always work. Read at the dashboard's next start. Changing it from the settings screen needs the control token, because it widens who may reach the dashboard |
 | `dashboard.inject` | map | The limits of the test-upload panel |
 | `dashboard.inject.max_image_bytes` | `8388608` | The largest image accepted, in bytes |
 | `dashboard.inject.max_audio_bytes` | `26214400` | The largest audio clip accepted, in bytes |

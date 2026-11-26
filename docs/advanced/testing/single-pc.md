@@ -28,7 +28,7 @@ A checklist for one machine and no second PC. The [dashboard](../../guide/operat
 
    You should see the dashboard log the URL it listens on.
 
-2. In a Windows browser open <http://localhost:3000> (`dashboard.port` in `config/config.yaml`). WSL forwards `localhost` to the distro, so the page counts as on this machine and asks for no token.
+2. In a Windows browser open <http://localhost:3000> (`dashboard.port` in `config/config.yaml`). WSL forwards `localhost` to the distro. Enter the `CONTROL_TOKEN` from `.env` when the page asks.
 
 3. Press **Launch** and wait for the stack to reach `up` on the Services screen.
 

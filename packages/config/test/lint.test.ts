@@ -100,14 +100,14 @@ test("the root tsconfig.json is a solution file, and no tsconfig sets baseUrl", 
 });
 
 const DISABLE = ["oxlint", "disable"].join("-");
-/** Lines of `text` holding an inline oxlint-disable comment that is not one next-line rule with a `--` reason. */
+/** Lines of `text` holding an inline disable comment (DISABLE) that is not one next-line rule with a `--` reason. */
 function badDisables(text: string): string[] {
   const ok = new RegExp(`^\\s*(//|/\\*|\\{/\\*)\\s*${DISABLE}-next-line [a-z-]+/[a-z0-9-]+ -- \\S`);
   return text.split("\n").filter((l) => l.includes(DISABLE) && !ok.test(l));
 }
 
 // @spec DEPLOY-LINT-006
-test("every inline oxlint-disable names one rule for the next line and gives a reason", () => {
+test("every inline oxlint disable comment names one rule for the next line and gives a reason", () => {
   const code = tracked.filter((f) => /\.(ts|tsx|mts|cts|js|mjs|cjs|vue)$/.test(f));
   const found: string[] = [];
   for (const f of code) for (const l of badDisables(readRepo(f))) found.push(`${f}: ${l.trim()}`);

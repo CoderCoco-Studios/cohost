@@ -5,6 +5,7 @@ export declare const BOT_ID: number;
 export declare const MARKER: string;
 export declare const BRANCH: string;
 export declare const RECORD_PATH: string;
+export declare const MAX_COMMITS: number;
 
 export interface Contributor { name: string; id: number | null }
 export interface Signature { name: string; id: number; comment_id: number; created_at: string; repoId: number; pullRequestNo: number }
@@ -15,7 +16,8 @@ export declare function resolveContributors(commits: unknown[]): Contributor[];
 export declare function classify(contributors: Contributor[], record: SignatureRecord): ContributorMap;
 export declare function formatRecord(record: SignatureRecord): string;
 export declare function isSignComment(body: string | null | undefined): boolean;
-export declare function commentBody(map: ContributorMap, claUrl: string): string;
+export declare function safeName(name: string): string;
+export declare function commentBody(map: ContributorMap, claUrl: string, totalCommits?: number): string;
 
 export interface RunOptions {
   eventName: string;

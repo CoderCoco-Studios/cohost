@@ -41,6 +41,8 @@ jobs:
         with:
           version: 2026.11.14
           install_args: node
+          # A privileged job neither restores nor saves a cache another run could have written.
+          cache: false
       - run: MISE_TASK_RUN_AUTO_INSTALL=false mise run cla
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

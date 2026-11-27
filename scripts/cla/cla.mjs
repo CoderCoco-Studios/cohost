@@ -26,11 +26,13 @@ export const BRANCH = "cla-signatures";
 export const RECORD_PATH = ".github/cla/signatures.json";
 const PER_PAGE = 100;
 const WRITE_ATTEMPTS = 3;
+/** The most commits the REST API lists for one pull request. */
+export const MAX_COMMITS = 250;
 
 /** A GitHub REST client over the given fetch. Returns parsed JSON, or null for a 404 when `allow404` is set. */
 function client({ fetch, apiUrl, token, repository }) {
   const base = `${apiUrl}/repos/${repository}`;
-  async function call(method, path, body, { allow404 = false, allow409 = false } = {}) {
+  async function call(method, path, body, { allow404 = false, conflict = [] } = {}) {
     const res = await fetch(`${base}${path}`, {
       method,
       headers: {
@@ -43,7 +45,7 @@ function client({ fetch, apiUrl, token, repository }) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (allow404 && res.status === 404) return null;
-    if (allow409 && res.status === 409) return { conflict: true };
+    if (conflict.includes(res.status)) return { conflict: true, status: res.status, message: await res.text() };
     if (!res.ok) throw new Error(`${method} ${path}: HTTP ${res.status} ${await res.text()}`);
     if (res.status === 204) return {};
     const text = await res.text();
@@ -77,6 +79,15 @@ export function resolveContributors(commits) {
   return [...seen.values()];
 }
 
+/**
+ * A name from a commit, which anyone can set, made safe for the comment: one code span with its backticks removed
+ * and each `@` followed by a zero-width space, so it can neither mention anyone nor become a link or HTML.
+ */
+export function safeName(name) {
+  const text = String(name).replace(/`/g, "").replace(/[\r\n]+/g, " ").replace(/@/g, "@\u200b").trim();
+  return `\`${text || "unknown"}\``;
+}
+
 /** Splits the contributors into signed, unsigned (with an account) and unknown (no account). */
 export function classify(contributors, record) {
   const ids = new Set(record.signedContributors.map((s) => s.id));
@@ -97,7 +108,10 @@ export function isSignComment(body) {
 }
 
 /** The check's comment, worded as the earlier action's was, with the marker that finds it again. */
-export function commentBody(map, claUrl) {
+export function commentBody(map, claUrl, totalCommits = 0) {
+  if (totalCommits > MAX_COMMITS) {
+    return `${MARKER}\n**CLA check:** This pull request has ${totalCommits} commits, more than the ${MAX_COMMITS} the GitHub API lists, so its contributors cannot all be checked. Please split it into smaller pull requests, or squash its commits, then comment **recheck**.`;
+  }
   if (map.notSigned.length === 0 && map.unknown.length === 0) {
     return `${MARKER}\n**CLA check:** All contributors have signed the CLA ✍️ ✅`;
   }
@@ -112,7 +126,7 @@ export function commentBody(map, claUrl) {
   }
   if (map.unknown.length > 0) {
     const seem = map.unknown.length > 1 ? "seem" : "seems";
-    text += `**${map.unknown.map((c) => c.name).join(", ")}** ${seem} not to be a GitHub user.`;
+    text += `${map.unknown.map((c) => safeName(c.name)).join(", ")} ${seem} not to be a GitHub user.`;
     text += " You need a GitHub account to be able to sign the CLA. If you have already a GitHub account, please [add the email address used for this commit to your account](https://help.github.com/articles/why-are-my-commits-linked-to-the-wrong-user/#commits-are-not-linked-to-any-user).<br/>";
   }
   text += "<sub>You can retrigger this check by commenting **recheck** in this Pull Request.</sub>";
@@ -133,7 +147,9 @@ async function ensureBranch(gh) {
   if (await gh.call("GET", `/git/ref/heads/${BRANCH}`, undefined, { allow404: true })) return;
   const repo = await gh.call("GET", "");
   const head = await gh.call("GET", `/git/ref/heads/${repo.default_branch}`);
-  await gh.call("POST", "/git/refs", { ref: `refs/heads/${BRANCH}`, sha: head.object.sha });
+  const made = await gh.call("POST", "/git/refs", { ref: `refs/heads/${BRANCH}`, sha: head.object.sha }, { conflict: [422] });
+  // Another run created the branch between the lookup and here: that is the branch wanted.
+  if (made.conflict && !/Reference already exists/i.test(made.message)) throw new Error(`POST /git/refs: HTTP 422 ${made.message}`);
 }
 
 /**
@@ -160,7 +176,8 @@ async function recordSignatures(gh, ctx, contributors) {
       "PUT",
       `/contents/${RECORD_PATH}`,
       { message: `${names} has signed the CLA in ${ctx.repository}#${ctx.number}`, content: Buffer.from(formatRecord(record)).toString("base64"), branch: BRANCH, ...(sha === undefined ? {} : { sha }) },
-      { allow409: attempt < WRITE_ATTEMPTS },
+      // 409 or 422: the file changed (or appeared) since it was read; read it again and retry.
+      { conflict: attempt < WRITE_ATTEMPTS ? [409, 422] : [] },
     );
     if (!put.conflict) {
       ctx.log(`recorded: ${names}`);
@@ -170,11 +187,11 @@ async function recordSignatures(gh, ctx, contributors) {
 }
 
 /** Creates the check's comment, or updates the one already there; posts none when all have signed and none exists. */
-async function upsertComment(gh, ctx, map) {
+async function upsertComment(gh, ctx, map, totalCommits = 0) {
   const comments = await gh.all(`/issues/${ctx.number}/comments`);
   const mine = comments.find((c) => c.user?.id === BOT_ID && (c.body?.includes(MARKER) || c.body?.includes(LEGACY_MARKER)));
-  const allSigned = map.notSigned.length === 0 && map.unknown.length === 0;
-  const body = commentBody(map, ctx.claUrl);
+  const allSigned = totalCommits <= MAX_COMMITS && map.notSigned.length === 0 && map.unknown.length === 0;
+  const body = commentBody(map, ctx.claUrl, totalCommits);
   if (mine) {
     if (mine.body !== body) await gh.call("PATCH", `/issues/comments/${mine.id}`, { body });
   } else if (!allSigned) {
@@ -212,8 +229,15 @@ export async function run({ eventName, event, repository, token, apiUrl = "https
     return 0;
   }
 
-  const headSha = isComment ? (await gh.call("GET", `/pulls/${number}`)).head.sha : event.pull_request.head.sha;
+  const pr = isComment ? await gh.call("GET", `/pulls/${number}`) : event.pull_request;
+  const headSha = pr.head.sha;
+  const totalCommits = pr.commits ?? 0;
   const ctx = { number, repository, repoId: event.repository?.id, runId, log, claUrl: `${serverUrl}/${repository}/blob/main/CLA.md` };
+  if (totalCommits > MAX_COMMITS) {
+    await upsertComment(gh, ctx, { signed: [], notSigned: [], unknown: [] }, totalCommits);
+    log(`${totalCommits} commits: more than the ${MAX_COMMITS} the API lists; not checked`);
+    return 1;
+  }
   const contributors = resolveContributors(await gh.all(`/pulls/${number}/commits`));
   const record = isComment ? await recordSignatures(gh, ctx, contributors) : (await readRecord(gh)).record;
   const map = classify(contributors, record);

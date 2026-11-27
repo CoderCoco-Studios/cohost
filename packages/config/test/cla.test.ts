@@ -209,7 +209,7 @@ test("a commit with no linked account fails and is named in the comment", async 
   const gh = fakeGitHub({ commits: [{ author: coco, committer: coco, name: "Coco" }, { author: null, committer: null, name: "Mallory Unlinked" }] });
   assert.equal(await check(gh, "pull_request_target", prEvent()), 1);
   const body = botComment(gh)[0]!.body;
-  assert.match(body, /\*\*Mallory Unlinked\*\* seems not to be a GitHub user/);
+  assert.match(body, /`Mallory Unlinked` seems not to be a GitHub user/);
   // The committer's account stands in when the author has none.
   const gh2 = fakeGitHub({ commits: [{ author: null, committer: coco, name: "Someone" }] });
   assert.equal(await check(gh2, "pull_request_target", prEvent()), 0);

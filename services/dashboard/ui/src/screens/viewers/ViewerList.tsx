@@ -60,7 +60,7 @@ export function ViewerList({ load, query, applied, onQuery, selected, onSelect, 
     e.preventDefault();
     const who = name.trim();
     if (!who) return;
-    const r = await mark.run(() => api.post("/viewers/regular", { name: who, regular: true }, { auth: "viewers", action: "Mark a viewer as regular" }), `${who} is marked as a regular`);
+    const r = await mark.run(() => api.post("/viewers/regular", { name: who, regular: true }, { auth: "control", action: "Mark a viewer as regular" }), `${who} is marked as a regular`);
     if (r.ok) { setName(""); onMarked(); }
   };
 
@@ -83,7 +83,7 @@ export function ViewerList({ load, query, applied, onQuery, selected, onSelect, 
         {load.status === "locked" ? (
           <div className="state">
             <p className="state-title">The viewers list is locked</p>
-            <p className="muted small">Viewer notes need the viewers token. Enter it to read and edit them.</p>
+            <p className="muted small">Viewer notes need the control token, or this browser unlocked by the unlock link.</p>
             <Button variant="primary" onClick={onRetry}>Unlock viewers</Button>
           </div>
         ) : null}

@@ -12,7 +12,7 @@ Orientation:
 
 - Design: LLD § Files, directory resolution and seeding; Loading pipeline; Schema key groups; Environment variables; Decisions & Alternatives.
 - Keys owned by other segments live in the config schema and are specified here (CFG-SCH-*), but the behaviour that reads them is the reader's: salience (SAL-*), affect (AFF-*), eyes (EYES-*), ears (EARS-*), mouth (MOUTH-*, see [mouth.md](mouth.md)), voice (VOICE-*), model-backends (LLM-*), connections (CONN-*).
-- Environment-only values (`CONTROL_*`, `DASHBOARD_HOST`, `VIEWERS_TOKEN`, `HEARTBEAT_INTERVAL_MS`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009); every other operator setting is a `config.yaml` key and every credential a `secrets.yaml` key (CFG-ENV-012).
+- Environment-only values (`CONTROL_*`, `DASHBOARD_HOST`, `HEARTBEAT_INTERVAL_MS`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009); every other operator setting is a `config.yaml` key and every credential a `secrets.yaml` key (CFG-ENV-012).
 
 ## References
 
@@ -41,7 +41,6 @@ Orientation:
 - packages/config/test/config-renderer.test.ts (CFG-SCH-006, CFG-SCH-097 to CFG-SCH-101, CFG-ISO-005, CFG-ISO-011, CFG-USR-021, CFG-LOAD-008)
 - packages/config/test/config-early.test.ts (CFG-SCH-102 to CFG-SCH-112)
 - packages/config/test/config-secrets.test.ts (CFG-SEC-016 to CFG-SEC-018, CFG-USR-016)
-- services/dashboard/test/viewers.test.ts (CFG-ENV-009)
 - services/voice/test/kokoro-request.test.ts (CFG-SCH-029)
 
 ### Code
@@ -50,7 +49,7 @@ Orientation:
 - packages/config/src/errors.ts (`ConfigError`, CFG-RCV-001)
 - packages/config/src/pipeline.ts (placeholder rejection, null dropping, isolation overrides, `parseConfigText`)
 - packages/config/src/schema.ts (zod schemas, `Emotion`)
-- services/dashboard/src/service.ts, services/dashboard/src/viewers.ts (CFG-ENV-009)
+- services/dashboard/src/control.ts (CFG-ENV-009)
 - packages/config/src/editor.ts, packages/config/package.json, packages/config/tsconfig.json (no `CFG-` annotations)
 - config/config.example.yaml, config/expressions.example.yaml, config/personality.example.md, .env.example (realize CFG-ISO-004, CFG-ISO-005, CFG-USR-*; no annotations, since the files are copied into the owner's own files)
 

@@ -77,14 +77,14 @@ test("the file picker is a real file input named by its label, plus a button fac
 });
 
 // @spec DASH-ACC-008
-test("a viewers token the server answered 403 for shows as Not set up on the server, even when a token is stored", () => {
+test("a token the server answered 403 for shows as Not set up on the server, even when a token is stored", () => {
   const app = makeApp();
-  app.rt.access.setToken("viewers", "old", "tab");
-  app.rt.access.markNotSetUp("viewers", true);
+  app.rt.access.setToken("control", "old", "tab");
+  app.rt.access.markNotSetUp("control", true);
   renderApp(<TokenPanel />, app);
-  const viewers = screen.getByRole("group", { name: /Viewers/ });
-  assert.match(viewers.textContent ?? "", /Not set up on the server/);
-  assert.ok(!/Unlocked/.test(viewers.textContent ?? ""), "no Unlocked beside a screen that says not set up");
+  const control = screen.getByRole("group", { name: /Control token/ });
+  assert.match(control.textContent ?? "", /Not set up on the server/);
+  assert.ok(!/Unlocked/.test(control.textContent ?? ""), "no Unlocked beside a token that is not set up");
 });
 
 // @spec DASH-UI-020

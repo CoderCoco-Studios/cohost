@@ -451,13 +451,11 @@ test("the shipped example sets brain.cortex.fallback_ack_chance to 0.25 with a c
 });
 
 // @spec CFG-ENV-009
-test("VIEWERS_TOKEN is env-only: no schema key at any depth, and a YAML key for it is reported as unknown", () => {
-  const keys = (o: unknown, out: string[] = []): string[] => {
-    if (o && typeof o === "object") for (const [k, v] of Object.entries(o)) { out.push(k); keys(v, out); }
-    return out;
-  };
-  assert.equal(keys(loadShipped()).some((k) => /viewers?_?token/i.test(k)), false);
-  { const raw = { dashboard: { viewers_token: "x" } }; assert.ok(unknownKeys(raw, loadShipped()).some((p) => /viewers_token/.test(p))); }
+test("DASHBOARD_HOST is env-only: the dashboard section has no host key, and a YAML key for it is reported as unknown", () => {
+  const shipped = loadShipped() as unknown as { dashboard: Record<string, unknown> };
+  assert.equal(Object.keys(shipped.dashboard).some((k) => /^(dashboard_?)?host$/i.test(k)), false);
+  assert.equal(Object.keys(shipped).some((k) => /^dashboard_?host$/i.test(k)), false);
+  { const raw = { dashboard: { host: "0.0.0.0" } }; assert.ok(unknownKeys(raw, loadShipped()).some((p) => /dashboard\.host/.test(p))); }
 });
 
 // @spec CFG-USR-008

@@ -9,7 +9,7 @@ import { uploadLimits } from "./uploads.js";
 import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
-import { ViewersClient, viewersTokenFromEnv } from "./viewers.js";
+import { ViewersClient } from "./viewers.js";
 import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners, type FeedConnection } from "./host.js";
@@ -61,9 +61,8 @@ export function dashboardService(deps: DashboardDeps = {}) {
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
 
-      // @spec CFG-ENV-009, DASH-VIEWERS-007
-      const viewersToken = viewersTokenFromEnv(env);
-      if (!viewersToken) log.warn("VIEWERS_TOKEN is not set: the Viewers page is locked (every /viewers route answers 403)");
+      // @spec DASH-VIEWERS-007
+      if (controlToken === undefined) log.warn("CONTROL_TOKEN is not set: viewer notes are locked (every /viewers route answers 403)");
       const viewers = new ViewersClient(bus);
 
       // @spec DASH-STACK-007
@@ -82,7 +81,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const models = { store, applied, maxBytes: cfg.dashboard.models.max_bytes };
       // @spec DASH-AVR-001, DASH-AVR-011, DASH-AVR-021
       const relay = createAvatarRelay({ bus, applied, clock: deps.clock ?? systemClock, log });
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, viewersToken, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken, unlock: links, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken, unlock: links, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
       const redacted = new WeakSet(); // sockets that arrived beyond loopback (DASH-FEED-011)

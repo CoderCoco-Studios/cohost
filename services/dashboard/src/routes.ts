@@ -33,8 +33,6 @@ export interface DashboardDeps {
   uploads?: UploadLimits;
   /** Request/reply client for the Viewers page; the feed hands it memory's replies. Defaults to a private client that never hears one. */
   viewers?: ViewersClient;
-  /** `VIEWERS_TOKEN` (env only). Unset or empty locks every `/viewers` route with a 403; independent of `control`. */
-  viewersToken?: string;
   loadPersonality: () => string;
   savePersonality: (text: string) => void;
   /** Derived per-service health (HealthTracker snapshot). */
@@ -104,7 +102,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   };
   const secrets = { token: settings.controlToken, file: d.secretsFile, config: settings.file, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
   const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
-  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
+  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: settings.controlToken };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
   const unlock = { token: gateToken, links: d.unlock ?? new UnlockLinks() };

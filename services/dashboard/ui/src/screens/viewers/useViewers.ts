@@ -5,7 +5,7 @@ import { figuresFrom, type MemoryFigures } from "./memory";
 import type { ViewerDetailData, ViewerSummary } from "./types";
 
 export interface Load<T> {
-  /** `locked`: the operator cancelled the Access dialog or locked the page. `notSetUp`: the server has no viewers token (403). */
+  /** `locked`: the operator cancelled the Access dialog or locked the page. `notSetUp`: the server has no control token (403). */
   status: "loading" | "ready" | "error" | "locked" | "notSetUp";
   /** The last good answer; kept while a later load fails (DASH-VIEWERS-017). */
   data?: T;
@@ -18,14 +18,15 @@ const enc = encodeURIComponent;
 
 /**
  * The Viewers screen's data: the list (searched, debounced, superseded answers ignored), the selected viewer's panel and
- * the `brain.memory` figures. Every request is gated by the viewers token through the api client's Access flow: a 401 opens
- * the dialog and retries once; a cancel or a Lock leaves the screen locked; a 403 means the server has no token
+ * the `brain.memory` figures. Every request is gated by the dashboard's one token through the api client's Access flow: it goes
+ * out with the held token or this browser's session cookie, a 401 opens the dialog and retries once; a cancel or a Lock leaves
+ * the screen locked; a 403 means the server has no token
  * (DASH-VIEWERS-010, -016, -017, -022, -023).
  */
 // @spec DASH-VIEWERS-010, DASH-VIEWERS-016, DASH-VIEWERS-017, DASH-VIEWERS-022
 export function useViewers() {
   const api = useApi();
-  const { state: tokens, access } = useAccess();
+  const { state: tokens } = useAccess();
   const [query, setQuery] = useState("");
   const [applied, setApplied] = useState("");
   const [list, setList] = useState<Load<ViewerSummary[]>>({ status: "loading" });
@@ -43,20 +44,20 @@ export function useViewers() {
   const loadList = useCallback(async (q: string) => {
     const mine = ++seq.current;
     inflight.current++;
-    const r = await api.get<{ viewers?: ViewerSummary[] }>(q ? `/viewers?q=${enc(q)}` : "/viewers", { auth: "viewers", action: "Load viewers" });
+    const r = await api.get<{ viewers?: ViewerSummary[] }>(q ? `/viewers?q=${enc(q)}` : "/viewers", { auth: "control", action: "Load viewers" });
     inflight.current--;
     if (!alive.current || mine !== seq.current) return; // a newer search superseded this answer
-    if (r.ok) { access.markNotSetUp("viewers", false); setList({ status: "ready", data: r.data?.viewers ?? [] }); }
+    if (r.ok) { setList({ status: "ready", data: r.data?.viewers ?? [] }); }
     else if (r.locked) setList({ status: "locked" });
-    else if (r.status === 403) { access.markNotSetUp("viewers", true); setList({ status: "notSetUp", error: r.detail }); }
+    else if (r.status === 403) { setList({ status: "notSetUp", error: r.detail }); }
     else setList((prev) => ({ status: "error", data: prev.data, error: `Could not load viewers: ${describe(r)}` }));
-  }, [api, access]);
+  }, [api]);
 
   const loadDetail = useCallback(async (key: string, fresh: boolean) => {
     const mine = ++detailSeq.current;
     if (fresh) setDetail({ status: "loading" });
     inflight.current++;
-    const r = await api.get<ViewerDetailData>(`/viewers/${enc(key)}`, { auth: "viewers", action: "Load a viewer" });
+    const r = await api.get<ViewerDetailData>(`/viewers/${enc(key)}`, { auth: "control", action: "Load a viewer" });
     inflight.current--;
     if (!alive.current || mine !== detailSeq.current) return;
     if (r.ok) setDetail({ status: "ready", data: r.data });
@@ -81,7 +82,7 @@ export function useViewers() {
 
   // Lock (from the Access panel) empties the screen without asking again; unlocking elsewhere loads it. A token the server
   // rejected mid-request is handled by that request itself, so nothing happens here while one is in flight.
-  const present = tokens.viewers.present;
+  const present = tokens.control.present || tokens.unlocked;
   const prevPresent = useRef(present);
   useEffect(() => {
     if (prevPresent.current === present) return;

@@ -19,7 +19,7 @@ const nonEmpty = (v: string | undefined): string | undefined => (v !== undefined
  * The full-surface address (`DASHBOARD_HOST`, else loopback) and the control configuration, shared by normal mode and config
  * recovery mode. Throws when control is enabled without a token, and when the address is not loopback while control is off.
  */
-// @spec DASH-CTRL-003, DASH-HOST-007
+// @spec DASH-CTRL-003, DASH-HOST-007, CFG-ENV-009
 export function fullSurfaceBind(env: NodeJS.ProcessEnv): { bind: string; cfg: ReturnType<typeof loadControlConfig> } {
   const bind = nonEmpty(env.DASHBOARD_HOST) ?? LOOPBACK_BIND;
   const cfg = loadControlConfig(env);
@@ -43,7 +43,7 @@ export function setupControl(
 ): ControlSetup {
   const { bind, cfg } = fullSurfaceBind(env);
   if (!cfg.enabled) return { bind };
-  if (!isLoopback(bind)) log.warn({ bind }, "the dashboard is bound to a non-loopback address: CONTROL_TOKEN and VIEWERS_TOKEN travel in cleartext over plain HTTP; use a reverse proxy or SSH tunnel");
+  if (!isLoopback(bind)) log.warn({ bind }, "the dashboard is bound to a non-loopback address: CONTROL_TOKEN and the session cookie travel in cleartext over plain HTTP; use a reverse proxy or SSH tunnel");
   if (cfg.advanced) log.warn("CONTROL_ADVANCED=1: redis/postgres can be stopped from the dashboard");
   const rt = runtime ?? new ComposeRuntime({ cwd: findWorkspaceRoot() ?? process.cwd(), warn: (msg) => log.warn(msg) });
   const controller = new ServiceController({

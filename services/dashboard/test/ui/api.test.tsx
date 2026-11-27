@@ -131,12 +131,12 @@ test("a gated request with no token held is sent without one, and the Access dia
   assert.equal(access.state.get().prompt, null, "an unlocked browser sends its session cookie, so nothing asks before a 401");
 });
 
-test("the viewers token is separate from the control token", async () => {
+test("a /viewers request carries the one control token", async () => {
   const { f, api, access } = setup();
-  access.setToken("control", "c", "tab"); access.setToken("viewers", "v", "tab");
+  access.setToken("control", "c", "tab");
   f.on("GET /viewers", { json: { viewers: [] } });
-  await api.get("/viewers", { auth: "viewers", action: "Load viewers" });
-  assert.equal(f.calls[0]!.headers.authorization, "Bearer v");
+  await api.get("/viewers", { auth: "control", action: "Load viewers" });
+  assert.equal(f.calls[0]!.headers.authorization, "Bearer c");
 });
 
 test("a raw body (an uploaded image or audio) is sent as given with its content type", async () => {

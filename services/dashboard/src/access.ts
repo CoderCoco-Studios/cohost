@@ -134,6 +134,13 @@ const BAD_LINK_PAGE = "This unlock link is not valid: it was already used, it ex
 export function handleUnlock(d: { token: string | undefined; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
   if (req.method === "GET" && url.pathname === "/unlock") {
     const ok = d.token !== undefined && d.links.consume(url.searchParams.get("n"));
+    // The browser the link already unlocked may open it again (a second click on the terminal line, a restored tab): it goes
+    // on to its unlocked dashboard, keeping the session it holds.
+    if (!ok && hasSession(d.token, req)) {
+      res.writeHead(303, { location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+      res.end();
+      return true;
+    }
     if (!ok) {
       res.writeHead(400, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
       res.end(d.token === undefined ? NO_TOKEN_PAGE : BAD_LINK_PAGE);

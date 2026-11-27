@@ -176,8 +176,8 @@ Work down the list:
 
 ### The Viewers screen is not set up or says 403
 
-- **Cause:** `VIEWERS_TOKEN` is empty or missing, so the screen stays locked on purpose.
-- **Fix:** set `VIEWERS_TOKEN` in `.env` and restart the dashboard. See [Memory and viewer notes](tune/memory.md).
+- **Cause:** `CONTROL_TOKEN` is empty or missing, so nothing can unlock viewer notes and the screen stays locked on purpose.
+- **Fix:** set `CONTROL_TOKEN` in `.env` (`echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env`), restart the dashboard and open the unlock link it prints. See [Memory and viewer notes](tune/memory.md).
 
 ### The memory service will not start after I changed the embedding model
 

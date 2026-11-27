@@ -257,7 +257,7 @@ test("projecting an operator file that sets every path of SECRET_PATHS gives eac
   assert.equal((read(w, "ears") as { ears: { http: { verifier: string } } }).ears.http.verifier, key);
 });
 
-// @spec CFG-SEC-020, DEPLOY-SECRET-012
+// @spec CFG-SEC-020
 test("a unit that declares no secret path but has a derived entry still gets its projection, holding only that entry", async () => {
   const w = workspace(OPERATOR);
   const key = "cd".repeat(32);

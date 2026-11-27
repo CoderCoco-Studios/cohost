@@ -73,7 +73,7 @@ test("a bearer that verifies while the store has no listener key re-derives it",
   const sb = sandbox();
   const s = await sb.open();
   s.setToken(TOKEN);
-  await s.resetCredentials({ isTTY: false, write: () => undefined });
+  await s.resetCredentials({ isTTY: false, write: () => undefined, warn: () => undefined });
   assert.equal(s.earsListenerKey(), undefined);
   assert.equal(await s.checkBearer("not-the-token-at-all-not-the-token"), "bad");
   assert.equal(s.earsListenerKey(), undefined);

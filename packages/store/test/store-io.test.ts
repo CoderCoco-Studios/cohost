@@ -136,3 +136,14 @@ test("parts replace only themselves: the settings, the personality, the expressi
   assert.deepEqual(settings.plan.notes, ["llm.openai.api_key: a credential in the settings, not imported as a setting (import it with --secrets)"]);
   s.close();
 });
+
+// @spec STORE-IO-003
+test("an export whose key derivation parameters are out of bounds is an issue at secrets.kdf, not a crash", async () => {
+  const { s } = await populated();
+  const doc = parseYaml(exportStore(s, { passphrase: PASS })) as { secrets: { kdf: Record<string, unknown>; values: Record<string, string> } };
+  for (const bad of [{ N: 1.5 }, { N: 3000 }, { N: 1 << 22 }, { r: 0 }, { p: 9 }, { N: 1 << 20, r: 8 }, { salt: "abc" }, { N: "x" }]) {
+    const r = openSecrets({ ...doc.secrets, kdf: { ...doc.secrets.kdf, ...bad } } as never, PASS);
+    assert.deepEqual(r.issues.map((i) => i.path), ["secrets.kdf"], JSON.stringify(bad));
+  }
+  s.close();
+});

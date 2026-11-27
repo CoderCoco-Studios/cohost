@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseYaml, secretPathOf, stringifyYaml, writeFileAtomic } from "@cohost/config";
 import { exportStore, importPlan, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
 import { StoreError, type StoreIssue } from "../errors.js";
+import { storeFile } from "../paths.js";
 import { checkStore, moveDamagedAside, openStore, restoreBackup, sectionOf, type Store, type StoreOptions, type WriteResult } from "../store.js";
 import { generateToken, MIN_TOKEN_LENGTH } from "../token.js";
+import type { NoticeOut } from "../keys.js";
 import type { CliIo } from "./io.js";
 
 /** The commands of the `config:*` tasks (STORE-TASK-001), each `mise run config:<command> -- <arguments>`. */
@@ -69,8 +71,9 @@ const getIn = (root: unknown, segs: readonly string[]): unknown =>
 // @spec STORE-TASK-002, STORE-TASK-003, STORE-TASK-004, STORE-TASK-005, STORE-TASK-006, STORE-TOK-001, STORE-KEY-007, STORE-KEY-008, STORE-KEY-009, STORE-IO-002, STORE-IO-003, STORE-IO-004
 export async function runCli(argv: readonly string[], io: CliIo, opts: StoreOptions = {}): Promise<number> {
   const [command, ...args] = argv;
-  const notice = { isTTY: io.stdoutIsTTY, write: (t: string) => io.out(t) };
-  const base: StoreOptions = { notice, warn: (m) => io.err(`${m}\n`), ...opts };
+  // The recovery key goes to standard output only when it is a terminal; the pointer that replaces it goes to standard error.
+  const notice: NoticeOut = { isTTY: io.stdoutIsTTY, write: (t: string) => io.out(t), warn: (t: string) => io.err(t) };
+  const base: StoreOptions = { ...opts, notice, warn: opts.warn ?? ((m) => io.err(`${m}\n`)) };
   try {
     switch (command) {
       case "get": return await withStore(base, (s) => get(s, args, io));
@@ -210,11 +213,10 @@ async function key(args: readonly string[], io: CliIo, opts: StoreOptions): Prom
         s.confirmRecoveryKey();
         io.out("the recovery key is marked as saved\n");
         return 0;
-      case "rotate": {
-        const text = s.rotateKey();
-        io.out(`The master key was rotated. The new recovery key is:\n\n  ${text}\n\nIt is the only way to recover the stored credentials if the key file is lost: keep it in a password manager; the old one no longer opens this store.\n`);
+      case "rotate":
+        s.rotateKey(opts.notice!);
+        io.out(`the master key was rotated; the old key file is kept beside ${s.keyFile} for backups taken before now\n`);
         return 0;
-      }
       default:
         s.restoreKey(await io.askHidden("recovery key: "));
         io.out(`the master key file ${s.keyFile} is restored\n`);
@@ -231,7 +233,7 @@ async function resetCredentials(io: CliIo, opts: StoreOptions): Promise<number> 
   return withStore({ ...opts, keyOptional: true }, async (s) => {
     const answer = await io.ask(`This deletes every stored credential and generated key of ${s.file}. Type "${RESET_CONFIRMATION}" to go on: `);
     if (answer.trim() !== RESET_CONFIRMATION) { io.err("nothing was changed\n"); return 1; }
-    await s.resetCredentials(opts.notice ?? { isTTY: io.stdoutIsTTY, write: (t) => io.out(t) });
+    await s.resetCredentials(opts.notice!);
     io.out("every credential was deleted and a new master key made. ears has no listener key until the next bearer check that succeeds or the next mise run config:token.\n");
     return 0;
   });
@@ -259,12 +261,23 @@ async function exportCmd(s: Store, args: readonly string[], io: CliIo): Promise<
 const PARTS = ["settings", "personality", "expressions", "secrets"] as const;
 
 // @spec STORE-IO-003, STORE-IO-004, STORE-TASK-006
-async function importCmd(args: readonly string[], io: CliIo, opts: StoreOptions): Promise<number> {
+async function importCmd(args: readonly string[], io: CliIo, opts: StoreOptions, throwaway = false): Promise<number> {
   const { flags, rest } = parseArgs(args, PARTS);
   const parts = PARTS.filter((p) => flags.has(p));
   if ((rest.length === 1) === (parts.length > 0) || rest.length > 1) throw new Usage("import takes one export file, or the parts --settings, --personality, --expressions and --secrets");
   const read = (f: string): string => { try { return readFileSync(resolve(f), "utf8"); } catch { throw new StoreError("usage", `cannot read ${resolve(f)}`); } };
   const dryRun = flags.has("dry-run");
+  // A dry run with no store yet creates nothing: it compares against a throwaway store, seeded as a new one would be, in a
+  // temporary directory with its own key file.
+  if (dryRun && !throwaway && !existsSync(storeFile(opts.dataDir))) {
+    const tmp = mkdtempSync(join(tmpdir(), "cohost-dry-run-"));
+    try {
+      io.err(`there is no settings store at ${storeFile(opts.dataDir)} yet: comparing with a new, seeded store; nothing is created\n`);
+      return await importCmd(args, io, { ...opts, dataDir: join(tmp, "data"), keyFile: join(tmp, "master.key"), notice: { isTTY: false, write: () => undefined, warn: () => undefined } }, true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
   let plan: ImportPlan;
   let issues: StoreIssue[];
   if (rest[0] !== undefined) ({ plan, issues } = readExport(read(rest[0])));

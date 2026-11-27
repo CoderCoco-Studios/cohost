@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { parseYaml } from "@cohost/config";
 import { checkStore, storeFile } from "../src/index.js";
 import { RESET_CONFIRMATION, runCli } from "../src/cli/run.js";
 import { fakeIo, repo, sandbox } from "./helpers.js";
@@ -215,4 +216,43 @@ test("mise.toml runs each config:* task through the store's entry point after bu
     assert.deepEqual(task.run, ["tsc -b packages/store", `node packages/store/dist/cli/index.js ${t}`], t);
     assert.deepEqual(task.depends, ["install"], t);
   }
+});
+
+// @spec STORE-KEY-002, STORE-IO-002
+test("without a terminal the recovery-key pointer goes to standard error, so config:export to standard output is pure YAML", async () => {
+  const sb = sandbox();
+  const { notice: _ignored, ...opts } = sb.opts;
+  const io = fakeIo();
+  assert.equal(await runCli(["export"], io, opts), 0);
+  assert.match(io.stderr, /a recovery key was created; run mise run config:key -- --show/);
+  assert.ok(!io.stdout.includes("recovery key"));
+  assert.equal((parseYaml(io.stdout) as { cohost_export: number }).cohost_export, 1);
+});
+
+// @spec STORE-IO-003
+test("config:import --dry-run with no store yet creates neither the store nor the key file", async () => {
+  const sb = sandbox();
+  const dir = mkdtempSync(join(tmpdir(), "cohost-dry-"));
+  writeFileSync(join(dir, "personality.md"), "# Dry\n");
+  const io = fakeIo();
+  assert.equal(await runCli(["import", "--personality", join(dir, "personality.md"), "--dry-run"], io, sb.opts), 0, io.stderr);
+  assert.match(io.stderr, /no settings store .* yet/);
+  assert.match(io.stdout, /dry run, nothing written/);
+  assert.match(io.stdout, /changed: personality/);
+  assert.equal(existsSync(storeFile(sb.data)), false);
+  assert.equal(existsSync(sb.keyFile), false);
+});
+
+// @spec STORE-KEY-007
+test("config:key --rotate keeps the old key file and, without a terminal, points at --show instead of printing the key", async () => {
+  const sb = sandbox();
+  await runCli(["secret", "llm.openai.api_key"], fakeIo({ stdin: "sk-1" }), sb.opts);
+  const { notice: _ignored, ...opts } = sb.opts;
+  const before = readFileSync(sb.keyFile, "utf8").trim();
+  const io = fakeIo();
+  assert.equal(await runCli(["key", "--rotate"], io, opts), 0, io.stderr);
+  const after = readFileSync(sb.keyFile, "utf8").trim();
+  assert.notEqual(after, before);
+  assert.ok(!io.stdout.includes(after) && !io.stderr.includes(after));
+  assert.match(io.stderr, /config:key -- --show/);
 });

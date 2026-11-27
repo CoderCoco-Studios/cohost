@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { StoreError } from "./errors.js";
 
@@ -29,6 +29,18 @@ const modeChecked = (mode: number): boolean => process.platform !== "win32" && (
 
 /** Whether `mode` grants any permission to group or other, where modes are checked. */
 export const looseMode = (mode: number): boolean => modeChecked(mode) && (mode & 0o077) !== 0;
+/** Whether `mode` lets group or other write, where modes are checked. */
+export const writableByOthers = (mode: number): boolean => modeChecked(mode) && (mode & 0o022) !== 0;
+
+/**
+ * Refuses a directory group or other can write (someone else could swap the files in it), naming it and `chmod 700`; does
+ * nothing when it does not exist.
+ */
+export function checkPrivateDir(dir: string, what: string): void {
+  let mode: number;
+  try { mode = statSync(dir).mode; } catch { return; }
+  if (writableByOthers(mode)) throw new StoreError("key-mode", `the ${what} directory ${dir} can be written by other users; run: chmod 700 ${dir}`);
+}
 
 /**
  * Reads the master key from `file`: undefined when the file does not exist. A file that grants group or other any permission is
@@ -36,14 +48,20 @@ export const looseMode = (mode: number): boolean => modeChecked(mode) && (mode &
  */
 // @spec STORE-KEY-005
 export function readKeyFile(file: string): Buffer | undefined {
-  let text: string;
+  let fd: number;
   try {
-    const st = statSync(file);
-    if (looseMode(st.mode)) throw new StoreError("key-mode", `the master key file ${file} can be read by other users; run: chmod 600 ${file}`);
-    text = readFileSync(file, "utf8");
+    fd = openSync(file, "r");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw e;
+  }
+  let text: string;
+  try {
+    // One descriptor for the mode check and the read, so the file checked is the file read.
+    if (looseMode(fstatSync(fd).mode)) throw new StoreError("key-mode", `the master key file ${file} can be read by other users; run: chmod 600 ${file}`);
+    text = readFileSync(fd, "utf8");
+  } finally {
+    closeSync(fd);
   }
   const key = parseKey(text);
   if (!key) throw new StoreError("key-wrong", `the master key file ${file} does not hold a key of the form ${KEY_PREFIX}<base64url>`);
@@ -95,12 +113,13 @@ export function createKeyFile(file: string): { key: Buffer; created: boolean } {
   }
 }
 
-/** Replaces the key file through a temporary file with mode 0600 renamed over it (STORE-KEY-007). Returns the temporary path's committer. */
-export function stageKeyFile(file: string, key: Buffer): { commit(): void; abort(): void } {
+/** Stages a replacement key file: a temporary file with mode 0600 beside it, renamed over it by `commit` (STORE-KEY-007). */
+export function stageKeyFile(file: string, key: Buffer): { path: string; commit(): void; abort(): void } {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const tmp = tempIn(file);
   writeFileSync(tmp, `${formatKey(key)}\n`, { flag: "wx", mode: 0o600 });
   return {
+    path: tmp,
     commit: () => renameSync(tmp, file),
     abort: () => { try { unlinkSync(tmp); } catch { /* already gone */ } },
   };
@@ -134,20 +153,23 @@ export function open(key: Buffer, aad: Buffer, s: Sealed): Buffer | undefined {
   }
 }
 
-/** Whether standard output is a terminal, and how to write to it: the recovery-key notice's only outlet. */
-export interface NoticeOut { isTTY?: boolean | undefined; write(text: string): unknown }
+/**
+ * Where the recovery-key notice goes: standard output when it is a terminal (`write`), and the pointer that replaces the key
+ * otherwise on standard error (`warn`), so a redirected standard output (`config:export > file`) never receives it.
+ */
+export interface NoticeOut { isTTY?: boolean | undefined; write(text: string): unknown; warn(text: string): unknown }
 
 /**
  * Prints the recovery-key notice for a key this program created (STORE-KEY-002): to a terminal, the key and why to keep it;
  * otherwise only that one was created and how to see it. Never through a logger or the bus. Returns whether the key was shown.
  */
 // @spec STORE-KEY-002
-export function recoveryNotice(out: NoticeOut, key: Buffer): boolean {
+export function recoveryNotice(out: NoticeOut, key: Buffer, headline = "cohost created a new master key."): boolean {
   if (out.isTTY) {
-    out.write(`cohost created a new master key. Its recovery key is:\n\n  ${formatKey(key)}\n\n` +
+    out.write(`${headline} Its recovery key is:\n\n  ${formatKey(key)}\n\n` +
       "It is the only way to recover the stored credentials if the key file is lost: keep it in a password manager.\n");
     return true;
   }
-  out.write("a recovery key was created; run mise run config:key -- --show\n");
+  out.warn("a recovery key was created; run mise run config:key -- --show\n");
   return false;
 }

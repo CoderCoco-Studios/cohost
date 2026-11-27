@@ -219,3 +219,80 @@ test("moving a damaged store aside renames the database and its WAL and shared-m
   assert.match(suffix, /^\.damaged-\d{8}T\d{6}Z$/);
   assert.deepEqual(readdirSync(join(sb.data, "store")).toSorted(), [`cohost.db${suffix}`, `cohost.db-shm${suffix}`, `cohost.db-wal${suffix}`].toSorted());
 });
+
+// @spec STORE-TASK-005, STORE-DB-008
+test("restoring the oldest of ten backups works: the pre-restore backup never prunes the backup being restored", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.setKey("cohost.timezone", "Asia/Tokyo");
+  const oldest = await s.backup();
+  s.setKey("cohost.timezone", "Europe/Rome");
+  for (let i = 0; i < 9; i++) await s.backup();
+  assert.equal(readdirSync(join(sb.data, "store", "backups")).length, 10);
+  await restoreBackup(oldest, sb.opts);
+  assert.equal(s.config().cohost.timezone, "Asia/Tokyo");
+  assert.ok(existsSync(oldest), "the restored backup is kept");
+  assert.deepEqual(readdirSync(join(sb.data, "store")).filter((n) => n.startsWith(".restore-")), [], "the private copy is removed");
+  s.close();
+});
+
+// @spec STORE-DB-011
+test("the restored revision is read inside the copy's transaction: a write that lands first is counted", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  const backup = await s.backup();
+  const other = await sb.open();
+  other.setKey("cohost.timezone", "Europe/Oslo");
+  const before = other.revision();
+  assert.equal(s.replaceFrom(backup), before + 1);
+  assert.equal(other.revision(), before + 1);
+  other.close();
+  s.close();
+});
+
+// @spec STORE-TASK-005
+test("a backup with another schema version or other columns is refused; the source is read only and a missing one is never created", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  const rev = s.revision();
+  const newer = await s.backup();
+  let db = raw(newer);
+  db.exec(`UPDATE meta SET value = '${SCHEMA_VERSION + 1}' WHERE key = 'schema_version'`);
+  db.close();
+  const older = await s.backup();
+  db = raw(older);
+  db.exec("ALTER TABLE documents ADD COLUMN extra TEXT");
+  db.close();
+  const before = readFileSync(older);
+  for (const f of [newer, older]) {
+    const e = await rejection(restoreBackup(f, sb.opts));
+    assert.equal(e.kind, "usage", e.message);
+    assert.ok(e.message.includes(f) && e.message.includes("nothing was changed"), e.message);
+  }
+  assert.ok(readFileSync(older).equals(before), "the source is not written");
+  const missing = join(sb.data, "no-such-backup.db");
+  assert.equal((await rejection(restoreBackup(missing, sb.opts))).kind, "usage");
+  assert.equal(existsSync(missing), false);
+  assert.throws(() => s.replaceFrom(missing), (e: StoreError) => e.kind === "usage");
+  assert.equal(existsSync(missing), false);
+  assert.equal(s.revision(), rev);
+  s.close();
+});
+
+// @spec STORE-TASK-005, STORE-KEY-007
+test("a backup taken before a rotation restores with the kept rotated key, which becomes the key file again", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.write({ secrets: { "llm.openai.api_key": "sk-before" } });
+  const backup = await s.backup();
+  const oldKey = readFileSync(sb.keyFile, "utf8");
+  s.rotateKey({ isTTY: false, write: () => undefined, warn: () => undefined });
+  s.write({ secrets: { "llm.openai.api_key": "sk-after" } });
+  s.close();
+  await restoreBackup(backup, sb.opts);
+  assert.equal(readFileSync(sb.keyFile, "utf8"), oldKey);
+  const r = await sb.open();
+  assert.equal(r.secret("llm.openai.api_key"), "sk-before");
+  r.close();
+  assert.ok(readdirSync(join(sb.keyFile, "..")).some((n) => n.startsWith("master.key.replaced-")), "the rotated-to key is kept as replaced");
+});

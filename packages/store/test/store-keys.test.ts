@@ -46,8 +46,9 @@ test("on a terminal the recovery key is printed with why to keep it; otherwise o
 
   const piped = sandbox(false);
   const b = await piped.open();
-  assert.deepEqual(piped.notices, ["a recovery key was created; run mise run config:key -- --show\n"]);
-  assert.ok(!piped.notices.join("").includes(KEY_PREFIX));
+  assert.deepEqual(piped.notices, [], "nothing reaches standard output");
+  assert.deepEqual(piped.pointers, ["a recovery key was created; run mise run config:key -- --show\n"]);
+  assert.ok(!piped.pointers.join("").includes(KEY_PREFIX));
   assert.equal(b.recoveryKeyUnconfirmed(), true);
   b.confirmRecoveryKey();
   assert.equal(b.recoveryKeyUnconfirmed(), false);
@@ -133,15 +134,19 @@ test("each credential is AES-256-GCM with a fresh nonce, bound to store, table a
 });
 
 // @spec STORE-KEY-007
-test("rotation re-encrypts every row under a new key, updates key_id and the 0600 key file, and returns the new recovery key", async () => {
+test("rotation re-encrypts every row under a new key, keeps the old key file as rotated-<stamp> 0600, and shows the new recovery key", async () => {
   const sb = sandbox();
   const s = await sb.open();
+  s.confirmRecoveryKey();
   s.write({ secrets: { "llm.openai.api_key": "sk-r" } });
   s.setToken("t".repeat(40));
   const oldText = readFileSync(sb.keyFile, "utf8").trim();
   const session = s.sessionKey();
-  const text = s.rotateKey();
+  const shown: string[] = [];
+  const text = s.rotateKey({ isTTY: true, write: (t) => { shown.push(t); }, warn: () => undefined });
   assert.notEqual(text, oldText);
+  assert.ok(shown.join("").includes(text), "the new recovery key is shown on a terminal");
+  assert.equal(s.recoveryKeyUnconfirmed(), false);
   assert.equal(readFileSync(sb.keyFile, "utf8").trim(), text);
   assert.equal(mode(sb.keyFile), 0o600);
   assert.equal(s.secret("llm.openai.api_key"), "sk-r");
@@ -150,7 +155,83 @@ test("rotation re-encrypts every row under a new key, updates key_id and the 060
   assert.equal(again.secret("llm.openai.api_key"), "sk-r");
   assert.ok(again.sessionKey()?.equals(session!));
   again.close();
-  assert.deepEqual(readdirSync(dirname(sb.keyFile)), ["master.key"]);
+  const names = readdirSync(dirname(sb.keyFile)).toSorted();
+  assert.equal(names.length, 2, names.join(","));
+  const kept = join(dirname(sb.keyFile), names.find((n) => n !== "master.key")!);
+  assert.match(kept, /master\.key\.rotated-\d{8}T\d{6}Z$/);
+  assert.equal(mode(kept), 0o600);
+  assert.equal(readFileSync(kept, "utf8").trim(), oldText);
+});
+
+// @spec STORE-KEY-007, STORE-KEY-002
+test("without a terminal, rotation prints only the pointer, on standard error, and sets the unconfirmed flag", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.confirmRecoveryKey();
+  const out: string[] = [];
+  const err: string[] = [];
+  s.rotateKey({ isTTY: false, write: (t) => { out.push(t); }, warn: (t) => { err.push(t); } });
+  assert.deepEqual(out, []);
+  assert.deepEqual(err, ["a recovery key was created; run mise run config:key -- --show\n"]);
+  assert.equal(s.recoveryKeyUnconfirmed(), true);
+  s.close();
+});
+
+// @spec STORE-KEY-006
+test("a row copied from another store, or a secrets row swapped into keys, fails to decrypt: the associated data binds store id and table", async () => {
+  const a = sandbox();
+  const sa = await a.open();
+  sa.write({ secrets: { "llm.openai.api_key": "sk-a" } });
+  const key = readFileSync(a.keyFile, "utf8");
+  sa.close();
+  // A second store under the same key: only the store id differs.
+  const b = sandbox();
+  const sb2 = await b.open({ keyFile: a.keyFile });
+  sb2.write({ secrets: { "chat.youtube.api_key": "yt-b" } });
+  sb2.close();
+  const da = new DatabaseSync(storeFile(a.data));
+  const row = da.prepare("SELECT nonce, tag, ciphertext, key_id FROM secrets WHERE path = 'llm.openai.api_key'").get()!;
+  // Same path, same key, the other store.
+  const db2 = new DatabaseSync(storeFile(b.data));
+  db2.prepare("INSERT INTO secrets (path, nonce, tag, ciphertext, key_id, updated_at) VALUES ('llm.openai.api_key', ?, ?, ?, ?, 'x')")
+    .run(row.nonce as Uint8Array, row.tag as Uint8Array, row.ciphertext as Uint8Array, String(row.key_id));
+  db2.close();
+  const s2 = await b.open({ keyFile: a.keyFile });
+  assert.throws(() => s2.secret("llm.openai.api_key"), (e: StoreError) => e.kind === "damaged");
+  s2.close();
+  // The same row moved to the keys table under the same name.
+  da.prepare("INSERT INTO keys (name, nonce, tag, ciphertext, key_id, updated_at) VALUES ('session', ?, ?, ?, ?, 'x')")
+    .run(row.nonce as Uint8Array, row.tag as Uint8Array, row.ciphertext as Uint8Array, String(row.key_id));
+  da.close();
+  const s1 = await a.open();
+  assert.throws(() => s1.sessionKey(), (e: StoreError) => e.kind === "damaged" && e.message.includes("keys.session"));
+  s1.close();
+  assert.equal(readFileSync(a.keyFile, "utf8"), key);
+});
+
+// @spec STORE-KEY-006
+test("a row whose key id is not the current key's is reported as under another key, not as damage", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.write({ secrets: { "llm.openai.api_key": "sk-x" } });
+  s.close();
+  const db = new DatabaseSync(storeFile(sb.data));
+  db.exec("UPDATE secrets SET key_id = '0123456789abcdef'");
+  db.close();
+  const r = await sb.open();
+  assert.throws(() => r.secret("llm.openai.api_key"), (e: StoreError) => e.kind === "key-wrong" && e.message.includes("0123456789abcdef"));
+  r.close();
+  assert.equal((await checkStore(sb.opts))[0]?.cause, "key");
+});
+
+// @spec STORE-KEY-005
+test("a key directory group or other can write is refused naming it and chmod 700", async () => {
+  const sb = sandbox();
+  (await sb.open()).close();
+  chmodSync(dirname(sb.keyFile), 0o770);
+  const e = await rejection(sb.open());
+  assert.equal(e.kind, "key-mode");
+  assert.ok(e.message.includes(dirname(sb.keyFile)) && e.message.includes("chmod 700"));
 });
 
 // @spec STORE-KEY-008
@@ -182,7 +263,7 @@ test("discarding credentials deletes every secret and key row, makes a new key a
   unlinkSync(sb.keyFile);
   const r = await sb.open({ keyOptional: true });
   const notices: string[] = [];
-  await r.resetCredentials({ isTTY: true, write: (t) => { notices.push(t); } });
+  await r.resetCredentials({ isTTY: true, write: (t) => { notices.push(t); }, warn: () => undefined });
   assert.deepEqual(r.secretPaths(), []);
   assert.ok(r.sessionKey());
   assert.equal(r.earsListenerKey(), undefined);
@@ -190,5 +271,16 @@ test("discarding credentials deletes every secret and key row, makes a new key a
   assert.ok(notices.join("").includes(readFileSync(sb.keyFile, "utf8").trim()));
   assert.equal(readdirSync(join(sb.data, "store", "backups")).length, 1);
   r.close();
+  // The key file present at the reset is kept beside it, 0600, so the pre-reset backup still decrypts with it.
+  const sb2 = sandbox();
+  const s2 = await sb2.open();
+  s2.write({ secrets: { "llm.openai.api_key": "sk-old" } });
+  const oldKey = readFileSync(sb2.keyFile, "utf8");
+  await s2.resetCredentials({ isTTY: false, write: () => undefined, warn: () => undefined });
+  s2.close();
+  const kept = readdirSync(dirname(sb2.keyFile)).filter((n) => /^master\.key\.discarded-\d{8}T\d{6}Z$/.test(n));
+  assert.equal(kept.length, 1);
+  assert.equal(mode(join(dirname(sb2.keyFile), kept[0]!)), 0o600);
+  assert.equal(readFileSync(join(dirname(sb2.keyFile), kept[0]!), "utf8"), oldKey);
   (await sb.open()).close();
 });

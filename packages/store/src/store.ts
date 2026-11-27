@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   ConfigSchema, ExpressionMapSchema, SECRET_PATHS, SECTION_PATHS, coerceEmptyNumbers, dataDir, findWorkspaceRoot, parseYaml, secretPathOf,
   unknownKeys, type Config, type ExpressionMap,
@@ -8,7 +9,7 @@ import {
 import { isBusy, openDb, type Db, type Row } from "./db.js";
 import { NEWER_MESSAGE, StoreError, type StoreIssue } from "./errors.js";
 import {
-  aadOf, createKeyFile, formatKey, keyId, linkKeyFile, looseMode, open as openSealed, parseKey, readKeyFile, recoveryNotice, seal, stageKeyFile,
+  aadOf, checkPrivateDir, createKeyFile, formatKey, keyId, linkKeyFile, looseMode, open as openSealed, parseKey, readKeyFile, recoveryNotice, seal, stageKeyFile,
   type NoticeOut,
 } from "./keys.js";
 import { backupDir, keyFilePath, stamp, storeDir, storeFile } from "./paths.js";
@@ -38,6 +39,14 @@ CREATE TABLE IF NOT EXISTS keys (
 ) STRICT;
 `;
 const TABLES = ["meta", "sections", "documents", "secrets", "keys"] as const;
+/** The columns of each table, in order: what a backup being restored must have, and what the copy names explicitly. */
+const COLUMNS: Readonly<Record<(typeof TABLES)[number], readonly string[]>> = {
+  meta: ["key", "value"],
+  sections: ["path", "doc", "updated_at"],
+  documents: ["name", "body", "updated_at"],
+  secrets: ["path", "nonce", "tag", "ciphertext", "key_id", "updated_at"],
+  keys: ["name", "nonce", "tag", "ciphertext", "key_id", "updated_at"],
+};
 
 /** The longest personality the store holds, in bytes of UTF-8, as the personality route allows. */
 export const PERSONALITY_MAX_BYTES = 64 * 1024;
@@ -286,6 +295,13 @@ function warnLooseModes(file: string, warn: (m: string) => void): void {
   if (loose.length > 0) warn(`the settings store ${loose.length > 1 ? "files" : "file"} ${loose.join(", ")} can be read by other users; run: chmod 600 ${loose.join(" ")}`);
 }
 
+/** The process's own outlets for the recovery-key notice: the key to a terminal on standard output, the pointer to standard error. */
+const defaultNotice = (): NoticeOut => ({
+  isTTY: process.stdout.isTTY,
+  write: (t: string) => process.stdout.write(t),
+  warn: (t: string) => process.stderr.write(t),
+});
+
 /** The examples a new store is seeded from (STORE-IO-005). */
 export const SEED_FILES = { settings: "config.example.yaml", personality: "personality.example.md", expressions: "expressions.example.yaml" } as const;
 
@@ -297,9 +313,16 @@ export async function openStore(opts: StoreOptions = {}): Promise<Store> {
   const keyFile = opts.keyFile ?? keyFilePath();
   const warn = opts.warn ?? ((m: string) => { process.stderr.write(`${m}\n`); });
   const busyTimeoutMs = opts.profile === "dashboard" ? BUSY_TIMEOUT_MS.dashboard : BUSY_TIMEOUT_MS.other;
+  const dir = storeDir(data);
+  if (existsSync(dir) && looseMode(statSync(dir).mode)) warn(`the settings store directory ${dir} can be read by other users; run: chmod 700 ${dir}`);
   const db = withUmask(() => {
-    mkdirSync(storeDir(data), { recursive: true, mode: 0o700 });
-    const d = openDb(file, { busyTimeoutMs });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    let d: Db;
+    try {
+      d = openDb(file, { busyTimeoutMs });
+    } catch (e) {
+      throw new StoreError("damaged", `the settings store ${file} cannot be opened: ${(e as Error).message}`);
+    }
     try {
       d.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON;");
     } catch (e) {
@@ -333,7 +356,7 @@ export async function openStore(opts: StoreOptions = {}): Promise<Store> {
     warnLooseModes(file, warn);
     const store = new Store(db, { data, file, keyFile, busyTimeoutMs, warn });
     if (version < SCHEMA_VERSION) await store.migrate(version);
-    store.loadKey(opts.notice ?? process.stdout, opts.keyOptional ?? false);
+    store.loadKey(opts.notice ?? defaultNotice(), opts.keyOptional ?? false);
     if (created && (opts.seed ?? true)) {
       const issues = store.seed(opts.seedDir ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
       if (issues.length > 0) {
@@ -427,6 +450,7 @@ export class Store {
   /** Reads, or creates, the master key, and checks it against `meta.key_id` (STORE-KEY-002 to -005). */
   loadKey(notice: NoticeOut, optional: boolean): void {
     try {
+      checkPrivateDir(dirname(this.keyFile), "master key");
       let key = readKeyFile(this.keyFile);
       if (!key) {
         const n = this.credentialCounts();
@@ -542,6 +566,9 @@ export class Store {
 
   private unseal(table: "secrets" | "keys", name: string, r: Row): Buffer {
     const key = this.requireKey();
+    if (r.key_id !== undefined && String(r.key_id) !== keyId(key)) {
+      throw new StoreError("key-wrong", `${table}.${name} in the settings store ${this.file} is encrypted under the key ${String(r.key_id)}, not the current key ${keyId(key)}`);
+    }
     const plain = openSealed(key, aadOf(this.storeId, table, name), { nonce: Buffer.from(r.nonce as Uint8Array), tag: Buffer.from(r.tag as Uint8Array), ciphertext: Buffer.from(r.ciphertext as Uint8Array) });
     if (!plain) throw new StoreError("damaged", `the settings store ${this.file} is damaged: ${table}.${name} does not decrypt under the master key`);
     return plain;
@@ -549,17 +576,17 @@ export class Store {
 
   /** The credential at `path`, or undefined when none is stored. */
   secret(path: string): string | undefined {
-    const r = this.db.get("SELECT nonce, tag, ciphertext FROM secrets WHERE path = ?", path);
+    const r = this.db.get("SELECT nonce, tag, ciphertext, key_id FROM secrets WHERE path = ?", path);
     return r ? this.unseal("secrets", path, r).toString("utf8") : undefined;
   }
   /** Every stored credential by path. */
   secretValues(): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const r of this.db.all("SELECT path, nonce, tag, ciphertext FROM secrets ORDER BY path")) out[String(r.path)] = this.unseal("secrets", String(r.path), r).toString("utf8");
+    for (const r of this.db.all("SELECT path, nonce, tag, ciphertext, key_id FROM secrets ORDER BY path")) out[String(r.path)] = this.unseal("secrets", String(r.path), r).toString("utf8");
     return out;
   }
   private keyRow(name: string): Buffer | undefined {
-    const r = this.db.get("SELECT nonce, tag, ciphertext FROM keys WHERE name = ?", name);
+    const r = this.db.get("SELECT nonce, tag, ciphertext, key_id FROM keys WHERE name = ?", name);
     return r ? this.unseal("keys", name, r) : undefined;
   }
 
@@ -567,7 +594,7 @@ export class Store {
   verifyRows(): void {
     for (const table of ["secrets", "keys"] as const) {
       const col = table === "secrets" ? "path" : "name";
-      for (const r of this.db.all(`SELECT ${col} AS id, nonce, tag, ciphertext FROM ${table}`)) this.unseal(table, String(r.id), r);
+      for (const r of this.db.all(`SELECT ${col} AS id, nonce, tag, ciphertext, key_id FROM ${table}`)) this.unseal(table, String(r.id), r);
     }
   }
 
@@ -777,11 +804,13 @@ export class Store {
 
   /**
    * Rotates the master key (STORE-KEY-007): a new key, every row of `secrets` and `keys` re-encrypted under it and `meta.key_id`
-   * set in one transaction, then the key file replaced through a temporary file renamed over it. The new key is staged before the
-   * transaction and the file is unchanged when the transaction fails. Returns the new recovery key.
+   * set in one transaction; then the old key file is kept as `master.key.rotated-<stamp>` (mode 0600, so backups taken before
+   * the rotation stay restorable) and the new key, staged in a temporary file before the transaction, is renamed over the key
+   * file. When the transaction fails, the key file is unchanged; when the rename fails after the commit, the error names the
+   * temporary file that holds the new key. The new recovery key is shown as STORE-KEY-002 shows one. Returns it.
    */
   // @spec STORE-KEY-007
-  rotateKey(): string {
+  rotateKey(notice: NoticeOut): string {
     const old = this.requireKey();
     const fresh = randomBytes(32);
     const staged = stageKeyFile(this.keyFile, fresh);
@@ -790,7 +819,7 @@ export class Store {
         const rows: [("secrets" | "keys"), string, Buffer][] = [];
         for (const table of ["secrets", "keys"] as const) {
           const col = table === "secrets" ? "path" : "name";
-          for (const r of this.db.all(`SELECT ${col} AS id, nonce, tag, ciphertext FROM ${table}`)) rows.push([table, String(r.id), this.unseal(table, String(r.id), r)]);
+          for (const r of this.db.all(`SELECT ${col} AS id, nonce, tag, ciphertext, key_id FROM ${table}`)) rows.push([table, String(r.id), this.unseal(table, String(r.id), r)]);
         }
         this.key = fresh;
         this.setMeta("key_id", keyId(fresh));
@@ -802,13 +831,36 @@ export class Store {
       staged.abort();
       throw e;
     }
-    staged.commit();
+    try {
+      const kept = `${this.keyFile}.rotated-${stamp()}`;
+      linkSync(this.keyFile, kept);
+      chmodSync(kept, 0o600);
+      staged.commit();
+    } catch (e) {
+      throw new StoreError("key-missing",
+        `the settings store ${this.file} is now encrypted under a new key, but it could not replace ${this.keyFile} (${(e as NodeJS.ErrnoException).code ?? (e as Error).message}): ` +
+        `the new key is in ${staged.path}; move it to ${this.keyFile} with mode 0600`);
+    }
+    if (!recoveryNotice(notice, fresh, "The master key was rotated; the old key file is kept beside it for older backups.")) {
+      this.immediate(() => { this.setMeta("recovery_key_unconfirmed", "1"); this.bump(); });
+    }
     return formatKey(fresh);
   }
 
   /** Moves an existing key file aside (kept, since older backups may need it) before another is written in its place. */
   private moveKeyAside(label: string): void {
-    if (existsSync(this.keyFile)) renameSync(this.keyFile, `${this.keyFile}.${label}-${stamp()}`);
+    if (!existsSync(this.keyFile)) return;
+    const kept = `${this.keyFile}.${label}-${stamp()}`;
+    renameSync(this.keyFile, kept);
+    chmodSync(kept, 0o600);
+  }
+
+  /** Installs `key` as the key file, the current one kept as `master.key.replaced-<stamp>` (a restore under a kept key). */
+  installKey(key: Buffer): void {
+    this.moveKeyAside("replaced");
+    if (!linkKeyFile(this.keyFile, key)) throw new StoreError("usage", `the master key file ${this.keyFile} appeared while it was being replaced`);
+    this.key = key;
+    this.keyProblem = undefined;
   }
 
   /**
@@ -856,23 +908,30 @@ export class Store {
   }
 
   /**
-   * Replaces every row of every table with a backup's, in one transaction on this connection, and sets `meta.revision` to
-   * `revision` (STORE-TASK-005, STORE-DB-011). A program that has the store open sees the new revision at its next read.
+   * Replaces every row of every table with a checked backup's (STORE-TASK-005, STORE-DB-011): the file is attached read-only
+   * (never created), and one `BEGIN IMMEDIATE` transaction reads the current revision, copies each table by its named columns and
+   * sets `meta.revision` to that revision plus one. Returns the new revision. A program that has the store open sees it at its
+   * next read.
    */
-  replaceFrom(source: string, revision: number): void {
-    this.db.run("ATTACH DATABASE ? AS restore_src", source);
+  replaceFrom(source: string): number {
+    if (!existsSync(source)) throw new StoreError("usage", `no backup at ${source}`);
+    this.db.run("ATTACH DATABASE ? AS restore_src", `${pathToFileURL(resolve(source)).href}?mode=ro`);
     try {
-      this.immediate(() => {
+      const revision = this.immediate(() => {
+        const before = this.revision();
         for (const t of TABLES) {
+          const cols = COLUMNS[t].join(", ");
           this.db.run(`DELETE FROM main.${t}`);
-          this.db.run(`INSERT INTO main.${t} SELECT * FROM restore_src.${t}`);
+          this.db.run(`INSERT INTO main.${t} (${cols}) SELECT ${cols} FROM restore_src.${t}`);
         }
-        this.setMeta("revision", String(revision));
+        this.setMeta("revision", String(before + 1));
+        return before + 1;
       });
+      this.session = undefined;
+      return revision;
     } finally {
       this.db.run("DETACH DATABASE restore_src");
     }
-    this.session = undefined;
   }
 
   // ---------------------------------------------------------------- backups
@@ -882,7 +941,7 @@ export class Store {
    * keeps the ten newest (STORE-DB-008). Returns the file written.
    */
   // @spec STORE-DB-008
-  async backup(): Promise<string> {
+  async backup(opts: { keep?: string } = {}): Promise<string> {
     const dir = backupDir(this.ctx.data);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     // Two backups in one second (an import right after a restore) must not overwrite each other: the later one takes the next
@@ -894,24 +953,69 @@ export class Store {
     writeFileSync(file, "", { mode: 0o600, flag: "wx" });
     chmodSync(file, 0o600);
     await this.db.backupTo(file);
-    pruneBackups(dir);
+    pruneBackups(dir, opts.keep);
     return file;
   }
 }
 
 const BACKUP_NAME = /^cohost-\d{8}T\d{6}Z\.db$/;
 
-/** Deletes all but the ten newest backups of `dir` (STORE-DB-008). */
-function pruneBackups(dir: string): void {
+/** Deletes all but the ten newest backups of `dir` (STORE-DB-008), never `keep` (the backup a restore is reading). */
+function pruneBackups(dir: string, keep?: string): void {
   const names = readdirSync(dir).filter((n) => BACKUP_NAME.test(n)).toSorted();
-  for (const n of names.slice(0, Math.max(0, names.length - 10))) unlinkSync(join(dir, n));
+  for (const n of names.slice(0, Math.max(0, names.length - 10))) {
+    if (keep !== undefined && resolve(join(dir, n)) === resolve(keep)) continue;
+    unlinkSync(join(dir, n));
+  }
+}
+
+/** The key files beside `keyFile` that an earlier rotation, restore or discard kept (`master.key.<label>-<stamp>`). */
+function keptKeyFiles(keyFile: string): string[] {
+  const dir = dirname(keyFile);
+  const name = basename(keyFile);
+  const kept = (n: string): boolean => n.startsWith(`${name}.`) && /^(rotated|replaced|discarded)-\d{8}T\d{6}Z$/.test(n.slice(name.length + 1));
+  try { return readdirSync(dir).filter(kept).toSorted().toReversed().map((n) => join(dir, n)); } catch { return []; }
 }
 
 /**
- * Restores a backup into the live store (STORE-TASK-005, -006; STORE-DB-011): the backup's integrity and key id are checked
- * first; a readable live store is backed up, a damaged one moved aside; the backup is copied in with SQLite's online backup, so
- * a program that has the store open sees a new revision; and `meta.revision` becomes the live store's previous revision plus
- * one (one when it could not be read). Returns the new revision.
+ * Checks a private copy of a backup before it is restored: SQLite's integrity check, the meta rows, exactly this build's schema
+ * version, and each table with exactly the columns this build's has. Returns its `meta.key_id`.
+ */
+function checkBackup(copy: string, source: string): string | undefined {
+  const db = openDb(copy, { busyTimeoutMs: BUSY_TIMEOUT_MS.other, readOnly: true });
+  try {
+    let meta: Map<string, string>;
+    let version: number;
+    try {
+      ({ meta, version } = checkIntegrity(db, source));
+    } catch (e) {
+      if (e instanceof StoreError && e.kind === "newer") throw new StoreError("usage", `the backup ${source} was made by a newer build of cohost (${e.message}); nothing was changed`);
+      if (e instanceof StoreError && e.kind === "damaged") throw new StoreError("usage", `${e.message.replace("the settings store", "the backup")}; nothing was changed`);
+      throw e;
+    }
+    if (version !== SCHEMA_VERSION) {
+      throw new StoreError("usage", `the backup ${source} has schema version ${version} and this build restores only version ${SCHEMA_VERSION}; nothing was changed`);
+    }
+    for (const t of TABLES) {
+      const cols = db.all(`SELECT name FROM pragma_table_info('${t}')`).map((r) => String(r.name));
+      if (cols.join(",") !== COLUMNS[t].join(",")) {
+        throw new StoreError("usage", `the backup ${source} is not a settings store backup: table ${t} has the columns ${cols.join(", ")}; nothing was changed`);
+      }
+    }
+    return meta.get("key_id");
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Restores a backup into the live store (STORE-TASK-005, -006; STORE-DB-011). The backup is first copied, through SQLite's
+ * online backup from a read-only connection, to a private 0600 file in the store directory, and every check runs on that copy:
+ * integrity, schema version, columns, and its key id, which must be the current key's or that of a kept key file beside it
+ * (`master.key.rotated-…`, `.replaced-…`, `.discarded-…`). A readable live store is then backed up (never pruning the backup
+ * being restored), a damaged one moved aside for a new, unseeded store; the copy's rows replace the live store's in one
+ * transaction that sets the revision to the live one plus one; and a kept key the backup needs becomes the key file, the
+ * current one kept as `replaced`. Returns the new revision.
  */
 // @spec STORE-TASK-005, STORE-DB-011
 export async function restoreBackup(source: string, opts: StoreOptions = {}): Promise<number> {
@@ -919,29 +1023,44 @@ export async function restoreBackup(source: string, opts: StoreOptions = {}): Pr
   const file = storeFile(data);
   const keyFile = opts.keyFile ?? keyFilePath();
   if (!existsSync(source)) throw new StoreError("usage", `no backup at ${source}`);
-  const src = openDb(source, { busyTimeoutMs: BUSY_TIMEOUT_MS.other });
+  withUmask(() => mkdirSync(storeDir(data), { recursive: true, mode: 0o700 }));
+  const tmp = mkdtempSync(join(storeDir(data), ".restore-"));
   try {
-    let meta: Map<string, string>;
+    const copy = join(tmp, "backup.db");
+    writeFileSync(copy, "", { mode: 0o600, flag: "wx" });
+    let src: Db;
     try {
-      ({ meta } = checkIntegrity(src, source));
+      src = openDb(source, { busyTimeoutMs: BUSY_TIMEOUT_MS.other, readOnly: true });
     } catch (e) {
-      throw e instanceof StoreError && e.kind === "damaged" ? new StoreError("usage", `${e.message.replace("the settings store", "the backup")}; nothing was changed`) : e;
+      throw new StoreError("usage", `the backup ${source} cannot be opened: ${(e as Error).message}; nothing was changed`);
     }
-    const recorded = meta.get("key_id");
+    try {
+      await src.backupTo(copy);
+    } catch (e) {
+      throw new StoreError("usage", `the backup ${source} cannot be read: ${(e as Error).message}; nothing was changed`);
+    } finally {
+      src.close();
+    }
+    const recorded = checkBackup(copy, source);
+
+    // The key the backup's rows are under: the current key file's, or a kept one beside it.
+    let installKey: Buffer | undefined;
     if (recorded !== undefined) {
-      const key = readKeyFile(keyFile);
-      if (!key || keyId(key) !== recorded) {
-        throw new StoreError("key-wrong", `the backup ${source} was encrypted under the key ${recorded}, but the master key file ${keyFile} ${key ? `holds the key ${keyId(key)}` : "is missing"}; nothing was changed`);
+      checkPrivateDir(dirname(keyFile), "master key");
+      const current = readKeyFile(keyFile);
+      if (!current || keyId(current) !== recorded) {
+        installKey = keptKeyFiles(keyFile).map((f) => { try { return readKeyFile(f); } catch { return undefined; } }).find((k) => k && keyId(k) === recorded);
+        if (!installKey) {
+          throw new StoreError("key-wrong", `the backup ${source} was encrypted under the key ${recorded}, but the master key file ${keyFile} ${current ? `holds the key ${keyId(current)}` : "is missing"} and no kept key file beside it holds that key; nothing was changed`);
+        }
       }
     }
-    src.close();
-    let previous = 0;
+
     let live: Store | undefined;
     if (existsSync(file)) {
       try {
         live = await openStore({ ...opts, keyOptional: true, seed: false });
-        previous = live.revision();
-        await live.backup();
+        await live.backup({ keep: source });
       } catch (e) {
         live?.close();
         live = undefined;
@@ -951,11 +1070,12 @@ export async function restoreBackup(source: string, opts: StoreOptions = {}): Pr
     }
     live ??= await openStore({ ...opts, keyOptional: true, seed: false });
     try {
-      live.replaceFrom(source, previous + 1);
+      const revision = live.replaceFrom(copy);
+      if (installKey) live.installKey(installKey);
+      return revision;
     } finally { live.close(); }
-    return previous + 1;
   } finally {
-    src.close();
+    rmSync(tmp, { recursive: true, force: true });
   }
 }
 
@@ -973,6 +1093,10 @@ export async function checkStore(opts: StoreOptions = {}): Promise<StoreProblem[
   } catch (e) {
     if (e instanceof StoreError && e.kind === "damaged") return [{ cause: "damaged", message: e.message }];
     if (e instanceof StoreError && e.kind === "newer") return [{ cause: "newer", message: e.message }];
+    const code = (e as NodeJS.ErrnoException).code;
+    if (typeof code === "string" && /^E[A-Z]+$/.test(code)) {
+      return [{ cause: "damaged", message: `the settings store under ${storeDir(opts.dataDir ?? dataDir())} cannot be used: ${code} (${(e as Error).message})` }];
+    }
     throw e;
   }
   try {
@@ -981,6 +1105,7 @@ export async function checkStore(opts: StoreOptions = {}): Promise<StoreProblem[
       store.verifyRows();
     } catch (e) {
       if (e instanceof StoreError && e.kind === "damaged") return [{ cause: "damaged", message: e.message }];
+      if (e instanceof StoreError && e.kind === "key-wrong") return [{ cause: "key", message: e.message }];
       throw e;
     }
     return store.issues().map((i) => ({ cause: "settings", path: i.path, message: i.message }));

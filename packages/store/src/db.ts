@@ -16,6 +16,8 @@ export type Row = Record<string, SqlValue>;
 export interface DbOptions {
   /** How long a statement waits for another writer's lock before it fails with `SQLITE_BUSY`. */
   busyTimeoutMs: number;
+  /** Open the file read-only (a backup being checked); it is never created. */
+  readOnly?: boolean;
 }
 
 /** An open connection to one database file. */
@@ -52,7 +54,10 @@ export function isBusy(e: unknown): boolean {
 /** Opens (creating when missing) the database at `file`. Pragmas are the caller's. */
 // @spec STORE-DB-001
 export function openDb(file: string, opts: DbOptions): Db {
-  const db = new DatabaseClass(file, { timeout: opts.busyTimeoutMs, enableForeignKeyConstraints: true });
+  // Defensive mode and trusted_schema off: a database file is data, and nothing in its schema (a view, a trigger, a function
+  // call in a default) may act with this connection's rights, which matters when a backup from elsewhere is attached.
+  const db = new DatabaseClass(file, { timeout: opts.busyTimeoutMs, enableForeignKeyConstraints: true, readOnly: opts.readOnly ?? false, defensive: true } as sqlite.DatabaseSyncOptions);
+  db.exec("PRAGMA trusted_schema = OFF;");
   const run = (sql: string, params: SqlParam[]): number => Number(db.prepare(sql).run(...params).changes);
   const txn = <T>(begin: string, fn: () => T): T => {
     db.exec(begin);

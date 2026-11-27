@@ -63,14 +63,14 @@ test("sectionJsonSchema renders a section from the zod schema with defaults, enu
 });
 
 // @spec MOD-CFG-002
-test("exactly the marked keys are secret: SECRET_PATHS (the seventeen and the tools wildcard), each section's secrets and the schema marks agree", () => {
+test("exactly the marked keys are secret: SECRET_PATHS (the sixteen and the tools wildcard), each section's secrets and the schema marks agree", () => {
   assert.deepEqual([...SECRET_PATHS].toSorted(), [
-    "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token", "ears.http.token",
+    "chat.twitch.access_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
     "ears.kyutai.api_key", "ears.nemotron.api_key", "ears.openai.api_key",
     "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "llm.claude.api_key", "llm.openai.api_key", "tools.servers.*.token",
     "vision.obs.password", "voice.openai.api_key", "voice.pocket.hf_token",
   ]);
-  assert.deepEqual(sectionSecrets("ears").toSorted(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
+  assert.deepEqual(sectionSecrets("ears").toSorted(), ["kyutai.api_key", "nemotron.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("llm").toSorted(), ["bedrock.access_key_id", "bedrock.secret_access_key", "claude.api_key", "openai.api_key"]);
   assert.deepEqual(sectionSecrets("chat").toSorted(), ["twitch.access_token", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token", "youtube.api_key"]);
   assert.deepEqual(sectionSecrets("connections"), ["discord.token"]);
@@ -141,11 +141,11 @@ test("a secret key reports only secret: true and whether secrets.yaml holds it, 
 // @spec MOD-CFG-002, MOD-CFG-005, MOD-CFG-017
 test("a secret key in an edit is refused without echoing its value, and editing a neighbour leaves it alone", () => {
   const text = FIXTURE.replace("ears: {}", "ears:\n  http:\n    port: 8765");
-  const refused = applySection(text, "ears", { "http.token": "tok-very-secret" });
+  const refused = applySection(text, "ears", { "openai.api_key": "tok-very-secret" });
   assert.equal(refused.ok, false);
   assert.doesNotMatch(JSON.stringify(refused), /tok-very-secret/);
   const edited = ok(applySection(text, "ears", { "http.port": 9000 }));
-  assert.doesNotMatch(edited.text, /token/);
+  assert.doesNotMatch(edited.text, /api_key/);
 });
 
 // @spec MOD-CFG-016

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { testConfig, waitFor } from "@cohost/testing";
 import { wavWrap } from "@cohost/shared";
 import { buildEngines, createBatchEngine } from "../src/engines.js";
-import { SttStatus, boot, connectorOffer, fakeStreaming, fakeStt, resetSeq, sleep } from "./rig.js";
+import { LISTENER_AUTH, SttStatus, boot, connectorOffer, fakeStreaming, fakeStt, resetSeq, sleep } from "./rig.js";
 
 // The STT engine contract and its selection (EARS-ENG-*). Test seams the code phase must provide (src/engines.ts, the module of
 // the LLD's SttEngine / BatchSttEngine / StreamingSttEngine / SttSession interfaces):
@@ -150,7 +150,7 @@ test("streaming engine with no fallback: a dir clip is renamed .failed, an http 
     await run(stt, cfg({ sources: ["dir", "http", "discord"], stt_engine: "nemotron", stt_fallback_engine: "none", dir: { path: dir, poll_ms: 20 }, http: { host: "127.0.0.1", port } }), async (r) => {
       await writeFile(join(dir, "a.wav"), wav());
       for (let i = 0; i < 100 && (await oneFile(dir))[0] !== "a.wav.failed"; i++) await sleep(20);
-      const res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wav(), headers: { "content-type": "audio/wav" } });
+      const res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wav(), headers: { "content-type": "audio/wav", ...LISTENER_AUTH } });
       assert.equal(res.status, 502);
       assert.match(await res.text(), /no batch STT engine/);
       const inj = await r.inject("c1");

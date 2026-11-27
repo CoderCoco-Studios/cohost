@@ -680,7 +680,7 @@ test("ears.sources accepts http, dir and a connector tag; ears.http and ears.dir
   const ears = (e: Record<string, unknown>) => ConfigSchema.safeParse({ ...base, ears: { ...e } });
   const dflt = ears({});
   assert.ok(dflt.success);
-  assert.deepEqual([earsSources(dflt.data.ears), dflt.data.ears.http, dflt.data.ears.dir], [["discord"], { host: "127.0.0.1", port: 8765, token: "" }, { path: "", poll_ms: 1000 }]);
+  assert.deepEqual([earsSources(dflt.data.ears), dflt.data.ears.http, dflt.data.ears.dir], [["discord"], { host: "127.0.0.1", port: 8765 }, { path: "", poll_ms: 1000 }]);
   for (const sources of [["http"], ["dir"], [], ["discord"], ["http", "desktop"]]) assert.ok(ears({ sources }).success, sources.join());
   assert.equal(ears({ sources: ["Mic"] }).success, false);
   assert.equal(ears({ http: { port: 0 } }).success, true);

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkConfig } from "@cohost/config";
+import { AUTH, TOKEN } from "./control-fixture.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 
@@ -51,7 +52,7 @@ test("the built dashboard on a stale config.yaml serves recovery mode, reset-all
     cwd: repo,
     env: {
       PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: secretsFile,
-      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"),
+      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_TOKEN: TOKEN,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -71,7 +72,7 @@ test("the built dashboard on a stale config.yaml serves recovery mode, reset-all
     assert.equal(readFileSync(configFile, "utf8"), fixture, "nothing is written without a save");
     assert.equal((await fetch(`${base}/stack`)).status, 503, "the normal routes are not up");
 
-    const res = await fetch(`${base}/recovery/reset-all`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ etag: s.etag }) });
+    const res = await fetch(`${base}/recovery/reset-all`, { method: "POST", headers: { "content-type": "application/json", ...AUTH }, body: JSON.stringify({ etag: s.etag }) });
     assert.equal(res.status, 200);
     const body = await res.json() as { valid: boolean; problems: unknown[] };
     assert.equal(body.valid, true, JSON.stringify(body.problems));
@@ -135,7 +136,7 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
     cwd: root, // the workspace root findWorkspaceRoot resolves: the lifecycle lock is taken in this temp root, never in the repo's data/
     env: {
       PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: secretsFile,
-      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: docker, CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
+      REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: docker, CONTROL_TOKEN: TOKEN,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -144,7 +145,7 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
   child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
   const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
   const base = "http://127.0.0.1:3000";
-  const auth = { authorization: "Bearer tok" };
+  const auth = AUTH;
   try {
     await until("the recovery line", async () => (/config recovery mode: 1 problem; fix them at http:\/\/127\.0\.0\.1:3000/.test(out) ? true : undefined));
     const s = await (await fetch(`${base}/recovery`)).json() as { problems: { kind: string; raw?: boolean }[] };
@@ -203,7 +204,7 @@ function raw(port: number, method: string, path: string, headers: Record<string,
  * and a client with neither token nor cookie is refused.
  */
 // @spec DASH-UNL-001, DASH-UNL-003, DASH-UNL-007, DASH-RCV-003, DASH-RCV-022, DASH-CTRL-011
-test("the built dashboard prints an unlock link to the terminal only, and the link, Reset all and dashboard:unlock work without the token", async () => {
+test("the built dashboard prints an unlock link to the terminal only; Reset all is refused without the token or a cookie and done with the cookie; dashboard:unlock works", async () => {
   const root = mkdtempSync(join(tmpdir(), "cohost-dash-unlock-"));
   const config = join(root, "config");
   const data = join(root, "data");
@@ -214,7 +215,7 @@ test("the built dashboard prints an unlock link to the terminal only, and the li
   writeFileSync(configFile, stale.replace(/^ {2}port: 3000$/m, `  port: ${port}\n  lan_port: ${lanPort}`));
   const env = {
     PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: join(root, "secrets.yaml"),
-    REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
+    REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_TOKEN: TOKEN,
   };
   const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
   let out = "";
@@ -235,8 +236,9 @@ test("the built dashboard prints an unlock link to the terminal only, and the li
     assert.equal((await raw(port, "PUT", "/secrets/access-check", {}, { value: null })).status, 401, "a client with neither token nor cookie is refused");
 
     const s = JSON.parse((await raw(port, "GET", "/recovery")).text) as { etag: string };
-    const res = await raw(port, "POST", "/recovery/reset-all", {}, { etag: s.etag });
-    assert.equal(res.status, 200, "Reset all needs no token on loopback");
+    assert.equal((await raw(port, "POST", "/recovery/reset-all", {}, { etag: s.etag })).status, 401, "no write is exempt, on loopback either");
+    const res = await raw(port, "POST", "/recovery/reset-all", { cookie, ...same }, { etag: s.etag });
+    assert.equal(res.status, 200, "the unlocked browser repairs");
     assert.equal((JSON.parse(res.text) as { valid: boolean }).valid, true);
 
     await until("the normal dashboard's unlock line", async () => (links().length >= 2 ? true : undefined));

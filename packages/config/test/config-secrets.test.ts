@@ -3,21 +3,21 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, chmodSync, copyFileSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema } from "../src/index.js";
+import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema, earsListenerVerifier } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
 const mode = (f: string): number => statSync(f).mode & 0o777;
-// The seventeen wildcard-free paths of CFG-SEC-003; `tools.servers.*.token` (CFG-SEC-016) is the eighteenth entry of SECRET_PATHS.
+// The sixteen wildcard-free paths of CFG-SEC-003; `tools.servers.*.token` (CFG-SEC-016) is the seventeenth entry of SECRET_PATHS.
 const TWELVE = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
-  "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
+  "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key", "connections.discord.token",
 ];
 const getPath = (o: unknown, p: string): unknown => p.split(".").reduce<unknown>((x, k) => (x as Record<string, unknown> | undefined)?.[k], o);
 
 // @spec CFG-SEC-003, CFG-SCH-039
-test("SECRET_PATHS lists exactly the seventeen wildcard-free credentials and tools.servers.*.token, and each wildcard-free one defaults to the empty string", () => {
+test("SECRET_PATHS lists exactly the sixteen wildcard-free credentials and tools.servers.*.token, and each wildcard-free one defaults to the empty string", () => {
   assert.deepEqual([...SECRET_PATHS].toSorted(), [...TWELVE, "tools.servers.*.token"].toSorted());
   const cfg = ConfigSchema.parse({
     cohost: { name: "a", streamer: "b" }, llm: { model: "m", embed_model: "e" }, vision: { model: "v", obs: {} }, chat: { twitch: {} },
@@ -129,9 +129,9 @@ test("a secrets.yaml that is not YAML, not a mapping or holds a non-string fails
   assert.ok(root.startsWith("Invalid "));
   assert.doesNotMatch(root, /sk-leak-2/);
   assert.match(root, /mapping/);
-  const wrong = fails("ears:\n  http:\n    token: 123456789\nvision:\n  obs:\n    password: [sk-leak-3]\n");
+  const wrong = fails("ears:\n  openai:\n    api_key: 123456789\nvision:\n  obs:\n    password: [sk-leak-3]\n");
   assert.ok(wrong.startsWith("Invalid "));
-  assert.match(wrong, /ears\.http\.token/);
+  assert.match(wrong, /ears\.openai\.api_key/);
   assert.match(wrong, /vision\.obs\.password/);
   assert.doesNotMatch(wrong, /123456789|sk-leak-3/);
 });
@@ -209,12 +209,12 @@ test("updateSecrets refuses a path outside SECRET_PATHS and changes nothing when
 test("updateSecrets trims a value, refuses one that is empty after trimming naming only the path, and clears only on null", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   const file = secretsIn(dir);
-  updateSecrets(file, { "ears.http.token": "  tok-1 \n" });
-  assert.equal(loadConfig(true).ears.http.token, "tok-1");
+  updateSecrets(file, { "ears.openai.api_key": "  tok-1 \n" });
+  assert.equal(loadConfig(true).ears.openai.api_key, "tok-1");
   for (const v of ["", "   ", "\n\t"]) {
-    assert.throws(() => updateSecrets(file, { "ears.http.token": v }), (e: Error) => e.message.includes("ears.http.token") && /empty/.test(e.message));
+    assert.throws(() => updateSecrets(file, { "ears.openai.api_key": v }), (e: Error) => e.message.includes("ears.openai.api_key") && /empty/.test(e.message));
   }
-  assert.equal(loadConfig(true).ears.http.token, "tok-1", "a refused set left the value alone");
+  assert.equal(loadConfig(true).ears.openai.api_key, "tok-1", "a refused set left the value alone");
   assert.throws(() => updateSecrets(file, { "vision.obs.password": "pw\nline2" }), /vision\.obs\.password/);
   try { updateSecrets(file, { "llm.model": "super-secret-value" }); } catch (e) { assert.doesNotMatch((e as Error).message, /super-secret-value/); }
 });
@@ -267,7 +267,7 @@ test("the shipped secrets.example.yaml lists the secret paths as empty strings w
   // each leaf the example writes is the empty string with a comment beside it or on the line above (chat.youtube.api_key is not written there, CFG-USR-016)
   const lines = text.split("\n");
   const leafLines = lines.map((l, i) => ({ l, i })).filter(({ l }) => /^\s+[a-z_]+:\s*(""|'')/.test(l));
-  assert.equal(leafLines.length, 11);
+  assert.equal(leafLines.length, 10);
   for (const { l, i } of leafLines) assert.ok(/#/.test(l) || /^\s*#/.test(lines[i - 1] ?? ""), `comment for: ${l.trim()}`);
   assert.deepEqual(setSecretPaths(secretsIn(dir)), []);
 });
@@ -445,4 +445,34 @@ test("a tools.servers name that holds a dot fails the load naming the entry, and
   const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
   assert.match(thrown, /tools\.servers\.a\.b/, "the load fails and names the entry");
   assert.ok(warnings.some((w) => w.includes("tools.servers.a.b") && !w.includes("tk-SECRET")), `the stray token is warned about by path: ${warnings.join(" | ")}`);
+});
+
+// @spec CFG-SEC-020, CFG-SEC-003
+test("the loader merges a well-formed ears.http.verifier from the secrets file it reads; it is not a secret path, so no write takes it and no read reports it", () => {
+  const key = "0123456789abcdef".repeat(4);
+  const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": `ears:\n  http:\n    verifier: ${key}\n  openai:\n    api_key: sk-e\n` });
+  chmodSync(secretsIn(dir), 0o600);
+  const warnings = captureWarnings(() => {
+    const cfg = loadConfig(true);
+    assert.equal(earsListenerVerifier(cfg), key);
+    assert.equal(cfg.ears.openai.api_key, "sk-e");
+  });
+  assert.deepEqual(warnings, [], "a well-formed key is merged without a warning");
+  assert.deepEqual(setSecretPaths(secretsIn(dir)), ["ears.openai.api_key"], "no read route reports the derived key");
+  assert.throws(() => updateSecrets(secretsIn(dir), { "ears.http.verifier": key }), /ears\.http\.verifier/);
+  assert.ok(!SECRET_PATHS.includes("ears.http.verifier"));
+});
+
+// @spec CFG-SEC-020
+test("an ears.http.verifier that is not 64 lowercase hex digits is dropped with one warning naming the path, never the value, and the load still succeeds", () => {
+  for (const bad of ["ABCDEF".repeat(10) + "abcd", "a".repeat(63), "a".repeat(65), "not-a-key-value-at-all"]) {
+    const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": `ears:\n  http:\n    verifier: ${bad}\n` });
+    chmodSync(secretsIn(dir), 0o600);
+    const warnings = captureWarnings(() => assert.equal(earsListenerVerifier(loadConfig(true)), undefined, bad));
+    const about = warnings.filter((w) => w.includes("ears.http.verifier"));
+    assert.equal(about.length, 1, warnings.join(" | "));
+    assert.ok(!about[0]!.includes(bad), "the value is never in the warning");
+  }
+  sandbox({ "config.yaml": MINIMAL_YAML });
+  assert.equal(earsListenerVerifier(loadConfig(true)), undefined, "no secrets file: no key");
 });

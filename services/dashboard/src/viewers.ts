@@ -44,8 +44,8 @@ export class ViewersClient {
 
 export interface ViewersDeps {
   client: ViewersClient;
-  /** `CONTROL_TOKEN`, the dashboard's one token; with none configured every `/viewers` route is refused (403). */
-  token: string | undefined;
+  /** `CONTROL_TOKEN`, the one lock: every `/viewers` route, the reads included, passes its gate (DASH-CTRL-011). */
+  token: string;
 }
 
 function send(res: http.ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
@@ -66,12 +66,6 @@ const nonBlank = (x: unknown): x is string => typeof x === "string" && x.trim() 
 /** Serves every `/viewers` route; returns false when the path is not one of ours. */
 export async function handleViewers(d: ViewersDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (url.pathname !== "/viewers" && !url.pathname.startsWith("/viewers/")) return false;
-  // Viewer notes are personal data: with no control token configured nothing can unlock them, so they stay refused.
-  if (!d.token) {
-    req.resume();
-    send(res, 403, "Viewer notes are locked: this dashboard has no control token. Set CONTROL_TOKEN in .env (a long random secret) and restart the dashboard.");
-    return true;
-  }
   // The one gate of every control-token route: the bearer token or this browser's session cookie (DASH-CTRL-011).
   if (!authorized(d.token, req)) {
     req.resume();

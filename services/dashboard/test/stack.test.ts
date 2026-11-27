@@ -241,7 +241,8 @@ test("onChange fires when the state, a container, the action, last or the bus ch
 
 // ---------- the routes
 
-const ON = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
+const TOKEN = "s3cret-control-token-for-stack-000001";
+const ON = { CONTROL_TOKEN: TOKEN };
 
 class CtlBus extends FakeBus { async resetGroup() {} }
 
@@ -275,21 +276,21 @@ async function boot(env: NodeJS.ProcessEnv, statusAtBoot: StackStatus | null = u
 }
 
 // @spec DASH-STACK-001, DASH-CTRL-005
-test("GET /stack answers the snapshot in both control modes, without a token", async () => {
-  for (const env of [{}, ON]) {
-    const t = await boot(env);
-    const r = await t.send("/stack", { method: "GET" });
-    assert.equal(r.status, 200);
-    assert.match(r.headers.get("content-type") ?? "", /application\/json/);
-    assert.deepEqual(await r.json(), t.svc.snapshot());
-  }
+test("GET /stack answers the snapshot without a token", async () => {
+  const t = await boot(ON);
+  const r = await t.send("/stack", { method: "GET" });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("content-type") ?? "", /application\/json/);
+  assert.deepEqual(await r.json(), t.svc.snapshot());
 });
 
 // @spec DASH-STACK-002, DASH-CTRL-001
-test("control disabled: every POST /stack/* is a 404 and nothing runs", async () => {
-  const t = await boot({});
-  for (const k of ["launch", "stop", "restart", "consolidate"]) assert.equal((await t.send(`/stack/${k}`)).status, 404);
-  assert.deepEqual(t.f.calls.filter((c) => c !== "status"), []);
+test("every POST /stack/* is served on every run, CONTROL_ENABLED or not, behind the gate", async () => {
+  for (const flag of ["0", "1"]) {
+    const t = await boot({ ...ON, CONTROL_ENABLED: flag });
+    for (const k of ["launch", "stop", "restart", "consolidate", "rebuild"]) assert.equal((await t.send(`/stack/${k}`)).status, 401, k);
+    assert.deepEqual(t.f.calls.filter((c) => c !== "status"), []);
+  }
 });
 
 // @spec DASH-STACK-002, DASH-CTRL-004
@@ -300,22 +301,22 @@ test("a stack POST needs the bearer token: 401 with www-authenticate, nothing ru
     assert.equal(r.status, 401);
     assert.equal(r.headers.get("www-authenticate"), "Bearer");
   }
-  assert.equal((await t.send("/stack/launch?token=s3cret")).status, 401);
-  assert.equal((await t.send("/stack/launch", { body: JSON.stringify({ token: "s3cret" }) })).status, 401);
+  assert.equal((await t.send(`/stack/launch?token=${TOKEN}`)).status, 401);
+  assert.equal((await t.send("/stack/launch", { body: JSON.stringify({ token: TOKEN }) })).status, 401);
   assert.deepEqual(t.f.calls.filter((c) => c !== "status"), []);
 });
 
 // @spec DASH-STACK-002
 test("an authorized stack POST answers 202 {ok, action} at once, ignores any body, and the action keeps running", async () => {
   const t = await boot(ON);
-  const r = await t.send("/stack/launch", { token: "s3cret", body: JSON.stringify({ argv: ["rm", "-rf", "/"], kind: "stop" }) });
+  const r = await t.send("/stack/launch", { token: TOKEN, body: JSON.stringify({ argv: ["rm", "-rf", "/"], kind: "stop" }) });
   assert.equal(r.status, 202);
   assert.deepEqual(await r.json(), { ok: true, action: "launch" });
   assert.deepEqual(t.f.calls.filter((c) => c !== "status"), ["launch"]);
   assert.equal(t.svc.snapshot().action!.kind, "launch");
   for (const [route, kind] of [["stop", "stop"], ["restart", "restart"], ["consolidate", "consolidate"]] as const) {
     t.f.finish({ ok: true }); await tick(); await tick();
-    const x = await t.send(`/stack/${route}`, { token: "s3cret" });
+    const x = await t.send(`/stack/${route}`, { token: TOKEN });
     assert.equal(x.status, 202, route);
     assert.deepEqual(await x.json(), { ok: true, action: kind });
   }
@@ -324,39 +325,39 @@ test("an authorized stack POST answers 202 {ok, action} at once, ignores any bod
 // @spec DASH-STACK-003
 test("a second stack POST is 409 busy: launch; a lifecycle POST is 409 too, and a lifecycle POST blocks a stack POST", async () => {
   const t = await boot(ON);
-  await t.send("/stack/launch", { token: "s3cret" });
-  const again = await t.send("/stack/launch", { token: "s3cret" });
+  await t.send("/stack/launch", { token: TOKEN });
+  const again = await t.send("/stack/launch", { token: TOKEN });
   assert.equal(again.status, 409);
   assert.deepEqual(await again.json(), { ok: false, detail: "busy: launch held by dashboard (pid 4242)" });
-  const life = await t.send("/services/cortex/restart", { token: "s3cret" });
+  const life = await t.send("/services/cortex/restart", { token: TOKEN });
   assert.equal(life.status, 409);
   assert.deepEqual(await life.json(), { ok: false, detail: "busy: launch held by dashboard (pid 4242)" });
   assert.deepEqual(t.lifecycle, []);
   t.f.finish({ ok: true }); await tick(); await tick();
 
   const open = t.holdLifecycle();
-  const pending = t.send("/services/cortex/restart", { token: "s3cret" });
+  const pending = t.send("/services/cortex/restart", { token: TOKEN });
   await new Promise((r) => setTimeout(r, 30));
-  const blocked = await t.send("/stack/stop", { token: "s3cret" });
+  const blocked = await t.send("/stack/stop", { token: TOKEN });
   assert.equal(blocked.status, 409);
   assert.match(((await blocked.json()) as { detail: string }).detail, /^busy: service-restart held by dashboard \(pid 4242\)$/);
   open();
   assert.equal((await pending).status, 200);
-  assert.equal((await t.send("/stack/stop", { token: "s3cret" })).status, 202); // the lifecycle request released the slot
+  assert.equal((await t.send("/stack/stop", { token: TOKEN })).status, 202); // the lifecycle request released the slot
 });
 
 // @spec DASH-STACK-004, DASH-STACK-005
 test("503 when Docker is unavailable (or never probed), 409 for a failed precondition", async () => {
   const noProbe = await boot(ON, null);
-  const a = await noProbe.send("/stack/launch", { token: "s3cret" });
+  const a = await noProbe.send("/stack/launch", { token: TOKEN });
   assert.equal(a.status, 503);
   assert.equal(((await a.json()) as { ok: boolean }).ok, false);
   const d = await boot(ON, noDocker);
-  const b = await d.send("/stack/stop", { token: "s3cret" });
+  const b = await d.send("/stack/stop", { token: TOKEN });
   assert.equal(b.status, 503);
   assert.equal(((await b.json()) as { detail: string }).detail, "docker: command not found");
   const down = await boot(ON, none);
-  const c = await down.send("/stack/restart", { token: "s3cret" });
+  const c = await down.send("/stack/restart", { token: TOKEN });
   assert.equal(c.status, 409);
   assert.equal(((await c.json()) as { ok: boolean }).ok, false);
 });
@@ -366,14 +367,14 @@ test("refusals are checked in order: 401 before 409 busy before 503 before 409 p
   const t = await boot(ON, noDocker);
   assert.equal((await t.send("/stack/restart")).status, 401); // no token beats docker unavailable
   const busy = await boot(ON);
-  await busy.send("/stack/launch", { token: "s3cret" });
+  await busy.send("/stack/launch", { token: TOKEN });
   busy.f.setStatus(noDocker); await busy.svc.probe();
-  assert.equal((await busy.send("/stack/stop", { token: "s3cret" })).status, 409); // busy beats docker unavailable
+  assert.equal((await busy.send("/stack/stop", { token: TOKEN })).status, 409); // busy beats docker unavailable
 });
 
 // @spec DASH-STACK-002
 test("unknown stack routes and GET on a stack action are 404", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/stack/explode", { token: "s3cret" })).status, 404);
+  assert.equal((await t.send("/stack/explode", { token: TOKEN })).status, 404);
   assert.equal((await t.send("/stack/launch", { method: "GET" })).status, 404);
 });

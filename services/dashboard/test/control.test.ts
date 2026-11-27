@@ -10,6 +10,7 @@ import type { Runtime } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
+import { ON, TOKEN } from "./control-fixture.js";
 
 class CtlBus extends FakeBus {
   resets: string[] = [];
@@ -51,34 +52,40 @@ async function boot(env: NodeJS.ProcessEnv, docsDir?: string, extra: Partial<Par
 }
 
 // @spec DASH-CTRL-001
-test("disabled: service routes 404, /control and /personality stay open, flag reports disabled", async () => {
-  const t = await boot({});
-  assert.equal(t.setup.control, undefined);
-  assert.equal(t.setup.bind, "127.0.0.1");
-  assert.equal((await t.send("/services/cortex/stop")).status, 404);
-  for (const k of ["launch", "stop", "restart", "consolidate"]) assert.equal((await t.send(`/stack/${k}`)).status, 404);
-  assert.equal((await t.send("/control", { body: { cmd: "mute" } })).status, 204);
-  assert.equal((await t.send("/personality", { method: "PUT", body: "hi" })).status, 204);
-  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: false, unlocked: false });
-  assert.deepEqual(t.calls, []);
+test("the service and stack routes are served on every run behind the gate; CONTROL_ENABLED switches nothing off", async () => {
+  for (const flag of [undefined, "0", "1"]) {
+    const t = await boot({ ...ON, ...(flag !== undefined ? { CONTROL_ENABLED: flag } : {}) });
+    assert.ok(t.setup.control, "a controller on every run");
+    assert.equal(t.setup.bind, "127.0.0.1");
+    assert.equal((await t.send("/services/cortex/stop")).status, 401, "behind the gate, not a 404");
+    for (const k of ["launch", "stop", "restart", "consolidate", "rebuild"]) assert.equal((await t.send(`/stack/${k}`)).status, 401, k);
+    assert.equal((await t.send("/services/cortex/stop", { token: TOKEN })).status, 200);
+    assert.deepEqual(t.calls, ["stop cortex"]);
+  }
 });
 
-const ON = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
-
 // @spec DASH-CTRL-002
-test("enabling without a token fails startup naming CONTROL_TOKEN", () => {
-  assert.throws(() => setupControl({ CONTROL_ENABLED: "1" }, new CtlBus(), recordingLog().log), /CONTROL_TOKEN/);
+test("a missing or too-short CONTROL_TOKEN fails startup naming the variable and the cause, never the value", () => {
+  for (const [env, cause] of [[{}, /missing/], [{ CONTROL_TOKEN: "  " }, /missing/], [{ CONTROL_TOKEN: "short-token-value" }, /too short/], [{ CONTROL_ENABLED: "1" }, /missing/]] as const) {
+    assert.throws(() => setupControl(env, new CtlBus(), recordingLog().log), (e: Error) => {
+      assert.match(e.message, /CONTROL_TOKEN/);
+      assert.match(e.message, cause);
+      assert.match(e.message, /installer/);
+      assert.match(e.message, /openssl rand -hex 24/);
+      assert.ok(!e.message.includes("short-token-value"));
+      return true;
+    }, JSON.stringify(env));
+  }
 });
 
 // @spec DASH-CTRL-003
-test("bind: loopback by default in both modes; an empty DASHBOARD_HOST is skipped; a non-loopback address warns", () => {
+test("bind: loopback by default; an empty DASHBOARD_HOST is skipped; a non-loopback address warns", () => {
   const a = recordingLog();
   assert.equal(setupControl(ON, new CtlBus(), a.log).bind, "127.0.0.1");
   assert.deepEqual(a.msgs("warn"), []);
   const off = recordingLog();
-  assert.equal(setupControl({}, new CtlBus(), off.log).bind, "127.0.0.1");
-  assert.equal(setupControl({ DASHBOARD_HOST: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
-  assert.equal(setupControl({ DASHBOARD_HOST: "  " }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "  " }, new CtlBus(), off.log).bind, "127.0.0.1");
   assert.deepEqual(off.msgs("warn"), []);
   const b = recordingLog();
   assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), b.log).bind, "0.0.0.0");
@@ -93,7 +100,7 @@ test("bind: loopback by default in both modes; an empty DASHBOARD_HOST is skippe
 });
 
 // @spec DASH-CTRL-008
-test("CONTROL_ENABLED=1 with CONTROL_ADVANCED=1 warns at startup that redis and postgres can be stopped; either alone does not", () => {
+test("CONTROL_ADVANCED=1 warns at startup that redis and postgres can be stopped; any other value does not", () => {
   const warned = (env: NodeJS.ProcessEnv) => {
     const r = recordingLog();
     setupControl(env, new CtlBus(), r.log, fakeRuntime().rt);
@@ -101,32 +108,28 @@ test("CONTROL_ENABLED=1 with CONTROL_ADVANCED=1 warns at startup that redis and 
   };
   assert.equal(warned({ ...ON, CONTROL_ADVANCED: "1" }).length, 1);
   assert.equal(warned(ON).length, 0);
-  assert.equal(warned({ CONTROL_ADVANCED: "1" }).length, 0, "control disabled: nothing to warn about");
   assert.equal(warned({ ...ON, CONTROL_ADVANCED: "0" }).length, 0);
+  assert.equal(warned({ ...ON, CONTROL_ADVANCED: "true" }).length, 0);
 });
 
-// @spec DASH-HOST-007
-test("a non-loopback full-surface address without CONTROL_ENABLED=1 fails startup naming DASHBOARD_HOST and CONTROL_ENABLED", () => {
-  for (const env of [{ DASHBOARD_HOST: "0.0.0.0" }, { DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }]) {
-    assert.throws(() => setupControl(env, new CtlBus(), recordingLog().log), (e: Error) => /DASHBOARD_HOST/.test(e.message) && /CONTROL_ENABLED/.test(e.message), JSON.stringify(env));
-  }
-  assert.doesNotThrow(() => setupControl({ DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), recordingLog().log));
-  assert.doesNotThrow(() => setupControl({ DASHBOARD_HOST: "localhost" }, new CtlBus(), recordingLog().log));
+// @spec DASH-CTRL-003
+test("a non-loopback full-surface address starts with a valid token, CONTROL_ENABLED or not", () => {
   assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), recordingLog().log));
+  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }, new CtlBus(), recordingLog().log));
 });
 
 // @spec DASH-HOST-006
 test("the control token is accepted only from the Authorization header and never reaches the log", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/control?token=s3cret", { body: { cmd: "mute" } })).status, 401);
-  assert.equal((await t.send("/control", { body: { cmd: "mute", token: "s3cret" } })).status, 401);
-  assert.equal((await t.send("/control", { body: "{not json", token: "s3cret" })).status, 500); // logged error path, with the header present
+  assert.equal((await t.send(`/control?token=${TOKEN}`, { body: { cmd: "mute" } })).status, 401);
+  assert.equal((await t.send("/control", { body: { cmd: "mute", token: TOKEN } })).status, 401);
+  assert.equal((await t.send("/control", { body: "{not json", token: TOKEN })).status, 500); // logged error path, with the header present
   assert.equal(JSON.stringify(t.rec.lines).includes("s3cret"), false);
   assert.equal(JSON.stringify(t.rec.lines).toLowerCase().includes("authorization"), false);
 });
 
 // @spec DASH-CTRL-004
-test("enabled: every mutating route needs the bearer token (401 otherwise, nothing happens)", async () => {
+test("every mutating route needs the bearer token (401 otherwise, nothing happens)", async () => {
   const t = await boot(ON);
   const before = t.bus.published.length;
   for (const token of [undefined, "wrong"]) {
@@ -140,18 +143,20 @@ test("enabled: every mutating route needs the bearer token (401 otherwise, nothi
 });
 
 // @spec DASH-CTRL-004, DASH-HTTP-008
-test("enabled + token: POST /control (incl. targeted pause) and PUT /personality succeed", async () => {
+test("with the token: POST /control (incl. targeted pause) and PUT /personality succeed", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/control", { body: { cmd: "pause", target: "affect" }, token: "s3cret" })).status, 204);
+  assert.equal((await t.send("/control", { body: { cmd: "pause", target: "affect" }, token: TOKEN })).status, 204);
   assert.deepEqual(t.bus.of("control").map((c) => [c.cmd, c.target]), [["pause", "affect"]]);
-  assert.equal((await t.send("/personality", { method: "PUT", body: "new", token: "s3cret" })).status, 204);
+  assert.equal((await t.send("/personality", { method: "PUT", body: "new", token: TOKEN })).status, 204);
   assert.equal(t.personality, "new");
 });
 
 // @spec DASH-CTRL-005, DASH-CTRL-007
-test("GET /services/control reports enabled without needing a token", async () => {
+test("GET /services/control answers {runtime, advanced, unlocked} without needing a token", async () => {
   const t = await boot(ON);
-  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "compose", advanced: false, unlocked: false });
+  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { runtime: "compose", advanced: false, unlocked: false });
+  const adv = await boot({ ...ON, CONTROL_ADVANCED: "1" });
+  assert.deepEqual(await (await adv.send("/services/control", { method: "GET" })).json(), { runtime: "compose", advanced: true, unlocked: false });
 });
 
 // @spec DASH-CTRL-005, DASH-DOCS-001
@@ -188,13 +193,13 @@ test("control mode leaves the UI files and the pick-list routes unauthenticated,
 // @spec DASH-CTRL-007
 test("setupControl without an injected runtime always selects the compose runtime", () => {
   const setup = setupControl({ ...ON, CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "start" }, new CtlBus(), recordingLog().log);
-  assert.equal(setup.control?.runtime, "compose");
+  assert.equal(setup.control.runtime, "compose");
 });
 
 // @spec DASH-SVC-001
 test("restart cortex: 200 {ok:true}, stop->reset->start, audited as dashboard", async () => {
   const t = await boot(ON);
-  const r = await t.send("/services/cortex/restart", { token: "s3cret" });
+  const r = await t.send("/services/cortex/restart", { token: TOKEN });
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ok: true });
   assert.deepEqual(t.calls, ["stop cortex", "start cortex"]);
@@ -205,11 +210,11 @@ test("restart cortex: 200 {ok:true}, stop->reset->start, audited as dashboard", 
 // @spec DASH-SVC-002
 test("body: mode override is honoured; bad bodies are 400 and run nothing", async () => {
   const t = await boot(ON);
-  await t.send("/services/memory/restart", { body: { mode: "fresh" }, token: "s3cret" });
+  await t.send("/services/memory/restart", { body: { mode: "fresh" }, token: TOKEN });
   assert.deepEqual(t.bus.resets, ["memory", "memory-recall", "memory-notes"]);
   t.calls.length = 0;
   for (const body of ["{nope", { mode: "sideways" }, { isolated: "yes" }, "[1]"]) {
-    assert.equal((await t.send("/services/memory/start", { body, token: "s3cret" })).status, 400);
+    assert.equal((await t.send("/services/memory/start", { body, token: TOKEN })).status, 400);
   }
   assert.deepEqual(t.calls, []);
 });
@@ -217,15 +222,15 @@ test("body: mode override is honoured; bad bodies are 400 and run nothing", asyn
 // @spec DASH-SVC-002
 test("isolated start is accepted in the body", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/services/salience/start", { body: { isolated: true }, token: "s3cret" })).status, 200);
+  assert.equal((await t.send("/services/salience/start", { body: { isolated: true }, token: TOKEN })).status, 200);
   assert.deepEqual(t.calls, ["start salience"]);
 });
 
 // @spec DASH-SVC-003
 test("unknown id 404, crafted id 404, nothing executed or audited", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/services/nope/start", { token: "s3cret" })).status, 404);
-  assert.equal((await t.send(`/services/${encodeURIComponent("cortex; rm -rf /")}/stop`, { token: "s3cret" })).status, 404);
+  assert.equal((await t.send("/services/nope/start", { token: TOKEN })).status, 404);
+  assert.equal((await t.send(`/services/${encodeURIComponent("cortex; rm -rf /")}/stop`, { token: TOKEN })).status, 404);
   assert.deepEqual(t.calls, []);
   assert.deepEqual(t.bus.of("service.lifecycle"), []);
 });
@@ -233,12 +238,12 @@ test("unknown id 404, crafted id 404, nothing executed or audited", async () => 
 // @spec DASH-SVC-003
 test("dashboard is not a manifest unit (404); infra is 403 unless CONTROL_ADVANCED=1", async () => {
   const t = await boot(ON);
-  assert.equal((await t.send("/services/dashboard/stop", { token: "s3cret" })).status, 404);
-  assert.equal((await t.send("/services/dashboard/restart", { token: "s3cret" })).status, 404);
-  assert.equal((await t.send("/services/redis/stop", { token: "s3cret" })).status, 403);
+  assert.equal((await t.send("/services/dashboard/stop", { token: TOKEN })).status, 404);
+  assert.equal((await t.send("/services/dashboard/restart", { token: TOKEN })).status, 404);
+  assert.equal((await t.send("/services/redis/stop", { token: TOKEN })).status, 403);
   assert.deepEqual(t.calls, []);
   const adv = await boot({ ...ON, CONTROL_ADVANCED: "1" });
-  assert.equal((await adv.send("/services/postgres/stop", { token: "s3cret" })).status, 200);
+  assert.equal((await adv.send("/services/postgres/stop", { token: TOKEN })).status, 200);
   assert.deepEqual(adv.calls, ["stop postgres"]);
 });
 
@@ -246,7 +251,7 @@ test("dashboard is not a manifest unit (404); infra is 403 unless CONTROL_ADVANC
 test("a failed audit publish does not fail the request", async () => {
   const t = await boot(ON);
   t.bus.fail = (type) => type === "service.lifecycle";
-  assert.equal((await t.send("/services/voice/stop", { token: "s3cret" })).status, 200);
+  assert.equal((await t.send("/services/voice/stop", { token: TOKEN })).status, 200);
 });
 
 // @spec DASH-HTTP-011
@@ -254,7 +259,7 @@ test("lifecycle body over 64 KiB is a 413 and runs nothing", async () => {
   const t = await boot(ON);
   const big = JSON.stringify({ mode: "resume", pad: "x".repeat(64 * 1024) });
   for (const act of ["start", "stop", "restart"]) {
-    assert.equal((await t.send(`/services/cortex/${act}`, { body: big, token: "s3cret" })).status, 413);
+    assert.equal((await t.send(`/services/cortex/${act}`, { body: big, token: TOKEN })).status, 413);
   }
   assert.deepEqual(t.calls, []);
   assert.deepEqual(t.bus.of("service.lifecycle"), []);
@@ -265,7 +270,7 @@ test("a malformed % escape in the service id is a 404 like an unknown service, n
   const t = await boot(ON);
   t.rec.lines.length = 0;
   for (const id of ["%E0%A4%A", "%", "cortex%zz"]) {
-    const r = await t.send(`/services/${id}/stop`, { token: "s3cret" });
+    const r = await t.send(`/services/${id}/stop`, { token: TOKEN });
     assert.equal(r.status, 404, id);
     assert.equal(((await r.json()) as { ok: boolean }).ok, false);
   }
@@ -290,7 +295,7 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   process.chdir(join(root, "services", "dashboard")); // as a task whose working directory is the package starts it
   try {
     const setup = setupControl(ON, new CtlBus(), recordingLog().log);
-    const r = await setup.control!.controller.restart("cortex");
+    const r = await setup.control.controller.restart("cortex");
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.equal(readFileSync(out, "utf8").trim(), root);
   } finally {

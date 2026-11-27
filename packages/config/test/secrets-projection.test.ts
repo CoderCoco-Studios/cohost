@@ -80,7 +80,7 @@ test("a unit with nothing set gets an empty mapping, and an absent operator file
   await projectSecrets(w.root, [{ composeName: "voice", secrets: ["voice.openai.api_key"] }]);
   assert.deepEqual(read(w, "voice"), {});
   const none = workspace(); // no secrets/secrets.yaml
-  await projectSecrets(none.root, [{ composeName: "chat", secrets: ["chat.youtube.api_key"] }, { composeName: "ears", secrets: ["ears.http.token"] }]);
+  await projectSecrets(none.root, [{ composeName: "chat", secrets: ["chat.youtube.api_key"] }, { composeName: "ears", secrets: ["ears.openai.api_key"] }]);
   assert.deepEqual(read(none, "chat"), {});
   assert.deepEqual(read(none, "ears"), {});
   assert.equal(existsSync(none.operator), false, "the projection never creates the operator's file");
@@ -244,10 +244,17 @@ test("projecting an operator file that sets every path of SECRET_PATHS gives eac
     { composeName: "u-one", secrets: SECRET_PATHS.filter((p) => p.startsWith("llm.")) },
     { composeName: "u-two", secrets: ["tools.servers.*.token", "chat.twitch.client_id"] },
     { composeName: "u-three", secrets: [...SECRET_PATHS] },
+    { composeName: "ears", secrets: SECRET_PATHS.filter((p) => p.startsWith("ears.")) },
   ];
-  await projectSecrets(w.root, units);
+  // The listener key is ears' one derived entry (DEPLOY-SECRET-012): it appears in ears' projection and in no other.
+  const key = "ab".repeat(32);
+  await projectSecrets(w.root, units, { ears: { "ears.http.verifier": key } });
   const expand = (p: string): string[] => (p === "tools.servers.*.token" ? ["tools.servers.a.token", "tools.servers.b.token"] : [p]);
-  for (const u of units) assert.deepEqual(flat(read(w, u.composeName)).toSorted(), u.secrets.flatMap(expand).toSorted(), u.composeName);
+  for (const u of units) {
+    const derived = u.composeName === "ears" ? ["ears.http.verifier"] : [];
+    assert.deepEqual(flat(read(w, u.composeName)).toSorted(), [...u.secrets.flatMap(expand), ...derived].toSorted(), u.composeName);
+  }
+  assert.equal((read(w, "ears") as { ears: { http: { verifier: string } } }).ears.http.verifier, key);
 });
 
 // @spec DEPLOY-SECRET-007

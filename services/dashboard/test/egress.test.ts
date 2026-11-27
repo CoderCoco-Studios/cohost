@@ -5,6 +5,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
+import { testControl } from "./control-fixture.js";
 import { lanHandler } from "../src/host.js";
 import type { StackService } from "../src/stack.js";
 import { configDir, configText } from "./config-fixture.js";
@@ -17,7 +18,7 @@ async function boot(dir: string) {
   after(() => { delete process.env["CONFIG_DIR"]; delete process.env["COHOST_ENV_FILE"]; });
   const handler = createDashboardHandler({
     bus: new FakeBus(), log: recordingLog().log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: {} as unknown as StackService,
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: {} as unknown as StackService, control: testControl(),
   });
   const full = http.createServer(handler);
   const lan = http.createServer(lanHandler(handler));

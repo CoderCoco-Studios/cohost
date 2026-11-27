@@ -16,7 +16,7 @@ export {
 } from "./pipeline.js";
 export { updateSecrets, secretRepair } from "./secrets.js";
 export { ConfigError, type ConfigProblem, type ConfigProblemKind } from "./errors.js";
-export { projectSecrets, type SecretUnit } from "./project.js";
+export { projectSecrets, type SecretUnit, type DerivedSecrets } from "./project.js";
 export { writeFileAtomic } from "./atomic.js";
 export { ollamaModels, type OllamaModels } from "./models.js";
 export * from "./editor.js";
@@ -58,7 +58,7 @@ const diag = (): Pick<Logger, "warn"> => diagnostics ?? configLogger();
 
 const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
 
-// @spec CFG-RCV-001, CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010, CFG-LOAD-008
+// @spec CFG-RCV-001, CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-006, CFG-ENV-011, CFG-SEC-001, CFG-SEC-002, CFG-SEC-005, CFG-SEC-008, CFG-SEC-011, CFG-SEC-017, CFG-SEC-020, CFG-SCH-086, CFG-ISO-007, CFG-ISO-009, CFG-ISO-010, CFG-LOAD-008
 export function loadConfig(force = false): Config {
   if (cached && !force) return cached;
   loadDotEnv();
@@ -83,8 +83,24 @@ export function loadConfig(force = false): Config {
     const names = [...new Set([...new URL(server.url).searchParams.keys()].filter((k) => CREDENTIAL_QUERY_NAMES.includes(k)))];
     if (names.length > 0) diag().warn(`[config] ${file}: tools.servers.${name}.url has a query parameter that looks like a credential (${names.join(", ")}); its value is not shown: put the credential in tools.servers.${name}.token`);
   }
+  // The derived ears listener key (CFG-SEC-020): merged when well formed; any other value is dropped with one warning naming the path.
+  for (const p of secrets.badDerived) diag().warn(`[config] ${secretsFile}: ignoring ${p}: it is not 64 lowercase hex digits, so the ears audio listener has no key`);
+  const verifier = secrets.derived[EARS_VERIFIER_PATH];
+  if (verifier !== undefined) (parsed.config.ears.http as { verifier?: string }).verifier = verifier;
   cached = parsed.config;
   return cached;
+}
+
+const EARS_VERIFIER_PATH = "ears.http.verifier";
+
+/**
+ * The ears listener key the loader merged from the secrets file it read (`ears.http.verifier`, CFG-SEC-020), or undefined when
+ * that file carries none in its valid form. It is not a key of `ConfigSchema`: only ears' credential delivery carries it.
+ */
+// @spec CFG-SEC-020
+export function earsListenerVerifier(cfg: Config): string | undefined {
+  const v = (cfg.ears.http as { verifier?: unknown }).verifier;
+  return typeof v === "string" ? v : undefined;
 }
 
 /** The problems of a failed parse of `config.yaml`, as `ConfigError` carries them (list indexes written `[i]`). */

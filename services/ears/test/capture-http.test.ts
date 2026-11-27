@@ -4,24 +4,28 @@ import { request } from "node:http";
 import { FakeBus, silentLog, testConfig, waitFor } from "@cohost/testing";
 import { INJECT_QUEUE_LIMIT, wavWrap } from "@cohost/shared";
 import { INJECT_READ_TIMEOUT_MS, INJECT_MAX_BYTES } from "../src/inject.js";
-import { createHttpCapture, type HttpCapture } from "../src/capture-http.js";
+import { createHttpCapture, listenerKeyMatches, type HttpCapture } from "../src/capture-http.js";
 import type { HearClip, HearOutcome } from "../src/capture.js";
 import { Hearing } from "../src/hearing.js";
 import { createBatchEngine } from "../src/engines.js";
 
 const wav = (ms: number) => wavWrap(Buffer.alloc((ms / 1000) * 32000), 16000, 1);
+/** The listener key a test listener holds, and the header that carries it. */
+const KEY = "0123456789abcdef".repeat(4);
+const AUTH = { authorization: `Bearer ${KEY}` };
 
 /** An http capture on a free port, wired to the real Hearing path with the stub transcriber, unless `hear` is given. */
-async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; token?: string; accepts?: (tag: string) => boolean } = {}) {
+async function rig(over: { hear?: HearClip; maxBytes?: number; queueLimit?: number; bodyTimeoutMs?: number; verifier?: string | null; accepts?: (tag: string) => boolean } = {}) {
   const bus = new FakeBus();
   const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: (w) => createBatchEngine("stub", testConfig().ears).transcribe(w) });
-  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src, id) => hearing.heardClip(c, s, src, id)), ...over });
+  const { verifier = KEY, ...rest } = over;
+  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, hear: over.hear ?? ((c, s, src, id) => hearing.heardClip(c, s, src, id)), ...rest, ...(verifier !== null ? { verifier } : {}) });
   await cap.start();
   const url = (q = "") => `http://127.0.0.1:${cap.port}/audio${q}`;
   return { bus, cap, url };
 }
 
-const post = (url: string, body: Buffer, type = "audio/wav") => fetch(url, { method: "POST", body, headers: { "content-type": type } });
+const post = (url: string, body: Buffer, type = "audio/wav") => fetch(url, { method: "POST", body, headers: { "content-type": type, ...AUTH } });
 
 // @spec EARS-CAP-005, EARS-CAP-007
 test("POST /audio with a WAV runs the stub transcriber and publishes speech.heard; the reply says what was heard", async () => {
@@ -78,7 +82,7 @@ test("the byte cap is the shared inject cap; an oversize body is refused 413 by 
     assert.equal((await post(r.url(), Buffer.alloc(2000))).status, 413);
     // No content-length: chunked body that crosses the cap while streaming.
     const status = await new Promise<number>((resolve, reject) => {
-      const req = request(r.url(), { method: "POST", headers: { "content-type": "audio/L16" } }, (res) => { res.resume(); resolve(res.statusCode!); });
+      const req = request(r.url(), { method: "POST", headers: { "content-type": "audio/L16", ...AUTH } }, (res) => { res.resume(); resolve(res.statusCode!); });
       req.on("error", (e) => (e as NodeJS.ErrnoException).code === "ECONNRESET" || (e as NodeJS.ErrnoException).code === "EPIPE" ? undefined : reject(e));
       req.write(Buffer.alloc(600));
       req.write(Buffer.alloc(600));
@@ -97,7 +101,7 @@ test("a body that does not arrive within the body timeout is cut off with 408", 
   const r = await rig({ bodyTimeoutMs: 80 });
   try {
     const status = await new Promise<number>((resolve, reject) => {
-      const req = request(r.url(), { method: "POST", headers: { "content-type": "audio/L16" } }, (res) => { res.resume(); resolve(res.statusCode!); });
+      const req = request(r.url(), { method: "POST", headers: { "content-type": "audio/L16", ...AUTH } }, (res) => { res.resume(); resolve(res.statusCode!); });
       req.on("error", reject);
       req.write(Buffer.alloc(100));
       // never ends
@@ -208,24 +212,49 @@ test("an unknown or mistyped source tag is refused 400 and nothing is heard", as
 });
 
 // @spec EARS-SRC-013
-test("with a token set, POST /audio needs a matching Bearer header (401 otherwise); with none set no header is needed", async () => {
-  const r = await rig({ token: "s3cret" });
+test("POST /audio needs Bearer <the delivered listener key>, exactly 64 lowercase hex, on a loopback listener too; 401 otherwise", async () => {
+  const r = await rig();
   try {
     const send = (headers: Record<string, string>) => fetch(r.url(), { method: "POST", body: wav(500), headers: { "content-type": "audio/wav", ...headers } });
-    assert.equal((await send({})).status, 401);
-    assert.equal((await send({ authorization: "Bearer wrong" })).status, 401);
-    assert.equal((await send({ authorization: "Basic s3cret" })).status, 401);
-    assert.equal((await send({ authorization: "Bearer s3cret" })).status, 200);
+    assert.equal((await send({})).status, 401, "no header, on 127.0.0.1");
+    const refused = await send({ authorization: "Bearer wrong" });
+    assert.equal(refused.status, 401);
+    assert.equal(refused.headers.get("www-authenticate"), "Bearer");
+    assert.equal((await send({ authorization: `Basic ${KEY}` })).status, 401);
+    assert.equal((await send({ authorization: `Bearer ${KEY.toUpperCase()}` })).status, 401, "uppercase hex is not the key");
+    assert.equal((await send({ authorization: `Bearer ${KEY}0` })).status, 401, "65 characters");
+    assert.equal((await send({ authorization: `Bearer ${KEY.slice(1)}` })).status, 401, "63 characters");
+    assert.equal((await send({ authorization: `Bearer ${"f".repeat(64)}` })).status, 401, "another well-formed key");
+    assert.equal(r.bus.published.length, 0, "nothing heard while refused");
+    assert.equal((await send(AUTH)).status, 200);
     assert.equal(r.bus.published.length, 1);
   } finally {
     await r.cap.stop();
   }
-  const open = await rig({ token: "" });
+});
+
+// @spec EARS-SRC-013
+test("with no listener key delivered, the listener still binds and refuses every POST /audio with 401, whatever it carries", async () => {
+  const r = await rig({ verifier: null });
   try {
-    assert.equal((await post(open.url(), wav(500))).status, 200);
+    assert.equal(r.cap.status(), "ok");
+    for (const headers of [{}, AUTH, { authorization: "Bearer " }]) {
+      const res = await fetch(r.url(), { method: "POST", body: wav(500), headers: { "content-type": "audio/wav", ...headers } });
+      assert.equal(res.status, 401, JSON.stringify(headers));
+    }
+    assert.equal(r.bus.published.length, 0);
   } finally {
-    await open.cap.stop();
+    await r.cap.stop();
   }
+});
+
+// @spec EARS-SRC-013
+test("listenerKeyMatches compares only a well-formed key, and never accepts with a malformed delivered key", () => {
+  assert.equal(listenerKeyMatches(`Bearer ${KEY}`, KEY), true);
+  assert.equal(listenerKeyMatches(`Bearer ${KEY}`, undefined), false);
+  assert.equal(listenerKeyMatches("Bearer abc", "abc"), false, "a delivered value that is not 64 hex is no key");
+  assert.equal(listenerKeyMatches(`Bearer  ${KEY}`, KEY), false);
+  assert.equal(listenerKeyMatches(undefined, KEY), false);
 });
 
 // @spec CONN-DESK-001

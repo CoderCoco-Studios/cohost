@@ -120,7 +120,7 @@ test("GET /avatar/model is served on both listeners and needs no token in either
 // @spec DASH-MDL-009
 test("GET and HEAD /avatar/models/<name> serve a listed valid model as /avatar/model does, 304 included; an error model or a bad name is 404; the LAN listener answers 404", async (t) => {
   const good = model("good", 256);
-  const r = await rig(t, { control: true, seed: { "Aiko.vrm": good, "Broken.vrm": glb({ asset: { version: "2.0" } }, { bin: 8 }) } });
+  const r = await rig(t, { seed: { "Aiko.vrm": good, "Broken.vrm": glb({ asset: { version: "2.0" } }, { bin: 8 }) } });
   const res = await r.get("/avatar/models/Aiko.vrm"); // no token, control mode on
   assert.equal(res.status, 200);
   assert.equal(res.headers["content-type"], "model/gltf-binary");
@@ -139,7 +139,7 @@ test("GET and HEAD /avatar/models/<name> serve a listed valid model as /avatar/m
 
 // @spec DASH-MDL-010
 test("GET /avatar/models answers the sorted list with the limits and the active name, no-store, ungated; the LAN listener answers 404", async (t) => {
-  const r = await rig(t, { control: true, maxBytes: 5 * MiB, seed: { "b.vrm": model("b"), "A.vrm": model("a"), "c.vrm": model("c") }, renderer: { model: "b.vrm" } });
+  const r = await rig(t, { maxBytes: 5 * MiB, seed: { "b.vrm": model("b"), "A.vrm": model("a"), "c.vrm": model("c") }, renderer: { model: "b.vrm" } });
   const res = await r.get("/avatar/models");
   assert.equal(res.status, 200);
   assert.equal(res.headers["cache-control"], "no-store");

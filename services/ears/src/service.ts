@@ -3,7 +3,7 @@
  * through `runService` with fakes. `index.ts` only hands this to `runService`.
  */
 import { ConnectorRegistry, type BusEvent } from "@cohost/bus";
-import { earsSources, egressDestinations, type Config } from "@cohost/config";
+import { earsListenerVerifier, earsSources, egressDestinations, type Config } from "@cohost/config";
 import { startIdle, type HeartbeatSpec, type ServiceContext } from "@cohost/shared";
 import { EarsHealth, earsPlan, sttInfoOf } from "./health.js";
 import { buildEngines, type BuiltEngines, type StreamingSttEngine } from "./engines.js";
@@ -126,8 +126,10 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
 
       // The one `http` listener, shared by the `http` source and by every connector source whose registration says `http`.
       // It binds when `http` is enabled or when such a registration is first seen (EARS-SRC-009).
+      // @spec EARS-SRC-013: the listener checks the delivered listener key; ears never reads CONTROL_TOKEN.
+      const verifier = earsListenerVerifier(cfg);
       const httpCapture = createHttpCapture({
-        ...cfg.ears.http, hear, log,
+        host: cfg.ears.http.host, port: cfg.ears.http.port, hear, log, ...(verifier !== undefined ? { verifier } : {}),
         accepts: (tag) => connectorNames.includes(tag) && registry.offer("audio-in", tag)?.cap.transport === "http",
       });
       let httpStart: Promise<void> | undefined;
@@ -138,6 +140,12 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
       for (const src of plan.runnable) {
         if (src.kind === "http") {
           adapters.set("http", { name: "http", start: ensureHttp, stop: () => httpCapture.stop(), status: () => httpCapture.status() });
+          // @spec EARS-SRC-013: no key delivered: every clip is refused 401, one warning, deps.http down; the other sources run.
+          if (verifier === undefined) {
+            const missing = "the http listener key (ears.http.verifier) is missing, so every POST /audio is refused 401: start ears through the control plane (Launch, Restart all or a unit start in the dashboard, or cohostctl), which delivers it";
+            log.warn(missing);
+            failed.set("http", missing);
+          }
         } else if (src.kind === "dir") {
           adapters.set("dir", createDirCapture({ path: cfg.ears.dir.path, pollMs: cfg.ears.dir.poll_ms, hear, log }));
         } else {

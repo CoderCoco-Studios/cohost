@@ -69,7 +69,7 @@ test("loadConfig seeds config.yaml from the example, validates, caches until for
 const ALLOWED = new Set([
   "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_SECRETS_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "HEARTBEAT_INTERVAL_MS",
   "REDIS_URL", "DATABASE_URL", "OLLAMA_URL", "TTS_URL", "STT_URL", "VOICE_URL", "VOICE_PORT",
-  "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST", "PATH", "HOSTNAME", "WSLENV", "NO_COLOR",
+  "CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST", "PATH", "HOSTNAME", "WSLENV", "NO_COLOR",
 ]);
 
 /**
@@ -116,6 +116,22 @@ test("cohost source reads only the permitted environment variables; the pending 
   assert.ok(found.includes("packages/config/src/index.ts::COHOST_SECRETS_FILE"), "the loader reads COHOST_SECRETS_FILE (CFG-SEC-001)");
   const stale = [...PENDING].filter((r) => !found.includes(r));
   assert.deepEqual(stale, [], "a pending read that no longer exists: delete it from PENDING");
+});
+
+// @spec CFG-ENV-008
+test("CONTROL_TOKEN is read only by the dashboard and @cohost/control, by no service; no cohost source reads CONTROL_ENABLED", () => {
+  const found: string[] = [];
+  for (const top of ["packages", "services"]) {
+    for (const pkg of readdirSync(join(repo, top))) {
+      const src = join(repo, top, pkg);
+      if (!statSync(src).isDirectory()) continue;
+      for (const f of sourceFiles(src)) found.push(...envReads(relative(repo, f).split(sep).join("/"), readFileSync(f, "utf8")));
+    }
+  }
+  const token = found.filter((r) => r.endsWith("::CONTROL_TOKEN")).map((r) => r.split("::")[0]!);
+  assert.ok(token.length > 0, "the scan sees the CONTROL_TOKEN reads");
+  assert.deepEqual(token.filter((f) => !f.startsWith("services/dashboard/") && !f.startsWith("packages/control/")), [], "CONTROL_TOKEN read outside the dashboard and @cohost/control");
+  assert.deepEqual(found.filter((r) => r.endsWith("::CONTROL_ENABLED")), []);
 });
 
 // @spec CFG-ENV-012

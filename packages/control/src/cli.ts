@@ -13,7 +13,8 @@
  *   cohostctl restart-all     restart every running application service
  *
  * Always drives services through the compose runtime. Honours CONTROL_ADVANCED and REDIS_URL.
- * It runs as the invoking user, so CONTROL_ENABLED / CONTROL_TOKEN (the dashboard's HTTP gate) do not apply.
+ * It runs as the invoking user (the OS user and the Docker socket are its boundary), so CONTROL_TOKEN, the dashboard's lock,
+ * does not apply.
  * Publishes `service.lifecycle` with by:"cohostctl". Every command but `status` and `latency` holds the lifecycle lock shared
  * with the dashboard (a held lock is a refusal, exit 1).
  */

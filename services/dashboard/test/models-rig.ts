@@ -15,7 +15,7 @@ import { dashboardService } from "../src/service.js";
 import { configDir as makeConfigDir, configText } from "./config-fixture.js";
 
 export const MiB = 1024 * 1024;
-export const TOKEN = "tok";
+export const TOKEN = "tok-models-control-token-00000001";
 /**
  * The longest a test waits for an answer or an event that should come at once. It only bounds a failing run: a passing one
  * returns as soon as the event happens, however loaded the machine is.
@@ -171,8 +171,6 @@ async function freePort(): Promise<number> {
 }
 
 export interface RigOpts {
-  /** CONTROL_ENABLED=1 with CONTROL_TOKEN=tok. */
-  control?: boolean;
   /** `renderer.*` of the loaded config and of config.yaml. */
   renderer?: { model?: string; zoom?: number; offset_y?: number; turn?: number };
   /** `dashboard.models.max_bytes`. */
@@ -231,7 +229,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const bus = o.bus ?? new DashBus();
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
-  const env: NodeJS.ProcessEnv = o.control ? { CONTROL_ENABLED: "1", CONTROL_TOKEN: TOKEN } : {};
+  const env: NodeJS.ProcessEnv = { CONTROL_TOKEN: TOKEN };
   // The write seam: the first chunk of each upload's file handle marks that its temporary file exists (see Rig.tempOpened).
   const writeAll = o.writeChunk ?? (async (fh: FileHandle, c: Buffer): Promise<void> => {
     let off = 0;
@@ -257,7 +255,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   const stop = async (): Promise<void> => { await shutdown?.(); };
   t.after(stop);
   const cfgFile = join(cfgDir, "config.yaml");
-  const auth: Record<string, string> = o.control ? { authorization: `Bearer ${TOKEN}` } : {};
+  const auth: Record<string, string> = { authorization: `Bearer ${TOKEN}` };
   return {
     port, lanPort, data, models, cfgDir, cfgFile, rec, bus, auth, stop,
     get: (path, headers) => send(port, "GET", path, { headers }),

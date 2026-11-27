@@ -32,12 +32,12 @@ function raw(port: number, path: string, o: { method?: string; headers?: Record<
 const handled: string[] = [];
 const echo: http.RequestListener = (req, res) => { handled.push(`${req.method} ${req.url}`); res.writeHead(200); res.end("full"); };
 
-async function boot(over: { bind?: string; controlEnabled?: boolean; handler?: http.RequestListener } = {}) {
+async function boot(over: { bind?: string; handler?: http.RequestListener } = {}) {
   handled.length = 0;
   const wss = new WebSocketServer({ noServer: true });
   const l = await startListeners({
     handler: over.handler ?? echo, wss, bind: over.bind ?? "127.0.0.1", port: 0, lanPort: 0, lanHost: "127.0.0.1",
-    controlEnabled: over.controlEnabled ?? true, log, exit: () => {},
+    log, exit: () => {},
   });
   assert.ok(l);
   after(() => { void l!.close(); });
@@ -153,7 +153,7 @@ test("loopback-bound full surface: a foreign Host is 403 on every request and /w
 // @spec DASH-HOST-009
 test("a full surface bound to a non-loopback address applies the address-literal Host rule, with dashboard.allowed_hosts", async () => {
   const seen: string[] = [];
-  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
+  const g = guardFullSurface((_req, res) => { seen.push("hit"); res.writeHead(200); res.end(); }, { loopback: false, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -195,7 +195,7 @@ test("a POST, PUT or DELETE with a foreign Origin is 403 and runs nothing; GET, 
 
 // @spec DASH-HOST-005
 test("Origin applies on a non-loopback full surface too", async () => {
-  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, controlEnabled: true, allowedHosts: ["my-pc.lan"] });
+  const g = guardFullSurface((_req, res) => { res.writeHead(200); res.end(); }, { loopback: false, allowedHosts: ["my-pc.lan"] });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -205,16 +205,17 @@ test("Origin applies on a non-loopback full surface too", async () => {
 });
 
 // @spec DASH-STACK-002
-test("with control disabled a stack or lifecycle POST answers the handler's 404 before the Host/Origin 403", async () => {
-  const g = guardFullSurface((_req, res) => { res.writeHead(404); res.end("not found"); }, { loopback: true, controlEnabled: false });
+test("a stack or lifecycle POST meets the Host/Origin 403 before the handler's gate", async () => {
+  const g = guardFullSurface((_req, res) => { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); }, { loopback: true });
   const server = http.createServer(g);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const port = (server.address() as net.AddressInfo).port;
   const evil = { host: "rebind.example", origin: "http://evil.example" };
-  assert.equal((await raw(port, "/stack/launch", { method: "POST", headers: evil })).status, 404);
-  assert.equal((await raw(port, "/services/cortex/stop", { method: "POST", headers: evil })).status, 404);
+  assert.equal((await raw(port, "/stack/launch", { method: "POST", headers: evil })).status, 403);
+  assert.equal((await raw(port, "/services/cortex/stop", { method: "POST", headers: evil })).status, 403);
   assert.equal((await raw(port, "/control", { method: "POST", headers: evil })).status, 403);
+  assert.equal((await raw(port, "/stack/launch", { method: "POST", headers: { host: `127.0.0.1:${port}` } })).status, 401);
 });
 
 // @spec DASH-HOST-003
@@ -225,7 +226,7 @@ test("a full-surface port that is taken logs fatal naming the address and port, 
   const taken = (blocker.address() as net.AddressInfo).port;
   lines.length = 0;
   const codes: number[] = [];
-  const l = await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "127.0.0.1", port: taken, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, log, exit: (c) => { codes.push(c); } });
+  const l = await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "127.0.0.1", port: taken, lanPort: 0, lanHost: "127.0.0.1", log, exit: (c) => { codes.push(c); } });
   assert.equal(l, undefined);
   assert.deepEqual(codes, [1]);
   const fatal = lines.filter((x) => x.level === "fatal");
@@ -241,12 +242,12 @@ test("a LAN port that is taken is fatal too, and names the LAN address and port"
   const taken = (blocker.address() as net.AddressInfo).port;
   lines.length = 0;
   const codes: number[] = [];
-  const l = await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "127.0.0.1", port: 0, lanPort: taken, lanHost: "127.0.0.1", controlEnabled: true, log, exit: (c) => { codes.push(c); } });
+  const l = await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "127.0.0.1", port: 0, lanPort: taken, lanHost: "127.0.0.1", log, exit: (c) => { codes.push(c); } });
   assert.equal(l, undefined);
   assert.deepEqual(codes, [1]);
   assert.match(String(lines.find((x) => x.level === "fatal")!.msg), new RegExp(`127\\.0\\.0\\.1:${taken}`));
   lines.length = 0;
-  await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "203.0.113.9", port: 0, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, log, exit: (c) => { codes.push(c); } });
+  await startListeners({ handler: echo, wss: new WebSocketServer({ noServer: true }), bind: "203.0.113.9", port: 0, lanPort: 0, lanHost: "127.0.0.1", log, exit: (c) => { codes.push(c); } });
   const other = lines.find((x) => x.level === "fatal")!;
   assert.match(String(other.msg), /203\.0\.113\.9/);
 });
@@ -271,7 +272,7 @@ test("startListeners resolves (so the heartbeat can go ready) only once both lis
 // @spec DASH-HTTP-010
 test("close() stops both listeners and the WebSocket server's clients, and returns without waiting for anything else", async () => {
   const wss = new WebSocketServer({ noServer: true });
-  const l = (await startListeners({ handler: echo, wss, bind: "127.0.0.1", port: 0, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, log, exit: () => {} }))!;
+  const l = (await startListeners({ handler: echo, wss, bind: "127.0.0.1", port: 0, lanPort: 0, lanHost: "127.0.0.1", log, exit: () => {} }))!;
   const ws = new WebSocket(`ws://127.0.0.1:${l.fullPort}/ws`);
   await new Promise((r) => ws.on("open", r));
   const closed = new Promise((r) => ws.on("close", r));

@@ -110,7 +110,7 @@ export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears", "network", "logging"], secrets: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    config: ["ears", "network", "logging"], secrets: ["ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },

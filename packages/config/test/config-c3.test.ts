@@ -157,7 +157,7 @@ test("writeFileAtomic replaces through a temp file and a failed write leaves the
 test(".env.example lists exactly the bootstrap, access-control and compose variables, none a config key, credential or isolation name", () => {
   const text = readFileSync(join(repo, ".env.example"), "utf8");
   const names = [...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
-  const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_ENABLED", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"];
+  const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"];
   assert.deepEqual([...new Set(names)].toSorted(), [...want].toSorted());
   assert.doesNotMatch(text, /COHOST_ISOLATION/);
   // each variable carries a comment, and a variable with a default is commented out
@@ -167,7 +167,7 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
     assert.ok(i > 0, n);
     assert.ok(/#/.test(lines[i]!) || lines[i - 1]!.startsWith("#"), `${n} has a comment`);
   }
-  for (const n of ["COMPOSE_FILE", "CONTROL_ENABLED", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
+  for (const n of ["COMPOSE_FILE", "CONTROL_TOKEN", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
   for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
 });
 

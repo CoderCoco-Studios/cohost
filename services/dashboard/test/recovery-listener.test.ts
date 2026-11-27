@@ -6,8 +6,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigError } from "@cohost/config";
-import { runRecovery, startDashboard } from "../src/recovery.js";
+import { runRecovery } from "../src/recovery.js";
 import { EXAMPLE } from "./config-fixture.js";
+import { ON } from "./control-fixture.js";
 
 const freePort = (): Promise<number> => new Promise((resolve, reject) => {
   const s = net.createServer();
@@ -43,7 +44,7 @@ test("the recovery listener applies the Host and Origin rules: a foreign Host is
   const f = files(port);
   const { log, lines } = logger();
   const exits: number[] = [];
-  const running = runRecovery({ env: {}, log, error: new ConfigError("Invalid", [{ file: f.configFile, path: "cohost.name", message: "x", kind: "placeholder" }]), files: f, exit: (c) => exits.push(c), signals: false, uiDir: join(f.dir, "ui") });
+  const running = runRecovery({ env: { ...ON }, log, error: new ConfigError("Invalid", [{ file: f.configFile, path: "cohost.name", message: "x", kind: "placeholder" }]), files: f, exit: (c) => exits.push(c), signals: false, uiDir: join(f.dir, "ui") });
   try {
     for (let i = 0; i < 50 && !lines.some((l) => l.startsWith("error config recovery mode:")); i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(lines.some((l) => l === `error config recovery mode: 1 problem; fix them at http://127.0.0.1:${port}`), lines.join("\n"));
@@ -70,32 +71,12 @@ test("a recovery port that is taken is logged at fatal and exits 1", async () =>
     const f = files(port);
     const { log, lines } = logger();
     const exits: number[] = [];
-    const ok = await runRecovery({ env: {}, log, error: new ConfigError("Invalid", []), files: f, exit: (c) => exits.push(c), signals: false });
+    const ok = await runRecovery({ env: { ...ON }, log, error: new ConfigError("Invalid", []), files: f, exit: (c) => exits.push(c), signals: false });
     assert.equal(ok, false);
     assert.deepEqual(exits, [1]);
     assert.ok(lines.some((l) => l.startsWith(`fatal dashboard cannot listen on 127.0.0.1:${port} (config recovery)`)), lines.join("\n"));
     assert.ok(!lines.some((l) => l.includes("could not be read")), "the port came from the file");
   } finally { busy.close(); }
-});
-
-// @spec DASH-RCV-002, DASH-HOST-007
-test("DASHBOARD_HOST beyond loopback with control off stops the start with exit 1 naming DASHBOARD_HOST", async () => {
-  const f = files(await freePort());
-  const keep = { c: process.env.CONFIG_DIR, s: process.env.COHOST_SECRETS_FILE, e: process.env.COHOST_ENV_FILE };
-  process.env.CONFIG_DIR = f.dir;
-  process.env.COHOST_SECRETS_FILE = f.secretsFile;
-  process.env.COHOST_ENV_FILE = join(f.dir, "none.env");
-  const { log, lines } = logger();
-  const exits: number[] = [];
-  let ran = false;
-  try {
-    await startDashboard({ env: { DASHBOARD_HOST: "0.0.0.0" }, log, exit: (c) => exits.push(c), run: async () => { ran = true; } });
-  } finally {
-    for (const [k, v] of [["CONFIG_DIR", keep.c], ["COHOST_SECRETS_FILE", keep.s], ["COHOST_ENV_FILE", keep.e]] as const) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-  }
-  assert.deepEqual(exits, [1]);
-  assert.equal(ran, false);
-  assert.ok(lines.some((l) => l.startsWith("error DASHBOARD_HOST is 0.0.0.0")), lines.join("\n"));
 });
 
 // @spec DASH-RCV-002
@@ -110,7 +91,7 @@ test("a taken default port, used because the dashboard section could not be read
     writeFileSync(join(dir, "config.yaml"), "dashboard: [x\n");
     const { log, lines } = logger();
     const exits: number[] = [];
-    const ok = await runRecovery({ env: {}, log, error: new ConfigError("Invalid", []), files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "secrets.yaml") }, exit: (c) => exits.push(c), signals: false });
+    const ok = await runRecovery({ env: { ...ON }, log, error: new ConfigError("Invalid", []), files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "secrets.yaml") }, exit: (c) => exits.push(c), signals: false });
     assert.equal(ok, false);
     assert.deepEqual(exits, [1]);
     const fatal = lines.find((l) => l.startsWith("fatal dashboard cannot listen on 127.0.0.1:3000 (config recovery)"));

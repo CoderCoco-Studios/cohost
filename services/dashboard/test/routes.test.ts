@@ -7,6 +7,7 @@ import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { HealthTracker } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
+import { AUTH, testControl } from "./control-fixture.js";
 import { StackService } from "../src/stack.js";
 
 // The voice service the dashboard proxies audio from.
@@ -39,11 +40,12 @@ const server = http.createServer(createDashboardHandler({
   savePersonality: (t) => { personality = t; },
   services: () => tracker.snapshot(),
   stack: new StackService({ log: rec.log, bus: () => "connected" }),
+  control: testControl(),
 }));
 await new Promise<void>((r) => server.listen(0, r));
 after(() => server.close());
 const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-const post = (path: string, body: unknown, method = "POST") => fetch(`${base}${path}`, { method, body: typeof body === "string" ? body : JSON.stringify(body) });
+const post = (path: string, body: unknown, method = "POST") => fetch(`${base}${path}`, { method, headers: AUTH, body: typeof body === "string" ? body : JSON.stringify(body) });
 
 // @spec DASH-HTTP-001
 test("GET / serves the page with every occurrence of the co-host's name filled in", async () => {

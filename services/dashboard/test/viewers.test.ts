@@ -6,10 +6,11 @@ import { createDashboardHandler } from "../src/routes.js";
 import { StackService } from "../src/stack.js";
 import { ViewersClient } from "../src/viewers.js";
 import { SESSION_COOKIE, newSession } from "../src/access.js";
+import { testControl } from "./control-fixture.js";
 
-const TOKEN = "s3cret-control";
+const TOKEN = "s3cret-control-token-for-viewers-0001";
 
-interface BootOpts { token?: string | null; timeoutMs?: number; control?: boolean; reply?: (req: Record<string, unknown>) => Record<string, unknown> | null }
+interface BootOpts { timeoutMs?: number; reply?: (req: Record<string, unknown>) => Record<string, unknown> | null }
 
 /** A dashboard whose "memory" answers each published memory.viewers.request through `reply` (null = never answer). */
 async function boot(o: BootOpts = {}) {
@@ -27,11 +28,9 @@ async function boot(o: BootOpts = {}) {
     return id;
   }) as never;
   const rec = recordingLog();
-  const token = o.token === null ? undefined : o.token ?? TOKEN;
-  const control = o.control && token ? { token, runtime: "t", advanced: false, controller: {} as never } : undefined;
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, ...(token !== undefined ? { controlToken: token } : {}), control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, control: testControl({ token: TOKEN }), stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -113,24 +112,22 @@ test("POST /viewers/regular publishes set_regular for a key or a non-blank name;
 });
 
 // @spec DASH-VIEWERS-007
-test("CONTROL_TOKEN set: every /viewers route, reads included, needs the control token or a session cookie, with or without control mode; nothing is published otherwise", async () => {
-  for (const control of [false, true]) {
-    const t = await boot({ control });
-    const routes: [string, string, unknown?][] = [
-      ["GET", "/viewers"], ["GET", "/viewers/k"], ["POST", "/viewers/k/notes/1/delete", {}], ["POST", "/viewers/deletions/1/restore"],
-      ["POST", "/viewers/k/clear", {}], ["POST", "/viewers/regular", { name: "x", regular: true }], ["GET", "/viewers/unknown/route/shape"],
-    ];
-    for (const [m, p, b] of routes) {
-      for (const auth of [null, "Bearer wrong", `Bearer ${TOKEN}x`, TOKEN, "Basic abc"]) {
-        const r = await t.call(m!, p!, b, auth);
-        assert.equal(r.status, 401, `${m} ${p} with ${auth}`);
-        assert.equal(r.headers.get("www-authenticate"), "Bearer");
-      }
+test("every /viewers route, reads included, needs the control token or a session cookie; nothing is published otherwise", async () => {
+  const t = await boot();
+  const routes: [string, string, unknown?][] = [
+    ["GET", "/viewers"], ["GET", "/viewers/k"], ["POST", "/viewers/k/notes/1/delete", {}], ["POST", "/viewers/deletions/1/restore"],
+    ["POST", "/viewers/k/clear", {}], ["POST", "/viewers/regular", { name: "x", regular: true }], ["GET", "/viewers/unknown/route/shape"],
+  ];
+  for (const [m, p, b] of routes) {
+    for (const auth of [null, "Bearer wrong", `Bearer ${TOKEN}x`, TOKEN, "Basic abc"]) {
+      const r = await t.call(m!, p!, b, auth);
+      assert.equal(r.status, 401, `${m} ${p} with ${auth}`);
+      assert.equal(r.headers.get("www-authenticate"), "Bearer");
     }
-    assert.equal(t.requests().length, 0);
-    assert.equal((await t.call("GET", "/viewers")).status, 200, "the control token passes");
-    assert.equal((await t.call("POST", "/viewers/regular", { name: "x", regular: true })).status, 200);
   }
+  assert.equal(t.requests().length, 0);
+  assert.equal((await t.call("GET", "/viewers")).status, 200, "the control token passes");
+  assert.equal((await t.call("POST", "/viewers/regular", { name: "x", regular: true })).status, 200);
 });
 
 // @spec DASH-VIEWERS-007, DASH-CTRL-011
@@ -147,20 +144,6 @@ test("an unlocked browser's session cookie opens every /viewers route: a read wi
   assert.equal((await t.call("GET", "/viewers", undefined, null, { cookie: `${SESSION_COOKIE}=${newSession("another-token")}` })).status, 401, "a session made under another token");
   assert.equal((await t.call("GET", "/viewers", undefined, "Bearer wrong", { cookie })).status, 401, "a request with Authorization is judged by it alone");
   assert.equal(t.requests().length, 3, "nothing published for a refused request");
-});
-
-// @spec DASH-VIEWERS-007
-test("no CONTROL_TOKEN configured: every /viewers route answers 403 naming CONTROL_TOKEN and publishes nothing, viewer notes being personal data", async () => {
-  for (const control of [false, true]) {
-    const t = await boot({ token: null, control });
-    for (const [m, p, b] of [["GET", "/viewers"], ["GET", "/viewers/k"], ["POST", "/viewers/regular", { name: "x", regular: true }]] as [string, string, unknown?][]) {
-      const r = await t.call(m, p, b);
-      assert.equal(r.status, 403);
-      assert.match(await r.text(), /CONTROL_TOKEN/);
-    }
-    assert.equal((await t.call("GET", "/viewers", undefined, null)).status, 403);
-    assert.equal(t.requests().length, 0);
-  }
 });
 
 // @spec DASH-VIEWERS-008

@@ -237,9 +237,9 @@ test("schemaAt names only the schema's own keys", () => {
 
 // @spec CFG-RCV-006
 test("secretRepair keeps a plain non-string scalar as its source text and clears what cannot be kept", () => {
-  const text = "llm:\n  openai:\n    api_key: 0123456\nvoice:\n  openai:\n    api_key: [a, b]\nears:\n  http:\n    token: true\n";
+  const text = "llm:\n  openai:\n    api_key: 0123456\nvoice:\n  openai:\n    api_key: [a, b]\nears:\n  openai:\n    api_key: true\n";
   assert.deepEqual(secretRepair(text, "llm.openai.api_key"), { value: "0123456" }, "leading zeros survive");
-  assert.deepEqual(secretRepair(text, "ears.http.token"), { value: "true" });
+  assert.deepEqual(secretRepair(text, "ears.openai.api_key"), { value: "true" });
   assert.deepEqual(secretRepair(text, "voice.openai.api_key"), { value: null });
   assert.deepEqual(secretRepair("a: |\n  x\n  y\n", "a"), { value: null });
   assert.deepEqual(secretRepair("a: [x\n", "a"), { value: null });

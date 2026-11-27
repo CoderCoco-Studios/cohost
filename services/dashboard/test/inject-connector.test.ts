@@ -6,6 +6,7 @@ import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
+import { AUTH, ON } from "./control-fixture.js";
 
 // The audio route's `?target=` (DASH-INJ-010): the Discord connector's test input rides the same upload path as ears'.
 
@@ -14,7 +15,7 @@ const ids = ["chat", "eyes", "ears", "connector-discord"];
 async function boot(states: Record<string, HealthState> = {}) {
   const bus = new (class extends FakeBus { async resetGroup() {} })();
   const rec = recordingLog();
-  const setup = setupControl({}, bus, rec.log);
+  const setup = setupControl(ON, bus, rec.log);
   const services = (): ServiceHealth[] => ids.map((service) => ({ service, state: states[service] ?? "up", restarts: 0 }));
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
@@ -27,7 +28,7 @@ async function boot(states: Record<string, HealthState> = {}) {
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const post = (path: string, type = "audio/wav", body: NonNullable<RequestInit["body"]> = Buffer.from("RIFFDATA")) =>
-    fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type } });
+    fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type, ...AUTH } });
   return { bus, post };
 }
 

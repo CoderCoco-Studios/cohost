@@ -119,7 +119,7 @@ test("the initial declarations: each unit lists the credentials its code reads a
   const want: Record<string, string[]> = {
     chat: ["chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key"],
     eyes: ["vision.obs.password", ...OPENAI_LLM],
-    ears: ["ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"],
+    ears: ["ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"],
     salience: OPENAI_LLM, affect: OPENAI_LLM, memory: OPENAI_LLM, cortex: OPENAI_LLM,
     tools: TOOLS_SECRETS,
     voice: ["voice.openai.api_key"],

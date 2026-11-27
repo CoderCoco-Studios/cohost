@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { createServer, type IncomingHttpHeaders } from "node:http";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,18 +34,23 @@ const nodeOk = (() => {
 const clipPath = path.join(tmp, "clip.wav");
 writeFileSync(clipPath, wavWrap(Buffer.alloc(32000), 16000, 1));
 
-async function listener(token = "") {
+/** The control token the clients are run with, and the listener key the listener holds (control-plane CTRL-RUNTIME-017). */
+const TOKEN = "f00dfeedf00dfeedf00dfeedf00dfeedf00dfeedf00dfeed";
+const KEY = createHmac("sha256", TOKEN).update("cohost/ears-listener/v1").digest("hex");
+
+async function listener(verifier = KEY) {
   const bus = new FakeBus();
   const hearing = new Hearing({ cfg: testConfig().ears, bus, log: silentLog, transcribe: (w) => createBatchEngine("stub", testConfig().ears).transcribe(w) });
-  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, token, hear: (c, s, src, id) => hearing.heardClip(c, s, src, id) });
+  const cap = createHttpCapture({ host: "127.0.0.1", port: 0, log: silentLog, verifier, hear: (c, s, src, id) => hearing.heardClip(c, s, src, id) });
   await cap.start();
   return { bus, cap, url: `http://127.0.0.1:${cap.port}/audio` };
 }
 
 interface Run { code: number; stdout: string; stderr: string }
-function run(cmd: string, args: string[], env: Record<string, string | undefined> = {}): Promise<Run> {
+/** Runs a client with `CONTROL_TOKEN` set to `TOKEN` unless `env` says otherwise (`undefined` leaves it unset). */
+function run(cmd: string, args: string[], env: Record<string, string | undefined> = { CONTROL_TOKEN: TOKEN }): Promise<Run> {
   const e: NodeJS.ProcessEnv = { ...process.env };
-  delete e.EARS_HTTP_TOKEN;
+  delete e.CONTROL_TOKEN;
   for (const [k, v] of Object.entries(env)) if (v !== undefined) e[k] = v;
   return new Promise((resolve) => {
     execFile(cmd, args, { env: e, timeout: 30_000 }, (err, stdout, stderr) => {
@@ -80,26 +86,30 @@ for (const c of clients) {
   });
 
   // @spec EARS-EX-002
-  test(`${c.name} sends the bearer token from EARS_HTTP_TOKEN, and none when it is empty`, { skip: c.skip }, async () => {
-    const l = await listener("s3cret");
+  test(`${c.name} derives the listener key from the trimmed CONTROL_TOKEN and sends it, never the token; without the variable it exits 1 and sends nothing`, { skip: c.skip }, async () => {
+    const l = await listener();
     try {
-      const withToken = await run(c.cmd, to(c, l.url), { EARS_HTTP_TOKEN: "s3cret" });
+      const withToken = await run(c.cmd, to(c, l.url), { CONTROL_TOKEN: `  ${TOKEN}\t` });
       assert.equal(withToken.code, 0, withToken.stderr);
-      const without = await run(c.cmd, to(c, l.url));
-      assert.equal(without.code, 1);
-      assert.match(without.stdout, /bearer token required/, "the 401 body is printed");
+      assert.deepEqual(speakers(l.bus), ["http"], "answered 200 and heard");
     } finally {
       await l.cap.stop();
     }
-    // An empty variable sends no Authorization header at all.
-    let seen: IncomingHttpHeaders = {};
-    const spy = createServer((req, res) => { seen = req.headers; req.resume(); res.end("{}"); });
+    const seen: IncomingHttpHeaders[] = [];
+    const spy = createServer((req, res) => { seen.push(req.headers); req.resume(); res.end("{}"); });
     await new Promise<void>((r) => spy.listen(0, "127.0.0.1", r));
     try {
-      const port = (spy.address() as { port: number }).port;
-      await run(c.cmd, to(c, `http://127.0.0.1:${port}/audio`), { EARS_HTTP_TOKEN: "" });
-      assert.equal(seen["content-type"], "audio/wav");
-      assert.equal(seen.authorization, undefined);
+      const url = `http://127.0.0.1:${(spy.address() as { port: number }).port}/audio`;
+      await run(c.cmd, to(c, url));
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0]!["content-type"], "audio/wav");
+      assert.equal(seen[0]!.authorization, `Bearer ${KEY}`, "the derived key, never the token");
+      for (const env of [{ CONTROL_TOKEN: "" }, { CONTROL_TOKEN: undefined }]) {
+        const r = await run(c.cmd, to(c, url), env);
+        assert.equal(r.code, 1, JSON.stringify(env));
+        assert.match(r.stderr, /CONTROL_TOKEN/);
+      }
+      assert.equal(seen.length, 1, "nothing sent without the variable");
     } finally {
       spy.close();
     }
@@ -107,7 +117,7 @@ for (const c of clients) {
 
   // @spec EARS-EX-001
   test(`${c.name} exits 1 and reports on a refused clip and on an unreachable listener`, { skip: c.skip }, async () => {
-    const l = await listener("s3cret");
+    const l = await listener("ab".repeat(32)); // a listener holding another key refuses the clip 401
     try {
       const refused = await run(c.cmd, to(c, l.url));
       assert.equal(refused.code, 1);
@@ -161,11 +171,11 @@ for (const c of clients) {
 
 // @spec EARS-EX-004
 test("send.sh exits non-zero and still prints the reply body when the status is not 200", { skip: !has("curl") && "curl not installed" }, async () => {
-  const l = await listener("s3cret");
+  const l = await listener("ab".repeat(32)); // another key: the clip is refused 401
   try {
     const r = await run("sh", [path.join(dir, "send.sh"), clipPath, l.url]);
     assert.notEqual(r.code, 0);
-    assert.match(r.stdout, /bearer token required/);
+    assert.match(r.stdout, /listener key is required/);
   } finally {
     await l.cap.stop();
   }
@@ -176,7 +186,7 @@ test("send_clip.py imports only the standard library and send-clip.ts only node:
   const py = readFileSync(path.join(dir, "send_clip.py"), "utf8");
   const mods = [...py.matchAll(/^\s*(?:import|from)\s+([A-Za-z_][\w.]*)/gm)].map((m) => m[1]!.split(".")[0]!);
   assert.ok(mods.length > 0);
-  const stdlib = new Set(["os", "sys", "urllib", "json", "http", "pathlib"]);
+  const stdlib = new Set(["os", "sys", "urllib", "json", "http", "pathlib", "hmac", "hashlib"]);
   for (const m of mods) assert.ok(stdlib.has(m), `non-stdlib import ${m}`);
 
   const ts = readFileSync(path.join(dir, "send-clip.ts"), "utf8");

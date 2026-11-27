@@ -14,7 +14,7 @@ const KOKORO_VOICE = /^[a-zA-Z0-9_][a-zA-Z0-9_+\-(). ]*$/;
 const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.string().default(def));
 
 /**
- * Dotted paths (from the config root) of the credentials (CFG-SEC-003): the seventeen wildcard-free keys and
+ * Dotted paths (from the config root) of the credentials (CFG-SEC-003): the sixteen wildcard-free keys and
  * `tools.servers.*.token`, where one `*` segment matches exactly one key of the map `config.yaml` holds there (CFG-SEC-016).
  * They live in `secrets.yaml` (the loader merges them there and ignores any value `config.yaml` holds at one), the settings
  * editor never shows or writes them, and a section's `secrets` list is derived from this one list.
@@ -22,7 +22,7 @@ const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.s
 // @spec CFG-SEC-003, CFG-SEC-016, MOD-CFG-002
 export const SECRET_PATHS: readonly string[] = [
   "llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key", "vision.obs.password",
-  "ears.http.token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
+  "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token",
   "chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token",
   "chat.youtube.api_key", "connections.discord.token", "tools.servers.*.token",
 ];
@@ -621,12 +621,13 @@ export const ConfigSchema = z.object({
      */
     // @spec CFG-SCH-030
     sources: z.array(z.string().regex(EARS_SOURCE_TAG, "must be http, dir or a source tag matching [a-z][a-z0-9-]{0,31}")).optional(),
-    /** The `http` source's listener; port 0 picks a free port. */
+    /**
+     * The `http` source's listener; port 0 picks a free port. It has no token key: its bearer is the listener key derived from
+     * `CONTROL_TOKEN`, which the loader merges as `ears.http.verifier` from ears' credential delivery (CFG-SEC-020).
+     */
     http: z.object({
       host: z.preprocess((v) => v || "127.0.0.1", z.string()),
       port: z.number().int().min(0).max(65535).default(8765),
-      /** Bearer token `POST /audio` must carry; empty requires none (EARS-SRC-013). */
-      token: z.string().default(""),
     }).prefault(EMPTY_INPUT),
     /** The `dir` source: the directory polled for dropped `.wav` files (empty = not configured) and the poll period. */
     dir: z.object({

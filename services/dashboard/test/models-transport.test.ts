@@ -7,14 +7,14 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { startListeners } from "../src/host.js";
 import { ModelStore } from "../src/models.js";
-import { model, MiB, rig, send } from "./models-rig.js";
+import { model, MiB, rig, send, TOKEN } from "./models-rig.js";
 
 // The transport under the model routes: a refusal before the body reads little of it (DASH-MDL-017), the full surface has no
 // request timeout (DASH-MDL-023), and a commit that finds its name taken leaves the stored file alone (DASH-MDL-028).
 
 // @spec DASH-MDL-017
 test("a refusal before the body is answered with the connection closed, and the server takes in only what the socket buffers hold", async (t) => {
-  const r = await rig(t, { control: true, seed: { "Aiko.vrm": model("a") } });
+  const r = await rig(t, { seed: { "Aiko.vrm": model("a") } });
   const sock = net.connect(r.port, "127.0.0.1");
   sock.on("error", () => undefined);
   let answer = "";
@@ -23,7 +23,7 @@ test("a refusal before the body is answered with the connection closed, and the 
   sock.on("close", () => { closed = true; });
   const total = 64 * MiB;
   // The name is already stored, so the refusal (409) comes before any byte of the 64 MiB body.
-  sock.write(`POST /avatar/models?name=Aiko.vrm HTTP/1.1\r\nhost: 127.0.0.1:${r.port}\r\nauthorization: Bearer tok\r\ncontent-length: ${total}\r\n\r\n`);
+  sock.write(`POST /avatar/models?name=Aiko.vrm HTTP/1.1\r\nhost: 127.0.0.1:${r.port}\r\nauthorization: Bearer ${TOKEN}\r\ncontent-length: ${total}\r\n\r\n`);
   let written = 0;
   const chunk = Buffer.alloc(256 * 1024);
   const pump = (async () => {
@@ -47,7 +47,7 @@ test("the full-surface server has no request timeout (a slow body that keeps mov
   const quiet = { info() {}, warn() {}, fatal() {} };
   const l = await startListeners({
     handler: (_q, s) => { s.end("ok"); }, wss, bind: "127.0.0.1", port: 0, lanPort: 0, lanHost: "127.0.0.1",
-    controlEnabled: false, log: quiet as never, exit: () => undefined,
+    log: quiet as never, exit: () => undefined,
   });
   assert.ok(l, "both listeners started");
   try {

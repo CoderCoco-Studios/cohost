@@ -181,15 +181,27 @@ fi
 mkdir -p data
 
 # begin control-token
-# Fill an empty CONTROL_TOKEN in .env with 24 random bytes as hex. The line is matched as text
-# (nothing sourced); a non-empty value stays, and a missing line is not added. Never printed.
+# Leave .env holding a CONTROL_TOKEN, cohost's one lock (the dashboard does not start without it). An empty value is filled
+# and a missing line is appended, each with 24 random bytes as hex; a hand-set value is never changed, only warned about
+# when it is shorter than 32 characters. The line is matched as text (nothing sourced). The token is never printed.
 # @spec DEPLOY-INST-013
 fill_control_token() {
-  local tok
-  grep -Eq '^CONTROL_TOKEN=[[:space:]]*(#.*)?$' .env || return 0
+  local tok val
   tok=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
-  sed -i -E "s#^CONTROL_TOKEN=[[:space:]]*(\#.*)?\$#CONTROL_TOKEN=${tok}#" .env
-  log "Generated CONTROL_TOKEN in .env (the dashboard asks for it)."
+  if grep -Eq '^CONTROL_TOKEN=[[:space:]]*(#.*)?$' .env; then
+    sed -i -E "s#^CONTROL_TOKEN=[[:space:]]*(\#.*)?\$#CONTROL_TOKEN=${tok}#" .env
+    log "Generated CONTROL_TOKEN in .env (open the unlock link the dashboard prints)."
+  elif ! grep -q '^CONTROL_TOKEN=' .env 2>/dev/null; then
+    if [ -s .env ] && [ -n "$(tail -c1 .env)" ]; then printf '\n' >> .env; fi
+    printf 'CONTROL_TOKEN=%s\n' "$tok" >> .env
+    log "Added CONTROL_TOKEN to .env (open the unlock link the dashboard prints)."
+  else
+    # The value as the loader reads it: an unquoted value ends at whitespace then `#`; quotes are removed; then trimmed.
+    val=$(grep -m1 '^CONTROL_TOKEN=' .env | sed -E 's/^CONTROL_TOKEN=//; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/; s/^[[:space:]]+//; s/[[:space:]]+$//')
+    if [ "${#val}" -lt 32 ]; then
+      warn "CONTROL_TOKEN in .env is shorter than 32 characters: the dashboard refuses a token shorter than 32 characters and will not start. Make one with: openssl rand -hex 24 (it is left as it is)."
+    fi
+  fi
 }
 # end control-token
 fill_control_token
@@ -275,7 +287,7 @@ Done. Next:
   1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and secrets/secrets.yaml (API keys,
      tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
   2. mise run dashboard                # start the dashboard on this machine (it brings up the stack)
-  3. open ${url}     # enter CONTROL_TOKEN from .env when asked, press Launch
+  3. open the unlock link the dashboard prints (or ${url} and paste CONTROL_TOKEN from .env), press Launch
 ${port_note:+${port_note}
 }     (the dashboard's startup log shows the URL it actually listens on; it differs when DASHBOARD_HOST is set)
   4. docker compose --profile eyes --profile ears --profile mouth --profile discord up -d

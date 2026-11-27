@@ -6,6 +6,7 @@ import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
+import { AUTH, ON, TOKEN } from "./control-fixture.js";
 
 // Test injection at the bus level (POST /inject/event) and the not-running refusal every injection route shares
 // (module-contract MOD-TEST-002 to MOD-TEST-006).
@@ -16,7 +17,7 @@ const health = (state: HealthState): ServiceHealth[] => ids.map((service) => ({ 
 async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthState> = {}) {
   const bus = new (class extends FakeBus { async resetGroup() {} })();
   const rec = recordingLog();
-  const setup = setupControl(env, bus, rec.log);
+  const setup = setupControl({ ...ON, ...env }, bus, rec.log);
   const services = () => health("up").map((s) => (states[s.service] ? { ...s, state: states[s.service]! } : s));
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
@@ -28,9 +29,9 @@ async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthSt
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const event = (body: unknown, token?: string) =>
+  const event = (body: unknown, token: string | null = TOKEN) =>
     fetch(`${base}/inject/event`, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {} });
-  const post = (path: string, body: NonNullable<RequestInit["body"]>, type: string) => fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type } });
+  const post = (path: string, body: NonNullable<RequestInit["body"]>, type: string) => fetch(`${base}${path}`, { method: "POST", body, headers: { "content-type": type, ...AUTH } });
   return { bus, base, event, post };
 }
 
@@ -85,14 +86,14 @@ test("injected is left unset where the event schema has no injected field, and a
 });
 
 // @spec MOD-TEST-004
-test("with control enabled POST /inject/event needs the bearer token; a body over 64 KiB is 413 and publishes nothing", async () => {
-  const t = await boot({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" });
-  assert.equal((await t.event({ unit: "salience", type: "chat.message", data: chat })).status, 401);
+test("POST /inject/event needs the bearer token; a body over 64 KiB is 413 and publishes nothing", async () => {
+  const t = await boot();
+  assert.equal((await t.event({ unit: "salience", type: "chat.message", data: chat }, null)).status, 401);
   assert.equal((await t.event({ unit: "salience", type: "chat.message", data: chat }, "wrong")).status, 401);
   assert.equal(t.bus.published.length, 0);
-  assert.equal((await t.event({ unit: "salience", type: "chat.message", data: chat }, "s3cret")).status, 202);
+  assert.equal((await t.event({ unit: "salience", type: "chat.message", data: chat })).status, 202);
   const big = JSON.stringify({ unit: "salience", type: "chat.message", data: { ...chat, text: "x".repeat(70 * 1024) } });
-  assert.equal((await t.event(big, "s3cret")).status, 413);
+  assert.equal((await t.event(big)).status, 413);
   assert.equal(t.bus.of("chat.message").length, 1);
 });
 
@@ -113,7 +114,7 @@ test("an injection for a unit that is down or unknown is refused 409 and publish
 // @spec MOD-TEST-005, DASH-INJ-008
 test("the same refusal covers service-level text, image and audio, and bus-level text is not refused", async () => {
   const t = await boot({}, { chat: "down", eyes: "unknown", ears: "down" });
-  const text = await fetch(`${t.base}/inject/text`, { method: "POST", body: JSON.stringify({ level: "service", text: "hi" }) });
+  const text = await fetch(`${t.base}/inject/text`, { method: "POST", headers: AUTH, body: JSON.stringify({ level: "service", text: "hi" }) });
   assert.equal(text.status, 409);
   assert.deepEqual(await text.json(), { ok: false, detail: "service not running: chat" });
   const img = await t.post("/inject/image", "PNG", "image/png");
@@ -123,15 +124,15 @@ test("the same refusal covers service-level text, image and audio, and bus-level
   assert.equal(audio.status, 409);
   assert.deepEqual(await audio.json(), { ok: false, detail: "service not running: ears" });
   assert.equal(t.bus.published.length, 0);
-  const bus = await fetch(`${t.base}/inject/text`, { method: "POST", body: JSON.stringify({ level: "bus", text: "hi" }) });
+  const bus = await fetch(`${t.base}/inject/text`, { method: "POST", headers: AUTH, body: JSON.stringify({ level: "bus", text: "hi" }) });
   assert.equal(bus.status, 202);
 });
 
 // @spec MOD-TEST-005, DASH-INJ-011
 test("service-level text with as: tool is for the tools unit: refused 409 while tools is down or unknown, accepted 202 while it is up, and chat's state does not matter", async () => {
-  const env = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" };
+  const env = {};
   const send = (t: Awaited<ReturnType<typeof boot>>) =>
-    fetch(`${t.base}/inject/text`, { method: "POST", headers: { authorization: "Bearer s3cret" }, body: JSON.stringify({ level: "service", as: "tool", text: "stream_info" }) });
+    fetch(`${t.base}/inject/text`, { method: "POST", headers: AUTH, body: JSON.stringify({ level: "service", as: "tool", text: "stream_info" }) });
   for (const state of ["down", "unknown"] as const) {
     const t = await boot(env, { tools: state });
     const r = await send(t);

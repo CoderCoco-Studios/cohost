@@ -11,12 +11,13 @@ import { SERVICE_MANIFEST, type ServiceController } from "@cohost/control";
 import { SECRET_PATHS, GROUPS } from "@cohost/config";
 import { createDashboardHandler } from "../src/routes.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
+import { TOKEN, testControl } from "./control-fixture.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
-interface Opts { control?: boolean; stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; secrets?: string }
+interface Opts { stack?: Partial<StackSnapshot>; write?: (f: string, t: string) => void; secrets?: string }
 
 async function boot(o: Opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-settings-"));
@@ -33,20 +34,21 @@ async function boot(o: Opts = {}) {
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => file, secretsFile: () => file.replace(/config\.yaml$/, "secrets.yaml"), ...(o.write ? { configWrite: o.write } : {}),
-    ...(o.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller } } : {}),
+    control: testControl({ controller }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const get = (path: string) => fetch(base + path);
-  const put = (path: string, body: unknown, token?: string) =>
+  /** A PUT with the control token unless `token` names another, or is null for none. */
+  const put = (path: string, body: unknown, token: string | null = TOKEN) =>
     fetch(base + path, { method: "PUT", body: typeof body === "string" ? body : JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {} });
   return { dir, file, bus, calls, get, put, text: () => readFileSync(file, "utf8") };
 }
 
 // @spec MOD-CFG-001
 test("GET /config/schema lists every declared section and dashboard with its readers, JSON Schema and secrets, ungated", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const r = await t.get("/config/schema");
   assert.equal(r.status, 200);
   const { sections } = (await r.json()) as { sections: { path: string; services: string[]; schema: any; secrets: string[] }[] };
@@ -60,13 +62,13 @@ test("GET /config/schema lists every declared section and dashboard with its rea
   assert.equal(llm.schema.properties.provider.enum.includes("mock"), true);
   assert.deepEqual(sections.find((s) => s.path === "dashboard")!.services, []);
   assert.deepEqual(sections.find((s) => s.path === "voice")!.secrets.slice().toSorted(), ["openai.api_key", "pocket.hf_token"]); // CFG-SCH-059, CFG-SCH-061
-  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().toSorted(), ["http.token", "kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
+  assert.deepEqual(sections.find((s) => s.path === "ears")!.secrets.slice().toSorted(), ["kyutai.api_key", "nemotron.api_key", "openai.api_key"]); // CFG-SCH-065..067
   assert.ok(SECRET_PATHS.length >= 2);
 });
 
 // @spec MOD-CFG-001, MOD-CFG-019, MOD-CFG-020, MOD-CFG-021
 test("GET /config/schema carries the groups and each section's title, group, about, page and per-key presentation, with the help as the schema description", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const body = (await (await t.get("/config/schema")).json()) as { groups: string[]; sections: any[] };
   assert.deepEqual(body.groups, [...GROUPS]);
   for (const s of body.sections) {
@@ -91,7 +93,7 @@ test("GET /config/schema carries the groups and each section's title, group, abo
 
 // @spec MOD-CFG-003
 test("GET /config/:section answers etag, keys and unknown for a declared section, 404 otherwise, ungated", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const r = await t.get("/config/voice");
   assert.equal(r.status, 200);
   const j = (await r.json()) as { section: string; etag: string; keys: Record<string, any>; unknown: string[] };
@@ -120,17 +122,33 @@ test("a secret key never appears in a section's answer", async () => {
 
 // @spec MOD-CFG-007
 test("PUT is gated by the control token and capped at 64 KiB, writing nothing otherwise", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const etag = sha(t.text());
   const body = { etag, values: { speed: 1.2 } };
-  assert.equal((await t.put("/config/voice", body)).status, 401);
+  assert.equal((await t.put("/config/voice", body, null)).status, 401);
   assert.equal((await t.put("/config/voice", body, "wrong")).status, 401);
   assert.equal(t.text(), EXAMPLE);
-  const big = await t.put("/config/voice", JSON.stringify({ etag, values: { "fallback.lines": ["x".repeat(70 * 1024)] } }), "tok");
+  const big = await t.put("/config/voice", JSON.stringify({ etag, values: { "fallback.lines": ["x".repeat(70 * 1024)] } }), TOKEN);
   assert.equal(big.status, 413);
   assert.equal(t.text(), EXAMPLE);
-  assert.equal((await t.put("/config/voice", body, "tok")).status, 200);
+  assert.equal((await t.put("/config/voice", body, TOKEN)).status, 200);
   assert.match(t.text(), /speed: 1\.2/);
+});
+
+// @spec MOD-CFG-007, DASH-CTRL-004
+test("a save that changes a sensitive key is gated exactly like any other: 401 without the token, 200 with it, and a dry run is never gated", async () => {
+  const t = await boot();
+  const values = { "openai.base_url": "https://example.invalid/v1" }; // CFG-PRES-011 marks it sensitive
+  const refused = await t.put("/config/llm", { etag: sha(t.text()), values }, null);
+  assert.equal(refused.status, 401);
+  assert.equal(refused.headers.get("www-authenticate"), "Bearer");
+  assert.equal(t.text(), EXAMPLE);
+  const dry = await t.put("/config/llm?dryRun=1", { etag: sha(t.text()), values }, null);
+  assert.equal(dry.status, 200);
+  assert.equal(t.text(), EXAMPLE, "a dry run writes nothing");
+  const saved = await t.put("/config/llm", { etag: sha(t.text()), values });
+  assert.equal(saved.status, 200, await saved.clone().text());
+  assert.match(t.text(), /example\.invalid/);
 });
 
 // @spec MOD-CFG-007
@@ -272,7 +290,7 @@ test("a saved logging section restarts every running application unit, in manife
 // @spec MOD-CFG-015
 test("a dashboard save says it applies at the dashboard's next start, and a save of another section warns of nothing", async () => {
   const t = await boot();
-  // voice.sample_rate, not voice.engine: CFG-PRES-011 makes the engine sensitive, so its save needs the control token
+  // voice.sample_rate: any save is gated alike (DASH-CTRL-004), a sensitive key needing nothing more
   const r = await t.put("/config/voice", { etag: sha(t.text()), values: { sample_rate: 24000 } });
   const j = (await r.json()) as { warnings: string[] };
   assert.deepEqual(j.warnings, []);
@@ -385,7 +403,7 @@ test("a save leaves comments, unknown keys and other sections exactly as they we
 
 // @spec MOD-CFG-021, MOD-CFG-022
 test("GET /config/schema serves the avatar-model and slider widgets and live: true on the renderer section alone", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const { sections } = (await (await t.get("/config/schema")).json()) as { sections: { path: string; live?: unknown; keys: Record<string, { widget?: unknown }> }[] };
   const renderer = sections.find((s) => s.path === "renderer")!;
   assert.equal(renderer.live, true);

@@ -27,25 +27,33 @@ const UNIT_NAME = /^[a-z0-9-]+$/;
 
 const isLink = (p: string): boolean => { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } };
 
-/** The text of a unit's projection: the declared paths the operator's file holds, nested as it is, and nothing else. */
-function unitText(values: Readonly<Record<string, string>>, declared: readonly string[]): string {
+/**
+ * The text of a unit's projection: the declared paths the operator's file holds, nested as it is, and the derived credentials
+ * handed for that unit (CFG-SEC-020), and nothing else.
+ */
+function unitText(values: Readonly<Record<string, string>>, declared: readonly string[], derived: Readonly<Record<string, string>> = {}): string {
   const doc = new Document({});
   let any = false;
   for (const [path, value] of Object.entries(values)) {
     if (declared.some((d) => secretPathMatches(path, d))) { doc.setIn(path.split("."), value); any = true; }
   }
+  for (const [path, value] of Object.entries(derived)) { doc.setIn(path.split("."), value); any = true; }
   return any && isMap(doc.contents) ? doc.toString({ lineWidth: 0 }) : "{}\n";
 }
+
+/** Derived credentials by Compose service name, then by dotted path: the ears listener key (CFG-SEC-020), never from the operator's file. */
+export type DerivedSecrets = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 /**
  * Writes `secrets/units/<composeName>/secrets.yaml` under `root` for every unit that declares a secret path: the operator's
  * file (`secretsPath()`, read with the loader's rules) cut down to exactly those paths. Each file is replaced by rename with
  * mode 0600 in a 0700 directory, a directory under `secrets/units/` that names no such unit is removed, and nothing is written
  * when the operator's file, a link or a directory is unusable. Rejects with an error that names a file, directory or path,
- * never a value.
+ * never a value. `derived` adds credentials the caller derived to the named units' files (the ears listener key, CFG-SEC-020);
+ * a value the operator's file holds at such a path is never copied.
  */
-// @spec CFG-SEC-019, DEPLOY-SECRET-003, DEPLOY-SECRET-005, DEPLOY-SECRET-007, DEPLOY-SECRET-009, DEPLOY-SECRET-010
-export async function projectSecrets(root: string, units: readonly SecretUnit[]): Promise<void> {
+// @spec CFG-SEC-019, CFG-SEC-020, DEPLOY-SECRET-003, DEPLOY-SECRET-005, DEPLOY-SECRET-007, DEPLOY-SECRET-009, DEPLOY-SECRET-010
+export async function projectSecrets(root: string, units: readonly SecretUnit[], derived: DerivedSecrets = {}): Promise<void> {
   for (const u of units) {
     if (!UNIT_NAME.test(u.composeName)) throw new Error(`Cannot project secrets: ${JSON.stringify(u.composeName)} is not a unit name (lower-case letters, digits and hyphens)`);
   }
@@ -74,7 +82,7 @@ export async function projectSecrets(root: string, units: readonly SecretUnit[])
   for (const u of declaring) {
     const dir = join(unitsDir, u.composeName);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileAtomic(join(dir, "secrets.yaml"), unitText(values, u.secrets), { mode: 0o600 });
+    writeFileAtomic(join(dir, "secrets.yaml"), unitText(values, u.secrets, derived[u.composeName]), { mode: 0o600 });
   }
   const keep = new Set(declaring.map((u) => u.composeName));
   for (const name of readdirSync(unitsDir)) {

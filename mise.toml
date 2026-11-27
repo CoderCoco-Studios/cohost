@@ -212,100 +212,114 @@ run = "docker compose stop redis postgres ollama tts stt"
 # ------------------------------------------------------------------------------------------ dev loop
 # One task per directory under services/ except dashboard. `outputs = []`: a clean exit never marks a
 # service up to date. `mise watch --restart dev:<service>` rebuilds what changed and restarts it.
+# Each runs the secrets projection first and reads its own unit's projection, as a container would, with CONTROL_TOKEN
+# pinned empty (loading .env does not override a set variable), so no host-run service sees the token.
 # @spec DEPLOY-TOOL-014
 
 [tasks."dev:affect"]
 description = "Run the affect service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/affect"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/affect/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/affect/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:avatar"]
 description = "Run the avatar service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/avatar"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/avatar/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/avatar/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:chat"]
 description = "Run the chat service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/chat"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/chat/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/chat/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:connector-discord"]
 description = "Run the Discord connector (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/connector-discord"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/connector-discord/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/connector-discord/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:cortex"]
 description = "Run the cortex service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/cortex"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/cortex/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/cortex/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:ears"]
 description = "Run the ears service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/ears"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/ears/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/ears/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:eyes"]
 description = "Run the eyes service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/eyes"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/eyes/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/eyes/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:memory"]
 description = "Run the memory service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/memory"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/memory/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/memory/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:mouth"]
 description = "Run the mouth service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/mouth"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/mouth/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/mouth/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:salience"]
 description = "Run the salience service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/salience"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/salience/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/salience/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:tools"]
 description = "Run the tools service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/tools"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/tools/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/tools/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:voice"]
 description = "Run the voice service (use with mise watch --restart)"
-depends = ["build:native", "build:ts"]
+depends = ["build:native", "build:ts", "secrets:project"]
 dir = "{{config_root}}/services/voice"
+env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/voice/secrets.yaml" }
 run = "node dist/index.js"
 sources = ["{{config_root}}/services/voice/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []

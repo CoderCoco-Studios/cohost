@@ -268,7 +268,7 @@ The task graph is the reason for the design. `depends` makes each task run what 
 | `test:file` | Node's test runner through `tsx` (`TSX_TSCONFIG_PATH=tsconfig.test.json`) over the files given after the task name, for one file or package | `build` | — |
 | `test:launch` | the launch end-to-end test `packages/control/test/launch.e2e.test.ts` | `build`, `doctor:docker` | — |
 | `test:rust-example` | the Rust bus example's round trip (`cargo test --manifest-path examples/Cargo.toml -p cohost-example-bus -- --nocapture`), failing on a `SKIP` line and requiring the `RAN round_trip against` line | — | — |
-| `dev:<service>` (one per directory under `services/` except `dashboard`) | `node dist/index.js`, `dir` = `services/<service>` | `build:native`, `build:ts` | `services/<service>/src/**`, `packages/*/src/**` → `outputs = []` (the sources are what `mise watch` watches; with no outputs, a clean exit never marks the task up to date) |
+| `dev:<service>` (one per directory under `services/` except `dashboard`) | `node dist/index.js`, `dir` = `services/<service>`, with `CONTROL_TOKEN` empty and `COHOST_SECRETS_FILE` the unit's projection | `build:native`, `build:ts`, `secrets:project` | `services/<service>/src/**`, `packages/*/src/**` → `outputs = []` (the sources are what `mise watch` watches; with no outputs, a clean exit never marks the task up to date) |
 | `dev` | `MISE_JOBS=<n> mise watch --restart dev:<a> ::: dev:<b> ::: …` over the explicit list of every `dev:<service>` task, `<n>` being the number of those tasks | — | — |
 | `infra:up` | `docker compose up -d redis postgres ollama tts stt` | `doctor:docker` | — |
 | `infra:down` | `docker compose stop redis postgres ollama tts stt` | `doctor:docker` | — |

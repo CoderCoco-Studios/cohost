@@ -94,7 +94,7 @@ test("a /avatar/ws upgrade is accepted on the LAN listener while an upgrade to a
 
 // @spec DASH-CTRL-005
 test("with control on, GET /avatar, /avatar/renderer, /avatar/model and the /avatar/ws relay need no token", async (t) => {
-  const r = await relay(t, { control: true, uiDir: builtUi() });
+  const r = await relay(t, { uiDir: builtUi() });
   assert.equal((await send(r.port, "GET", "/avatar")).status, 200);
   assert.equal((await send(r.port, "GET", "/avatar/renderer")).status, 200);
   assert.notEqual((await send(r.port, "GET", "/avatar/model")).status, 401);

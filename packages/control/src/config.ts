@@ -1,12 +1,13 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-export type ControlConfig =
-  | { enabled: false }
-  | {
-      enabled: true;
-      token: string;
-      advanced: boolean;
-    };
+/** The control configuration: the one lock (`CONTROL_TOKEN`, trimmed) and the infrastructure safety switch (`CONTROL_ADVANCED`). */
+export interface ControlConfig {
+  token: string;
+  advanced: boolean;
+}
+
+/** The shortest `CONTROL_TOKEN` accepted, after trimming (CTRL-CONFIG-001). */
+export const MIN_CONTROL_TOKEN_LENGTH = 32;
 
 export const LOOPBACK_BIND = "127.0.0.1";
 
@@ -34,13 +35,39 @@ export function isLoopback(host: string): boolean {
   return m !== null && m.slice(1).every((o) => Number(o) <= 255);
 }
 
-/** Parses CONTROL_* env. Throws (fail fast) when enabled without a token. There is no runtime setting: compose is the only runtime. */
+/**
+ * Why `CONTROL_TOKEN` cannot be used, naming the variable and never its value: unset or empty, or shorter than 32 characters
+ * after trimming. Undefined when it is usable.
+ */
+export function controlTokenProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const token = (env.CONTROL_TOKEN ?? "").trim();
+  if (token.length >= MIN_CONTROL_TOKEN_LENGTH) return undefined;
+  const what = token === "" ? "CONTROL_TOKEN is missing" : "CONTROL_TOKEN is too short";
+  return `${what}: it must be at least ${MIN_CONTROL_TOKEN_LENGTH} characters. The installer writes one into .env; to make one by hand, run \`openssl rand -hex 24\` and put the result in .env as CONTROL_TOKEN=<that value>`;
+}
+
+/**
+ * Parses CONTROL_* env. `CONTROL_TOKEN` is cohost's one lock and always required: throws (fail fast) when it is unset or shorter
+ * than 32 characters after trimming, never including the value. `CONTROL_ENABLED` is not read: no variable switches control off.
+ * There is no runtime setting: compose is the only runtime.
+ */
 // @spec CTRL-CONFIG-001, CTRL-CONFIG-002
 export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): ControlConfig {
-  if (env.CONTROL_ENABLED !== "1") return { enabled: false };
-  const token = env.CONTROL_TOKEN ?? "";
-  if (token.trim() === "") throw new Error("CONTROL_ENABLED=1 requires CONTROL_TOKEN to be set to a non-empty secret");
-  return { enabled: true, token, advanced: env.CONTROL_ADVANCED === "1" };
+  const problem = controlTokenProblem(env);
+  if (problem !== undefined) throw new Error(problem);
+  return { token: (env.CONTROL_TOKEN ?? "").trim(), advanced: env.CONTROL_ADVANCED === "1" };
+}
+
+/** The label the ears listener key is an HMAC of (CTRL-RUNTIME-017); it differs from the dashboard's session-key label. */
+export const EARS_LISTENER_LABEL = "cohost/ears-listener/v1";
+
+/**
+ * The ears listener key: HMAC-SHA256 keyed with the trimmed control token, of `EARS_LISTENER_LABEL`, as 64 lowercase hex digits
+ * (CTRL-RUNTIME-017). The token cannot be recovered from it, and it only lets a client post audio.
+ */
+// @spec CTRL-RUNTIME-017
+export function earsListenerKey(token: string): string {
+  return createHmac("sha256", token.trim()).update(EARS_LISTENER_LABEL).digest("hex");
 }
 
 /** Constant-time check of an `Authorization: Bearer <token>` header. */

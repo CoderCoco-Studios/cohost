@@ -5,15 +5,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDir, loadDotEnv } from "@cohost/config";
+import { controlTokenProblem } from "@cohost/control";
 import { unlockBase } from "./access.js";
 import { recoveryAddress } from "./recovery.js";
-import { controlTokenFromEnv } from "./secrets.js";
 
 /** The link, or why there is none. The port is read the way config recovery mode reads it, so a broken config.yaml still gives it. */
 // @spec DASH-UNL-007
 export async function freshUnlockLink(env: NodeJS.ProcessEnv = process.env): Promise<{ ok: true; url: string } | { ok: false; why: string }> {
-  const token = controlTokenFromEnv(env);
-  if (token === undefined) return { ok: false, why: "no control token is configured: set CONTROL_TOKEN in .env and restart the dashboard (mise run dashboard)" };
+  const problem = controlTokenProblem(env);
+  if (problem !== undefined) return { ok: false, why: `${problem}; the dashboard does not start without it` };
+  const token = env.CONTROL_TOKEN!.trim();
   let text: string | undefined;
   try { text = readFileSync(join(configDir(), "config.yaml"), "utf8"); } catch { text = undefined; }
   const bind = env.DASHBOARD_HOST?.trim() || "127.0.0.1";

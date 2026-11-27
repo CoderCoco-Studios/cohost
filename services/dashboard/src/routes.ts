@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { authorized, handleUnlock, hasSession, pathOf, UnlockLinks } from "./access.js";
+import { authorized, handleUnlock, hasSession, pathOf, unauthorized, UnlockLinks } from "./access.js";
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import { ConfigSchema, ensureFromExample, urls, type Logger } from "@cohost/config";
 import { SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
@@ -38,12 +38,10 @@ export interface DashboardDeps {
   /** Derived per-service health (HealthTracker snapshot). */
   services: () => ServiceHealth[];
   /**
-   * Present only when CONTROL_ENABLED=1. Its presence turns on the service routes AND the bearer
-   * token requirement on every mutating route (`POST /control`, `PUT /personality`).
+   * The one lock (`CONTROL_TOKEN`, which also keys the session cookies, DASH-UNL-005) and the service controller. Every
+   * mutation passes the gate of DASH-CTRL-011, and the stack and lifecycle routes are served on every run (DASH-CTRL-001).
    */
-  control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
-  /** The control token whenever one is configured (`CONTROL_TOKEN`), in either control mode: the secret write and a sensitive config change need it even with control off. It also keys the session cookies (DASH-UNL-005). */
-  controlToken?: string;
+  control: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
   /** The unlock link's nonces (DASH-UNL-002); a private set by default. */
   unlock?: UnlockLinks;
   /** The secrets file for `PUT /secrets`. Defaults to the loader's `secrets/secrets.yaml`; tests pin it. */
@@ -71,16 +69,15 @@ const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
-  /** The control token whenever one is configured: every mutation then needs it or a session cookie, whatever CONTROL_ENABLED says (DASH-CTRL-004, DASH-CTRL-011). */
-  const gateToken = d.control?.token ?? d.controlToken;
+  /** The one lock: every mutation needs it or a session cookie (DASH-CTRL-004, DASH-CTRL-011). */
+  const gateToken = d.control.token;
   const uploads = d.uploads ?? uploadLimits(ConfigSchema.shape.dashboard.parse({}).inject);
   const inject = {
     bus: d.bus,
     uploads,
-    toolToken: d.control?.token ?? d.controlToken,
     stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
-      if (gateToken !== undefined && !authorized(gateToken, req)) { unauthorized(res); return false; }
+      if (!authorized(gateToken, req)) { unauthorized(res); return false; }
       return true;
     },
   };
@@ -95,14 +92,13 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),
     secretsFile: d.secretsFile,
-    controlMode: gateToken !== undefined,
-    controlToken: d.control?.token ?? d.controlToken,
+    controlToken: gateToken,
     body: readText,
     models: { store, applied },
   };
-  const secrets = { token: settings.controlToken, file: d.secretsFile, config: settings.file, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
+  const secrets = { token: gateToken, file: d.secretsFile, config: settings.file, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
   const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
-  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: settings.controlToken };
+  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: gateToken };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
   const unlock = { token: gateToken, links: d.unlock ?? new UnlockLinks() };
@@ -159,7 +155,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the config is valid" }));
         return;
       }
-      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016, DASH-CTRL-009, DASH-CTRL-010
+      // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
       if (await handleConfig(settings, req, res, url)) return;
       // @spec DASH-FEED-006
       if (req.method === "GET" && url.pathname === "/services") {
@@ -176,15 +172,13 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-CTRL-007
       if (req.method === "GET" && url.pathname === "/services/control") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-        const unlocked = hasSession(unlock.token, req);
-        res.end(JSON.stringify(d.control ? { enabled: true, runtime: d.control.runtime, advanced: d.control.advanced, unlocked } : { enabled: false, unlocked }));
+        res.end(JSON.stringify({ runtime: d.control.runtime, advanced: d.control.advanced, unlocked: hasSession(unlock.token, req) }));
         return;
       }
-      // @spec DASH-SVC-001, DASH-SVC-002, DASH-SVC-003
+      // @spec DASH-SVC-001, DASH-SVC-002, DASH-SVC-003, DASH-CTRL-001
       const life = req.method === "POST" ? LIFECYCLE.exec(url.pathname) : null;
       if (life) {
         const ctl = d.control;
-        if (!ctl) { res.writeHead(404); res.end("not found"); return; }
         if (!authorized(ctl.token, req)) return unauthorized(res);
         let id: string;
         try { id = decodeURIComponent(life[1]!); } catch { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: "unknown service" })); return; } // @spec DASH-HTTP-013
@@ -214,7 +208,6 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       const stackAct = req.method === "POST" ? STACK_ACTION.exec(url.pathname) : null;
       if (stackAct) {
         const ctl = d.control;
-        if (!ctl) { res.writeHead(404); res.end("not found"); return; }
         if (!authorized(ctl.token, req)) return unauthorized(res);
         req.resume(); // any body is ignored: nothing from the request reaches an argv
         const out = d.stack.request(stackAct[1] as StackActionKind, ctl.controller);
@@ -230,7 +223,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-HTTP-006
       if (req.method === "PUT" && url.pathname === "/personality") {
-        if (gateToken !== undefined && !authorized(gateToken, req)) return unauthorized(res);
+        if (!authorized(gateToken, req)) return unauthorized(res);
         d.savePersonality(await readText(req));
         await d.bus.publish("control", { cmd: "reload_personality" });
         res.writeHead(204); res.end();
@@ -238,7 +231,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-017
       if (req.method === "POST" && url.pathname === "/control") {
-        if (gateToken !== undefined && !authorized(gateToken, req)) return unauthorized(res);
+        if (!authorized(gateToken, req)) return unauthorized(res);
         const { cmd, text, target, route } = JSON.parse(await readText(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string; route?: string[] };
         await d.bus.publish("control", { cmd, text, target, ...(route !== undefined ? { route } : {}) });
         res.writeHead(204); res.end();
@@ -281,10 +274,6 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   return (req, res) => { void handle(req, res).catch((err: unknown) => d.log.error({ err, path: pathOf(req) }, "request handler failed")); };
 }
 
-function unauthorized(res: http.ServerResponse): void {
-  res.writeHead(401, { "www-authenticate": "Bearer" });
-  res.end("unauthorized");
-}
 
 /** Only `mode` and `isolated` are read from the body; anything else is ignored. Undefined = malformed. */
 function parseLifecycleBody(raw: string): { mode?: StartMode; isolated?: boolean } | undefined {

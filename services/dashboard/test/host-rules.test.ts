@@ -16,7 +16,7 @@ async function boot(bind: string, allowedHosts: string[] = ALLOWED): Promise<Boo
   const hits: string[] = [];
   const wss = new WebSocketServer({ noServer: true });
   const handler: http.RequestListener = (req, res) => { hits.push(`${req.method} ${req.url}`); res.writeHead(200); res.end("ok"); };
-  const l = await startListeners({ handler, wss, bind, port: 0, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, allowedHosts, log, exit: () => {} });
+  const l = await startListeners({ handler, wss, bind, port: 0, lanPort: 0, lanHost: "127.0.0.1", allowedHosts, log, exit: () => {} });
   assert.ok(l);
   after(() => { void l!.close(); });
   return { l: l!, hits, wss };

@@ -6,6 +6,7 @@ import { FakeBus, recordingLog, testConfig, waitFor } from "@cohost/testing";
 import { runService } from "@cohost/shared";
 import type { StackService, StackOps } from "../src/stack.js";
 import { dashboardService } from "../src/service.js";
+import { ON } from "./control-fixture.js";
 
 /** A bus that also answers what the feed reads (FakeBus only records). */
 class DashBus extends FakeBus {
@@ -43,7 +44,7 @@ async function rig(env: NodeJS.ProcessEnv, ports?: { port?: number; lan_port?: n
   const rec = recordingLog();
   const exits: number[] = [];
   let shutdown: (() => void | Promise<void>) | undefined;
-  const svc = dashboardService({ env, exit: (c) => { exits.push(c); }, lanHost: "127.0.0.1", attachStack: idleStack });
+  const svc = dashboardService({ env: { ...ON, ...env }, exit: (c) => { exits.push(c); }, lanHost: "127.0.0.1", attachStack: idleStack });
   const start = () => runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard }), createBus: () => bus as never, log: rec.log,
@@ -69,7 +70,7 @@ test("the dashboard runs on runService: it is `starting` first, `ready` once bot
 
 // @spec DASH-HTTP-016, DASH-CTRL-002
 test("a control configuration that cannot start ends the process with status 1 and never reaches ready", async (t) => {
-  const r = await rig({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "" });
+  const r = await rig({ CONTROL_TOKEN: "" });
   t.after(() => r.stop());
   await r.start();
   assert.deepEqual(r.exits, [1]);

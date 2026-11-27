@@ -5,8 +5,8 @@ import { figuresFrom, type MemoryFigures } from "./memory";
 import type { ViewerDetailData, ViewerSummary } from "./types";
 
 export interface Load<T> {
-  /** `locked`: the operator cancelled the Access dialog or locked the page. `notSetUp`: the server has no control token (403). */
-  status: "loading" | "ready" | "error" | "locked" | "notSetUp";
+  /** `locked`: the operator cancelled the Access dialog or locked the page. */
+  status: "loading" | "ready" | "error" | "locked";
   /** The last good answer; kept while a later load fails (DASH-VIEWERS-017). */
   data?: T;
   error?: string;
@@ -20,8 +20,7 @@ const enc = encodeURIComponent;
  * The Viewers screen's data: the list (searched, debounced, superseded answers ignored), the selected viewer's panel and
  * the `brain.memory` figures. Every request is gated by the dashboard's one token through the api client's Access flow: it goes
  * out with the held token or this browser's session cookie, a 401 opens the dialog and retries once; a cancel or a Lock leaves
- * the screen locked; a 403 means the server has no token
- * (DASH-VIEWERS-010, -016, -017, -022, -023).
+ * the screen locked (DASH-VIEWERS-010, -016, -017, -022, -023).
  */
 // @spec DASH-VIEWERS-010, DASH-VIEWERS-016, DASH-VIEWERS-017, DASH-VIEWERS-022
 export function useViewers() {
@@ -49,7 +48,6 @@ export function useViewers() {
     if (!alive.current || mine !== seq.current) return; // a newer search superseded this answer
     if (r.ok) { setList({ status: "ready", data: r.data?.viewers ?? [] }); }
     else if (r.locked) setList({ status: "locked" });
-    else if (r.status === 403) { setList({ status: "notSetUp", error: r.detail }); }
     else setList((prev) => ({ status: "error", data: prev.data, error: `Could not load viewers: ${describe(r)}` }));
   }, [api]);
 

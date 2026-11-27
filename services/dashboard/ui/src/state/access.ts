@@ -7,8 +7,6 @@ export interface TokenState {
   /** A token is held (in storage or memory). The value itself is never in the store's state. */
   present: boolean;
   scope: Scope | null;
-  /** The server answered that it has no such token configured (`403`); shown as "Not set up on the server". */
-  notSetUp?: boolean;
 }
 
 /** A request waiting for a token: the Access dialog shows `action` and calls `resolvePrompt` when done. */
@@ -51,7 +49,6 @@ export interface Access {
   setToken(kind: TokenKind, value: string, scope: Scope): void;
   /** Removes the token from both storages and memory. */
   lock(kind: TokenKind): void;
-  markNotSetUp(kind: TokenKind, notSetUp: boolean): void;
   /** Records whether this browser is unlocked by a session cookie (the `unlocked` of `GET /services/control`). */
   markUnlocked(unlocked: boolean): void;
   /**
@@ -84,10 +81,7 @@ export function createAccess(deps: AccessDeps = {}): Access {
     return memory[kind] ? { present: true, scope: "tab" } : none();
   };
   const state = createStore<AccessState>({ control: present("control"), prompt: null, panelOpen: false, memoryOnly: false, unlocked: false });
-  const refresh = (kind: TokenKind): void => state.set((s) => {
-    const next = present(kind);
-    return { ...s, [kind]: { ...next, ...(s[kind].notSetUp !== undefined ? { notSetUp: s[kind].notSetUp } : {}) } };
-  });
+  const refresh = (kind: TokenKind): void => state.set((s) => ({ ...s, [kind]: present(kind) }));
   deps.events?.addEventListener("storage", (e) => {
     const key = (e as Event & { key: string | null }).key;
     for (const kind of ["control"] as const) if (key === null || key === KEYS[kind]) refresh(kind);
@@ -111,9 +105,8 @@ export function createAccess(deps: AccessDeps = {}): Access {
     lock(kind) {
       delete memory[kind];
       erase("tab", kind); erase("browser", kind);
-      state.set((s) => ({ ...s, [kind]: { ...none(), ...(s[kind].notSetUp !== undefined ? { notSetUp: s[kind].notSetUp } : {}) } }));
+      state.set((s) => ({ ...s, [kind]: none() }));
     },
-    markNotSetUp: (kind, notSetUp) => state.set((s) => ({ ...s, [kind]: { ...s[kind], notSetUp } })),
     markUnlocked: (unlocked) => state.set((s) => (s.unlocked === unlocked ? s : { ...s, unlocked })),
     ask(kind, action, opts = {}) {
       const shared = open.get(kind);

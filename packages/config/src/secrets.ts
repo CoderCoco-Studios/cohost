@@ -13,7 +13,15 @@ export interface LoadedSecrets {
   ignored: string[];
   /** True when the file grants any permission to group or other on a platform where that is meaningful. */
   loose: boolean;
+  /** The derived credentials the file holds in their valid form (`ears.http.verifier`, CFG-SEC-020); not secret paths. */
+  derived: Readonly<Record<string, string>>;
+  /** Paths of derived credentials whose value is not in their valid form, which are dropped. */
+  badDerived: string[];
 }
+
+/** The derived credentials a secrets file may carry, each with the form its value must have (CFG-SEC-020). */
+export const DERIVED_SECRET_PATHS: Readonly<Record<string, RegExp>> = { "ears.http.verifier": /^[0-9a-f]{64}$/ };
+const isDerivedPrefix = (path: string): boolean => Object.keys(DERIVED_SECRET_PATHS).some((p) => p.startsWith(`${path}.`));
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
@@ -35,14 +43,14 @@ function parseSecretsText(file: string, text: string): Document {
 }
 
 /** Reads `file` as `secrets.yaml`: a missing file holds nothing, one that cannot be read or parsed is an error. */
-// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-RCV-001, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010, CFG-SEC-016
+// @spec CFG-SEC-001, CFG-SEC-002, CFG-SEC-014, CFG-SEC-005, CFG-SEC-006, CFG-RCV-001, CFG-SEC-007, CFG-SEC-008, CFG-SEC-010, CFG-SEC-016, CFG-SEC-020
 export function loadSecrets(file: string): LoadedSecrets {
   let text: string;
   try {
     text = readFileSync(file, "utf8");
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return { values: {}, ignored: [], loose: false };
+    if (code === "ENOENT") return { values: {}, ignored: [], loose: false, derived: {}, badDerived: [] };
     throw new Error(`Cannot read ${file}: ${code ?? "unknown error"}`, { cause: e });
   }
   const root: unknown = parseSecretsText(file, text).toJS();
@@ -52,17 +60,23 @@ export function loadSecrets(file: string): LoadedSecrets {
   const ignored: string[] = [];
   const wrong: string[] = [];
   const multiline: string[] = [];
+  const derived: Record<string, string> = {};
+  const badDerived: string[] = [];
   const walk = (node: Record<string, unknown>, prefix: string): void => {
     for (const [k, v] of Object.entries(node)) {
       const path = prefix ? `${prefix}.${k}` : k;
-      if (secretPathOf(path) !== undefined) {
+      const form = DERIVED_SECRET_PATHS[path];
+      if (form !== undefined) {
+        if (typeof v === "string" && form.test(v)) derived[path] = v;
+        else if (v !== null) badDerived.push(path);
+      } else if (secretPathOf(path) !== undefined) {
         if (v === null) continue;
         if (typeof v !== "string") { wrong.push(path); continue; }
         const trimmed = v.trim();
         if (trimmed === "") continue;
         if (/[\r\n]/.test(trimmed)) multiline.push(path);
         else values[path] = trimmed;
-      } else if (isSecretPrefix(path) && (v === null || isObj(v))) {
+      } else if ((isSecretPrefix(path) || isDerivedPrefix(path)) && (v === null || isObj(v))) {
         if (v !== null) walk(v, path);
       } else {
         ignored.push(path);
@@ -78,7 +92,7 @@ export function loadSecrets(file: string): LoadedSecrets {
   }
 
   const mode = statSync(file).mode & 0o777;
-  return { values, ignored, loose: process.platform !== "win32" && mode !== 0o777 && (mode & 0o077) !== 0 };
+  return { values, ignored, loose: process.platform !== "win32" && mode !== 0o777 && (mode & 0o077) !== 0, derived, badDerived };
 }
 
 /**

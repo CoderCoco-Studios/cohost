@@ -9,7 +9,7 @@ const log = { info: () => {}, warn: () => {}, fatal: () => {} } as never;
 async function boot(bind = "127.0.0.1") {
   const wss = new WebSocketServer({ noServer: true });
   const handler: http.RequestListener = (_req, res) => { res.writeHead(200); res.end("ok"); };
-  const l = await startListeners({ handler, wss, bind, port: 0, lanPort: 0, lanHost: "127.0.0.1", controlEnabled: true, log, exit: () => {} });
+  const l = await startListeners({ handler, wss, bind, port: 0, lanPort: 0, lanHost: "127.0.0.1", log, exit: () => {} });
   assert.ok(l);
   after(() => { void l!.close(); });
   return { l: l as Listeners, wss };

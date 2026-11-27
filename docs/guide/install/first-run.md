@@ -51,7 +51,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    chmod 600 secrets/secrets.yaml
    ```
 
-   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a long random string after `CONTROL_TOKEN=`. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
+   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a random string of at least 32 characters after `CONTROL_TOKEN=`; the dashboard does not start without it. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
    </details>
 
 3. Start the dashboard.

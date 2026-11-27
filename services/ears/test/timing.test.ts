@@ -8,6 +8,7 @@ import { runService, wavWrap, type Heartbeat } from "@cohost/shared";
 import type { Frame } from "@cohost/bus";
 import { createServer } from "node:net";
 import { createEarsService } from "../src/service.js";
+import { LISTENER_AUTH, withListenerKey } from "./rig.js";
 import { createInjectHandler } from "../src/inject.js";
 
 /** The real ears service on a fake bus, stub STT, no signals and no exit. */
@@ -23,7 +24,7 @@ async function boot(ears: Record<string, unknown>, setup?: (bus: ConnectorFakeBu
   await runService({
     service: "ears", health: svc.health,
     main: async (ctx) => { hb = ctx.heartbeat; await svc.main(ctx); },
-    loadConfig: () => testConfig({ ears }),
+    loadConfig: () => withListenerKey(testConfig({ ears })),
     createBus: () => bus as never,
     onShutdown: (fn) => { shutdown = fn; },
     exit: () => {}, log: recordingLog().log,
@@ -92,7 +93,7 @@ test("http clip: audioEndedAt is when ears received the clip", async () => {
   const port = await freePort();
   const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port } });
   try {
-    const post = () => fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav" } });
+    const post = () => fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav", ...LISTENER_AUTH } });
     let before = Date.now();
     let res: Response | undefined;
     for (let i = 0; i < 50 && !res; i++) { before = Date.now(); res = await post().catch(() => undefined); if (!res) await sleep(20); }
@@ -127,7 +128,7 @@ test("an http clip is not closed by ears: no closedAt", async () => {
   const r = await boot({ sources: ["http"], stt_engine: "stub", http: { host: "127.0.0.1", port } });
   try {
     let res: Response | undefined;
-    for (let i = 0; i < 50 && !res; i++) { res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav" } }).catch(() => undefined); if (!res) await sleep(20); }
+    for (let i = 0; i < 50 && !res; i++) { res = await fetch(`http://127.0.0.1:${port}/audio`, { method: "POST", body: wavWrap(Buffer.alloc(32000), 16000, 1), headers: { "content-type": "audio/wav", ...LISTENER_AUTH } }).catch(() => undefined); if (!res) await sleep(20); }
     assert.equal(res?.status, 200);
     assert.equal((r.bus.of("speech.heard")[0]!.timing as { closedAt?: number } | undefined)?.closedAt, undefined);
   } finally { await r.stop(); }

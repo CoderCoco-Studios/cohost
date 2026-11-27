@@ -7,6 +7,7 @@ import { RowShell } from "./RowShell";
 import { AvatarRenderer } from "./AvatarRenderer";
 import { SaveBar } from "./SaveBar";
 import { SecretPair, SecretRow, pairOf } from "./secrets";
+import { SensitiveNote } from "./SensitiveNote";
 import { McpServers, ToolList } from "./ToolSettings";
 import { keyGroups, matchIssue, noteFor, sourceLabel, type JsonSchema, type KeyModel, type KeyRead, type SectionModel } from "./schemaModel";
 import { useSettings, useSettingsState, type SectionState } from "./store";
@@ -70,7 +71,7 @@ function Row({ section, km, st, picks, egress }: { section: SectionModel; km: Ke
       {!embedded && km.help ? <p className="help" id={ids.help}>{km.help}</p> : null}
       {note ? <p className="help" id={ids.note}>{note}</p> : null}
       {egressNotes.map((n, i) => <p className="help egress-note" key={i}>{n}</p>)}
-      {km.sensitive ? <p className="help" id={ids.sens}>Changing this needs the control token.</p> : null}
+      {km.sensitive ? <SensitiveNote id={ids.sens} /> : null}
       {overriders.length > 0 ? (
         <div className="note note-warn small" id={ids.iso}>
           {`${overriders.join(", ")} ${overriders.length === 1 ? "runs" : "run"} isolated: its ${info!.isolation!.name} override is set, and a restart keeps it. Your saved value applies again once it is started without isolation.`}

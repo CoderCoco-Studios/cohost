@@ -180,7 +180,7 @@ To see what a handler looks like, here is the critic of the Python server. The T
 
 <<< @/../examples/modules/server.py#critic
 
-Once your server passes, set a hook to `kind: http` as above and restart the service that owns it (the Services screen has a Restart button on its row when the controls are on).
+Once your server passes, set a hook to `kind: http` as above and restart the service that owns it (the Services screen has a Restart button on its row).
 
 ## How you know it worked
 

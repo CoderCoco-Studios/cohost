@@ -1,9 +1,13 @@
 """Send one audio clip to cohost's ears `http` source. Standard library only.
 
-    mise run example:audio-send:py -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+    CONTROL_TOKEN=<the value in cohost's .env> mise run example:audio-send:py -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+
+The listener key is derived from CONTROL_TOKEN; the token itself is never sent.
 
 A copy outside the checkout runs as `python3 send_clip.py <file> ...`.
 """
+import hashlib
+import hmac
 import os
 import sys
 import urllib.error
@@ -41,17 +45,19 @@ def parse(argv):
 
 
 # region send
-def send(path, url, speaker=None, source=None):
-    """POST the file's bytes as audio/wav. Returns (status, reply body)."""
+def listener_key(token):
+    """The listener key: HMAC-SHA256 keyed with the trimmed control token of the label cohost/ears-listener/v1, as hex."""
+    return hmac.new(token.strip().encode(), b"cohost/ears-listener/v1", hashlib.sha256).hexdigest()
+
+
+def send(path, url, key, speaker=None, source=None):
+    """POST the file's bytes as audio/wav with the listener key. Returns (status, reply body)."""
     with open(path, "rb") as f:
         body = f.read()
     query = {k: v for k, v in (("speaker", speaker), ("source", source)) if v}
     if query:
         url += ("&" if "?" in url else "?") + urllib.parse.urlencode(query)
-    headers = {"content-type": "audio/wav"}
-    token = os.environ.get("EARS_HTTP_TOKEN", "")
-    if token:
-        headers["authorization"] = "Bearer " + token
+    headers = {"content-type": "audio/wav", "authorization": "Bearer " + key}
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request) as reply:
@@ -63,8 +69,11 @@ def send(path, url, speaker=None, source=None):
 
 def main():
     path, options = parse(sys.argv[1:])
+    token = os.environ.get("CONTROL_TOKEN", "").strip()
+    if not token:
+        fail("send_clip.py: set CONTROL_TOKEN to the value in cohost's .env")
     try:
-        status, text = send(path, options["--url"], options.get("--speaker"), options.get("--source"))
+        status, text = send(path, options["--url"], listener_key(token), options.get("--speaker"), options.get("--source"))
     except (OSError, ValueError) as err:
         fail(f"send_clip.py: {err}")
     print(text)

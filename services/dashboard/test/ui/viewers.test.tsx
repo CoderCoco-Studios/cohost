@@ -433,7 +433,7 @@ test("a 401 opens the one Access dialog, for the control token, naming the actio
 // @spec DASH-VIEWERS-016
 test("in a browser the unlock link unlocked, the screen opens with no prompt: the request carries the session cookie, not a token", async () => {
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  app.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: true } });
   // The server lets the cookie through; the fake sees no Authorization header, as the browser sends none.
   app.fetch.on("GET /viewers", (c) => c.headers.authorization === undefined ? { json: LIST } : { status: 400, text: "unexpected header" });
   app.fetch.on("GET /config/brain.memory", { json: CONFIG });
@@ -472,29 +472,19 @@ test("cancelling the Access dialog leaves a locked state with a button that asks
   assert.equal(app.fetch.callsTo("GET /viewers").length, asked);
 });
 
-// @spec DASH-VIEWERS-016, DASH-ACC-009
-test("a 403 shows the setup steps, the copyable line and Check again in place of the list, with no field to paste a token into", async () => {
+// @spec DASH-VIEWERS-016
+test("a 403 (the Host or Origin guard) is a load error with Retry: no setup state and no Access dialog", async () => {
   const user = userEvent.setup();
   const app = makeApp();
-  app.fetch.on("GET /viewers", { status: 403, text: "Viewer notes are locked: this dashboard has no control token. Set CONTROL_TOKEN in .env" });
+  app.fetch.on("GET /viewers", { status: 403, text: "forbidden origin" });
   renderApp(<><AccessDialog /><Screen route={{ view: "viewers" }} /></>, app);
-  await screen.findByText(/not set up/i);
+  const alert = await screen.findByRole("alert");
+  assert.match(alert.textContent ?? "", /Could not load viewers: 403 forbidden origin/);
   assert.ok(screen.queryByRole("dialog") === null, "403 does not open the Access dialog");
-  const steps = screen.getAllByRole("listitem");
-  assert.equal(steps.length, 3);
-  assert.ok(document.body.textContent!.includes('echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env'));
-  assert.match(document.body.textContent!, /unlock link/);
-  assert.ok(screen.queryByRole("list", { name: "Viewers" }) === null);
-  assert.ok(screen.queryByRole("searchbox") === null, "no list controls");
-  assert.ok(document.querySelector("input") === null, "no field at all");
-  const before = app.fetch.callsTo("GET /viewers").length;
-  await user.click(screen.getByRole("button", { name: "Check again" }));
-  await settle();
-  assert.equal(app.fetch.callsTo("GET /viewers").length, before + 1);
-  assert.ok(screen.getByText(/not set up/i), "still set up as not");
-  act(() => app.rt.access.setToken("control", "tok", "tab"));
+  assert.ok(!/not set up|CONTROL_TOKEN/i.test(document.body.textContent ?? ""), "no setup state");
   app.fetch.on("GET /viewers", authed(() => ({ json: LIST })));
-  await user.click(screen.getByRole("button", { name: "Check again" }));
+  act(() => app.rt.access.setToken("control", "tok", "tab"));
+  await user.click(within(alert).getByRole("button", { name: "Retry" }));
   await screen.findByRole("list", { name: "Viewers" });
 });
 

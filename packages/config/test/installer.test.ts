@@ -21,7 +21,7 @@ const block = (name: string) => {
 const run = (name: string, call: string, env: string, shellEnv: Record<string, string> = {}) => {
   const dir = mkdtempSync(join(tmpdir(), "cohost-inst-"));
   writeFileSync(join(dir, ".env"), env);
-  const stdout = execFileSync("bash", ["-c", `set -euo pipefail\ncd "${dir}"\nlog(){ echo "LOG $*"; }\n${block(name)}\n${call}`], {
+  const stdout = execFileSync("bash", ["-c", `set -euo pipefail\ncd "${dir}"\nlog(){ echo "LOG $*"; }\nwarn(){ echo "WARN $*"; }\n${block(name)}\n${call}`], {
     encoding: "utf8",
     env: { PATH: process.env.PATH!, ...shellEnv },
   });
@@ -42,12 +42,38 @@ test("an empty CONTROL_TOKEN (nothing, spaces, inline comment) gets a fresh 48-h
 });
 
 // @spec DEPLOY-INST-013
-test("two runs generate different tokens; a non-empty token is untouched; no line adds none", () => {
+test("two runs generate different tokens; a non-empty token of 32 characters or more is untouched with no warning", () => {
   const a = tokenOf(run("control-token", "fill_control_token", "CONTROL_TOKEN=\n").env);
   const b = tokenOf(run("control-token", "fill_control_token", "CONTROL_TOKEN=\n").env);
   assert.notEqual(a, b);
-  assert.equal(run("control-token", "fill_control_token", "CONTROL_TOKEN=mine\n").env, "CONTROL_TOKEN=mine\n");
-  assert.equal(run("control-token", "fill_control_token", "A=1\n").env, "A=1\n");
+  const long = "x".repeat(32);
+  const kept = run("control-token", "fill_control_token", `CONTROL_TOKEN=${long}\n`);
+  assert.equal(kept.env, `CONTROL_TOKEN=${long}\n`);
+  assert.doesNotMatch(kept.stdout, /WARN/);
+});
+
+// @spec DEPLOY-INST-013
+test("a .env with no CONTROL_TOKEN line gets one appended with a fresh 48-hex secret, never printed, the other lines kept", () => {
+  for (const env of ["A=1\n", "A=1", ""]) {
+    const r = run("control-token", "fill_control_token", env);
+    const t = tokenOf(r.env)!;
+    assert.match(t, /^[0-9a-f]{48}$/, JSON.stringify(env));
+    assert.ok(!r.stdout.includes(t), "token not printed");
+    if (env !== "") assert.match(r.env, /^A=1\nCONTROL_TOKEN=[0-9a-f]{48}\n$/);
+  }
+});
+
+// @spec DEPLOY-INST-013
+test("a hand-set CONTROL_TOKEN shorter than 32 characters after trimming is left untouched with a warning naming the variable, not its value", () => {
+  for (const env of ["CONTROL_TOKEN=mine\n", "CONTROL_TOKEN=  short-one  # note\n", `CONTROL_TOKEN="${"y".repeat(31)}"\n`]) {
+    const r = run("control-token", "fill_control_token", env);
+    assert.equal(r.env, env, "never changed");
+    const warning = r.stdout.split("\n").find((l) => l.startsWith("WARN")) ?? "";
+    assert.match(warning, /CONTROL_TOKEN/);
+    assert.match(warning, /32 characters/);
+    assert.match(warning, /openssl rand -hex 24/);
+    for (const v of ["mine", "short-one", "y".repeat(31)]) assert.ok(!warning.includes(v), "the value is never printed");
+  }
 });
 
 /** Runs one block of install.sh in bash from `cwd` with `ROOT` set, `log`/`warn` printing, and `env`; returns the exit status and both streams. */

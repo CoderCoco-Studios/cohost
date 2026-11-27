@@ -153,11 +153,13 @@ test("on its own port the page names the address it waits for after ten unanswer
 });
 
 // @spec DASH-RCV-013
-test("reset-all without the token says which secrets.yaml keys wait for it", async () => {
+test("reset-all replaces the rows with the answer's problems and shows no token banner", async () => {
   const b = open();
-  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e2", problems: PROBLEMS.slice(3), valid: false, tokenNeeded: ["voice.openai.api_key"] } });
+  b.app.fetch.on("POST /recovery/reset-all", { json: { ok: true, etag: "e2", problems: PROBLEMS.slice(3), valid: false } });
+  const before = screen.getAllByRole("listitem").length;
   await userEvent.click(screen.getByRole("button", { name: "Reset all failing keys" }));
-  await screen.findByText(/voice\.openai\.api_key in secrets\.yaml need the control token/);
+  await waitFor(() => assert.ok(screen.getAllByRole("listitem").length < before));
+  assert.ok(!/control token/i.test(document.body.textContent ?? ""), "no tokenNeeded banner");
 });
 
 // @spec DASH-RCV-013, DASH-RCV-023
@@ -224,10 +226,10 @@ test("a raw save that finds the file changed reads it again and says so; a refus
     assert.ok(area instanceof HTMLTextAreaElement);
     assert.equal(area.value, "changed: [\n");
   });
-  b.app.fetch.on("POST /recovery/raw", { status: 403, json: { ok: false, detail: "changing config.yaml needs the control token" } });
+  b.app.fetch.on("POST /recovery/raw", { status: 500, json: { ok: false, detail: "config.yaml could not be written" } });
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
   const alert = await screen.findByRole("alert");
-  assert.match(alert.textContent ?? "", /needs the control token/);
+  assert.match(alert.textContent ?? "", /could not be written/);
   assert.equal((JSON.parse(b.app.fetch.callsTo("POST /recovery/raw").at(-1)!.body!) as { etag: string }).etag, "e7");
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   assert.equal(screen.queryByRole("textbox", { name: "config.yaml" }), null);
@@ -244,17 +246,11 @@ test("editing secrets.yaml as text asks for the control token on a 401", async (
 });
 
 // @spec DASH-RCV-021
-test("Stop the stack is offered only with control enabled, and reports its result", async () => {
-  const off = open();
-  off.app.fetch.on("GET /services/control", { json: { enabled: false, unlocked: false } });
-  await waitFor(() => assert.ok(off.app.fetch.callsTo("GET /services/control").length >= 1));
-  assert.equal(screen.queryByRole("button", { name: "Stop the stack" }), null);
-  off.unmount();
-
+test("Stop the stack is always offered, with no control-info read first, and reports its result", async () => {
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: false } });
   renderApp(<RecoveryScreen initial={STATE} reload={() => {}} navigate={() => {}} probe={async () => {}} here={HERE} pollMs={5} />, app);
-  const stop = await screen.findByRole("button", { name: "Stop the stack" });
+  const stop = screen.getByRole("button", { name: "Stop the stack" });
+  assert.equal(app.fetch.callsTo("GET /services/control").length, 0);
   app.fetch.on("POST /stack/stop", { status: 502, json: { ok: false, detail: "Cannot connect to the Docker daemon" } });
   await userEvent.click(stop);
   assert.match((await screen.findByRole("alert")).textContent ?? "", /Cannot connect to the Docker daemon/);

@@ -42,15 +42,15 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### The dashboard will not start, mentioning `CONTROL_TOKEN`
 
-- **Cause:** `CONTROL_ENABLED=1` is set but `CONTROL_TOKEN` is empty. The dashboard refuses to run its controls without a token. The same refusal happens if `DASHBOARD_HOST` is set to something other than `127.0.0.1` without a token.
-- **Fix:** put a long random value on the `CONTROL_TOKEN=` line in `.env`. The installer fills one in; to make one by hand, run `openssl rand -hex 24`. Then start the dashboard again.
+- **Cause:** `CONTROL_TOKEN` in `.env` is missing, empty, or shorter than 32 characters. It is cohost's one lock, so the dashboard does not start without it, in normal mode or in config recovery mode. The message says which (missing or too short) and never prints the value.
+- **Fix:** run `./scripts/install.sh` again, which fills an empty `CONTROL_TOKEN` (it warns about a hand-set one that is too short and leaves it alone), or put a value of at least 32 characters on the `CONTROL_TOKEN=` line yourself: `openssl rand -hex 24` makes one. Then start the dashboard again and open the unlock link it prints.
 
 ### The dashboard says the config is invalid
 
 The page shows **Config recovery** instead of the usual screens, and the terminal shows `Invalid <path>/config.yaml:` followed by the failing keys and `config recovery mode: <n> problems; fix them at http://127.0.0.1:3000`.
 
 - **Cause:** `config/config.yaml` or `secrets/secrets.yaml` does not pass the checks every program makes when it starts. The usual reasons: a file from an older cohost still holds `${NAME}` placeholders (cohost substitutes none; every value is written as it is), a value is out of range, or the file is not valid YAML. Every other program refuses to start with such a file, so the dashboard starts in recovery mode to let you fix it; Launch, Rebuild and every service start or restart are refused until the file is valid, and so are `cohostctl launch`, `rebuild`, `start`, `restart` and `restart-all`.
-- **Fix:** open the page at the address in the log (the usual one, or `http://localhost:3000` when the `dashboard` section itself is broken). Each failing key has its own row: type a value and press **Set**, press **Use** to keep the value an old placeholder fell back to, or press **Reset to default**. **Reset all failing keys** does that for every key it can, using each placeholder's fallback when it has one; what is left needs a value from you (a model name, for example). A credential written into `config.yaml` is removed there: set it afterwards in **Settings**, in the section the row names, with its masked field. A YAML syntax error (the row says `not valid YAML at line <l>, column <c>`) has **Edit config.yaml as text** (or **Edit secrets.yaml as text**): fix that line in the text box and press **Save**; the box stays open with the new position until the file parses. With control on, or with a `CONTROL_TOKEN` set, opening and saving the file ask for the control token, and `secrets.yaml` always does. If you save an empty file by mistake, the button stays there to put the text back. You can also fix the line in a text editor and press **Check again**. If the stack is still running from before, **Stop the stack** (control enabled) stops it without a valid config, as `mise run cohostctl stop-all` does. Nothing changes in the file until you press a button, and your comments are kept. When the last key is fixed the page says the dashboard is starting and reloads into the normal screens; there is nothing to restart.
+- **Fix:** open the page at the address in the log (the usual one, or `http://localhost:3000` when the `dashboard` section itself is broken). Each failing key has its own row: type a value and press **Set**, press **Use** to keep the value an old placeholder fell back to, or press **Reset to default**. **Reset all failing keys** does that for every key it can, using each placeholder's fallback when it has one; what is left needs a value from you (a model name, for example). A credential written into `config.yaml` is removed there: set it afterwards in **Settings**, in the section the row names, with its masked field. A YAML syntax error (the row says `not valid YAML at line <l>, column <c>`) has **Edit config.yaml as text** (or **Edit secrets.yaml as text**): fix that line in the text box and press **Save**; the box stays open with the new position until the file parses. Opening and saving either file ask for the control token. If you save an empty file by mistake, the button stays there to put the text back. You can also fix the line in a text editor and press **Check again**. If the stack is still running from before, **Stop the stack** stops it without a valid config, as `mise run cohostctl stop-all` does. Every button asks for the control token, unless the browser is unlocked. Nothing changes in the file until you press a button, and your comments are kept. When the last key is fixed the page says the dashboard is starting and reloads into the normal screens; there is nothing to restart.
 
 ### The address is already in use
 
@@ -65,12 +65,12 @@ The page shows **Config recovery** instead of the usual screens, and the termina
 ### The unlock link says it is not valid
 
 - **Cause:** each unlock link works once and only for 10 minutes, and a restart of the dashboard ends the links it printed before. The link was already opened, is older than 10 minutes, or came from an earlier start.
-- **Fix:** while the dashboard runs, run `mise run dashboard:unlock` and open the link it prints, or restart the dashboard and open the link in its terminal. If the page says no control token is configured, set `CONTROL_TOKEN` in `.env` and restart the dashboard.
+- **Fix:** while the dashboard runs, run `mise run dashboard:unlock` and open the link it prints, or restart the dashboard and open the link in its terminal.
 
 ### I changed `CONTROL_TOKEN` and the page is locked again
 
 - **Cause:** expected. `CONTROL_TOKEN` signs the sessions of browsers unlocked by the unlock link, so a new token ends every one of them.
-- **Fix:** open a fresh unlock link: restart the dashboard (it reads `.env` at start) and open the link it prints, or run `mise run dashboard:unlock`.
+- **Fix:** open a fresh unlock link: restart the dashboard (it reads `.env` at start) and open the link it prints, or run `mise run dashboard:unlock`. Then press **Restart all**, so `ears` gets the audio listener key derived from the new token.
 
 ### My settings are not being read
 
@@ -120,6 +120,11 @@ The page shows **Config recovery** instead of the usual screens, and the termina
 
 - **Cause:** a thing it relies on is not answering. A name like `hook.cortex.critic` means a [hook](../start/glossary.md#hook) set to ask a model or your own server cannot reach it. The service carries on with its built-in rules meanwhile.
 - **Fix:** fix or restart the named dependency, or set the hook back to `rules`.
+
+### `ears` answers 401, or `deps.http` is `down` with the listener key missing
+
+- **Cause:** the `http` audio listener checks every clip for a key derived from `CONTROL_TOKEN`, on loopback too. Either `ears` was started without the key (a hand-run `docker compose up`, or a start that skipped the control plane: the dashboard, `cohostctl` and `mise run dev` deliver it), `CONTROL_TOKEN` changed since `ears` started, or the client sending the clip has a different `CONTROL_TOKEN` in its shell.
+- **Fix:** start or restart `ears` from the dashboard or `cohostctl`; after changing `CONTROL_TOKEN`, press **Restart all**. Set `CONTROL_TOKEN` in the client's shell to the value in `.env`. See [Send audio to ears](../advanced/extend/audio-in.md).
 
 ### The `chat` service does nothing
 
@@ -174,10 +179,10 @@ Work down the list:
 
 ## Memory
 
-### The Viewers screen is not set up or says 403
+### The Viewers screen asks for the token or says 401
 
-- **Cause:** `CONTROL_TOKEN` is empty or missing, so nothing can unlock viewer notes and the screen stays locked on purpose.
-- **Fix:** set `CONTROL_TOKEN` in `.env` (`echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env`), restart the dashboard and open the unlock link it prints. See [Memory and viewer notes](tune/memory.md).
+- **Cause:** this browser is locked. Viewer notes are personal data, so reading them needs the control token like every change does.
+- **Fix:** enter the `CONTROL_TOKEN` from `.env` in the Access dialog, or open the unlock link the dashboard printed (`mise run dashboard:unlock` prints a fresh one). See [Memory and viewer notes](tune/memory.md).
 
 ### The memory service will not start after I changed the embedding model
 

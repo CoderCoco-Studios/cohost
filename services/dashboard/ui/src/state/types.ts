@@ -45,10 +45,14 @@ export interface FeedEvent {
 }
 
 /** The `GET /services/control` answer. */
-export type ControlInfo = ({ enabled: false } | { enabled: true; runtime: string; advanced: boolean }) & {
+export interface ControlInfo {
+  /** The container runtime: always `compose`. */
+  runtime: string;
+  /** True only when `CONTROL_ADVANCED=1`. */
+  advanced: boolean;
   /** The request carried a valid session cookie: this browser was unlocked by the unlock link (DASH-CTRL-007). */
   unlocked: boolean;
-};
+}
 
 /** The `GET /services/manifest` unit descriptors (only what the shell and screens read). */
 export interface UnitDescriptor {

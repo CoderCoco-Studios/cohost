@@ -49,6 +49,16 @@ export const SILENCE = 10;
 type Sub = { opts: { group: string; types: readonly string[]; start?: string }; handler: (ev: never) => Promise<void> };
 const UPLOAD = "0123456789abcdef0123456789abcdef";
 
+/** The listener key a booted ears holds (its delivered `ears.http.verifier`, config CFG-SEC-020), and the header that carries it. */
+export const LISTENER_KEY = "0123456789abcdef".repeat(4);
+export const LISTENER_AUTH = { authorization: `Bearer ${LISTENER_KEY}` };
+
+/** The config as the loader returns it once a listener key is merged. */
+export function withListenerKey<T extends { ears: { http: object } }>(cfg: T): T {
+  (cfg.ears.http as { verifier?: string }).verifier = LISTENER_KEY;
+  return cfg;
+}
+
 export async function boot(ears: Record<string, unknown>, o: { setup?: (bus: ConnectorFakeBus) => void; loadVad?: LoadVad; streaming?: StreamingSttEngine; pingIntervalMs?: number } = {}) {
   const subs: Sub[] = [];
   const bus = Object.assign(new ConnectorFakeBus(), { resetGroup: async () => {}, subscribe: (opts: Sub["opts"], handler: Sub["handler"]) => { subs.push({ opts, handler }); return new Promise<void>(() => {}); } });
@@ -63,7 +73,7 @@ export async function boot(ears: Record<string, unknown>, o: { setup?: (bus: Con
   await runService({
     service: "ears", health: svc.health,
     main: async (ctx) => { hb = ctx.heartbeat; await svc.main(ctx); },
-    loadConfig: () => testConfig({ ears }),
+    loadConfig: () => withListenerKey(testConfig({ ears })),
     createBus: () => bus as never,
     onShutdown: (fn) => { shutdown = fn; },
     exit: () => {}, log: log.log,

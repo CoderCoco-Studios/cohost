@@ -1,8 +1,6 @@
 import type { TokenKind } from "../../state/types";
 
 export const CONTROL_FIND = "grep ^CONTROL_TOKEN= .env";
-/** The exact line that adds a control token to a dashboard started without one (DASH-ACC-009). */
-export const CONTROL_LINE = 'echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env';
 
 export const ENV_NAME: Record<TokenKind, string> = { control: "CONTROL_TOKEN" };
 export const TOKEN_LABEL: Record<TokenKind, string> = { control: "Control token" };

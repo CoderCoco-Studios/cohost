@@ -4,7 +4,7 @@ The listening half of the co-host: it consumes connector audio sources (`discord
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 195 specs: 184 `[x]`, 9 `[ ]`, 2 `[D]`; EARS-ENG-008 and EARS-SRC-013 take credentials from the delivery ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 195 specs: 187 `[x]`, 6 `[ ]`, 2 `[D]`; EARS-ENG-008 and EARS-SRC-013 take credentials from the delivery ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 **PARTIAL**, 2026-11-23: the STT engine contract is built (`services/ears/src/engines.ts`, `stt.ts`, `health.ts`): batch engines `speaches`, `openai` and `stub`, engine selection and the batch fallback, streaming sessions with the batch fallback, streamed partials and the engine-aware `deps.stt` (EARS-ENG-001 to 012, EARS-SES-001 to 013, EARS-HLTH-003 to 012). The Nemotron publishes no partials (EARS-NEM-004: the wire cannot tell a suffix from a corrected whole text). The Nemotron and Kyutai adapters are built (`services/ears/src/nemotron.ts`, `kyutai.ts`; wired by `buildEngines`), with the Kyutai end of turn closing an utterance in `connector-source.ts` (EARS-NEM-001 to 007, EARS-KYU-001 to 014 `[x]`, tested against local fake servers; the live run against `stt-nemotron` and `stt-kyutai` is manual, #190). Early reply is built (`services/ears/src/connector-source.ts`, EARS-EARLY-001 to 026): one early snapshot per pause of a connector utterance under a batch engine, `speech.early`, `speech.retracted` on resumption, reuse of the early transcript as the final (`earlySeq`, `earlySttMs`), `earlyLate` for a call the close waited for, `closedAt` on every utterance ears closes itself, and the heartbeat counts (EARS-HEAR-012, EARS-PART-009 `[x]`); a streaming engine, an echo-suppressed source, `http`, `dir` and injection take no early snapshot. The spec file holds 195 specs: 185 `[x]`, 8 `[ ]`, 2 `[D]` (EARS-SRC-013, -015, -021 and EARS-EX-002 rewritten for the one lock of #370, the audio listener requiring `CONTROL_TOKEN`). The echo gate (EARS-ECHO-001 to 009) is implemented: only non-virtual sinks' `voice.playing` and `voice.done` move the gate (EARS-ECHO-002). Each streamed clause is its own entry. The open specs are the desktop helper gaps. EARS-SES-003 is `[x]`: a buffered start the server does not accept within `ears.stt_timeout_ms` fails the session, tested through the router. The desktop capture helper is built in `crates/cohost-desktop-audio`: clip cutting, delivery and retry, token, usage exits and CI are tested (EARS-SRC-015, 017, 020, 021, 023; the Linux back end uses the pure-Rust `pulseaudio` client, so its build needs no system library). Its capture back ends (PulseAudio monitor, WASAPI loopback), default-device reopen and stop path are compiled but not verified on hardware (EARS-SRC-014, 018, 019, 022). Earlier: `ears.http.token` is read from `secrets.yaml` and ears uses no Discord token (EARS-SRC-013, EARS-CON-002).
 
@@ -46,12 +46,12 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | EARS-VAD-001 to 008 | endpointing | 8 | 8 `[x]` |
 | EARS-PART-001 to 022 | partial transcripts | 22 | 21 `[x]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
-| EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 11 `[x]`, 3 `[ ]`, 1 `[D]` |
-| EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 3 `[x]`, 4 `[ ]` |
+| EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 12 `[x]`, 2 `[ ]`, 1 `[D]` |
+| EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 4 `[x]`, 3 `[ ]` |
 | EARS-CON-001 to 005 | connector sources | 5 | 5 `[x]` |
 | EARS-ECHO-001 to 009 | echo gate | 9 | 9 `[x]` |
 | EARS-EARLY-001 to 026 | early transcription | 26 | 26 `[x]` |
-| EARS-EX-001 to 007 | example audio clients and scripts | 7 | 6 `[x]`, 1 `[ ]` |
+| EARS-EX-001 to 007 | example audio clients and scripts | 7 | 7 `[x]` |
 | EARS-INJ-005 to 012 | audio injection | 7 | 7 `[x]` |
 | EARS-STUB-001 to 002 | stub transcriber | 2 | 2 `[x]` |
 | EARS-HLTH-001 to 012 | health | 12 | 12 `[x]` |

@@ -7,6 +7,7 @@ import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { createFeed, type FeedSocket } from "../src/feed.js";
 import { StackService, type StackOps } from "../src/stack.js";
+import { AUTH, ON, testControl } from "./control-fixture.js";
 
 const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
@@ -54,24 +55,21 @@ test("a rebuild request runs the rebuild action; the stack reads as starting whi
 });
 
 // @spec DASH-STACK-008
-test("POST /stack/rebuild needs the token, answers 202 {ok, action: rebuild} and is 404 with control disabled", async () => {
+test("POST /stack/rebuild passes the gate (401 without the token) and answers 202 {ok, action: rebuild}", async () => {
   const rec = recordingLog();
   const svc = new StackService({ log: rec.log, bus: () => "connected" });
   const f = ops(crashed);
   svc.attach(f.o);
   await svc.probe();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
-  const mk = (control: typeof setup.control) => http.createServer(createDashboardHandler({
+  const setup = setupControl(ON, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const on = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], ...(control ? { control } : {}), stack: svc,
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: svc,
   }));
-  const on = mk(setup.control);
-  const off = mk(undefined as never);
-  for (const s of [on, off]) await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
-  after(() => { on.close(); off.close(); });
-  assert.equal((await fetch(url(off, "/stack/rebuild"), { method: "POST" })).status, 404);
+  await new Promise<void>((r) => on.listen(0, "127.0.0.1", r));
+  after(() => { on.close(); });
   assert.equal((await fetch(url(on, "/stack/rebuild"), { method: "POST" })).status, 401);
-  const r = await fetch(url(on, "/stack/rebuild"), { method: "POST", headers: { authorization: "Bearer s3cret" } });
+  const r = await fetch(url(on, "/stack/rebuild"), { method: "POST", headers: AUTH });
   assert.equal(r.status, 202);
   assert.deepEqual(await r.json(), { ok: true, action: "rebuild" });
   assert.ok(f.calls.includes("rebuild"));
@@ -108,7 +106,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
   assert.equal("overrides" in of("redis"), false);
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc,
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc, control: testControl(),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -119,7 +117,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
 // @spec DASH-HTTP-014, MOD-MAN-007
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
-  const setup = setupControl({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" }, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl(ON, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
@@ -142,7 +140,7 @@ test("GET /services/manifest lists the twenty units in manifest order, the tools
   const rec = recordingLog();
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }), control: testControl(),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

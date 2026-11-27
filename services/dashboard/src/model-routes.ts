@@ -11,14 +11,14 @@ import {
 export const UPLOAD_IDLE_MS = 30_000;
 const MODELS_PREFIX = "/avatar/models/";
 
-/** What the model routes need: the store, the applied view, the cap and the token gate (`CONTROL_ENABLED=1`). */
+/** What the model routes need: the store, the applied view, the cap and the one lock. */
 export interface ModelRoutes {
   store: ModelStore;
   applied: AppliedView;
   /** `dashboard.models.max_bytes`. */
   maxBytes: number;
-  /** The control token when `CONTROL_ENABLED=1`: every mutating model route then needs it (DASH-MDL-016). */
-  token?: string;
+  /** `CONTROL_TOKEN`: every mutating model route passes the gate of DASH-CTRL-011 (DASH-MDL-016). */
+  token: string;
   /** The one upload slot: an upload runs at a time (DASH-MDL-017). */
   slot: { busy: boolean };
   idleMs?: number;
@@ -109,7 +109,7 @@ async function serveNamed(m: ModelRoutes, req: http.IncomingMessage, res: http.S
   return serveFile(req, res, s);
 }
 
-const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => m.token !== undefined && !authorized(m.token, req);
+const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => !authorized(m.token, req);
 
 /**
  * Answers a request and closes its connection, writing the answer to the socket as it is (`connection: close`) and ending the

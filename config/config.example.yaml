@@ -284,8 +284,8 @@ ears:
   http:
     host: 127.0.0.1
     port: 8765
-    # POST /audio can require a bearer token (Authorization: Bearer <token>): set ears.http.token in secrets.yaml when the port
-    # is reachable by others; empty requires none. A clip names its source with ?source=<tag> (default http).
+    # Every POST /audio, on this computer too, must carry Authorization: Bearer <listener key>, the key the audio clients derive
+    # from CONTROL_TOKEN in .env (ears gets only that key, never the token). A clip names its source with ?source=<tag> (default http).
   # The `dir` source: the directory to watch (created if missing) and how often to look. Empty path = not configured (ears idles degraded).
   dir:
     path: ""

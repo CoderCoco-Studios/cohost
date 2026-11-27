@@ -2,7 +2,7 @@
  * dashboard — a host process (`mise run dashboard`), http://localhost:3000
  *
  * - Live feed of everything on the bus, brain status, avatar preview
- * - Stack panel: Launch / Stop / Restart-all for the Compose stack (control mode), and per-service control
+ * - Stack panel: Launch / Stop / Restart-all for the Compose stack, and per-service control, behind the one lock (CONTROL_TOKEN)
  * - Audio sink: plays the co-host's voice. Add http://<ai-pc-ip>:3001/?sink=1 (by IP address, or by a name listed in dashboard.allowed_hosts; DASH-HOST-009) as an OBS Browser Source
  *   (with "control audio via OBS") and the voice lands on stream with no virtual cables.
  * - Mute / unmute / make it say something / wipe context

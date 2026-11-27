@@ -91,7 +91,7 @@ export class ComposeRuntime implements Runtime {
     if (!docker.ok) return { ok: false, detail: docker.detail };
     // A command that creates, starts or restarts a container projects first; stop only stops (CTRL-RUNTIME-014).
     if (verb[0] !== "stop") {
-      const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
+      const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest, base);
       if (failed) return { ok: false, detail: failed.detail };
       ensureLogsDir(projectionRoot(this.o.cwd), this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     }
@@ -126,7 +126,7 @@ export class ComposeRuntime implements Runtime {
     const base = this.o.env ?? process.env;
     const docker = resolveDockerBin(base, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
-    const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest);
+    const failed = await projectManifestSecrets(projectionRoot(this.o.cwd), this.manifest, base);
     if (failed) return { ok: false, detail: failed.detail };
     ensureLogsDir(projectionRoot(this.o.cwd), this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     try {

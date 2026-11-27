@@ -74,11 +74,32 @@ impl fmt::Display for PostError {
 
 impl std::error::Error for PostError {}
 
-/// The bearer token: `--token` when non-empty, otherwise `EARS_HTTP_TOKEN` when non-empty.
+/// The control token: `--token` when non-empty (an override: a command-line value can be read by
+/// other users through the process list), otherwise `CONTROL_TOKEN` from the environment when
+/// non-empty.
 // @spec EARS-SRC-021
 pub fn resolve_token(flag: Option<String>, env: Option<String>) -> Option<String> {
     flag.filter(|t| !t.is_empty())
         .or_else(|| env.filter(|t| !t.is_empty()))
+}
+
+/// The label the ears listener key is an HMAC of (control-plane CTRL-RUNTIME-017).
+pub const LISTENER_LABEL: &str = "cohost/ears-listener/v1";
+
+/// The ears listener key: HMAC-SHA256 keyed with the control token, leading and trailing
+/// whitespace removed, of [`LISTENER_LABEL`], as 64 lowercase hex digits (control-plane
+/// CTRL-RUNTIME-017). The helper sends this key, never the token itself.
+// @spec EARS-SRC-021
+pub fn listener_key(token: &str) -> String {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(token.trim().as_bytes())
+        .expect("HMAC takes a key of any length");
+    mac.update(LISTENER_LABEL.as_bytes());
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// A parsed `http://` URL.
@@ -175,17 +196,17 @@ pub fn parse_http_target(url: &str) -> Result<HttpTarget, String> {
     })
 }
 
-/// Posts one clip as `audio/L16` (little-endian 16-bit mono at 16 kHz) to `url`, with a bearer
-/// token when given. Succeeds on a 2xx answer.
+/// Posts one clip as `audio/L16` (little-endian 16-bit mono at 16 kHz) to `url`, with the listener
+/// key as its bearer when given. Succeeds on a 2xx answer.
 // @spec EARS-SRC-015, EARS-SRC-020, EARS-SRC-021
-pub async fn post_clip(url: &str, token: Option<&str>, clip: &[i16]) -> Result<(), PostError> {
-    post_clip_timed(url, token, clip, &PostTimeouts::default()).await
+pub async fn post_clip(url: &str, key: Option<&str>, clip: &[i16]) -> Result<(), PostError> {
+    post_clip_timed(url, key, clip, &PostTimeouts::default()).await
 }
 
 /// [`post_clip`] with explicit stage timeouts.
 pub async fn post_clip_timed(
     url: &str,
-    token: Option<&str>,
+    key: Option<&str>,
     clip: &[i16],
     timeouts: &PostTimeouts,
 ) -> Result<(), PostError> {
@@ -197,8 +218,8 @@ pub async fn post_clip_timed(
         target.host_header,
         body.len()
     );
-    if let Some(t) = token {
-        head += &format!("Authorization: Bearer {t}\r\n");
+    if let Some(k) = key {
+        head += &format!("Authorization: Bearer {k}\r\n");
     }
     head += "\r\n";
 
@@ -276,11 +297,12 @@ async fn read_status(stream: &mut TcpStream) -> Result<u16, PostError> {
 /// The HTTP sender the delivery loop uses: one clip per [`post_clip`] call.
 pub struct HttpSender {
     pub url: String,
-    pub token: Option<String>,
+    /// The ears listener key (EARS-SRC-021).
+    pub key: String,
 }
 
 impl crate::deliver::ClipSender for HttpSender {
     async fn send(&self, clip: &[i16]) -> Result<(), PostError> {
-        post_clip(&self.url, self.token.as_deref(), clip).await
+        post_clip(&self.url, Some(&self.key), clip).await
     }
 }

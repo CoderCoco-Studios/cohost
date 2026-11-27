@@ -19,7 +19,7 @@ export interface TokenFormProps {
   onCancel: () => void;
 }
 
-type Result = { kind: "rejected" } | { kind: "failed"; message: string } | { kind: "not-set-up" } | { kind: "memory" } | null;
+type Result = { kind: "rejected" } | { kind: "failed"; message: string } | { kind: "memory" } | null;
 
 function Checks({ kind }: { kind: TokenKind }) {
   return (
@@ -35,7 +35,7 @@ function Checks({ kind }: { kind: TokenKind }) {
  * so it is gone when the dialog closes (DASH-ACC-012). A submitted token is trimmed and checked against the server; it is
  * stored only after the server accepted it, in this tab or, when chosen, this browser (DASH-ACC-004, DASH-ACC-007).
  */
-// @spec DASH-ACC-003, DASH-ACC-004, DASH-ACC-005, DASH-ACC-007, DASH-ACC-012
+// @spec DASH-ACC-003, DASH-ACC-004, DASH-ACC-005, DASH-ACC-007, DASH-ACC-010, DASH-ACC-012
 export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenFormProps) {
   const api = useApi();
   const { access } = useAccess();
@@ -58,13 +58,11 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
     const outcome = await checkToken(api, token);
     setBusy(false);
     if (outcome.kind === "accepted") {
-      access.markNotSetUp(kind, false);
       access.setToken(kind, token, scope);
       if (access.state.get().memoryOnly) setResult({ kind: "memory" });
       else onStored();
       return;
     }
-    if (outcome.kind === "not-set-up") access.markNotSetUp(kind, true);
     setResult(outcome);
   };
 
@@ -117,11 +115,6 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
           </Banner>
         ) : null}
         {result?.kind === "failed" ? <Banner tone="bad">The token could not be checked: {result.message}. Nothing was changed.</Banner> : null}
-        {result?.kind === "not-set-up" ? (
-          <Banner tone="warn" title="Not set up on the server">
-            The dashboard has no control token. Set <code>CONTROL_TOKEN</code> in <code>.env</code> (<code>CONTROL_ENABLED</code> does not have to be 1) and restart the dashboard. Nothing was changed.
-          </Banner>
-        ) : null}
         {result?.kind === "memory" ? (
           <Banner tone="warn" title="Unlocked for this page only">
             This browser blocks storage, so the token is kept in memory and you will be asked for again after a reload.
@@ -138,7 +131,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
       <details className="where">
         <summary>Where these are set</summary>
         <p className="help">
-          <code>CONTROL_TOKEN</code>, <code>CONTROL_ENABLED</code>, <code>CONTROL_ADVANCED</code> and <code>DASHBOARD_HOST</code> are set in <code>.env</code>, in the cohost folder.
+          <code>CONTROL_TOKEN</code>, <code>CONTROL_ADVANCED</code> and <code>DASHBOARD_HOST</code> are set in <code>.env</code>, in the cohost folder.
           The dashboard reads them once when the dashboard starts, so a change takes effect only after it restarts.
           This dialog never sets them: it only checks a token you paste and remembers it for this page.
         </p>

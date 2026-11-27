@@ -4,7 +4,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use crate::clip::ClipConfig;
-use crate::post::{DEFAULT_URL, parse_http_target, resolve_token};
+use crate::post::{DEFAULT_URL, listener_key, parse_http_target, resolve_token};
 
 pub const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1:6379";
 pub const DEFAULT_PREFIX: &str = "cohost";
@@ -21,7 +21,8 @@ pub struct Options {
     pub redis_url: String,
     pub prefix: String,
     pub clip: ClipConfig,
-    pub token: Option<String>,
+    /// The ears listener key derived from the control token: the bearer of every `POST /audio`.
+    pub key: String,
     pub device: Option<String>,
     /// Problems that do not stop the helper, for the caller to log.
     pub warnings: Vec<String>,
@@ -60,20 +61,26 @@ fn bounded(flag: &str, value: u32, min: u32, max: u32) -> Result<u32, UsageError
 }
 
 impl Options {
-    /// Parses `args` (without the program name). `env` holds `REDIS_URL` and `EARS_HTTP_TOKEN`
+    /// Parses `args` (without the program name). `env` holds `REDIS_URL` and `CONTROL_TOKEN`
     /// when set; a flag wins over the environment and an empty value counts as unset. Any
-    /// problem is a [`UsageError`], so the helper exits before it posts anything.
+    /// problem, a missing token included, is a [`UsageError`], so the helper exits before it
+    /// captures or posts anything.
     // @spec EARS-SRC-015, EARS-SRC-017, EARS-SRC-018, EARS-SRC-021
     pub fn parse(args: &[&str], env: &[(&str, &str)]) -> Result<Self, UsageError> {
         let mut url = DEFAULT_URL.to_string();
         let mut prefix = DEFAULT_PREFIX.to_string();
         let mut redis_flag = None;
         let mut token_flag = None;
+        let mut allow_remote = false;
         let mut device = None;
         let mut clip = ClipConfig::default();
 
         let mut rest = args.iter().copied();
         while let Some(flag) = rest.next() {
+            if flag == "--allow-remote" {
+                allow_remote = true;
+                continue;
+            }
             let mut value = || {
                 rest.next()
                     .map(str::to_string)
@@ -115,15 +122,26 @@ impl Options {
             .filter(|u| !u.is_empty())
             .or_else(|| env_value(env, "REDIS_URL").filter(|u| !u.is_empty()))
             .unwrap_or_else(|| DEFAULT_REDIS_URL.to_string());
-        let token = resolve_token(token_flag, env_value(env, "EARS_HTTP_TOKEN"));
-        if token.as_deref().is_some_and(|t| t.contains(['\r', '\n'])) {
+        let Some(token) = resolve_token(token_flag, env_value(env, "CONTROL_TOKEN")) else {
+            return Err(UsageError(
+                "no control token: set CONTROL_TOKEN to the value in cohost's .env (or pass --token)"
+                    .into(),
+            ));
+        };
+        if token.contains(['\r', '\n']) {
             return Err(UsageError("the token must not contain a line break".into()));
         }
 
         let mut warnings = Vec::new();
-        if token.is_some() && !target.is_loopback() {
+        if !target.is_loopback() {
+            if !allow_remote {
+                return Err(UsageError(format!(
+                    "--url names {}, which is not a loopback address: the listener key would cross the network in clear text over http; pass --allow-remote to send it anyway",
+                    target.host
+                )));
+            }
             warnings.push(format!(
-                "--url is not a loopback address and a token is set: the token will be sent to {} in clear text over http",
+                "--url is not a loopback address: the listener key travels unencrypted to {} over http",
                 target.host
             ));
         }
@@ -132,7 +150,7 @@ impl Options {
             redis_url,
             prefix,
             clip,
-            token,
+            key: listener_key(&token),
             device,
             warnings,
         })

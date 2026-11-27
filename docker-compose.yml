@@ -51,6 +51,9 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
     # Empty so a value in .env cannot point the loader away from the unit's own projection at /app/secrets/secrets.yaml
     # (DEPLOY-SECRET-002); tools carries no env_file, so it needs no pin.
     COHOST_SECRETS_FILE: ""
+    # cohost's one lock reaches no container: this empty value wins over env_file .env. ears gets only the listener key
+    # derived from it, in its projection (DEPLOY-COMPOSE-032, DEPLOY-SECRET-012).
+    CONTROL_TOKEN: ""  # @spec DEPLOY-COMPOSE-032
     # Pinned so each program's log file lands in the ./data/logs mount whatever .env says (DEPLOY-COMPOSE-029).
     COHOST_DATA_DIR: /app/data
     # The JSON preset the control plane sets on the `docker compose` process for an isolated start; empty leaves the

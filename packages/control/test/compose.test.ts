@@ -41,7 +41,7 @@ test("every x-ts-service application service runs the heartbeat healthcheck on t
   assert.ok(appServices.length >= 10);
 });
 
-const IN_NETWORK = ["COHOST_DATA_DIR", "COHOST_SECRETS_FILE", "CONFIG_DIR", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
+const IN_NETWORK = ["COHOST_DATA_DIR", "COHOST_SECRETS_FILE", "CONFIG_DIR", "CONTROL_TOKEN", "DATABASE_URL", "OLLAMA_URL", "REDIS_URL", "STT_URL", "TTS_URL", "VOICE_URL"];
 
 // @spec CTRL-RUNTIME-009, DEPLOY-COMPOSE-017
 test("the shared environment is the in-network addresses plus the one pass-through COHOST_ISOLATION: ${COHOST_ISOLATION:-}", () => {
@@ -70,12 +70,36 @@ test("no operator setting is interpolated into the Compose files: the only ${VAR
 test("no service passes EARS_HTTP_TOKEN or any other credential variable through its environment", () => {
   for (const [name, s] of [...Object.entries(base.services), ["x-ts-service", base["x-ts-service"]!] as const]) {
     for (const k of Object.keys(s.environment ?? {})) {
-      // COHOST_SECRETS_FILE is the loader's path variable, pinned to the empty string (DEPLOY-COMPOSE-003), not a credential.
-      if (k === "COHOST_SECRETS_FILE") { assert.equal(s.environment![k], "", `${name} pins it empty`); continue; }
+      // COHOST_SECRETS_FILE is the loader's path variable, pinned to the empty string (DEPLOY-COMPOSE-003), not a credential;
+      // CONTROL_TOKEN is pinned empty so the one lock reaches no container (DEPLOY-COMPOSE-032).
+      if (k === "COHOST_SECRETS_FILE" || k === "CONTROL_TOKEN") { assert.equal(s.environment![k], "", `${name} pins ${k} empty`); continue; }
       assert.doesNotMatch(k, /TOKEN|SECRET|API_KEY|ACCESS_KEY/, `${name} passes ${k}`);
     }
   }
   assert.doesNotMatch(readFileSync(root("docker-compose.yml"), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n"), /EARS_HTTP_TOKEN|DISCORD_TOKEN/);
+});
+
+/**
+ * Each service's environment as Compose resolves it (`docker compose config`): anchors merged, then every `env_file` read,
+ * then the `environment:` block over it, which wins. `envFile` stands in for `.env`. Docker is not run.
+ */
+function resolvedEnvironments(envFile: Record<string, string>): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const [name, s] of Object.entries(base.services) as [string, Svc & { env_file?: string | string[] }][]) {
+    const files = s.env_file === undefined ? [] : Array.isArray(s.env_file) ? s.env_file : [s.env_file];
+    const env: Record<string, string> = {};
+    for (const f of files) { assert.equal(f, ".env", `${name} reads ${f}`); Object.assign(env, envFile); }
+    out[name] = { ...env, ...s.environment };
+  }
+  return out;
+}
+
+// @spec DEPLOY-COMPOSE-032
+test("with a .env holding a non-empty CONTROL_TOKEN, no service's resolved environment holds a non-empty CONTROL_TOKEN", () => {
+  const resolved = resolvedEnvironments({ CONTROL_TOKEN: "f".repeat(48), DASHBOARD_HOST: "127.0.0.1" });
+  assert.ok(Object.values(resolved).some((e) => e.DASHBOARD_HOST === "127.0.0.1"), "the resolver applies env_file");
+  for (const [name, env] of Object.entries(resolved)) assert.ok(!env.CONTROL_TOKEN, `${name} receives CONTROL_TOKEN`);
+  assert.equal(base["x-ts-service"]!.environment!.CONTROL_TOKEN, "", "pinned empty in the x-ts-service environment block");
 });
 
 const images = (file: ReturnType<typeof load>) => Object.entries(file.services).flatMap(([n, s]) => (s.image ? [[n, s.image] as const] : []));
@@ -116,6 +140,8 @@ test("every application service mounts ./config:/app/config, and no Compose entr
         // The local-only Postgres service's fixed `cohost` credential is inside the trust boundary, not an operator credential.
         if (name === "postgres" && k === "POSTGRES_PASSWORD") { assert.equal(v, "cohost"); continue; }
         if (k === "DATABASE_URL") { assert.equal(v, LOCAL_POSTGRES, `${name} DATABASE_URL is the fixed local credential`); continue; }
+        // CONTROL_TOKEN is pinned empty so the one lock reaches no container (DEPLOY-COMPOSE-032).
+        if (k === "CONTROL_TOKEN") { assert.equal(v, "", `${name} pins CONTROL_TOKEN empty`); continue; }
         for (const leaf of leaves) assert.ok(!k.toUpperCase().includes(leaf), `${name} passes ${k}, an operator credential`);
         assert.doesNotMatch(v, /\/\/[^/@\s]+:[^/@\s]+@/, `${name} ${k} embeds a credential in a URL`);
       }

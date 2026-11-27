@@ -3,7 +3,6 @@
 // between sections and screens, as the design requires (DASH-SET-006, DASH-SET-007), and so `beforeunload` can see them.
 import { createStore, useStore, type Store } from "../../state/store";
 import type { Api, ApiResult } from "../../state/api";
-import type { Access } from "../../state/access";
 import { useRuntime } from "../../app/providers";
 import { parseSchema, matchIssue, type KeyRead, type SchemaModel, type SectionModel } from "./schemaModel";
 import { toWire, validateKey } from "./validate";
@@ -50,8 +49,6 @@ export interface SettingsState {
   sections: Record<string, SectionState>;
   bars: Record<string, BarState>;
   restart: RestartState;
-  /** Whether `GET /services/control` said control is enabled; undefined until it answered. */
-  control?: boolean;
   personality: PersonalityState;
 }
 
@@ -73,7 +70,6 @@ export interface Settings {
   loadSchema(): Promise<void>;
   /** Reads a section. A section that holds edits is not read again (the edits belong to the values they were made on) unless `force`. */
   loadSection(path: string, force?: boolean): Promise<void>;
-  loadControl(): Promise<void>;
   edit(section: string, key: string, value: unknown, error?: string): void;
   revert(section: string, key: string): void;
   discard(paths: string[]): void;
@@ -110,7 +106,7 @@ export function sectionValid(s: SectionState, model: SectionModel | undefined): 
 }
 
 // @spec DASH-SET-006, DASH-SET-011, DASH-SET-012, DASH-SET-031, DASH-SET-032, DASH-SET-033
-export function createSettings(api: Api, access: Access, win: Pick<Window, "addEventListener" | "removeEventListener"> = window): Settings {
+export function createSettings(api: Api, win: Pick<Window, "addEventListener" | "removeEventListener"> = window): Settings {
   const state = createStore<SettingsState>({
     schema: { status: "loading" }, sections: {}, bars: {}, restart: { units: [], warnings: [], running: false, results: {} },
     personality: { status: "loading", loaded: "", text: "", saving: false },
@@ -199,10 +195,6 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
       else if (cur.status === "error") patchSection(path, (s) => ({ ...s, status: "loading", error: undefined }));
       await readSection(path);
     },
-    async loadControl() {
-      const r = await api.controlInfo();
-      state.set((st) => ({ ...st, control: r.ok ? r.data.enabled : false }));
-    },
     edit(section, key, value, error) {
       patchSection(section, (s) => {
         const loaded = s.keys[key];
@@ -247,13 +239,10 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
         const m = sectionModel(path);
         const sent = s.edits; // what this request carries; edits made while it is in flight are not part of it
         const values = changedValues(s, m);
-        const sensitive = Object.keys(values).filter((k) => m?.keys.find((x) => x.key === k)?.sensitive).map((k) => `${path}.${k}`);
-        const heldToken = access.getToken("control") !== undefined;
+        // A save is gated like every write, a sensitive key included; Check, a dry run, is never gated (DASH-SET-028).
         const r = await api.put<{ etag?: string; restart?: string[]; warnings?: string[] }>(
           `/config/${encodeURIComponent(path)}${dryRun ? "?dryRun=1" : ""}`, { etag: s.etag, values },
-          dryRun
-            ? (heldToken ? { auth: "control", action: `Check ${m?.title ?? path} settings` } : {})
-            : { auth: "control", action: sensitive.length ? `Change ${sensitive.join(", ")}` : `Save ${m?.title ?? path} settings` },
+          dryRun ? {} : { auth: "control", action: `Save ${m?.title ?? path} settings` },
         );
         if (r.ok) {
           warnings.push(...(r.data?.warnings ?? []));
@@ -297,7 +286,6 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
             `The outcome of the save is unknown: the dashboard did not answer (${r.detail}). ${held} Your edits are kept.`);
           return;
         }
-        if (r.status === 403) access.markNotSetUp("control", true);
         stop(path, r.locked ? r.detail : detailOf(r), r.locked ? r.detail : detailOf(r));
         return;
       }
@@ -313,7 +301,6 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
         ? await api.put<{ set: boolean; restart: string[] }>(`/secrets/${encodeURIComponent(paths[0]!)}`, { value: Object.values(values)[0] }, { auth: "control", action })
         : await api.put<{ set: Record<string, boolean>; restart: string[] }>("/secrets", { values: body }, { auth: "control", action });
       if (!r.ok) {
-        if (r.status === 403) access.markNotSetUp("control", true);
         const named = r.data && typeof r.data === "object" && Array.isArray((r.data as { paths?: unknown }).paths) ? (r.data as { paths: string[] }).paths : undefined;
         return { ok: false, detail: r.locked ? r.detail : detailOf(r), ...(named ? { paths: named } : {}) };
       }
@@ -372,9 +359,9 @@ export function createSettings(api: Api, access: Access, win: Pick<Window, "addE
 const stores = new WeakMap<object, Settings>();
 
 /** The one Settings store of this runtime. */
-export function settingsFor(rt: { api: Api; access: Access }): Settings {
+export function settingsFor(rt: { api: Api }): Settings {
   let s = stores.get(rt);
-  if (!s) { s = createSettings(rt.api, rt.access); stores.set(rt, s); }
+  if (!s) { s = createSettings(rt.api); stores.set(rt, s); }
   return s;
 }
 

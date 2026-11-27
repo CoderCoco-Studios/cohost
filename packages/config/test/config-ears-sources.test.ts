@@ -27,7 +27,7 @@ test("a source name that is not http, dir or a valid tag fails the load naming e
 });
 
 // @spec CFG-SCH-030, EARS-SRC-013
-test("ears.http.token defaults to the empty string", () => {
-  assert.equal(parse({}).data!.ears.http.token, "");
-  assert.equal(parse({ http: { token: "s3cret" } }).data!.ears.http.token, "s3cret");
+test("ears.http has host and port and no token key: its bearer is the listener key derived from CONTROL_TOKEN", () => {
+  assert.deepEqual(parse({}).data!.ears.http, { host: "127.0.0.1", port: 8765 });
+  assert.deepEqual(parse({ http: { token: "s3cret", host: "0.0.0.0" } }).data!.ears.http, { host: "0.0.0.0", port: 8765 }, "a token key is not part of the schema");
 });

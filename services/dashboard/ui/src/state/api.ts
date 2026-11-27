@@ -8,10 +8,10 @@ import type { ControlInfo, ServiceHealth, StackActionKind, StackSnapshot, TokenK
  */
 export type ApiResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; detail: string; /** The parsed JSON body when the server sent one (`issues`, `sensitive`, ...). */ data?: unknown; /** The operator cancelled the Access dialog. */ locked?: boolean; network?: boolean };
+  | { ok: false; status: number; detail: string; /** The parsed JSON body when the server sent one (`issues`, `problems`, ...). */ data?: unknown; /** The operator cancelled the Access dialog. */ locked?: boolean; network?: boolean };
 
 export interface RequestOptions {
-  /** Which token the route takes: `control` for every gated route, `viewers` for `/viewers`. A read sends none. */
+  /** Which token the route takes: `control` for every gated route. A read sends none. */
   auth?: TokenKind;
   /** What is waiting, named in the Access dialog when the request is answered 401 ("Restart voice"). */
   action?: string;

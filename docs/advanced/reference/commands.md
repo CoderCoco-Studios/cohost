@@ -52,17 +52,17 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 
 | Task | What it does |
 | --- | --- |
-| `dashboard` | Rebuilds the documentation site when the docs changed (`docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. With a `CONTROL_TOKEN` set it prints a one-time unlock link to the terminal (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`). It is the one thing you start by hand |
+| `dashboard` | Rebuilds the documentation site when the docs changed (`docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It refuses to start without a `CONTROL_TOKEN` of at least 32 characters in `.env`, and at start it prints a one-time unlock link to the terminal (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`). It is the one thing you start by hand |
 | `dashboard:unlock` | Prints a fresh one-time unlock link (`http://127.0.0.1:3000/unlock?n=...`) for the running dashboard, as `mise run dashboard` prints at start. It reads `CONTROL_TOKEN` and `DASHBOARD_HOST` from `.env` and the port from `config/config.yaml` (also while the dashboard is in config recovery mode), and asks the dashboard through `POST /unlock/link`. It exits 1 and says why when no token is configured, the dashboard is not running at that address, or the token is refused. See [HTTP routes](http.md#dashboard-unlock) |
 | `dashboard:ui` | The dashboard UI's Vite dev server |
 | `cohostctl` | Builds `packages/control`, then runs `cohostctl` with the arguments after `--` (see below) |
-| `secrets:project` | Copies `secrets/secrets.yaml` into each unit's directory under `secrets/units/` |
+| `secrets:project` | Copies `secrets/secrets.yaml` into each unit's directory under `secrets/units/`, each unit getting only the keys it uses; `ears`' copy also gets the `http` listener key derived from `CONTROL_TOKEN` |
 | `reflect` | The reflection pass of `memory`: appends a dated block of bullets to `## Learned` in `personality.md` |
 | `consolidate` | The viewer-note consolidation pass of `memory`, on the host |
 | `reembed` | Re-embeds every stored memory vector on the host, after an embedder change |
 | `infra:up` | `doctor:docker`, then `docker compose up -d redis postgres ollama tts stt`: the infrastructure for the dev loop, from [Compose](../../start/glossary.md#docker-compose) |
 | `infra:down` | Stops those containers |
-| `dev:<service>` | Builds what changed, then runs one service (`dev:salience`, `dev:cortex`, and so on for each folder under `services/` except `dashboard`). `mise watch --restart dev:<service>` rebuilds and restarts it on every saved change |
+| `dev:<service>` | Runs `secrets:project` and builds what changed, then runs one service with `COHOST_SECRETS_FILE` pointing at its copy under `secrets/units/` and `CONTROL_TOKEN` set empty (`dev:salience`, `dev:cortex`, and so on for each folder under `services/` except `dashboard`). `mise watch --restart dev:<service>` rebuilds and restarts it on every saved change |
 | `dev` | Every `dev:<service>` task under one `mise watch --restart`, against the infrastructure from `infra:up`; see [Developer setup](../dev-setup.md) |
 
 ### Developer tools
@@ -106,7 +106,7 @@ Each program under `examples/` that a page tells you to run has a task; the [Ext
 
 ## cohostctl
 
-`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_ENABLED` and `CONTROL_TOKEN`, which gate the dashboard's HTTP routes, do not apply. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
+`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_TOKEN`, which gates the dashboard's HTTP routes, does not apply as a credential; it reads it only to derive the `ears` listener key when it copies the secrets. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
 
 ```bash
 mise run cohostctl -- status

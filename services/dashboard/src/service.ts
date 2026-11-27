@@ -10,7 +10,6 @@ import { createFeed, serveClient, startFeed } from "./feed.js";
 import { dashboardHealth } from "./health.js";
 import { setupControl } from "./control.js";
 import { ViewersClient } from "./viewers.js";
-import { controlTokenFromEnv } from "./secrets.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners, type FeedConnection } from "./host.js";
 import { createAvatarRelay, systemClock, type Clock } from "./avatar-relay.js";
@@ -53,16 +52,13 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const { port: PORT, lanPort: LAN_PORT } = resolvePorts(cfg.dashboard);
       // @spec DASH-SINK-004
       const VOICE = urls.voice();
-      // @spec DASH-CTRL-003, DASH-HOST-007
+      // @spec DASH-CTRL-002, DASH-CTRL-003
       const { control, bind } = setupControl(env, bus, log);
-      const controlToken = controlTokenFromEnv(env);
       const links = new UnlockLinks();
 
       // @spec DASH-UPL-001, DASH-UPL-002
       const uploads = uploadLimits(cfg.dashboard.inject);
 
-      // @spec DASH-VIEWERS-007
-      if (controlToken === undefined) log.warn("CONTROL_TOKEN is not set: viewer notes are locked (every /viewers route answers 403)");
       const viewers = new ViewersClient(bus);
 
       // @spec DASH-STACK-007
@@ -81,7 +77,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       const models = { store, applied, maxBytes: cfg.dashboard.models.max_bytes };
       // @spec DASH-AVR-001, DASH-AVR-011, DASH-AVR-021
       const relay = createAvatarRelay({ bus, applied, clock: deps.clock ?? systemClock, log });
-      const handler = createDashboardHandler({ bus, log, uploads, viewers, cohostName: cfg.cohost.name, voiceUrl: VOICE, controlToken, unlock: links, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
+      const handler = createDashboardHandler({ bus, log, uploads, viewers, cohostName: cfg.cohost.name, voiceUrl: VOICE, unlock: links, loadPersonality, savePersonality, services: () => decorate(tracker.snapshot()), control, stack, models, renderer: () => relay.renderer(), ...(deps.uiDir ? { uiDir: deps.uiDir } : {}) });
 
       const wss = new WebSocketServer({ noServer: true });
       const redacted = new WeakSet(); // sockets that arrived beyond loopback (DASH-FEED-011)
@@ -90,7 +86,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       void startFeed(feed, log); // @spec DASH-HTTP-012
 
       // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-009, DASH-HTTP-009
-      const listeners = await startListeners({ handler, wss, avatar: relay, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, controlEnabled: !!control, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit });
+      const listeners = await startListeners({ handler, wss, avatar: relay, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit });
       // @spec DASH-HTTP-010, DASH-HTTP-016
       onStop(() => { feed.stop(); stack.stop(); relay.stop(); return listeners?.close(); });
       if (!listeners) relay.stop(); // a listener that could not bind leaves nothing running
@@ -98,8 +94,8 @@ export function dashboardService(deps: DashboardDeps = {}) {
         heartbeat.ready(); // only once both listeners are listening
         links.base = unlockBase(bind, listeners.fullPort);
         // @spec DASH-UNL-001
-        if (controlToken !== undefined) (deps.print ?? printToTerminal)(unlockLine(unlockBase(bind, listeners.fullPort), links.issue()));
-        if (control) log.info("stack controls are enabled: open the unlock link printed in this terminal, or paste CONTROL_TOKEN from .env when the page asks");
+        (deps.print ?? printToTerminal)(unlockLine(unlockBase(bind, listeners.fullPort), links.issue()));
+        log.info("the dashboard is locked: open the unlock link printed in this terminal, or paste CONTROL_TOKEN from .env when the page asks");
         stack.start();
       }
     },

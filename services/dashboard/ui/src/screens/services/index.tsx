@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/StateBloc
 import { useApi, useFeed } from "../../state/hooks";
 import { attentionCount } from "../../state/derive";
 import { useEgress, type EgressEntry } from "../../state/egress";
-import type { ControlInfo, UnitDescriptor } from "../../state/types";
+import type { UnitDescriptor } from "../../state/types";
 import { blockReason, sortServices } from "./model";
 import { ServiceRow } from "./ServiceRow";
 import { StackCard } from "./StackCard";
@@ -15,9 +15,12 @@ import { TestSheet } from "./TestSheet";
 type Loaded =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; control: ControlInfo; units: Map<string, UnitDescriptor> };
+  | { status: "ready"; units: Map<string, UnitDescriptor> };
 
-/** Reads `GET /services/control` and `GET /services/manifest` together; `reload` repeats both (the error state's Retry). */
+/**
+ * Reads `GET /services/control` and `GET /services/manifest` together; either failing is the error state, whose Retry
+ * repeats both (DASH-UI-031).
+ */
 function useControlAndManifest(): [Loaded, () => void] {
   const api = useApi();
   const [state, setState] = useState<Loaded>({ status: "loading" });
@@ -27,9 +30,9 @@ function useControlAndManifest(): [Loaded, () => void] {
     setState({ status: "loading" });
     void Promise.all([api.controlInfo(), api.manifest()]).then(([c, m]) => {
       if (!alive) return;
-      if (!c.ok) setState({ status: "error", message: `Could not load whether service control is on: ${c.status ? `${c.status} ` : ""}${c.detail}` });
+      if (!c.ok) setState({ status: "error", message: `Could not load the service control settings: ${c.status ? `${c.status} ` : ""}${c.detail}` });
       else if (!m.ok) setState({ status: "error", message: `Could not load the service manifest: ${m.status ? `${m.status} ` : ""}${m.detail}` });
-      else setState({ status: "ready", control: c.data, units: new Map((m.data.units ?? []).map((u) => [u.id, u])) });
+      else setState({ status: "ready", units: new Map((m.data.units ?? []).map((u) => [u.id, u])) });
     });
     return () => { alive = false; };
   }, [api, attempt]);
@@ -38,18 +41,16 @@ function useControlAndManifest(): [Loaded, () => void] {
 
 /**
  * The Services screen: the always-visible stack card, then the service list as a real table (one row per service, keyed
- * by name, needing-attention rows first) with the lifecycle, pause and Test actions of the manifest's units where control
- * is on, and the per-unit test side sheet. Loading, empty, error and stale (socket closed) states follow the design.
+ * by name, needing-attention rows first) with the lifecycle, pause and Test actions of the manifest's units, and the
+ * per-unit test side sheet. Loading, empty, error and stale (socket closed) states follow the design.
  */
-// @spec DASH-UI-007, DASH-UI-021, DASH-UI-025, DASH-UI-029, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001
+// @spec DASH-UI-007, DASH-UI-021, DASH-UI-025, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001
 export function Screen(_props: ScreenProps) {
   const [load, reload] = useControlAndManifest();
   const services = useFeed((f) => f.services);
   const stack = useFeed((f) => f.stack);
   const stale = useStale();
   const [testing, setTesting] = useState<string | null>(null);
-  const controlOn = load.status === "ready" && load.control.enabled;
-  const controlOff = load.status === "ready" && !load.control.enabled;
   const blocked = blockReason(stack);
   const rows = useMemo(() => (services ? sortServices(services) : null), [services]);
   const attention = attentionCount(services);
@@ -66,7 +67,7 @@ export function Screen(_props: ScreenProps) {
   return (
     <>
       <PageHeading>Services</PageHeading>
-      <StackCard controlOn={controlOn} controlOff={controlOff} />
+      <StackCard />
       <section {...stale} className={`card${stale.className ? ` ${stale.className}` : ""}`} aria-labelledby="svc-h">
         <div className="card-h">
           <h2 id="svc-h">Services</h2>
@@ -82,14 +83,14 @@ export function Screen(_props: ScreenProps) {
                 <thead><tr><th scope="col">Service</th><th scope="col">State</th><th scope="col">Why</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr></thead>
                 <tbody>
                   {rows!.map((s) => (
-                    <ServiceRow key={s.service} s={s} unit={load.units.get(s.service)} controlOn={controlOn} blocked={blocked} isolatedBy={overrides.get(s.service) ?? ""} onTest={onTest} egress={egressBy.get(s.service) ?? []} />
+                    <ServiceRow key={s.service} s={s} unit={load.units.get(s.service)} blocked={blocked} isolatedBy={overrides.get(s.service) ?? ""} onTest={onTest} egress={egressBy.get(s.service) ?? []} />
                   ))}
                 </tbody>
               </table>
             </div>
           )}
       </section>
-      {sheetUnit ? <TestSheet key={sheetUnit.id} unit={sheetUnit} controlOn={controlOn} blocked={blocked} onClose={() => setTesting(null)} /> : null}
+      {sheetUnit ? <TestSheet key={sheetUnit.id} unit={sheetUnit} blocked={blocked} onClose={() => setTesting(null)} /> : null}
     </>
   );
 }

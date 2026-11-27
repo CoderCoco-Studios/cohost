@@ -134,7 +134,7 @@ async fn run_async(opts: Options) -> i32 {
     let registry = BusRegistry::connect(&opts.redis_url, &opts.prefix);
     let sender = Arc::new(HttpSender {
         url: opts.url.clone(),
-        token: opts.token.clone(),
+        key: opts.key.clone(),
     });
     let clip = opts.clip;
     let session_choice = choice.clone();

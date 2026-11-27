@@ -1,11 +1,10 @@
 import type http from "node:http";
-import { authorized } from "./access.js";
+import { authorized, unauthorized } from "./access.js";
 import { readFileSync } from "node:fs";
 import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, secretsPath, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
 import type { ServiceDef } from "@cohost/control";
 import { modelIssue, type AppliedView, type Framing, type Loadable } from "./applied.js";
 import type { ModelStore } from "./models.js";
-import { changedSensitiveKeys, noTokenDetail } from "./sensitive.js";
 import type { StackSnapshot } from "./stack.js";
 
 export interface SettingsDeps {
@@ -18,10 +17,8 @@ export interface SettingsDeps {
   stack: () => Pick<StackSnapshot, "docker" | "services">;
   /** The operator's secrets file (`secrets/secrets.yaml`), for which secrets are set. Defaults to the loader's `secretsPath()`. */
   secretsFile?: () => string;
-  /** True when a control token is configured: every `PUT /config/:section` then needs it or a session cookie (DASH-CTRL-004). */
-  controlMode?: boolean;
-  /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
-  controlToken?: string;
+  /** `CONTROL_TOKEN`, the one lock: every `PUT /config/:section` but a dry run needs it or a session cookie (DASH-CTRL-004). */
+  controlToken: string;
   /** The request body as text, capped at 64 KiB (throws past the cap). */
   body: (req: http.IncomingMessage) => Promise<string>;
   /** The model store and the applied view a save of `renderer` checks and sets (DASH-MDL-037, DASH-AVR-024). */
@@ -81,25 +78,6 @@ function parseBody(raw: string): Body | "notjson" | undefined {
   return { etag, values: values as Record<string, unknown> };
 }
 
-/** The sensitive keys a gated request's body would change; never throws, so the refusal it informs is always answered. */
-async function sensitiveInBody(d: SettingsDeps, req: http.IncomingMessage, section: string): Promise<string[]> {
-  try {
-    const body = parseBody(await d.body(req));
-    return body && body !== "notjson" ? changedSensitiveKeys(readFileSync(d.file(), "utf8"), section, body.values) : [];
-  } catch { return []; }
-}
-
-/** 401 for a missing or wrong token, 403 when no control token is configured at all; the paths, never the values. */
-function refuseSensitive(res: http.ServerResponse, token: string | undefined, sensitive: string[]): void {
-  const keys = sensitive.join(", ");
-  if (token === undefined) {
-    json(res, 403, { ok: false, detail: noTokenDetail(keys), sensitive });
-    return;
-  }
-  res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": "Bearer" });
-  res.end(JSON.stringify({ ok: false, detail: `changing ${keys} needs the control token (Authorization: Bearer)`, sensitive }));
-}
-
 /**
  * The settings editor's routes: `GET /config/schema`, `GET /config/:section`, `PUT /config/:section`. They read and write
  * `config.yaml` through `@cohost/config`'s editor, never touch `.env`, and never start, stop or restart a unit.
@@ -126,16 +104,10 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     return true;
   }
 
-  // @spec DASH-CTRL-004, DASH-CTRL-009, DASH-CTRL-010
+  // Every save passes the one gate, a change to a sensitive key included; a dry run (Check) writes nothing and is not gated.
+  // @spec DASH-CTRL-004, MOD-CFG-007
   const dryRun = url.searchParams.get("dryRun") === "1";
-  const tokenOk = d.controlToken !== undefined && authorized(d.controlToken, req);
-  if (d.controlMode && !tokenOk) {
-    // The ordinary refusal; it names the sensitive keys when the body shows a change to one.
-    const sensitive = dryRun ? [] : await sensitiveInBody(d, req, name);
-    if (sensitive.length) refuseSensitive(res, d.controlToken, sensitive);
-    else { res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); }
-    return true;
-  }
+  if (!dryRun && !authorized(d.controlToken, req)) { req.resume(); unauthorized(res); return true; }
   const raw = await d.body(req); // over the cap this throws and nothing has been read or written
   const input = parseBody(raw);
   if (input === "notjson") { json(res, 400, { ok: false, issues: [{ path: "", message: "the body is not JSON" }] }); return true; }
@@ -144,10 +116,6 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
     return true;
   }
   const { etag, values } = input;
-  if (!dryRun && !tokenOk) {
-    const sensitive = changedSensitiveKeys(readFileSync(d.file(), "utf8"), name, values);
-    if (sensitive.length) { refuseSensitive(res, d.controlToken, sensitive); return true; }
-  }
 
   // The save is synchronous from the etag check to the write, so no other request can change the file in between. A save of
   // `renderer` also holds the applied view's lock, and reads the loadable models first, so the check sees the same store.

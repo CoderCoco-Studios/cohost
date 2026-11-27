@@ -1,30 +1,57 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bearerOk, isLoopback, loadControlConfig } from "../src/index.js";
+import { createHmac } from "node:crypto";
+import { bearerOk, EARS_LISTENER_LABEL, earsListenerKey, isLoopback, loadControlConfig } from "../src/index.js";
+
+const T = "0123456789abcdef0123456789abcdef"; // 32 characters, the shortest token accepted
 
 // @spec CTRL-CONFIG-001
-test("disabled unless CONTROL_ENABLED=1", () => {
-  assert.deepEqual(loadControlConfig({}), { enabled: false });
-  assert.deepEqual(loadControlConfig({ CONTROL_ENABLED: "true", CONTROL_TOKEN: "x" }), { enabled: false });
+test("CONTROL_TOKEN is always required: unset, empty, whitespace-only or under 32 characters after trimming throws naming it, never the value", () => {
+  for (const env of [{}, { CONTROL_TOKEN: "" }, { CONTROL_TOKEN: "   " }, { CONTROL_TOKEN: "short-secret-value" }, { CONTROL_TOKEN: ` ${T.slice(1)} ` }]) {
+    assert.throws(() => loadControlConfig(env), (err: Error) => {
+      assert.match(err.message, /CONTROL_TOKEN/);
+      assert.match(err.message, /at least 32 characters/);
+      assert.match(err.message, /openssl rand -hex 24/);
+      const v = (env as { CONTROL_TOKEN?: string }).CONTROL_TOKEN?.trim();
+      if (v) assert.ok(!err.message.includes(v), "the value is never in the message");
+      return true;
+    }, JSON.stringify(env));
+  }
 });
 
 // @spec CTRL-CONFIG-001
-test("enabled without a token fails fast naming CONTROL_TOKEN", () => {
+test("CONTROL_ENABLED is not read: a valid token loads whatever it says, and no value switches control off", () => {
+  for (const flag of [undefined, "0", "1", "false"]) {
+    assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T, ...(flag !== undefined ? { CONTROL_ENABLED: flag } : {}) }), { token: T, advanced: false });
+  }
   assert.throws(() => loadControlConfig({ CONTROL_ENABLED: "1" }), /CONTROL_TOKEN/);
-  assert.throws(() => loadControlConfig({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "  " }), /CONTROL_TOKEN/);
+});
+
+// @spec CTRL-CONFIG-001
+test("the token is carried trimmed", () => {
+  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: `  ${T}\t` }), { token: T, advanced: false });
 });
 
 // @spec CTRL-CONFIG-002
-test("enabled defaults: not advanced, no listen address, no runtime selection", () => {
-  const c = loadControlConfig({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "t" });
-  assert.deepEqual(c, { enabled: true, token: "t", advanced: false });
+test("defaults: not advanced, no listen address, no runtime selection", () => {
+  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T }), { token: T, advanced: false });
 });
 
 // @spec CTRL-CONFIG-002
 test("CONTROL_ADVANCED is set only by exactly 1; CONTROL_RUNTIME and CONTROL_PROCESS_MODE are ignored", () => {
-  const c = loadControlConfig({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "t", CONTROL_ADVANCED: "1", CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "bogus" });
-  assert.deepEqual(c, { enabled: true, token: "t", advanced: true });
-  assert.deepEqual(loadControlConfig({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "t", CONTROL_ADVANCED: "true" }), { enabled: true, token: "t", advanced: false });
+  const c = loadControlConfig({ CONTROL_TOKEN: T, CONTROL_ADVANCED: "1", CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "bogus" });
+  assert.deepEqual(c, { token: T, advanced: true });
+  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T, CONTROL_ADVANCED: "true" }), { token: T, advanced: false });
+});
+
+// @spec CTRL-RUNTIME-017
+test("the ears listener key is HMAC-SHA256 keyed with the trimmed token of cohost/ears-listener/v1, as 64 lowercase hex digits", () => {
+  assert.equal(EARS_LISTENER_LABEL, "cohost/ears-listener/v1");
+  const want = createHmac("sha256", T).update("cohost/ears-listener/v1").digest("hex");
+  assert.equal(earsListenerKey(T), want);
+  assert.equal(earsListenerKey(` ${T}\n`), want, "derived from the trimmed token");
+  assert.match(want, /^[0-9a-f]{64}$/);
+  assert.notEqual(earsListenerKey(T), earsListenerKey(T.replace("0", "1")));
 });
 
 // @spec CTRL-CONFIG-002

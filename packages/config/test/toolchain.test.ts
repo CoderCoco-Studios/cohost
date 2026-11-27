@@ -275,7 +275,7 @@ test("the task dependencies are exactly the specified graph", () => {
     "infra:up": ["doctor:docker"], "infra:down": ["doctor:docker"], smoke: ["doctor:docker"],
     "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], doctor: [], "doctor:docker": [],
   };
-  for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts"];
+  for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts", "secrets:project"];
   for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].toSorted(), [...deps].toSorted(), name);
   // The UI bundles @cohost/shared from its dist/, so a change to the shared sources must rebuild it.
   assert.deepEqual(task("build:ui").sources.map(rel), ["services/dashboard/ui/**", "packages/shared/src/**"]);
@@ -400,7 +400,10 @@ test("each dev:<service> runs the built service from its directory over its and 
   for (const s of devServices) {
     const t = task(`dev:${s}`);
     assert.deepEqual(t.run, ["node dist/index.js"], s);
-    assert.equal(rel(t.dir ?? ""), `services/${s}`);
+    // the projection runs first, and the service reads its own unit's projection with CONTROL_TOKEN pinned empty
+    assert.ok(t.depends.includes("secrets:project"), `dev:${s} depends on secrets:project`);
+    assert.ok(t.depends.includes("build:ts") && t.depends.includes("build:native"), `dev:${s} rebuilds through build:ts and build:native`);
+    assert.deepEqual(t.env, ["CONTROL_TOKEN=", `COHOST_SECRETS_FILE={{config_root}}/secrets/units/${s}/secrets.yaml`], `dev:${s} env`);    assert.equal(rel(t.dir ?? ""), `services/${s}`);
     assert.deepEqual(t.sources.map(rel), [`services/${s}/src/**`, "packages/*/src/**"]);
     assert.deepEqual(t.outputs, [], `dev:${s} declares outputs = []`);
   }

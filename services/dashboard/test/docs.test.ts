@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
+import { testControl } from "./control-fixture.js";
 import { guardFullSurface } from "../src/host.js";
 import { StackService } from "../src/stack.js";
 
@@ -62,9 +63,9 @@ async function serve(docsDir: string, opts: { control?: boolean; guard?: boolean
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
     docsDir,
-    ...(opts.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller: {} as never } } : {}),
+    control: testControl(),
   });
-  const server = http.createServer(opts.guard ? guardFullSurface(handler, { loopback: true, controlEnabled: !!opts.control }) : handler);
+  const server = http.createServer(opts.guard ? guardFullSurface(handler, { loopback: true }) : handler);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => { server.close(); server.closeAllConnections(); });
   return { port: (server.address() as { port: number }).port };
@@ -95,7 +96,7 @@ test("the docs directory is found under the workspace root, or the working direc
     const handler = createDashboardHandler({
       bus: new FakeBus(), log: rec.log, uiDir, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
       loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
-      stack: new StackService({ log: rec.log, bus: () => "connected" }),
+      stack: new StackService({ log: rec.log, bus: () => "connected" }), control: testControl(),
     });
     const server = http.createServer(handler);
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

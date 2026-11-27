@@ -22,12 +22,12 @@ const STARTED: Record<StackActionKind, string> = { launch: "Launch started", reb
 
 /**
  * The stack card, always shown: the stack's state as a status with a sentence of cause, the running action's kind, phase,
- * step and elapsed time, the last result with each not-ready service, the containers that send no heartbeat and, where
- * control is on, the Launch, Restart all, Rebuild and Stop stack buttons (each behind a confirmation dialog) and the
+ * step and elapsed time, the last result with each not-ready service, the containers that send no heartbeat, the Launch,
+ * Restart all, Rebuild and Stop stack buttons (each behind a confirmation dialog) and the
  * consolidation pass offered after a successful stop. A button is disabled while an action runs or Docker is unavailable.
  */
-// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020, DASH-UI-029
-export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** Control is known to be off (not merely unknown or failed to load). */ controlOff: boolean }) {
+// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020
+export function StackCard() {
   const api = useApi();
   const stack = useFeed((f) => f.stack);
   const services = useFeed((f) => f.services);
@@ -40,7 +40,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
   const others = (stack?.services ?? []).filter((c) => !heartbeating.has(c.service));
   const blocked = blockReason(stack);
   const last = stack?.last ?? null;
-  const offerConsolidate = controlOn && stack !== null && !stack.action && last !== null && last.kind === "stop" && last.ok;
+  const offerConsolidate = stack !== null && !stack.action && last !== null && last.kind === "stop" && last.ok;
 
   const open = (kind: StackActionKind) => { act.dismiss(); setAsking(kind); };
   const submit = async () => {
@@ -98,13 +98,7 @@ export function StackCard({ controlOn, controlOff }: { controlOn: boolean; /** C
               ) : null}
             </>
           )}
-          {controlOff ? (
-            <div className="note" role="status" aria-label="Service control is off">
-              <strong className="note-title">Service control is off</strong>
-              <span>Set <code>CONTROL_ENABLED=1</code> in <code>.env</code> and restart the dashboard to start, stop and restart services from here, or use <code>cohostctl</code> on the host.</span>
-            </div>
-          ) : null}
-          {controlOn && stack !== null ? (
+          {stack !== null ? (
             <div className="row">
               {stack.state === "down" || stack.state === "docker-unavailable"
                 ? button("launch", "Launch", "primary")

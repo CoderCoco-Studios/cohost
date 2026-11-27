@@ -12,8 +12,8 @@ import { resolveDockerBin } from "@cohost/control";
 // 3000 and 3001 are free (the dashboard under test binds them).
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const env: NodeJS.ProcessEnv = { ...process.env, CONTROL_ENABLED: "1" };
-const TOKEN =env.CONTROL_TOKEN ?? "";
+const env: NodeJS.ProcessEnv = { ...process.env };
+const TOKEN = env.CONTROL_TOKEN ?? "";
 const BASE = "http://127.0.0.1:3000";
 const docker = resolveDockerBin(env);
 

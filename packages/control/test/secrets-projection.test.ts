@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { ComposeRuntime, StackController, SERVICE_MANIFEST, type ExecFile } from "../src/index.js";
+import { ComposeRuntime, StackController, SERVICE_MANIFEST, earsListenerKey, type ExecFile } from "../src/index.js";
 
 // The control plane runs the secrets projection before it issues a `docker compose` command that creates, starts or restarts an
 // application container (control-plane CTRL-RUNTIME-014, deployment DEPLOY-SECRET-004), and exposes it as an entry the installer
@@ -151,4 +151,51 @@ test("node packages/control/dist/project-secrets.js projects for the workspace r
   assert.equal(fail.status, 1);
   assert.ok(fail.stderr.includes(bad.operator), fail.stderr);
   assert.ok(!fail.stderr.includes(MARKER) && !fail.stdout.includes(MARKER));
+});
+
+const TOKEN = "f00dfeedf00dfeedf00dfeedf00dfeedf00dfeedf00dfeed"; // 48 hex characters, as the installer makes one
+
+/** Every scalar value a parsed projection holds, with its dotted path. */
+const leaves = (o: unknown, prefix = ""): [string, unknown][] =>
+  typeof o === "object" && o !== null ? Object.entries(o).flatMap(([k, v]) => leaves(v, `${prefix}${prefix ? "." : ""}${k}`)) : [[prefix, o]];
+
+// @spec CTRL-RUNTIME-017, DEPLOY-SECRET-012, DEPLOY-SECRET-008
+test("with a valid CONTROL_TOKEN the projection gives ears the listener key as ears.http.verifier, and no unit the key elsewhere, the token or CONTROL_TOKEN", async () => {
+  const w = workspace(GOOD + "ears:\n  http:\n    verifier: " + "a".repeat(64) + "\n");
+  const { exec, calls } = recorder(w.units);
+  const rt = new ComposeRuntime({ exec, onPath, cwd: w.root, env: { CONTROL_TOKEN: ` ${TOKEN} ` } });
+  assert.equal((await rt.start("ears")).ok, true);
+  const contents = calls[0]!.contents;
+  const key = earsListenerKey(TOKEN);
+  assert.deepEqual(contents.ears, { ears: { http: { verifier: key } } }, "ears holds the derived key, never the operator file's value");
+  for (const [unit, c] of Object.entries(contents)) {
+    for (const [path, v] of leaves(c)) {
+      assert.notEqual(v, TOKEN, `${unit}: ${path} holds the token`);
+      assert.ok(!path.includes("CONTROL_TOKEN"), `${unit}: ${path}`);
+      if (unit !== "ears") assert.notEqual(v, key, `${unit}: ${path} holds the listener key`);
+      if (unit !== "ears") assert.ok(!path.endsWith("verifier"), `${unit}: ${path}`);
+    }
+  }
+});
+
+// @spec CTRL-RUNTIME-017
+test("without a valid CONTROL_TOKEN the projection still succeeds and delivers no listener key", async () => {
+  for (const env of [{}, { CONTROL_TOKEN: "" }, { CONTROL_TOKEN: "too-short" }]) {
+    const w = workspace(GOOD);
+    const { exec, calls } = recorder(w.units);
+    const rt = new ComposeRuntime({ exec, onPath, cwd: w.root, env });
+    assert.equal((await rt.start("ears")).ok, true);
+    assert.deepEqual(calls[0]!.contents.ears, {}, JSON.stringify(env));
+  }
+});
+
+// @spec CTRL-RUNTIME-017
+test("the projection entry reads CONTROL_TOKEN from .env when the environment lacks it, and never prints it", () => {
+  const w = workspace(GOOD);
+  writeFileSync(join(w.root, "pnpm-workspace.yaml"), "packages: []\n");
+  writeFileSync(join(w.root, ".env"), `CONTROL_TOKEN=${TOKEN}\n`);
+  const r = runEntry(w.root, w.operator);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(parse(readFileSync(join(w.units, "ears", "secrets.yaml"), "utf8")), { ears: { http: { verifier: earsListenerKey(TOKEN) } } });
+  assert.ok(!r.stdout.includes(TOKEN) && !r.stderr.includes(TOKEN));
 });

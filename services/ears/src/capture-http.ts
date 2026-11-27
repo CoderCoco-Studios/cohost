@@ -19,8 +19,11 @@ export interface HttpCaptureOptions {
   queueLimit?: number;
   /** Time a body may take to arrive (default `INJECT_READ_TIMEOUT_MS`). */
   bodyTimeoutMs?: number;
-  /** Bearer token `POST /audio` must carry; empty or absent requires none (EARS-SRC-013). */
-  token?: string;
+  /**
+   * The listener key every `POST /audio` must carry as `Authorization: Bearer <key>` (`ears.http.verifier`, delivered with ears'
+   * credentials and derived from `CONTROL_TOKEN` by the control plane); absent, every clip is refused 401 (EARS-SRC-013).
+   */
+  verifier?: string;
   /**
    * Whether a tag besides `http` may be named by `?source=`: an enabled source whose live registration has transport
    * `http`. Any other value is refused 400 (EARS-SRC-010).
@@ -58,13 +61,18 @@ function readBody(req: IncomingMessage, max: number, timeoutMs: number): Promise
   });
 }
 
-/** True when the `Authorization` header is `Bearer <token>` with exactly this token. */
-function bearerMatches(header: string | undefined, token: string): boolean {
-  const m = /^Bearer (.+)$/.exec(header ?? "");
+const LISTENER_KEY = /^[0-9a-f]{64}$/;
+
+/**
+ * True when the `Authorization` header is `Bearer <key>`, `<key>` exactly 64 lowercase hex characters equal to the delivered
+ * listener key under a constant-time comparison; false whenever no well-formed key was delivered (EARS-SRC-013).
+ */
+// @spec EARS-SRC-013
+export function listenerKeyMatches(header: string | undefined, verifier: string | undefined): boolean {
+  if (verifier === undefined || !LISTENER_KEY.test(verifier)) return false;
+  const m = /^Bearer ([0-9a-f]{64})$/.exec(header ?? "");
   if (!m) return false;
-  const a = Buffer.from(m[1]!);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return timingSafeEqual(Buffer.from(m[1]!), Buffer.from(verifier));
 }
 
 // @spec EARS-CAP-005, EARS-CAP-006, EARS-CAP-007, EARS-CAP-012, EARS-SRC-006, EARS-SRC-010, EARS-SRC-013
@@ -77,7 +85,6 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
   const maxBytes = o.maxBytes ?? INJECT_MAX_BYTES;
   const queueLimit = o.queueLimit ?? INJECT_QUEUE_LIMIT;
   const bodyTimeoutMs = o.bodyTimeoutMs ?? INJECT_READ_TIMEOUT_MS;
-  const token = o.token ?? "";
   let tail: Promise<unknown> = Promise.resolve();
   /** Accepted requests not yet answered: the one being processed plus those waiting (or still sending their body). */
   let inflight = 0;
@@ -97,8 +104,8 @@ export function createHttpCapture(o: HttpCaptureOptions): HttpCapture {
     const url = new URL(req.url ?? "/", "http://localhost");
     if (url.pathname !== "/audio") return reply(res, 404, { error: "not found" });
     if (req.method !== "POST") return reply(res, 405, { error: "POST only" }, { allow: "POST" });
-    if (token !== "" && !bearerMatches(req.headers.authorization, token)) {
-      return reply(res, 401, { error: "bearer token required" }, { "www-authenticate": "Bearer" });
+    if (!listenerKeyMatches(req.headers.authorization, o.verifier)) {
+      return reply(res, 401, { error: "the listener key is required (Authorization: Bearer <key derived from CONTROL_TOKEN>)" }, { "www-authenticate": "Bearer" });
     }
     const source = url.searchParams.has("source") ? url.searchParams.get("source")! : "http";
     if (source !== "http" && !(o.accepts?.(source) ?? false)) return reply(res, 400, { error: `unknown source '${source}'` });

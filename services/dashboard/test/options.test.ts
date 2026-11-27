@@ -5,6 +5,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
+import { testControl } from "./control-fixture.js";
 import { lanHandler } from "../src/host.js";
 import type { StackService } from "../src/stack.js";
 import { configDir, configText, withConfigDir } from "./config-fixture.js";
@@ -41,7 +42,7 @@ async function boot(o: { tts?: string; ollama?: string; control?: boolean; timeo
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: {} as unknown as StackService,
     options: { urls: { tts: () => o.tts ?? "http://127.0.0.1:1", ollama: () => o.ollama ?? "http://127.0.0.1:1" }, ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) },
-    ...(o.control ? { control: { token: "tok", runtime: "compose", advanced: false, controller: {} as never } } : {}),
+    control: testControl(),
   });
   const server = http.createServer(handler);
   const lan = http.createServer(lanHandler(handler));

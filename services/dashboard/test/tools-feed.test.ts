@@ -7,6 +7,7 @@ import { runService } from "@cohost/shared";
 import type { BusEvent, EventType } from "@cohost/bus";
 import type { StackService, StackOps } from "../src/stack.js";
 import { dashboardService } from "../src/service.js";
+import { ON } from "./control-fixture.js";
 
 // Tool text stays off the LAN: the arguments of a tool.request and tool.confirm and the content of a tool.result are what a
 // recalled viewer memory or the owner's private lookup ends up in. A socket that arrived on the LAN listener, or on the
@@ -43,9 +44,9 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-const CTRL_OFF: NodeJS.ProcessEnv = {};
-/** The full surface bound to every interface: it needs control mode (DASH-HOST-007). */
-const NON_LOOPBACK: NodeJS.ProcessEnv = { CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok", DASHBOARD_HOST: "0.0.0.0" };
+const LOOPBACK: NodeJS.ProcessEnv = { ...ON };
+/** The full surface bound to every interface. */
+const NON_LOOPBACK: NodeJS.ProcessEnv = { ...ON, DASHBOARD_HOST: "0.0.0.0" };
 
 async function rig(env: NodeJS.ProcessEnv, replay: BusEvent[] = []) {
   const dashboard = { port: await freePort(), lan_port: await freePort() };
@@ -123,7 +124,7 @@ function assertWhole(c: { events(): Record<string, unknown>[] }, sent: BusEvent[
 // @spec DASH-FEED-012, DASH-FEED-002
 test("a socket on the loopback full surface gets every tool event unchanged, live and in the replay", async (t) => {
   const history = all();
-  const r = await rig(CTRL_OFF, history);
+  const r = await rig(LOOPBACK, history);
   t.after(r.stop);
   const replayed = await r.connect(r.full);
   await waitFor(() => replayed.events().length >= 6, "the replay");
@@ -137,7 +138,7 @@ test("a socket on the loopback full surface gets every tool event unchanged, liv
 
 // @spec DASH-FEED-011, DASH-HOST-001
 test("a socket on the LAN listener gets the arguments of tool.request and tool.confirm as {} and tool.result's content empty with no truncated, live", async (t) => {
-  const r = await rig(CTRL_OFF);
+  const r = await rig(LOOPBACK);
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   const full = await r.connect(r.full);
@@ -150,7 +151,7 @@ test("a socket on the LAN listener gets the arguments of tool.request and tool.c
 
 // @spec DASH-FEED-011, DASH-HOST-001
 test("the same on a LAN socket's connect replay: replayed tool events are redacted and keep replay: true", async (t) => {
-  const r = await rig(CTRL_OFF, all());
+  const r = await rig(LOOPBACK, all());
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   await waitFor(() => lan.events().length >= 6, "the replay");
@@ -174,7 +175,7 @@ test("the full-surface listener bound to a non-loopback address redacts for its 
 
 // @spec DASH-FEED-011
 test("a live tool event that lands while a LAN socket's replay is still being read is held and sent redacted, not whole", async (t) => {
-  const r = await rig(CTRL_OFF);
+  const r = await rig(LOOPBACK);
   t.after(r.stop);
   let release!: () => void;
   r.bus.gate = new Promise<void>((res) => { release = res; });
@@ -188,7 +189,7 @@ test("a live tool event that lands while a LAN socket's replay is still being re
 
 // @spec DASH-FEED-011
 test("a LAN client and a loopback client on one feed each get their own form of the same event: redacting for one never changes what the other is sent", async (t) => {
-  const r = await rig(CTRL_OFF);
+  const r = await rig(LOOPBACK);
   t.after(r.stop);
   const [a, b, c] = [await r.connect(r.lan), await r.connect(r.full), await r.connect(r.lan)];
   const e = request();
@@ -204,7 +205,7 @@ test("the text of an inject.request for the tools unit and the note of a tool.ti
   const inj = ev("inject.request", { id: "i1", target: "tools", kind: "text", text: `{"tool":"x","arguments":{"q":"${SECRET}"}}`, remember: false });
   const timer = ev("tool.timer", { id: "t9", note: `remind ${SECRET}`, setAt: 1, dueAt: 2 });
   const none = ev("tool.request", { id: "c9", tool: "stream_info", arguments: {}, origin: "speech", round: 1, listed: true });
-  const r = await rig(CTRL_OFF, [inj, timer, none]);
+  const r = await rig(LOOPBACK, [inj, timer, none]);
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   await waitFor(() => lan.frames.some((f) => f.type === "inject.request") && lan.frames.some((f) => f.type === "tool.timer") && lan.events().length >= 1, "the replay");
@@ -218,7 +219,7 @@ test("the text of an inject.request for the tools unit and the note of a tool.ti
 test("memory recall events are redacted for a LAN socket, live and in its replay: the query and each memory's text are emptied and marked; the loopback socket gets them whole", async (t) => {
   const request = ev("memory.recall.request", { id: "m1", query: `who is ${SECRET}`, k: 3 });
   const reply = ev("memory.recall.reply", { id: "m1", memories: [{ ts: 1, kind: "note", who: "bob", text: `note ${SECRET}` }] });
-  const r = await rig(CTRL_OFF, [request, reply]);
+  const r = await rig(LOOPBACK, [request, reply]);
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   const full = await r.connect(r.full);
@@ -244,7 +245,7 @@ test("memory recall events are redacted for a LAN socket, live and in its replay
 
 // @spec DASH-FEED-011
 test("a tool.request whose arguments are not an empty plain object is marked redacted, whatever its type: the redaction fails closed", async (t) => {
-  const r = await rig(CTRL_OFF);
+  const r = await rig(LOOPBACK);
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   r.bus.emit(ev("tool.request", { id: "c7", tool: "stream_info", arguments: "not-an-object", origin: "speech", round: 1, listed: true }));
@@ -259,7 +260,7 @@ test("a tool.request whose arguments are not an empty plain object is marked red
 
 // @spec DASH-FEED-011
 test("an inject.request for the tools unit carries no redacted member: its text is emptied and nothing more is marked", async (t) => {
-  const r = await rig(CTRL_OFF);
+  const r = await rig(LOOPBACK);
   t.after(r.stop);
   const lan = await r.connect(r.lan);
   r.bus.emit(ev("inject.request", { id: "i2", target: "tools", kind: "text", text: `{"tool":"x"}`, remember: false }));

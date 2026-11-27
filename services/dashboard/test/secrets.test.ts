@@ -10,21 +10,18 @@ import { SERVICE_MANIFEST } from "@cohost/control";
 import { SECRET_PATHS } from "@cohost/config";
 import { createDashboardHandler } from "../src/routes.js";
 import { guardFullSurface, lanHandler } from "../src/host.js";
+import { testControl } from "./control-fixture.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
 
-const TOKEN = "tok-123";
+const TOKEN = "tok-123-control-token-for-secrets-0001";
 const OPENAI = "llm.openai.api_key";
 const BR_ID = "llm.bedrock.access_key_id";
 const BR_SECRET = "llm.bedrock.secret_access_key";
 
 interface Opts {
-  /** CONTROL_ENABLED=1 (the handler gets `control`). */
-  control?: boolean;
-  /** CONTROL_TOKEN configured; default is the token when `control`, none otherwise. */
-  token?: string | null;
   secrets?: string;
   stack?: Partial<StackSnapshot>;
   /** Let the settings reads locate config.yaml (the secret route itself never does). */
@@ -41,7 +38,6 @@ async function boot(o: Opts = {}) {
   if (o.secrets !== undefined) writeFileSync(secretsFile, o.secrets, { mode: 0o600 });
   const bus = new FakeBus();
   const rec = recordingLog();
-  const token = o.token === undefined ? (o.control ? TOKEN : undefined) : o.token ?? undefined;
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [], ...o.stack };
   let configReads = 0;
   const handler = createDashboardHandler({
@@ -50,11 +46,10 @@ async function boot(o: Opts = {}) {
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => { configReads++; if (o.readConfig) return configFile; throw new Error("the secret route must not touch config.yaml"); },
     secretsFile: () => secretsFile,
-    ...(token ? { controlToken: token } : {}),
-    ...(o.control ? { control: { token: token!, runtime: "compose", advanced: false, controller: {} as never } } : {}),
+    control: testControl({ token: TOKEN }),
   });
   const mk = (h: http.RequestListener) => new Promise<http.Server>((r) => { const s = http.createServer(h); s.listen(0, "127.0.0.1", () => r(s)); });
-  const server = await mk(guardFullSurface(handler, { loopback: true, controlEnabled: !!o.control }));
+  const server = await mk(guardFullSurface(handler, { loopback: true }));
   const lan = await mk(lanHandler(handler));
   after(() => { server.close(); lan.close(); });
   const port = (server.address() as { port: number }).port;
@@ -101,24 +96,22 @@ const mode = (f: string) => statSync(f).mode & 0o777;
 
 // @spec DASH-SECRET-001, DASH-SECRET-008, DASH-SECRET-010
 test("a set stores the value trimmed at its config path, mode 0600, answers {ok, set: true, restart}, and touches no other file", async () => {
-  for (const control of [true, false]) {
-    const t = await boot({ control, token: TOKEN });
-    const r = await t.put(`/secrets/${OPENAI}`, { value: "  sk-abc123\n" }, TOKEN);
-    assert.equal(r.status, 200);
-    assert.deepEqual(await r.json(), { ok: true, set: true, restart: [] });
-    assert.deepEqual(t.values(), { [OPENAI]: "sk-abc123" });
-    assert.equal(mode(t.secretsFile), 0o600);
-    assert.equal(t.configText(), EXAMPLE, "config.yaml is untouched");
-    assert.equal(t.configReads(), 0, "config.yaml is never even located");
-    assert.deepEqual(t.bus.published, []);
-  }
+  const t = await boot();
+  const r = await t.put(`/secrets/${OPENAI}`, { value: "  sk-abc123\n" }, TOKEN);
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { ok: true, set: true, restart: [] });
+  assert.deepEqual(t.values(), { [OPENAI]: "sk-abc123" });
+  assert.equal(mode(t.secretsFile), 0o600);
+  assert.equal(t.configText(), EXAMPLE, "config.yaml is untouched");
+  assert.equal(t.configReads(), 0, "config.yaml is never even located");
+  assert.deepEqual(t.bus.published, []);
 });
 
 // @spec DASH-SECRET-001
-test("each of the seventeen wildcard-free secret paths can be set and cleared", async () => {
-  const t = await boot({ control: true });
+test("each of the sixteen wildcard-free secret paths can be set and cleared", async () => {
+  const t = await boot();
   const wildcardFree = SECRET_PATHS.filter((p) => !p.includes("*"));
-  assert.equal(wildcardFree.length, 17); // CFG-SEC-003, wildcard-free paths only
+  assert.equal(wildcardFree.length, 16); // CFG-SEC-003, wildcard-free paths only
   for (const p of wildcardFree) {
     // the Bedrock pair is only ever changed together (DASH-SECRET-012)
     if (p === BR_ID || p === BR_SECRET) continue;
@@ -135,7 +128,7 @@ test("each of the seventeen wildcard-free secret paths can be set and cleared", 
 // @spec DASH-SECRET-001
 test("the engine secrets (ears openai/nemotron/kyutai keys, voice openai key, pocket hf_token) are secret paths of GET /config/schema and PUT /secrets/:path stores each trimmed", async () => {
   const engine = ["ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key", "voice.openai.api_key", "voice.pocket.hf_token"];
-  const t = await boot({ control: true });
+  const t = await boot();
   const schema = (await (await t.get("/config/schema")).json()) as { sections: { path: string; secrets?: string[] }[] };
   const advertised = schema.sections.flatMap((s) => (s.secrets ?? []).map((n) => `${s.path}.${n}`));
   for (const p of engine) {
@@ -150,7 +143,7 @@ test("the engine secrets (ears openai/nemotron/kyutai keys, voice openai key, po
 
 // @spec DASH-SECRET-002, DASH-SECRET-007
 test("a clear empties the value, keeps the key and every other secret, and every read reports it not set", async () => {
-  const t = await boot({ control: true, secrets: `# mine\nllm:\n  openai:\n    api_key: sk-old\n  claude:\n    api_key: sk-claude\n` });
+  const t = await boot({ secrets: `# mine\nllm:\n  openai:\n    api_key: sk-old\n  claude:\n    api_key: sk-claude\n` });
   const r = await t.put(`/secrets/${OPENAI}`, { value: null }, TOKEN);
   assert.deepEqual(await r.json(), { ok: true, set: false, restart: [] });
   assert.match(t.secretsText(), /# mine/);
@@ -159,50 +152,42 @@ test("a clear empties the value, keeps the key and every other secret, and every
   assert.doesNotMatch(t.secretsText(), /sk-old/);
 });
 
-// @spec DASH-SECRET-003, DASH-SECRET-004
-test("the control token is always required, in both modes: missing or wrong is 401 with www-authenticate and nothing is written", async () => {
-  for (const control of [true, false]) {
-    const t = await boot({ control, token: TOKEN });
-    for (const tok of [undefined, "wrong", ""]) {
-      const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, tok);
-      assert.equal(r.status, 401, `control=${control} token=${String(tok)}`);
-      assert.equal(r.headers.get("www-authenticate"), "Bearer");
-      assert.equal(t.secretsText(), "");
-    }
-  }
-});
-
-// @spec DASH-SECRET-004
-test("with no control token configured the route is 403 naming CONTROL_TOKEN and CONTROL_ENABLED, whatever the request carries", async () => {
-  const t = await boot({ control: false, token: null });
-  for (const tok of [undefined, "anything"]) {
+// @spec DASH-SECRET-003
+test("the write passes the one gate: missing or wrong is 401 {ok: false} with www-authenticate and nothing is written; never a 403", async () => {
+  const t = await boot();
+  for (const tok of [undefined, "wrong", ""]) {
     const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, tok);
-    assert.equal(r.status, 403);
-    const j = (await r.json()) as { ok: boolean; detail: string };
-    assert.equal(j.ok, false);
-    assert.match(j.detail, /CONTROL_TOKEN/);
-    assert.match(j.detail, /CONTROL_ENABLED/);
+    assert.equal(r.status, 401, `token=${String(tok)}`);
+    assert.equal(r.headers.get("www-authenticate"), "Bearer");
+    assert.equal(((await r.json()) as { ok: boolean }).ok, false);
+    assert.equal(t.secretsText(), "");
   }
-  assert.equal((await t.put("/secrets", { values: { [OPENAI]: "x" } }, TOKEN)).status, 403);
-  assert.equal(t.secretsText(), "");
+  assert.equal((await t.put("/secrets", { values: { [OPENAI]: "x" } })).status, 401);
 });
 
 // @spec DASH-SECRET-003, DASH-SECRET-005, DASH-ACC-004
 test("the token is checked before the path: an unknown path is 401 for a wrong token and 404 for the right one, writing nothing", async () => {
-  for (const control of [true, false]) {
-    const t = await boot({ control, token: TOKEN });
-    assert.equal((await t.put("/secrets/access-check", { value: null }, "wrong")).status, 401);
-    assert.equal((await t.put("/secrets/access-check", { value: null })).status, 401);
-    const ok = await t.put("/secrets/access-check", { value: null }, TOKEN);
-    assert.equal(ok.status, 404);
-    assert.deepEqual(await ok.json(), { ok: false, detail: "unknown secret" });
-    assert.equal(t.secretsText(), "");
-  }
+  const t = await boot();
+  assert.equal((await t.put("/secrets/access-check", { value: null }, "wrong")).status, 401);
+  assert.equal((await t.put("/secrets/access-check", { value: null })).status, 401);
+  const ok = await t.put("/secrets/access-check", { value: null }, TOKEN);
+  assert.equal(ok.status, 404);
+  assert.deepEqual(await ok.json(), { ok: false, detail: "unknown secret" });
+  assert.equal(t.secretsText(), "");
+});
+
+// @spec CFG-SEC-020, DASH-SECRET-005
+test("the derived ears.http.verifier is no secret path: its write is 404 unknown secret, with the right token", async () => {
+  const t = await boot();
+  const r = await t.put("/secrets/ears.http.verifier", { value: "ab".repeat(32) }, TOKEN);
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { ok: false, detail: "unknown secret" });
+  assert.equal(t.secretsText(), "");
 });
 
 // @spec DASH-SECRET-003, DASH-SECRET-006
 test("refusal order after the token: 413 body size, then 404 path, then 400 body", async () => {
-  const t = await boot({ control: false, token: TOKEN });
+  const t = await boot();
   const huge = JSON.stringify({ value: "x".repeat(70 * 1024) });
   assert.equal((await t.put(`/secrets/${OPENAI}`, huge, "wrong")).status, 401, "token before size");
   assert.equal((await t.put(`/secrets/${OPENAI}`, huge, TOKEN)).status, 413);
@@ -214,7 +199,7 @@ test("refusal order after the token: 413 body size, then 404 path, then 400 body
 
 // @spec DASH-SECRET-005
 test("a path that is not one of the secret paths is 404 unknown secret: traversal, prototype keys, non-secret config paths, bad escapes", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const bad = [
     "llm", "llm.openai", "llm.openai.base_url", "llm.model", "voice.speed", "dashboard.port", "llm.openai.api_key.x", "LLM.OPENAI.API_KEY",
     "%20llm.openai.api_key", "llm.openai.api_key%20", "llm.openai.api_key%0A", "", "__proto__", "constructor", "prototype", "toString", "__proto__.polluted",
@@ -232,7 +217,7 @@ test("a path that is not one of the secret paths is 404 unknown secret: traversa
 
 // @spec DASH-SECRET-006
 test("a body that is not a JSON object, lacks value, or holds an unusable value is 400 {ok:false, detail}; nothing is written", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const bodies: unknown[] = [
     "not json", "", "null", "[]", '"x"', "42", "{}", { other: "x" }, { value: "" }, { value: "   \n\t " }, { value: 5 }, { value: true }, { value: ["a"] },
     { value: { a: 1 } }, { value: "line1\nline2" }, { value: "line1\r\nline2" }, { value: "a\u0000b" }, { value: "\u0000" }, { value: undefined },
@@ -250,7 +235,7 @@ test("a body that is not a JSON object, lacks value, or holds an unusable value 
 
 // @spec DASH-SECRET-006
 test("a body over 64 KiB is 413 and writes nothing", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const r = await t.put(`/secrets/${OPENAI}`, JSON.stringify({ value: "x".repeat(64 * 1024) }), TOKEN);
   assert.equal(r.status, 413);
   assert.equal(t.secretsText(), "");
@@ -259,7 +244,7 @@ test("a body over 64 KiB is 413 and writes nothing", async () => {
 // @spec DASH-SECRET-007
 test("the value appears in no response body, no log line and no error text, on success or failure", async () => {
   const LEAK = "sk-LEAK-0123456789-unique";
-  const t = await boot({ control: true });
+  const t = await boot();
   const bodies: string[] = [];
   const grab = async (r: Response) => { bodies.push(await r.text()); return r.status; };
   assert.equal(await grab(await t.put(`/secrets/${OPENAI}`, { value: LEAK }, TOKEN)), 200);
@@ -272,7 +257,7 @@ test("the value appears in no response body, no log line and no error text, on s
   // failed writes: an unparsable secrets file, and a secrets path that is a directory
   writeFileSync(t.secretsFile, `llm: [${LEAK}\n`);
   assert.equal(await grab(await t.put(`/secrets/${OPENAI}`, { value: LEAK }, TOKEN)), 500);
-  const asDir = await boot({ control: true, secretsFile: join(mkdtempSync(join(tmpdir(), "cohost-secrets-dir-")), "secrets.yaml") });
+  const asDir = await boot({ secretsFile: join(mkdtempSync(join(tmpdir(), "cohost-secrets-dir-")), "secrets.yaml") });
   mkdirSync(asDir.secretsFile);
   assert.equal(await grab(await asDir.put(`/secrets/${OPENAI}`, { value: LEAK }, TOKEN)), 500);
   for (const b of bodies) assert.ok(!b.includes(LEAK), `response leaked: ${b}`);
@@ -283,7 +268,7 @@ test("the value appears in no response body, no log line and no error text, on s
 
 // @spec DASH-SECRET-007
 test("GET /config/:section reports a stored secret only as set or not set", async () => {
-  const t = await boot({ control: true, readConfig: true });
+  const t = await boot({ readConfig: true });
   const before = (await (await t.get("/config/llm")).json()) as { keys: Record<string, { set?: boolean; value?: unknown }> };
   assert.equal(before.keys["openai.api_key"]!.set, false);
   await t.put(`/secrets/${OPENAI}`, { value: "sk-SHOWN-NOWHERE" }, TOKEN);
@@ -295,7 +280,7 @@ test("GET /config/:section reports a stored secret only as set or not set", asyn
 // @spec DASH-SECRET-008
 test("a failed write is 500 {ok:false, detail} carrying the error text and leaves the file as it was", async () => {
   const bad = "llm: [unclosed\n";
-  const t = await boot({ control: true, secrets: bad });
+  const t = await boot({ secrets: bad });
   const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-never" }, TOKEN);
   assert.equal(r.status, 500);
   const j = (await r.json()) as { ok: boolean; detail: string };
@@ -306,7 +291,7 @@ test("a failed write is 500 {ok:false, detail} carrying the error text and leave
 
 // @spec DASH-SECRET-008
 test("the file ends at mode 0600 even when it existed with a looser mode", async () => {
-  const t = await boot({ control: true, secrets: "llm:\n  claude:\n    api_key: sk-c\n" });
+  const t = await boot({ secrets: "llm:\n  claude:\n    api_key: sk-c\n" });
   chmodSync(t.secretsFile, 0o644);
   assert.equal((await t.put(`/secrets/${OPENAI}`, { value: "sk-x" }, TOKEN)).status, 200);
   assert.equal(mode(t.secretsFile), 0o600);
@@ -315,7 +300,7 @@ test("the file ends at mode 0600 even when it existed with a looser mode", async
 
 // @spec DASH-SECRET-009
 test("two requests in flight are applied one after the other and leave the file well-formed with both applied", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const paths = SECRET_PATHS.filter((p) => p !== BR_ID && p !== BR_SECRET && !p.includes("*"));
   const rs = await Promise.all(paths.map((p) => t.put(`/secrets/${p}`, { value: `v-${p}` }, TOKEN)));
   assert.deepEqual(rs.map((r) => r.status), paths.map(() => 200));
@@ -329,19 +314,19 @@ test("restart lists, in manifest order, the running units whose manifest secrets
   assert.ok(SERVICE_MANIFEST.filter((s) => s.config.includes("llm")).length > readers.length - 1, "units read the llm section; only those declaring the path restart");
   const svc = (service: string, status: string) => ({ service, status });
   const running = [...readers].toReversed().map((id) => svc(id, "running")).concat([svc("voice", "running")]);
-  const t = await boot({ control: true, stack: { services: running as never } });
+  const t = await boot({ stack: { services: running as never } });
   const r = await t.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN);
   assert.deepEqual(((await r.json()) as { restart: string[] }).restart, readers);
-  const stopped = await boot({ control: true, stack: { services: [svc(readers[0]!, "exited")] as never } });
+  const stopped = await boot({ stack: { services: [svc(readers[0]!, "exited")] as never } });
   assert.deepEqual(((await (await stopped.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN)).json()) as { restart: string[] }).restart, []);
-  const noDocker = await boot({ control: true, stack: { docker: { ok: false } as never, services: running as never } });
+  const noDocker = await boot({ stack: { docker: { ok: false } as never, services: running as never } });
   assert.deepEqual(((await (await noDocker.put(`/secrets/${OPENAI}`, { value: "sk-1" }, TOKEN)).json()) as { restart: string[] }).restart, []);
 });
 
 // @spec DASH-SECRET-001, MOD-MAN-015
 test("a unit that reads a section but does not declare the path is not restarted, and a path no unit declares restarts nothing", async () => {
   const everyone = SERVICE_MANIFEST.map((s) => ({ service: s.composeName, status: "running" }));
-  const t = await boot({ control: true, stack: { services: everyone as never } });
+  const t = await boot({ stack: { services: everyone as never } });
   const restartOf = async (body: unknown, path: string) => ((await (await t.put(`/secrets/${path}`, body, TOKEN)).json()) as { restart: string[] }).restart;
   assert.deepEqual(await restartOf({ value: "d" }, "connections.discord.token"), ["connector-discord"]);
   assert.deepEqual(await restartOf({ value: "y" }, "chat.youtube.api_key"), ["chat", "tools"], "tools declares the stream-info credentials; chat the user ones");
@@ -349,13 +334,13 @@ test("a unit that reads a section but does not declare the path is not restarted
   assert.deepEqual(await restartOf({ value: "v" }, "voice.openai.api_key"), ["voice"], "mouth and avatar read other sections and declare none");
   assert.deepEqual(await restartOf({ value: "hf" }, "voice.pocket.hf_token"), [], "the Pocket token reaches only the engine container, through its own file");
   assert.deepEqual(await restartOf({ value: null }, "voice.pocket.hf_token"), [], "a clear lists the same units as a set");
-  const multi = (await (await t.put("/secrets", { values: { "connections.discord.token": "d", "ears.http.token": "e" } }, TOKEN)).json()) as { restart: string[] };
+  const multi = (await (await t.put("/secrets", { values: { "connections.discord.token": "d", "ears.openai.api_key": "e" } }, TOKEN)).json()) as { restart: string[] };
   assert.deepEqual(multi.restart, ["ears", "connector-discord"], "PUT /secrets: the union in manifest order");
 });
 
 // @spec DASH-SECRET-003, DASH-HOST-004, DASH-HOST-005
 test("Host and Origin checks apply before the token: a foreign Origin or Host is 403 and writes nothing, even with the right token", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const auth = { authorization: `Bearer ${TOKEN}` };
   const body = JSON.stringify({ value: "sk-never" });
   const viaRaw = (headers: Record<string, string>) => t.raw(`/secrets/${OPENAI}`, { ...headers, "content-length": String(body.length) }, body);
@@ -367,7 +352,7 @@ test("Host and Origin checks apply before the token: a foreign Origin or Host is
 
 // @spec DASH-SECRET-010, DASH-HOST-002
 test("the secret route is not served on the LAN listener", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const body = JSON.stringify({ value: "sk-never" });
   const headers = { authorization: `Bearer ${TOKEN}`, "content-length": String(body.length) };
   assert.equal((await t.raw(`/secrets/${OPENAI}`, headers, body, t.lanPort)).status, 404);
@@ -377,7 +362,7 @@ test("the secret route is not served on the LAN listener", async () => {
 
 // @spec DASH-SECRET-011
 test("PUT /secrets sets and clears several paths in one atomic write and answers {ok, set: {path: boolean}, restart}", async () => {
-  const t = await boot({ control: true, secrets: "llm:\n  claude:\n    api_key: sk-c\n" });
+  const t = await boot({ secrets: "llm:\n  claude:\n    api_key: sk-c\n" });
   const r = await t.put("/secrets", { values: { [OPENAI]: " sk-o ", "llm.claude.api_key": null, "vision.obs.password": "pw" } }, TOKEN);
   assert.equal(r.status, 200);
   assert.deepEqual(await r.json(), { ok: true, set: { [OPENAI]: true, "llm.claude.api_key": false, "vision.obs.password": true }, restart: [] });
@@ -386,10 +371,8 @@ test("PUT /secrets sets and clears several paths in one atomic write and answers
 });
 
 // @spec DASH-SECRET-011, DASH-SECRET-003
-test("PUT /secrets is gated like the single form: 403 with no token configured, 401 for a wrong token, before the body is judged", async () => {
-  const none = await boot({ control: false, token: null });
-  assert.equal((await none.put("/secrets", { values: { [OPENAI]: "x" } }, TOKEN)).status, 403);
-  const t = await boot({ control: false, token: TOKEN });
+test("PUT /secrets is gated like the single form: 401 for a missing or wrong token, before the body is judged", async () => {
+  const t = await boot();
   assert.equal((await t.put("/secrets", "not json", "wrong")).status, 401);
   assert.equal((await t.put("/secrets", { values: { [OPENAI]: "x" } })).status, 401);
   assert.equal((await t.put("/secrets", "not json", TOKEN)).status, 400);
@@ -398,7 +381,7 @@ test("PUT /secrets is gated like the single form: 403 with no token configured, 
 
 // @spec DASH-SECRET-011
 test("PUT /secrets refuses a bad body, an unknown path or an unusable value with nothing written for any path", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   const bad: [unknown, number][] = [
     ["not json", 400], [{}, 400], [{ values: null }, 400], [{ values: [] }, 400], [{ values: {} }, 400], [{ values: "x" }, 400], [{ value: "x" }, 400],
     [{ values: { [OPENAI]: "" } }, 400], [{ values: { [OPENAI]: 5 } }, 400], [{ values: { [OPENAI]: "a\nb" } }, 400],
@@ -417,7 +400,7 @@ test("PUT /secrets refuses a bad body, an unknown path or an unusable value with
 // @spec DASH-SECRET-012
 test("a request that would leave exactly one of the two Bedrock credentials set is 400 naming both paths and writes nothing", async () => {
   const both = { paths: [BR_ID, BR_SECRET] };
-  const t = await boot({ control: true });
+  const t = await boot();
   const cases: { name: string; call: () => Promise<Response> }[] = [
     { name: "single: set the key id alone", call: () => t.put(`/secrets/${BR_ID}`, { value: "id" }, TOKEN) },
     { name: "single: set the secret key alone", call: () => t.put(`/secrets/${BR_SECRET}`, { value: "sec" }, TOKEN) },
@@ -437,7 +420,7 @@ test("a request that would leave exactly one of the two Bedrock credentials set 
 
 // @spec DASH-SECRET-012
 test("the Bedrock pair is judged on the state the request would leave: with its partner set it can change alone; clearing one of a set pair is refused, clearing both is not", async () => {
-  const t = await boot({ control: true });
+  const t = await boot();
   assert.equal((await t.put("/secrets", { values: { [BR_ID]: "id", [BR_SECRET]: "sec" } }, TOKEN)).status, 200);
   assert.equal((await t.put(`/secrets/${BR_ID}`, { value: "id2" }, TOKEN)).status, 200, "rotate one while the other is set");
   assert.deepEqual(t.values(), { [BR_ID]: "id2", [BR_SECRET]: "sec" });
@@ -451,6 +434,6 @@ test("the Bedrock pair is judged on the state the request would leave: with its 
 
 // @spec DASH-SECRET-012
 test("a request that does not name a Bedrock credential is not refused for a half-set pair already in the file", async () => {
-  const t = await boot({ control: true, secrets: `llm:\n  bedrock:\n    access_key_id: id\n` });
+  const t = await boot({ secrets: `llm:\n  bedrock:\n    access_key_id: id\n` });
   assert.equal((await t.put(`/secrets/${OPENAI}`, { value: "sk" }, TOKEN)).status, 200);
 });

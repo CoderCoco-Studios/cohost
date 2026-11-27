@@ -4,7 +4,7 @@
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 268 specs: 216 `[x]`, 52 `[ ]`, 0 `[D]`; the loader reads the unit's projection and the delivered credentials; the YAML and secrets-file specs are retired (still `[ ]` while the code has them) ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 268 specs: 218 `[x]`, 50 `[ ]`, 0 `[D]`; the loader reads the unit's projection and the delivered credentials; the YAML and secrets-file specs are retired (still `[ ]` while the code has them) ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
@@ -25,7 +25,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 216 `[x]`, 52 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 218 `[x]`, 50 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -83,7 +83,7 @@ Orientation:
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 2 | 0 | 0 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 13 | 0 | 0 |
 | Tools egress | CFG-EGR-014 to CFG-EGR-016 | 3 | 0 | 0 |
-| Schema | CFG-SCH-001 to CFG-SCH-071 | 69 | 0 | 2 |
+| Schema | CFG-SCH-001 to CFG-SCH-071 | 71 | 0 | 0 |
 | Renderer section | CFG-SCH-097 to CFG-SCH-101 | 5 | 0 | 0 |
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Tools section and reminder expiry | CFG-SCH-075 to CFG-SCH-096 | 22 | 0 | 0 |

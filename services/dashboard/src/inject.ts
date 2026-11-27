@@ -3,7 +3,6 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { EventPayloads, type Bus, type EventType, type Publisher } from "@cohost/bus";
 import { SERVICE_MANIFEST, type HealthState, type ServiceDef } from "@cohost/control";
 import { readBody } from "./body.js";
-import { requireToolToken } from "./tools-routes.js";
 import { uploadMaxBytes, type UploadKind, type UploadLimits } from "./uploads.js";
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -18,8 +17,6 @@ export interface InjectDeps {
   uploads: UploadLimits;
   /** Returns false (after sending 401) when the bearer gate rejects the request. */
   authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
-  /** The control token whenever one is configured (either control mode); `as: "tool"` requires it always. */
-  toolToken?: string | undefined;
   /** The derived health state of a unit (the tracker's snapshot with the Compose overlay); undefined for a unit not in it. */
   stateOf: (unit: string) => HealthState | undefined;
   /** The control plane's units: what `POST /inject/event` accepts for `unit`, and which `type`s for it. */
@@ -105,8 +102,6 @@ async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.Se
   try { j = JSON.parse(data.toString("utf8")); } catch { return send(res, 400, "body must be JSON"); }
   if (typeof j !== "object" || j === null || Array.isArray(j)) return send(res, 400, "body must be a JSON object");
   const b = j as Record<string, unknown>;
-  // @spec DASH-INJ-011
-  if (b.as === "tool" && !requireToolToken(d.toolToken, req, res)) return;
 
   const level = b.level;
   if (level !== "service" && level !== "bus") return send(res, 400, "level must be 'service' or 'bus'");

@@ -6,6 +6,7 @@ import net from "node:net";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { TOKEN } from "./control-fixture.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 
@@ -40,7 +41,7 @@ test("an invalid config.yaml under the dashboard prints as indented terminal lin
     cwd: repo, stdio: ["ignore", "pipe", "pipe"],
     env: {
       PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data,
-      COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: join(root, "secrets.yaml"), REDIS_URL: "redis://127.0.0.1:1",
+      COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: join(root, "secrets.yaml"), REDIS_URL: "redis://127.0.0.1:1", CONTROL_TOKEN: TOKEN,
     },
   });
   let stdout = "";

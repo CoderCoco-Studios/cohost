@@ -1,9 +1,21 @@
 //! Flag and environment parsing for the helper's command line.
 use cohost_desktop_audio::cli::Options;
-use cohost_desktop_audio::post::DEFAULT_URL;
+use cohost_desktop_audio::post::{DEFAULT_URL, listener_key};
 
+/// A control token as the installer makes one, and the listener key derived from it
+/// (HMAC-SHA256 of `cohost/ears-listener/v1`, control-plane CTRL-RUNTIME-017).
+const TOKEN: &str = "f00dfeedf00dfeedf00dfeedf00dfeedf00dfeedf00dfeed";
+const KEY: &str = "67ed33ea3112c4bf1508bfca5a994b3c32d7de97ebf774f9cd18fc085f7517fb";
+/// An environment holding the control token, so a parse fails only for the problem under test.
+const WITH: &[(&str, &str)] = &[("CONTROL_TOKEN", TOKEN)];
+
+/// Parses with `CONTROL_TOKEN` set unless `env` sets it.
 fn parse(args: &[&str], env: &[(&str, &str)]) -> Options {
-    Options::parse(args, env).unwrap()
+    let mut e = env.to_vec();
+    if !e.iter().any(|(k, _)| *k == "CONTROL_TOKEN") {
+        e.push(("CONTROL_TOKEN", TOKEN));
+    }
+    Options::parse(args, &e).unwrap()
 }
 
 // @spec EARS-SRC-015
@@ -22,6 +34,7 @@ fn url_redis_url_and_prefix_flags_override_the_defaults() {
         &[
             "--url",
             "http://h:1/audio?source=desktop",
+            "--allow-remote",
             "--redis-url",
             "redis://r:2",
             "--prefix",
@@ -80,21 +93,47 @@ fn the_clip_flags_default_to_700_15000_and_500_and_can_be_set() {
 
 // @spec EARS-SRC-021
 #[test]
-fn the_token_follows_the_flag_then_the_environment_and_an_empty_value_is_unset() {
+fn the_key_is_derived_from_control_token_or_the_overriding_flag_trimmed_and_never_the_token() {
+    assert_eq!(listener_key(TOKEN), KEY);
     assert_eq!(
-        parse(&["--token", "a"], &[("EARS_HTTP_TOKEN", "b")])
-            .token
-            .as_deref(),
-        Some("a")
+        parse(&[], &[]).key,
+        KEY,
+        "from CONTROL_TOKEN in the environment"
     );
     assert_eq!(
-        parse(&[], &[("EARS_HTTP_TOKEN", "b")]).token.as_deref(),
-        Some("b")
+        parse(&[], &[("CONTROL_TOKEN", &format!("  {TOKEN}\t"))]).key,
+        KEY,
+        "the token is trimmed before the key is derived"
     );
     assert_eq!(
-        parse(&["--token", ""], &[("EARS_HTTP_TOKEN", "")]).token,
-        None
+        parse(&["--token", TOKEN], &[("CONTROL_TOKEN", "other")]).key,
+        KEY,
+        "a non-empty --token overrides the environment"
     );
+    assert_eq!(
+        parse(&["--token", ""], &[]).key,
+        KEY,
+        "an empty --token is the same as none"
+    );
+    let o = parse(&[], &[]);
+    assert_ne!(o.key, TOKEN);
+    assert!(!format!("{o:?}").contains(TOKEN), "the token is not kept");
+}
+
+// @spec EARS-SRC-021
+#[test]
+fn without_a_token_from_the_flag_or_the_environment_parsing_fails_naming_both() {
+    for (args, env) in [
+        (&[][..], &[][..]),
+        (&[][..], &[("CONTROL_TOKEN", "")][..]),
+        (&["--token", ""][..], &[("CONTROL_TOKEN", "")][..]),
+    ] {
+        let err = Options::parse(args, env).unwrap_err().to_string();
+        assert!(
+            err.contains("CONTROL_TOKEN") && err.contains("--token"),
+            "{err}"
+        );
+    }
 }
 
 // @spec EARS-SRC-018
@@ -110,38 +149,38 @@ fn device_is_optional() {
 // @spec EARS-SRC-015
 #[test]
 fn an_unknown_flag_is_an_error() {
-    assert!(Options::parse(&["--nope"], &[]).is_err());
+    assert!(Options::parse(&["--nope"], WITH).is_err());
 }
 
 // @spec EARS-SRC-017
 #[test]
 fn a_zero_clip_length_is_rejected() {
-    assert!(Options::parse(&["--silence-ms", "0"], &[]).is_err());
-    assert!(Options::parse(&["--max-clip-ms", "0"], &[]).is_err());
+    assert!(Options::parse(&["--silence-ms", "0"], WITH).is_err());
+    assert!(Options::parse(&["--max-clip-ms", "0"], WITH).is_err());
 }
 
 // @spec EARS-SRC-017
 #[test]
 fn clip_lengths_and_the_silence_level_have_upper_bounds() {
-    assert!(Options::parse(&["--silence-ms", "10000"], &[]).is_ok());
-    assert!(Options::parse(&["--silence-ms", "10001"], &[]).is_err());
-    assert!(Options::parse(&["--max-clip-ms", "60000"], &[]).is_ok());
-    assert!(Options::parse(&["--max-clip-ms", "60001"], &[]).is_err());
-    assert!(Options::parse(&["--silence-level", "32767"], &[]).is_ok());
-    assert!(Options::parse(&["--silence-level", "32768"], &[]).is_err());
+    assert!(Options::parse(&["--silence-ms", "10000"], WITH).is_ok());
+    assert!(Options::parse(&["--silence-ms", "10001"], WITH).is_err());
+    assert!(Options::parse(&["--max-clip-ms", "60000"], WITH).is_ok());
+    assert!(Options::parse(&["--max-clip-ms", "60001"], WITH).is_err());
+    assert!(Options::parse(&["--silence-level", "32767"], WITH).is_ok());
+    assert!(Options::parse(&["--silence-level", "32768"], WITH).is_err());
 }
 
 // @spec EARS-SRC-015
 #[test]
 fn an_empty_prefix_is_rejected() {
-    assert!(Options::parse(&["--prefix", ""], &[]).is_err());
+    assert!(Options::parse(&["--prefix", ""], WITH).is_err());
 }
 
 // @spec EARS-SRC-021
 #[test]
 fn a_token_with_a_line_break_is_rejected_from_the_flag_or_the_environment() {
-    assert!(Options::parse(&["--token", "a\r\nX-Evil: 1"], &[]).is_err());
-    assert!(Options::parse(&[], &[("EARS_HTTP_TOKEN", "a\nb")]).is_err());
+    assert!(Options::parse(&["--token", "a\r\nX-Evil: 1"], WITH).is_err());
+    assert!(Options::parse(&[], &[("CONTROL_TOKEN", "a\nb")]).is_err());
 }
 
 // @spec EARS-SRC-015
@@ -158,41 +197,33 @@ fn a_url_must_be_http_with_a_host_and_a_valid_port() {
         "http://[::1/x",
     ] {
         assert!(
-            Options::parse(&["--url", bad], &[]).is_err(),
+            Options::parse(&["--url", bad], WITH).is_err(),
             "{bad} accepted"
         );
     }
-    assert!(Options::parse(&["--url", "http://[::1]:8765/audio?source=desktop"], &[]).is_ok());
+    assert!(Options::parse(&["--url", "http://[::1]:8765/audio?source=desktop"], WITH).is_ok());
 }
 
 // @spec EARS-SRC-015
 #[test]
-fn a_non_loopback_url_with_a_token_warns() {
-    let warned = Options::parse(
-        &["--url", "http://192.168.1.5:8765/audio", "--token", "t"],
-        &[],
-    )
-    .unwrap();
-    assert_eq!(warned.warnings.len(), 1);
+fn a_non_loopback_url_is_a_usage_error_unless_allow_remote_is_given_which_warns() {
+    let remote = ["--url", "http://192.168.1.5:8765/audio"];
+    let err = Options::parse(&remote, WITH).unwrap_err().to_string();
+    assert!(err.contains("--allow-remote"), "{err}");
+    let allowed = Options::parse(&[&remote[..], &["--allow-remote"]].concat(), WITH).unwrap();
+    assert_eq!(allowed.warnings.len(), 1);
     assert!(
-        Options::parse(&["--url", "http://192.168.1.5:8765/audio"], &[])
-            .unwrap()
-            .warnings
-            .is_empty()
+        allowed.warnings[0].contains("unencrypted"),
+        "{:?}",
+        allowed.warnings
     );
-    assert!(
-        Options::parse(&["--token", "t"], &[])
-            .unwrap()
-            .warnings
-            .is_empty()
-    );
-    assert!(
-        Options::parse(
-            &["--url", "http://localhost:8765/audio", "--token", "t"],
-            &[]
-        )
-        .unwrap()
-        .warnings
-        .is_empty()
-    );
+    for local in [
+        "http://localhost:8765/audio",
+        "http://127.0.0.2:8765/audio",
+        "http://[::1]:8765/audio",
+    ] {
+        let o = Options::parse(&["--url", local], WITH).unwrap();
+        assert!(o.warnings.is_empty(), "{local}");
+    }
+    assert!(Options::parse(&[], WITH).unwrap().warnings.is_empty());
 }

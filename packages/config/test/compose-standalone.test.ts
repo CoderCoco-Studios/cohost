@@ -115,11 +115,25 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
 });
 
 // @spec DEPLOY-HOST-002
-test(".env.example turns control on, carries the empty token, the host and the docker bin hint, and no port", () => {
+test(".env.example carries the empty token as the one lock, no CONTROL_ENABLED, the host and the docker bin hint, and no port", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   const line = (k: string) => env.split("\n").find((l) => l.startsWith(`${k}=`));
-  assert.equal(line("CONTROL_ENABLED"), "CONTROL_ENABLED=1");
+  assert.doesNotMatch(env, /CONTROL_ENABLED/, "no CONTROL_ENABLED line or mention");
   assert.match(line("CONTROL_TOKEN") ?? "", /^CONTROL_TOKEN=\s*(#.*)?$/);
+  // the comment above the token line: the one lock, the dashboard refuses to start without it, a bearer for programs, the
+  // unlock link in a browser, and the installer fills it
+  const lines = env.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("CONTROL_TOKEN="));
+  let first = at;
+  while (first > 0 && lines[first - 1]!.startsWith("#")) first--;
+  const comment = lines.slice(first, at).join("\n");
+  assert.match(comment, /one lock/);
+  assert.match(comment, /does not start without it/);
+  assert.match(comment, /bearer/);
+  assert.match(comment, /unlock link/);
+  assert.match(comment, /install\.sh fills it/);
+  assert.match(comment, /openssl rand -hex 24/);
+  assert.match(env, /0\.0\.0\.0 opens the full dashboard to other machines,\n# and the control token and the unlock cookie then cross the network in cleartext/);
   assert.equal(line("DASHBOARD_PORT"), undefined, "the ports are dashboard.port and dashboard.lan_port in config.yaml");
   assert.equal(line("DASHBOARD_LAN_PORT"), undefined);
   assert.equal(line("DASHBOARD_HOST"), "DASHBOARD_HOST=127.0.0.1");

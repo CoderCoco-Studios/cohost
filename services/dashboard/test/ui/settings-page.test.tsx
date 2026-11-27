@@ -520,24 +520,26 @@ test("the restart banner survives moving to another section and unmounting the s
 });
 
 // @spec DASH-SET-008
-test("where control is disabled the banner names the units and the cohostctl command instead of a button", async () => {
-  await open("demo", { control: false, routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: ["voice", "mouth"], warnings: [] } } } });
+test("the banner always offers Restart, with no cohostctl command in its place", async () => {
+  await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: ["voice", "mouth"], warnings: [] } } } });
   const user = userEvent.setup();
   await user.click(within(row("enabled")).getByRole("switch"));
   await user.click(bar("Save"));
   await settle();
   const banner = screen.getByRole("region", { name: "Restart needed" });
-  assert.equal(within(banner).queryByRole("button", { name: "Restart" }), null);
-  assert.ok(within(banner).getByText("cohostctl restart voice"));
-  assert.ok(within(banner).getByText("cohostctl restart mouth"));
+  assert.ok(within(banner).getByRole("button", { name: "Restart" }));
+  assert.equal(within(banner).queryByText(/cohostctl/), null);
 });
 
 // @spec DASH-SET-028, DASH-UI-006
-test("a sensitive key carries a control-token note; with no token held its save goes out without one (an unlocked browser's cookie counts) and no Access dialog opens before a 401", async () => {
+test("a sensitive key carries a warning about where data goes or who may reach the dashboard; with no token held its save goes out without one (an unlocked browser's cookie counts) and no Access dialog opens before a 401", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: [], warnings: [] } } } });
   const user = userEvent.setup();
-  assert.ok(within(row("url")).getByText(/Changing this needs the control token/));
-  assert.equal(within(row("name")).queryByText(/needs the control token/), null);
+  const warning = within(row("url")).getByText(/decides where a credential or private data goes, or who may reach the dashboard/);
+  assert.ok(!/control token/i.test(warning.textContent ?? ""), "the warning asks for no token");
+  assert.ok((within(row("url")).getByRole("textbox", { name: "Url" }).getAttribute("aria-describedby") ?? "").includes(warning.id), "the field is described by the warning");
+  assert.equal(within(row("name")).queryByText(/decides where a credential/), null);
+  assert.equal(screen.queryByText(/needs the control token/), null);
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
   await user.click(bar("Save"));
   await settle();
@@ -550,15 +552,15 @@ test("a sensitive key carries a control-token note; with no token held its save 
 });
 
 // @spec DASH-SET-028, DASH-UI-006
-test("a sensitive save answered 401 asks for the token naming the change, keeps the edits on Cancel and retries once unlocked", async () => {
-  const b = await open("demo", { routes: { "PUT /config/demo": { status: 401, json: { ok: false, detail: "changing demo.url needs the control token", sensitive: ["demo.url"] } } } });
+test("a save with a sensitive edit answered 401 asks for the token like any save, keeps the edits on Cancel and retries once unlocked", async () => {
+  const b = await open("demo", { routes: { "PUT /config/demo": { status: 401, json: { ok: false, detail: "unauthorized" } } } });
   const user = userEvent.setup();
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
   await user.click(bar("Save"));
   await settle();
   const prompt = b.app.rt.access.state.get().prompt;
   assert.ok(prompt, "the Access dialog is asked for the token after the 401");
-  assert.match(prompt!.action, /demo\.url/);
+  assert.match(prompt!.action, /^Save .* settings$/, "the same action as any save: no sensitive-key prompt");
   act(() => b.app.rt.access.resolvePrompt(false));
   await settle();
   assert.match(text(screen.getByRole("alert")), /not done: locked/);
@@ -574,20 +576,21 @@ test("a sensitive save answered 401 asks for the token naming the change, keeps 
 });
 
 // @spec DASH-SET-028
-test("Check never asks for the token, a 403 on save shows the control token as not set up, and a held token is sent", async () => {
-  const b = await open("demo", { routes: { "PUT /config/demo?dryRun=1": { status: 401, text: "unauthorized" }, "PUT /config/demo": { status: 403, json: { ok: false, detail: "set CONTROL_TOKEN and CONTROL_ENABLED", sensitive: ["demo.url"] } } } });
+test("Check is never gated: it sends no token, even one the page holds, and never opens the Access dialog; Save sends the held token and a refusal shows in the bar", async () => {
+  const b = await open("demo", { routes: { "PUT /config/demo?dryRun=1": { status: 401, text: "unauthorized" }, "PUT /config/demo": { status: 403, json: { ok: false, detail: "forbidden origin" } } } });
   const user = userEvent.setup();
-  await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
+  b.app.rt.access.setToken("control", "tok", "tab");
+  await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
   await user.click(bar("Check"));
   await settle();
   assert.equal(b.app.rt.access.state.get().prompt, null, "a dry run never opens the Access dialog");
+  assert.equal(b.app.fetch.callsTo("PUT /config/demo?dryRun=1")[0]!.headers.authorization, undefined, "Check carries no token");
   assert.match(text(screen.getByRole("alert")), /401/);
-  b.app.rt.access.setToken("control", "tok", "tab");
   await user.click(bar("Save"));
   await settle();
   assert.equal(b.app.fetch.callsTo("PUT /config/demo")[0]!.headers.authorization, "Bearer tok");
-  assert.equal(b.app.rt.access.state.get().control.notSetUp, true);
-  assert.match(text(screen.getByRole("alert")), /403/);
+  assert.equal(b.app.rt.access.state.get().control.present, true, "a 403 does not change the token's state");
+  assert.match(text(screen.getByRole("alert")), /403 forbidden origin/);
 });
 
 // @spec DASH-NAV-004

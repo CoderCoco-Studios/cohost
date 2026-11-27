@@ -5,8 +5,9 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { HealthTracker } from "@cohost/control";
 import { createDashboardHandler, type DashboardDeps } from "../src/routes.js";
 import { StackService } from "../src/stack.js";
+import { AUTH, testControl } from "./control-fixture.js";
 
-function start(control?: DashboardDeps["control"]) {
+function start(control: DashboardDeps["control"] = testControl()) {
   const bus = new FakeBus();
   const rec = recordingLog();
   const server = http.createServer(createDashboardHandler({
@@ -21,7 +22,7 @@ function start(control?: DashboardDeps["control"]) {
     });
   });
 }
-const post = (base: string, body: unknown, headers: Record<string, string> = {}) =>
+const post = (base: string, body: unknown, headers: Record<string, string> = AUTH) =>
   fetch(`${base}/mouth/routing`, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) });
 
 // @spec DASH-ROUTE-001
@@ -33,13 +34,13 @@ test("POST /mouth/routing publishes set_routing addressed to mouth with the outp
 });
 
 // @spec DASH-ROUTE-001
-test("with CONTROL_ENABLED the route needs the bearer token", async () => {
-  const { bus, base } = await start({ token: "s3cret", runtime: "compose", advanced: false, controller: {} as never });
+test("the route passes the one gate: the bearer token or a session cookie", async () => {
+  const { bus, base } = await start(testControl({ token: "s3cret-control-token-for-routing-0001" }));
   const body = { outputs: { discord: { enabled: false } } };
-  assert.equal((await post(base, body)).status, 401);
+  assert.equal((await post(base, body, {})).status, 401);
   assert.equal((await post(base, body, { authorization: "Bearer wrong" })).status, 401);
   assert.equal(bus.of("control").length, 0);
-  assert.equal((await post(base, body, { authorization: "Bearer s3cret" })).status, 204);
+  assert.equal((await post(base, body, { authorization: "Bearer s3cret-control-token-for-routing-0001" })).status, 204);
   assert.equal(bus.of("control").length, 1);
 });
 

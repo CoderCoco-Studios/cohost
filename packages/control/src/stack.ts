@@ -294,7 +294,7 @@ export class StackController {
   // @spec CTRL-RUNTIME-016
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
-    const projected = await projectManifestSecrets(this.cwd, this.manifest); // CTRL-RUNTIME-014
+    const projected = await projectManifestSecrets(this.cwd, this.manifest, this.env); // CTRL-RUNTIME-014, CTRL-RUNTIME-017
     if (projected) return { ok: false, detail: projected.detail };
     const secret = this.writePocketSecret();
     if (!secret.ok) return { ok: false, detail: secret.detail };

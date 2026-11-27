@@ -157,7 +157,7 @@ Also set `connections.discord.guild_id` and `connections.discord.voice_channel_i
 3. Start `mouth`, send a chat line and hear the reply in the channel. Then stop `voice` and send another: `mouth` plays its cached fallback line, at most once per `mouth.fallback.min_interval_ms`.
 4. The co-host's own voice never becomes `speech.heard`; the connector ignores every bot account.
 5. Set `mouth.outputs.discord.enabled: false` in the Settings screen and restart `mouth`: it idles `off` and plays nothing. Kill and restart the connector: it rejoins and both halves resume.
-6. Set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio` and see `speech.heard` with `source` `http`. Stop the connector and see only `deps.discord` go `down`.
+6. Set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio` with one of the [audio clients](../extend/audio-in.md) (which send the listener key derived from `CONTROL_TOKEN`) and see `speech.heard` with `source` `http`. Stop the connector and see only `deps.discord` go `down`.
 
 ## What has not been run
 

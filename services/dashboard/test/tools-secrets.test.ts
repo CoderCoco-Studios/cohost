@@ -8,6 +8,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { SERVICE_MANIFEST } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { guardFullSurface } from "../src/host.js";
+import { testControl } from "./control-fixture.js";
 import type { StackService, StackSnapshot } from "../src/stack.js";
 
 // `tools.servers.<name>.token`: the one secret path that names a map entry (CFG-SEC-016). The dashboard sets it only for a
@@ -36,9 +37,9 @@ async function boot(config: string | undefined = WITH_WEATHER, secrets?: string)
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
-    configFile: () => configFile, secretsFile: () => secretsFile, controlToken: TOKEN,
+    configFile: () => configFile, secretsFile: () => secretsFile, control: testControl({ token: TOKEN }),
   });
-  const server = await new Promise<http.Server>((r) => { const s = http.createServer(guardFullSurface(handler, { loopback: true, controlEnabled: false })); s.listen(0, "127.0.0.1", () => r(s)); });
+  const server = await new Promise<http.Server>((r) => { const s = http.createServer(guardFullSurface(handler, { loopback: true })); s.listen(0, "127.0.0.1", () => r(s)); });
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const put = (path: string, body: unknown, tok: string | undefined = TOKEN) =>

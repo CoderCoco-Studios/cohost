@@ -5,8 +5,7 @@ import type { TokenKind } from "../../state/types";
 import { TokenForm } from "./TokenForm";
 import { TOKEN_LABEL, UNLOCKS } from "./text";
 
-function stateText(t: { present: boolean; scope: "tab" | "browser" | null; notSetUp?: boolean }, session: boolean): string {
-  if (t.notSetUp) return "Not set up on the server"; // a token kept in this browser means nothing while the server has none
+function stateText(t: { present: boolean; scope: "tab" | "browser" | null }, session: boolean): string {
   if (t.present) return `Unlocked · ${t.scope === "browser" ? "this browser" : "this tab"}`;
   if (session) return "Unlocked (this browser)"; // the unlock link's session cookie (DASH-ACC-008)
   return "Locked";
@@ -26,7 +25,7 @@ function TokenRow({ kind }: { kind: TokenKind }) {
   const label = TOKEN_LABEL[kind];
   return (
     <div role="group" aria-label={label} className="token-row">
-      <div className="row"><strong>{label}</strong><span className={`tag ${(t.present || session) && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t, session)}</span></div>
+      <div className="row"><strong>{label}</strong><span className={`tag ${t.present || session ? "tag-set" : ""}`}>{stateText(t, session)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
       {changing ? (
         <TokenForm kind={kind} onStored={() => setChanging(false)} onCancel={() => setChanging(false)} />
@@ -41,9 +40,8 @@ function TokenRow({ kind }: { kind: TokenKind }) {
 }
 
 /**
- * The Access panel: the dashboard's one token with its state (Unlocked with its storage scope, Locked, or Not set up on the
- * server), what it unlocks, and Change token and Lock; a browser unlocked by the unlock link shows it as "Unlocked (this
- * browser)" (DASH-ACC-008).
+ * The Access panel: the dashboard's one token with its state (Unlocked with its storage scope, Unlocked (this browser) when
+ * the unlock link's session cookie unlocked the browser, or Locked), what it unlocks, and Change token and Lock (DASH-ACC-008).
  */
 // @spec DASH-ACC-008, DASH-ACC-007
 export function TokenPanel() {

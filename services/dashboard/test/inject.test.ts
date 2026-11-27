@@ -5,6 +5,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
+import { ON, TOKEN } from "./control-fixture.js";
 
 /** Every unit up: the not-running refusal (MOD-TEST-005) has its own tests in inject-event.test.ts. */
 const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
@@ -24,7 +25,7 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64, ttlMs = 300_000)
   const bus = new CtlBus();
   const rec = recordingLog();
   const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs };
-  const setup = setupControl(env, bus, rec.log);
+  const setup = setupControl({ ...ON, ...env }, bus, rec.log);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => UP,
@@ -33,9 +34,9 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64, ttlMs = 300_000)
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const text = (body: unknown, token?: string) =>
+  const text = (body: unknown, token: string | null = TOKEN) =>
     fetch(`${base}/inject/text`, { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body), headers: token ? { authorization: `Bearer ${token}` } : {} });
-  const bin = (path: string, body: Buffer | string, type: string | undefined, token?: string) =>
+  const bin = (path: string, body: Buffer | string, type: string | undefined, token: string | null = TOKEN) =>
     fetch(`${base}${path}`, { method: "POST", body, headers: { ...(type ? { "content-type": type } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) } });
   return { bus, ids: bus.ids, base, uploads, text, bin };
 }
@@ -171,24 +172,20 @@ test("there is no upload route: GET /uploads/<id> is 404 even for a stored uploa
 });
 
 // @spec DASH-CTRL-004, DASH-CTRL-005
-test("gate: with control enabled the three routes need the bearer token", async () => {
-  const t = await boot({ CONTROL_ENABLED: "1", CONTROL_TOKEN: "s3cret" });
-  assert.equal((await t.text({ level: "bus", text: "hi" })).status, 401);
-  assert.equal((await t.text({ level: "bus", text: "hi" }, "wrong")).status, 401);
-  assert.equal((await t.bin("/inject/image", Buffer.from("x"), "image/png")).status, 401);
-  assert.equal((await t.bin("/inject/audio", Buffer.from("x"), "audio/wav")).status, 401);
-  assert.equal(t.bus.published.length, 0);
-  assert.equal(t.bus.uploads.size, 0);
-  assert.equal((await t.text({ level: "bus", text: "hi" }, "s3cret")).status, 202);
-  const r = await t.bin("/inject/image", Buffer.from("x"), "image/png", "s3cret");
-  assert.equal(r.status, 202);
-  assert.equal(t.bus.uploads.size, 1);
-});
-
-// @spec DASH-CTRL-001
-test("control disabled: routes are open", async () => {
-  const t = await boot({});
-  assert.equal((await t.text({ level: "bus", text: "hi" })).status, 202);
+test("gate: the three routes need the bearer token, CONTROL_ENABLED or not", async () => {
+  for (const flag of ["0", "1"]) {
+    const t = await boot({ CONTROL_ENABLED: flag });
+    assert.equal((await t.text({ level: "bus", text: "hi" }, null)).status, 401);
+    assert.equal((await t.text({ level: "bus", text: "hi" }, "wrong")).status, 401);
+    assert.equal((await t.bin("/inject/image", Buffer.from("x"), "image/png", null)).status, 401);
+    assert.equal((await t.bin("/inject/audio", Buffer.from("x"), "audio/wav", null)).status, 401);
+    assert.equal(t.bus.published.length, 0);
+    assert.equal(t.bus.uploads.size, 0);
+    assert.equal((await t.text({ level: "bus", text: "hi" })).status, 202);
+    const r = await t.bin("/inject/image", Buffer.from("x"), "image/png");
+    assert.equal(r.status, 202);
+    assert.equal(t.bus.uploads.size, 1);
+  }
 });
 
 // @spec DASH-INJ-009

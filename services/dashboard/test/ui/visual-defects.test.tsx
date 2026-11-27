@@ -15,7 +15,7 @@ import { mountServices, stackMsg } from "./services-fixtures";
 function boot() {
   location.hash = "";
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: { enabled: false, unlocked: false } });
+  app.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: false } });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   const r = renderApp(<App sink={false} />, app);
   act(() => { app.socket().open(); });
@@ -77,19 +77,18 @@ test("the file picker is a real file input named by its label, plus a button fac
 });
 
 // @spec DASH-ACC-008
-test("a token the server answered 403 for shows as Not set up on the server, even when a token is stored", () => {
+test("a stored token shows as Unlocked with its scope, never as not set up", () => {
   const app = makeApp();
   app.rt.access.setToken("control", "old", "tab");
-  app.rt.access.markNotSetUp("control", true);
   renderApp(<TokenPanel />, app);
   const control = screen.getByRole("group", { name: /Control token/ });
-  assert.match(control.textContent ?? "", /Not set up on the server/);
-  assert.ok(!/Unlocked/.test(control.textContent ?? ""), "no Unlocked beside a token that is not set up");
+  assert.match(control.textContent ?? "", /Unlocked · this tab/);
+  assert.ok(!/not set up/i.test(control.textContent ?? ""), "no not-set-up state");
 });
 
 // @spec DASH-UI-020
 test("the running-action note's phase line starts with the phase, not a stray separator", async () => {
-  const { app } = await mountServices({ control: { enabled: true, runtime: "compose", advanced: false, unlocked: false }, stack: stackMsg({ state: "starting" }) });
+  const { app } = await mountServices({ control: { runtime: "compose", advanced: false, unlocked: false }, stack: stackMsg({ state: "starting" }) });
   act(() => app.socket().message({ type: "stack", ...stackMsg({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: app.clock.now - 1000 } }) }));
   const group = screen.getByRole("group", { name: "Running action" });
   const phase = [...group.querySelectorAll("span")].find((s) => /building images/.test(s.textContent ?? ""))!;

@@ -12,8 +12,6 @@ export interface BootOptions {
   section?: string;
   /** Replace the schema answer. */
   schema?: unknown;
-  /** `GET /services/control`; default enabled. */
-  control?: boolean;
   app?: TestApp;
   /** Routes to answer before the screen mounts. */
   routes?: Record<string, Parameters<TestApp["fetch"]["on"]>[1]>;
@@ -115,7 +113,7 @@ export function boot(opts: BootOptions = {}) {
     f.on(`GET /config/${path}`, file.get(path));
     f.on(`PUT /config/${path}`, file.put(path));
   }
-  f.on("GET /services/control", { json: opts.control === false ? { enabled: false, unlocked: false } : { enabled: true, runtime: "compose", advanced: false, unlocked: false } });
+  f.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: false } });
   f.on("GET /personality", { text: "# Coco\n" });
   f.on("GET /options/models", { json: { models: ["llama3.2:3b", "qwen2.5:7b"] } });
   f.on("GET /options/voices", { json: { voices: ["af_heart", "bm_george"] } });

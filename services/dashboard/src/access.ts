@@ -8,18 +8,11 @@ export const SESSION_COOKIE = "cohost_session";
 /** 90 days (owner decision): a new link is one `mise run dashboard:unlock` away. */
 export const SESSION_MAX_AGE = 7_776_000;
 
-/** Who must present the control token on a route: `required` false lets every request through; `token` is `CONTROL_TOKEN`. */
-export interface TokenGate {
-  required: boolean;
-  token: string | undefined;
-}
-
-/** Why a request is refused for the control token: none configured, or neither the token nor a counted session cookie. */
-export type TokenRefusal = "none" | "wrong";
-
 const b64 = (b: Buffer): string => b.toString("base64url");
+/** The label the session MAC key is an HMAC of; it differs from the ears listener key's label (control-plane CTRL-RUNTIME-017). */
+export const SESSION_LABEL = "cohost dashboard session";
 /** The MAC key of every session: HMAC-SHA256 of a fixed label under the control token, so changing the token ends every session. */
-const sessionKey = (token: string): Buffer => createHmac("sha256", token).update("cohost dashboard session").digest();
+const sessionKey = (token: string): Buffer => createHmac("sha256", token).update(SESSION_LABEL).digest();
 const mac = (token: string, id: string): string => b64(createHmac("sha256", sessionKey(token)).update(id).digest());
 
 /** A new session cookie value, `<id>.<mac>` (DASH-UNL-005). Nothing is stored: the MAC alone makes it valid. */
@@ -60,27 +53,31 @@ function sessionCounts(token: string, req: http.IncomingMessage): boolean {
 }
 
 /** True when the request carries a valid session cookie, whatever its method and `Origin` (what `GET /services/control` reports). */
-export function hasSession(token: string | undefined, req: http.IncomingMessage): boolean {
-  return token !== undefined && sessionValid(token, sessionCookie(req.headers.cookie));
+export function hasSession(token: string, req: http.IncomingMessage): boolean {
+  return sessionValid(token, sessionCookie(req.headers.cookie));
 }
 
 /**
- * The one decision every route the control token gates makes, in normal mode and in config recovery mode (DASH-CTRL-011): no
- * refusal when the gate is not required; `none` when no token is configured; otherwise a request that carries `Authorization`
- * is judged by that header alone, and one without it passes on a valid session cookie whose request names its own origin
- * (or, for a read, names none).
+ * The one decision every route the control token gates makes, in normal mode and in config recovery mode, on any full-surface
+ * address (DASH-CTRL-011): a request that carries `Authorization` is judged by that header alone (`Bearer <CONTROL_TOKEN>`,
+ * compared in constant time); one without it passes on a valid session cookie whose request names its own origin (or, for a
+ * read, names none). Nothing else lifts it: not a loopback bind, not a loopback peer.
  */
 // @spec DASH-CTRL-011
-export function tokenRefusal(gate: TokenGate, req: http.IncomingMessage): TokenRefusal | undefined {
-  if (!gate.required) return undefined;
-  if (gate.token === undefined) return "none";
-  if (req.headers.authorization !== undefined) return bearerOk(req.headers.authorization, gate.token) ? undefined : "wrong";
-  return sessionCounts(gate.token, req) ? undefined : "wrong";
+export function authorized(token: string, req: http.IncomingMessage): boolean {
+  if (req.headers.authorization !== undefined) return bearerOk(req.headers.authorization, token);
+  return sessionCounts(token, req);
 }
 
-/** True when `token` is configured and the request presents it or a counted session cookie (DASH-CTRL-011). */
-export function authorized(token: string | undefined, req: http.IncomingMessage): boolean {
-  return tokenRefusal({ required: true, token }, req) === undefined;
+/** The gate's refusal: 401 with `www-authenticate: Bearer`, as JSON `{ok: false, detail}` or, for the plain routes, as text. */
+export function unauthorized(res: http.ServerResponse, as: "json" | "text" = "text"): void {
+  if (as === "json") {
+    res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": "Bearer" });
+    res.end(JSON.stringify({ ok: false, detail: "unauthorized" }));
+    return;
+  }
+  res.writeHead(401, { "www-authenticate": "Bearer" });
+  res.end("unauthorized");
 }
 
 /** The nonces of the unlock link: 32 random bytes each, accepted once within 10 minutes, at most 16 unused (DASH-UNL-002). */
@@ -123,17 +120,27 @@ export function pathOf(req: http.IncomingMessage): string {
 /** The terminal line of DASH-UNL-001. */
 export const unlockLine = (base: string, nonce: string): string => `Unlock this browser: ${base}/unlock?n=${nonce}`;
 
-const NO_TOKEN_PAGE = "This dashboard has no control token, so it cannot unlock a browser. Set CONTROL_TOKEN in .env and restart the dashboard (mise run dashboard): it prints an unlock link in its terminal.\n";
-const BAD_LINK_PAGE = "This unlock link is not valid: it was already used, it expired (a link lasts 10 minutes), or it is from an earlier start of the dashboard.\n\nGet a new one: run `mise run dashboard:unlock` in the cohost folder, or restart the dashboard (mise run dashboard) and open the link it prints in its terminal.\n";
+/** The answer to a link that is not valid (DASH-UNL-004): static, the same bytes for every request, nothing from the request. */
+export const BAD_LINK_PAGE = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Unlock link not valid</title></head>
+<body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5">
+<h1>This unlock link is not valid</h1>
+<p>It was already used, it expired (a link lasts 10 minutes), or it is from an earlier start of the dashboard.</p>
+<p>Get a new one: run <code>mise run dashboard:unlock</code> in the cohost folder, or restart the dashboard (<code>mise run dashboard</code>) and open the link it prints in its terminal.</p>
+<p>If this browser is already unlocked, <a href="/">open the dashboard</a>.</p>
+</body>
+</html>
+`;
 
 /**
  * `GET /unlock?n=` (DASH-UNL-003, DASH-UNL-004), `POST /unlock/link` (DASH-UNL-006) and `POST /unlock/forget` (DASH-UNL-008),
  * shared by normal mode and config recovery mode. Returns false for any other request.
  */
 // @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006, DASH-UNL-008
-export function handleUnlock(d: { token: string | undefined; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
+export function handleUnlock(d: { token: string; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
   if (req.method === "GET" && url.pathname === "/unlock") {
-    const ok = d.token !== undefined && d.links.consume(url.searchParams.get("n"));
+    const ok = d.links.consume(url.searchParams.get("n"));
     // The browser the link already unlocked may open it again (a second click on the terminal line, a restored tab): it goes
     // on to its unlocked dashboard, keeping the session it holds.
     if (!ok && hasSession(d.token, req)) {
@@ -142,13 +149,13 @@ export function handleUnlock(d: { token: string | undefined; links: UnlockLinks 
       return true;
     }
     if (!ok) {
-      res.writeHead(400, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
-      res.end(d.token === undefined ? NO_TOKEN_PAGE : BAD_LINK_PAGE);
+      res.writeHead(400, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
+      res.end(BAD_LINK_PAGE);
       return true;
     }
     res.writeHead(303, {
       location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer",
-      "set-cookie": `${SESSION_COOKIE}=${newSession(d.token!)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`,
+      "set-cookie": `${SESSION_COOKIE}=${newSession(d.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`,
     });
     res.end();
     return true;
@@ -159,8 +166,8 @@ export function handleUnlock(d: { token: string | undefined; links: UnlockLinks 
       res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...headers });
       res.end(JSON.stringify(value));
     };
-    if (d.token === undefined) { json(403, { ok: false, detail: "no control token is configured: set CONTROL_TOKEN in .env (with CONTROL_ENABLED=1 for the stack controls) and restart the dashboard" }); return true; }
-    if (!bearerOk(req.headers.authorization, d.token)) { json(401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
+    // The one gate: the token, or the session cookie of an unlocked browser minting a link for another (DASH-CTRL-011).
+    if (!authorized(d.token, req)) { json(401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
     const base = d.links.base ?? `http://${req.headers.host ?? "127.0.0.1"}`;
     json(200, { ok: true, url: `${base}/unlock?n=${d.links.issue()}` });
     return true;

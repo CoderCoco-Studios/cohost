@@ -113,23 +113,15 @@ export function hostPermitted(host: string | undefined, allowed: readonly string
 /** Every method other than GET, HEAD and OPTIONS (PATCH and any unknown method included) may change state. */
 const isStateChanging = (method: string | undefined): boolean => method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 
-const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
-const STACK_POST = /^\/stack\/[^/]+$/; // any /stack/<name>: with control off every one is a 404 (DASH-CTRL-001)
-
 /**
  * The checks in front of the full-surface handler: while bound to loopback, a foreign Host is a 403 (DASH-HOST-004), and
- * when bound beyond it a Host that fails `hostPermitted` is (DASH-HOST-009); a state-changing method (any but GET, HEAD and OPTIONS) with a foreign Origin is a 403 (DASH-HOST-005). With control disabled the stack and lifecycle
- * routes are answered by the handler's 404 first (DASH-STACK-002's refusal order).
+ * when bound beyond it a Host that fails `hostPermitted` is (DASH-HOST-009); a state-changing method (any but GET, HEAD and
+ * OPTIONS) with a foreign Origin is a 403 (DASH-HOST-005). They come before the control-token gate (DASH-STACK-002's order).
  */
 // @spec DASH-HOST-004, DASH-HOST-005, DASH-HOST-009
-export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; controlEnabled: boolean; allowedHosts?: readonly string[] }): http.RequestListener {
+export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; allowedHosts?: readonly string[] }): http.RequestListener {
   return (req, res) => {
     const method = req.method ?? "GET";
-    if (!o.controlEnabled && method === "POST") {
-      let pathname = "";
-      try { pathname = new URL(req.url ?? "/", "http://x").pathname; } catch { /* the handler answers it */ }
-      if (STACK_POST.test(pathname) || LIFECYCLE.test(pathname)) return inner(req, res);
-    }
     if (!(o.loopback ? hostAllowed(req.headers.host) : hostPermitted(req.headers.host, o.allowedHosts))) { res.writeHead(403); res.end("forbidden"); return; }
     if (isStateChanging(method) && req.headers.origin !== undefined && !originAllowed(req.headers.origin, req.headers.host)) {
       res.writeHead(403); res.end("forbidden"); return;
@@ -148,7 +140,6 @@ export interface ListenerOptions {
   lanPort: number;
   /** The LAN listener's address; default all interfaces (tests pin loopback). */
   lanHost?: string;
-  controlEnabled: boolean;
   /** The renderer relay's upgrades (`/avatar/ws`); without it that path is a 400 (DASH-AVR-001). */
   avatar?: Pick<AvatarRelay, "upgrade">;
   /** `dashboard.allowed_hosts`: host names the non-loopback listeners accept in `Host` besides address literals and `localhost` (DASH-HOST-009). */
@@ -207,7 +198,7 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const loopback = isLoopback(o.bind);
   const allowedHosts = o.allowedHosts ?? [];
   // No request timeout on the full surface: an upload's own 30 s idle limit (DASH-MDL-023) is the only cut on a slow body that keeps moving.
-  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, controlEnabled: o.controlEnabled, allowedHosts }));
+  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, allowedHosts }));
   const lan = http.createServer(lanHandler(o.handler, allowedHosts));
   // @spec DASH-HOST-008, DASH-HOST-009
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);

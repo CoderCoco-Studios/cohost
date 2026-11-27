@@ -43,7 +43,7 @@ test("the models live only in <dataDir>/dashboard/avatar-models/, created at the
 
 // @spec DASH-MDL-015
 test("POST /avatar/models is a 404 on the LAN listener and stores nothing", async (t) => {
-  const r = await rig(t, { control: true });
+  const r = await rig(t);
   const res = await send(r.lanPort, "POST", "/avatar/models?name=Aiko.vrm", { headers: r.auth, body: model("a") });
   assert.equal(res.status, 404);
   assert.deepEqual(r.ls(), []);
@@ -51,25 +51,23 @@ test("POST /avatar/models is a 404 on the LAN listener and stores nothing", asyn
 });
 
 // @spec DASH-MDL-016
-test("with control on it needs the bearer token; with it off a loopback full surface is open; a foreign Origin is refused", async (t) => {
-  const on = await rig(t, { control: true });
-  assert.equal((await send(on.port, "POST", "/avatar/models?name=A.vrm", { body: model("a") })).status, 401);
-  assert.equal((await send(on.port, "POST", "/avatar/models?name=A.vrm", { headers: { authorization: "Bearer wrong" }, body: model("a") })).status, 401);
-  assert.deepEqual(on.ls(), []);
-  assert.equal((await up(on, "?name=A.vrm", model("a"))).status, 201);
-  const off = await rig(t, {});
-  assert.equal((await send(off.port, "POST", "/avatar/models?name=A.vrm", { body: model("a") })).status, 201);
-  for (const origin of ["http://evil.example", "null", "not a url", "https://127.0.0.1:" + off.port]) {
-    const res = await send(off.port, "POST", "/avatar/models?name=B.vrm", { headers: { origin }, body: model("b") });
+test("an upload passes the one gate on a loopback full surface too (401 without the token); a foreign Origin is refused", async (t) => {
+  const r = await rig(t);
+  assert.equal((await send(r.port, "POST", "/avatar/models?name=A.vrm", { body: model("a") })).status, 401);
+  assert.equal((await send(r.port, "POST", "/avatar/models?name=A.vrm", { headers: { authorization: "Bearer wrong" }, body: model("a") })).status, 401);
+  assert.deepEqual(r.ls(), []);
+  assert.equal((await up(r, "?name=A.vrm", model("a"))).status, 201);
+  for (const origin of ["http://evil.example", "null", "not a url", "https://127.0.0.1:" + r.port]) {
+    const res = await send(r.port, "POST", "/avatar/models?name=B.vrm", { headers: { ...r.auth, origin }, body: model("b") });
     assert.equal(res.status, 403, origin);
   }
-  assert.deepEqual(off.ls(), ["A.vrm"]);
-  assert.equal((await send(off.port, "POST", "/avatar/models?name=C.vrm", { headers: { origin: `http://127.0.0.1:${off.port}` }, body: model("c") })).status, 201);
+  assert.deepEqual(r.ls(), ["A.vrm"]);
+  assert.equal((await send(r.port, "POST", "/avatar/models?name=C.vrm", { headers: { ...r.auth, origin: `http://127.0.0.1:${r.port}` }, body: model("c") })).status, 201);
 });
 
 // @spec DASH-MDL-017
 test("the checks run in order, each answering alone and reading no body byte after it: Host, Origin, token, Content-Length, name, slot, collision, limit", async (t) => {
-  const r = await rig(t, { control: true, maxBytes: MiB, seed: { "Aiko.vrm": model("a") } });
+  const r = await rig(t, { maxBytes: MiB, seed: { "Aiko.vrm": model("a") } });
   const answers = async (query: string, headers: Record<string, string>, expected: number, why: string) => {
     const h = open(r.port, "POST", `/avatar/models${query}`, headers);
     h.write(Buffer.alloc(100, 1)); // a body that never finishes: the answer must come without it
@@ -101,7 +99,7 @@ test("the checks run in order, each answering alone and reading no body byte aft
 test("a collision is judged before a limit", async (t) => {
   const seed: Record<string, Buffer> = {};
   for (let i = 0; i < 20; i++) seed[`m${String(i).padStart(2, "0")}.vrm`] = model(String(i));
-  const r = await rig(t, { control: true, seed });
+  const r = await rig(t, { seed });
   const col = await up(r, "?name=m00.vrm", model("again"));
   assert.equal(col.status, 409);
   assert.equal(col.json().name, "m00.vrm", "the collision answer, not the limit one");
@@ -190,7 +188,7 @@ test("a body over dashboard.models.max_bytes is cut at the first byte over: 413,
   assert.deepEqual(names(r), ["Exact.vrm"]);
   assert.deepEqual(incoming(r), []);
   // An endless body is cut: the server answers 413 while the client is still sending.
-  const h = open(r.port, "POST", "/avatar/models?name=Endless.vrm", {});
+  const h = open(r.port, "POST", "/avatar/models?name=Endless.vrm", r.auth);
   // The head declares a JSON chunk of 2 MiB, so no head is judged before the cap: the zeros after the first 100 bytes are never parsed.
   const endless = glb({ asset: { version: "2.0" }, extensionsUsed: ["VRMC_vrm"], extensions: { VRMC_vrm: {} } }, { bin: 0, jsonLen: 2 * MiB });
   h.write(endless.subarray(0, 100));
@@ -404,7 +402,7 @@ test("a stored upload changes no setting and does not select the model", async (
 test("the upload body is not capped at 64 KiB while the JSON and text routes still are", async (t) => {
   const r = await rig(t, {});
   assert.equal((await up(r, "?name=Big.vrm", modelOfSize(MiB))).status, 201);
-  const ctl = (n: number) => { const head = '{"cmd":"mute","pad":"'; const tail = '"}'; return send(r.port, "POST", "/control", { body: head + "x".repeat(n - head.length - tail.length) + tail }); };
+  const ctl = (n: number) => { const head = '{"cmd":"mute","pad":"'; const tail = '"}'; return send(r.port, "POST", "/control", { headers: r.auth, body: head + "x".repeat(n - head.length - tail.length) + tail }); };
   assert.equal((await ctl(64 * 1024)).status, 204);
   assert.equal((await ctl(64 * 1024 + 1)).status, 413);
 });

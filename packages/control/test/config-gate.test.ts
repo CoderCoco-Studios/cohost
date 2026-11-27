@@ -20,8 +20,11 @@ test("configRefusal is undefined for a usable store and otherwise names the coun
 // @spec CTRL-GATE-001
 test("configRefusal checks the settings store fresh by default", async () => {
   const saved = process.env.COHOST_DATA_DIR;
+  const savedKey = process.env.COHOST_KEY_FILE;
   try {
     process.env.COHOST_DATA_DIR = mkdtempSync(join(tmpdir(), "cohost-gate-"));
+    // Never the owner's key file, even when this file runs outside scripts/test-env.sh.
+    process.env.COHOST_KEY_FILE = join(process.env.COHOST_DATA_DIR, "master.key");
     (await openStore({ notice: { isTTY: false, write: () => {}, warn: () => {} }, warn: () => {} })).close();
     assert.equal(await configRefusal(), undefined, "a store seeded from the shipped examples can be used");
     const damaged = mkdtempSync(join(tmpdir(), "cohost-gate-"));
@@ -31,6 +34,7 @@ test("configRefusal checks the settings store fresh by default", async () => {
     assert.match((await configRefusal())!, /first: damaged\)/);
   } finally {
     if (saved === undefined) delete process.env.COHOST_DATA_DIR; else process.env.COHOST_DATA_DIR = saved;
+    if (savedKey === undefined) delete process.env.COHOST_KEY_FILE; else process.env.COHOST_KEY_FILE = savedKey;
   }
 });
 

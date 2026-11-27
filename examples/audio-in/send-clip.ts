@@ -1,6 +1,7 @@
 // Send one audio clip to cohost's ears `http` source. Node built-ins only.
-//   CONTROL_TOKEN=<the value in cohost's .env> mise run example:audio-send:ts -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
-// The listener key is derived from CONTROL_TOKEN; the token itself is never sent.
+//   CONTROL_TOKEN=<cohost's control token> mise run example:audio-send:ts -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+// The listener key is derived from CONTROL_TOKEN, read from this command's environment only (export it from your password
+// manager); the token itself is never sent.
 // A copy outside the checkout runs as `node send-clip.ts <file> ...`.
 // Runs with `node` on Node 22.18 or later, which strips the types.
 import { createHmac } from "node:crypto";
@@ -54,7 +55,7 @@ async function send(file: string, url: string, key: string, speaker?: string, so
 
 const { file, options } = parse(process.argv.slice(2));
 const token = (process.env.CONTROL_TOKEN ?? "").trim();
-if (token === "") fail("send-clip.ts: set CONTROL_TOKEN to the value in cohost's .env");
+if (token === "") fail("send-clip.ts: set CONTROL_TOKEN to cohost's control token (from your password manager)");
 try {
   const { status, text } = await send(file, options["--url"]!, listenerKey(token), options["--speaker"], options["--source"]);
   console.log(text);

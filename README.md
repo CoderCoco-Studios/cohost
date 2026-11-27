@@ -21,11 +21,13 @@ cd cohost
 mise run dashboard
 ```
 
+The installer prints two things once: the recovery key of your settings store
+and the control token, cohost's one lock. Keep both in your password manager.
 Open the unlock link the dashboard prints (`Unlock this browser:
-http://127.0.0.1:3000/unlock?n=...`), which unlocks your browser without the
-`CONTROL_TOKEN` from `.env`, and press Launch. To reach mock mode, edit no
-file: on the Services screen, tick **isolated** and press Start (or Restart) on
-`chat`, `memory`, `cortex` and `voice`, which gives each a stand-in backend.
+http://127.0.0.1:3000/unlock?n=...`), which unlocks your browser without typing
+the token, and press Launch. To reach mock mode, edit no file: on the Services
+screen, press Start (or Restart) on `chat`, `memory`, `cortex` and `voice` and
+switch on **Isolated** in each dialog, which gives each a stand-in backend.
 Nothing is appended to `.env`. For real accounts, follow
 [Install for real](https://codercoco-studios.github.io/cohost/guide/install/real-install).
 

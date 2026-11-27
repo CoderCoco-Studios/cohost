@@ -2,7 +2,7 @@
 title: Avatar
 description: Connect a 2D avatar in VTube Studio or a 3D VRM avatar through a VMC app, and map the co-host's emotions to your model's expressions.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Avatar
@@ -32,41 +32,33 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
 
 1. In VTube Studio, open Settings, General, and turn on **Start API (allow plugins)**.
 
-2. In `config/config.yaml`, choose the driver. `avatar.vtube_studio.host` and `avatar.vtube_studio.port` are where VTube Studio listens; the defaults already work for VTube Studio on the same machine as [Docker](../../start/glossary.md#docker), and `8001` is its default port:
+2. Choose the driver in the Settings screen's **Avatar** section, or from a terminal in the cohost folder. `avatar.vtube_studio.host` and `avatar.vtube_studio.port` are where VTube Studio listens; the defaults (`host.docker.internal` and `8001`) already work for VTube Studio on the same machine as [Docker](../../start/glossary.md#docker), and `8001` is its default port:
 
-   ```yaml
-   avatar:
-     driver: "vtube-studio"
-     vtube_studio:
-       host: "host.docker.internal"
-       port: 8001
+   ```bash
+   mise run config:set -- avatar.driver vtube-studio
    ```
 
-3. Restart the `avatar` service from the Services screen, or from a terminal:
+3. Restart the `avatar` service from the Services screen, because a setting applies at the service's next start. Or, from a terminal:
 
    ```bash
    mise run cohostctl restart avatar
    ```
 
-4. VTube Studio pops up an **Allow plugin** request. Click **Allow**. cohost saves the answer in `config/.vts-token`, so you will only be asked once.
+4. VTube Studio pops up an **Allow plugin** request. Click **Allow**. cohost saves the token VTube Studio gives it in `data/avatar/vts-token.enc`, encrypted under a key only the `avatar` service is given, so no readable token is kept on disk and you will only be asked once.
 
-5. Tell the co-host what your model's expressions are called. Open `config/expressions.yaml` and, under `vtube-studio`, set each emotion to the name of the hotkey that triggers it in VTube Studio (Settings, Hotkey Settings). Leave an emotion out to skip it. The emotions are `neutral`, `happy`, `laugh`, `surprised`, `smug`, `sad`, `angry`, `confused` and `think`. You can also name hotkeys for gestures, such as `wave`, under `gestures`.
+5. Tell the co-host what your model's expressions are called. In the emotion map (see [Editing the emotion map](#editing-the-emotion-map)), under `vtube-studio`, set each emotion to the name of the hotkey that triggers it in VTube Studio (Settings, Hotkey Settings). Leave an emotion out to skip it. The emotions are `neutral`, `happy`, `laugh`, `surprised`, `smug`, `sad`, `angry`, `confused` and `think`. You can also name hotkeys for gestures, such as `wave`, under `gestures`.
 
 ## Steps: 3D with a VRM and VMC
 
 1. In your VRM app, turn on a VMC receiver and note its port. cohost's default is `39539`.
 
-2. In `config/config.yaml`:
+2. Choose the driver in the **Avatar** section, or from a terminal:
 
-   ```yaml
-   avatar:
-     driver: "vmc"
-     vmc:
-       host: "host.docker.internal"
-       port: 39539
+   ```bash
+   mise run config:set -- avatar.driver vmc
    ```
 
-   If the app runs on another machine, put its address in `avatar.vmc.host`.
+   `avatar.vmc.host` defaults to `host.docker.internal` and `avatar.vmc.port` to `39539`. If the app runs on another machine, put its address in `avatar.vmc.host`.
 
 3. Restart the `avatar` service from the Services screen, or:
 
@@ -74,7 +66,7 @@ A face is optional. A voice with no face is a podcast. A face with no voice is a
    mise run cohostctl restart avatar
    ```
 
-4. Open `config/expressions.yaml` and, under `vmc`, set each emotion to the name of the VRM expression (blendshape) it should use. The defaults use the standard VRM presets, such as `Joy`, `Angry`, `Sorrow` and `Surprised`.
+4. In the emotion map, under `vmc`, set each emotion to the name of the VRM expression (blendshape) it should use. The defaults use the standard VRM presets, such as `Joy`, `Angry`, `Sorrow` and `Surprised`.
 
 ## Browser renderer
 
@@ -84,12 +76,11 @@ The dashboard tells the owner's own renderer pages from remote ones by the addre
 
 On Windows with [WSL2](../../start/glossary.md#wsl2) there are two ways a forward does this. A `netsh interface portproxy` rule that listens on `localhost:3001` makes every LAN client arrive at the dashboard as `127.0.0.1`, so any of them can send model reports that the owner sees. A portproxy that targets the WSL VM's IP address makes every LAN page arrive from one address, so they all count against the two-page cap for a non-loopback address and only two can draw. Create no portproxy rule for the dashboard's ports.
 
-```yaml
-avatar:
-  driver: "browser"
+```bash
+mise run config:set -- avatar.driver browser
 ```
 
-Under `browser` in `config/expressions.yaml`, each emotion names the VRM expression the page should show. The built-in names are the VRM 1.0 presets, so a model with the standard presets needs no block. An emotion you leave out takes the built-in name, and an empty string means no expression for that emotion. A name is at most 64 characters. `neutral` always shows no expression.
+Under `browser` in the emotion map, each emotion names the VRM expression the page should show. The built-in names are the VRM 1.0 presets, so a model with the standard presets needs no block. An emotion you leave out takes the built-in name, and an empty string means no expression for that emotion. A name is at most 64 characters. `neutral` always shows no expression.
 
 | Emotion | Built-in expression |
 | --- | --- |
@@ -108,6 +99,18 @@ Pick the model and frame it on the Settings screen's Avatar page, in the **Avata
 
 Read the terms the model's author attaches before you stream it: cohost does not enforce them.
 
+## Editing the emotion map
+
+The emotion map is kept in cohost's [settings store](../operate/settings.md) with your other settings, as the `expressions` part, with one block per driver (`vtube-studio`, `vmc`, `browser`). A new install starts from the committed example `config/expressions.example.yaml`; editing that example changes nothing for your install. To edit your map, export your settings to a file and copy the block under its `expressions:` key into a file of its own, `my-expressions.yaml`, moved left so the driver names start the lines. Edit that file, check the import with a dry run, and import it as the emotion map alone:
+
+```bash
+mise run config:export -- my-settings.yaml
+mise run config:import -- --dry-run --expressions my-expressions.yaml
+mise run config:import -- --expressions my-expressions.yaml
+```
+
+The dry run shows what would change and writes nothing. The import takes a backup first and replaces only the emotion map; your settings, personality and credentials stay as they are. The map is read when `avatar` starts, so restart `avatar` after an import.
+
 ## Getting the avatar into OBS
 
 The avatar app shows the model in its own window. To put it on stream, capture that window in [OBS](../../start/glossary.md#obs) as you would any other, if OBS runs on the same PC. If the avatar app runs on the AI PC and OBS runs on a second PC, send the avatar to OBS over NDI instead. [OBS and the voice on stream](obs.md) covers the other half, the voice.
@@ -122,7 +125,7 @@ The avatar app shows the model in its own window. To put it on stream, capture t
 ## If it didn't
 
 - **VTube Studio never asks you to Allow.** The API is not on, or `avatar.vtube_studio.host` or `avatar.vtube_studio.port` is wrong. Check Start API, then restart `avatar`.
-- **The mouth moves but expressions do not.** The names in `config/expressions.yaml` do not match your model. VTube Studio matches hotkey names exactly.
+- **The mouth moves but expressions do not.** The names in the emotion map do not match your model, or `avatar` has not been restarted since the import. VTube Studio matches hotkey names exactly.
 - **Nothing moves with VMC.** Check the receiver is on, that the port matches `avatar.vmc.port`, and that no firewall blocks UDP between the machines.
 - **VTube Studio is untested against a real app.** The VMC driver has been run against a network listener and VTube Studio only against a stand-in, so expect to adjust names on first contact.
 

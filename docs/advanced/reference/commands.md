@@ -1,8 +1,8 @@
 ---
 title: Commands
-description: The project's mise tasks, every cohostctl command, and the Docker Compose profiles and one-shot jobs.
+description: The project's mise tasks, the settings tasks, every cohostctl command, and the Docker Compose profiles and one-shot jobs.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Commands
@@ -53,18 +53,45 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 
 | Task | What it does |
 | --- | --- |
-| `dashboard` | Rebuilds the documentation site when the docs changed (`docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It refuses to start without a `CONTROL_TOKEN` of at least 32 characters in `.env`, and at start it prints a one-time unlock link to the terminal (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`). It is the one thing you start by hand |
-| `dashboard:unlock` | Prints a fresh one-time unlock link (`http://127.0.0.1:3000/unlock?n=...`) for the running dashboard, as `mise run dashboard` prints at start. It reads `CONTROL_TOKEN` and `DASHBOARD_HOST` from `.env` and the port from `config/config.yaml` (also while the dashboard is in config recovery mode), and asks the dashboard through `POST /unlock/link`. It exits 1 and says why when no token is configured, the dashboard is not running at that address, or the token is refused. See [HTTP routes](http.md#dashboard-unlock) |
+| `dashboard` | Rebuilds the documentation site when the docs changed (`docs:build`), then builds `services/dashboard` and runs it on the host, so the docs it serves match your checkout. If the docs build fails, it says so and the dashboard still starts, without fresh docs; only a failed dashboard build stops it. It refuses to start while the settings store holds no control token (set one with `mise run config:token`) or while `.env` or its environment defines `CONTROL_TOKEN`. At start it prints a one-time unlock link to the terminal (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`), delivers credentials to every running unit that waits for them, and, when the settings store cannot be used, serves the config recovery screen instead of exiting. It is the one thing you start by hand |
+| `dashboard:unlock` | Prints a fresh one-time unlock link (`http://127.0.0.1:3000/unlock?n=...`) for the running dashboard, as `mise run dashboard` prints at start. It takes the control token from `CONTROL_TOKEN` in its own environment (export it in that shell from your password manager), or else asks for it without echo; it reads `DASHBOARD_HOST` from the environment and `.env` and the port from the setting `dashboard.port` (the default when the store cannot be read), and asks the dashboard through `POST /unlock/link`. It exits 1 and says why when no token is given, the dashboard is not running at that address, or the token is refused. See [HTTP routes](http.md#dashboard-unlock) |
 | `dashboard:ui` | The dashboard UI's Vite dev server |
 | `cohostctl` | Builds `packages/control`, then runs `cohostctl` with the arguments after `--` (see below) |
-| `secrets:project` | Copies `secrets/secrets.yaml` into each unit's directory under `secrets/units/`, each unit getting only the keys it uses; `ears`' copy also gets the `http` listener key derived from `CONTROL_TOKEN` |
-| `reflect` | The reflection pass of `memory`: appends a dated block of bullets to `## Learned` in `personality.md` |
-| `consolidate` | The viewer-note consolidation pass of `memory`, on the host |
-| `reembed` | Re-embeds every stored memory vector on the host, after an embedder change |
+| `reflect` | The reflection pass of `memory`, through the unit runner: appends a dated block of bullets to `## Learned` in the personality, which the runner saves to the settings store when the pass exits cleanly |
+| `consolidate` | The viewer-note consolidation pass of `memory`, on the host, through the unit runner |
+| `reembed` | Re-embeds every stored memory vector on the host, through the unit runner, after an embedder change |
+| `deliver` | Runs `cohostctl deliver`: delivers credentials to every running unit that waits for them. After a reboot the containers wait, reporting `waiting for credentials`, until the dashboard starts or this runs |
 | `infra:up` | `doctor:docker`, then `docker compose up -d redis postgres ollama tts stt`: the infrastructure for the dev loop, from [Compose](../../start/glossary.md#docker-compose) |
 | `infra:down` | Stops those containers |
-| `dev:<service>` | Runs `secrets:project` and builds what changed, then runs one service with `COHOST_SECRETS_FILE` pointing at its copy under `secrets/units/` and `CONTROL_TOKEN` set empty (`dev:salience`, `dev:cortex`, and so on for each folder under `services/` except `dashboard`). `mise watch --restart dev:<service>` rebuilds and restarts it on every saved change |
+| `dev:<service>` | Builds what changed, then runs one service through the unit runner (`packages/control/dist/run-unit.js`), which writes the unit's projection, points `CONFIG_DIR` at it and passes the unit's credentials on a pipe (`dev:salience`, `dev:cortex`, and so on for each folder under `services/` except `dashboard`). `mise watch --restart dev:<service>` rebuilds and restarts it on every saved change |
 | `dev` | Every `dev:<service>` task under one `mise watch --restart`, against the infrastructure from `infra:up`; see [Developer setup](../dev-setup.md) |
+
+### Settings
+
+Every task opens the [settings store](../../start/glossary.md#settings-store) and takes its arguments after `--`. The [Configuration](config.md#the-config-tasks) page describes each in full.
+
+```bash
+mise run config:set -- logging.level debug
+mise run config:secret -- connections.discord.token
+mise run config:key -- --show
+```
+
+| Task | What it does |
+| --- | --- |
+| `config:get` | Prints the effective value of a setting; a credential prints `set` or `not set` |
+| `config:set` | Sets one setting: `config:set -- <path> <yaml value>` |
+| `config:reset` | Removes one setting so its default applies: `config:reset -- <path>` |
+| `config:secret` | Sets a credential read without echo, or clears it: `config:secret -- <path> [--clear]` |
+| `config:personality` | Prints the personality, or edits it in `$EDITOR` with `--edit` |
+| `config:token` | Sets the control token: a generated one, printed once, or your own with `--stdin` |
+| `config:key` | The master key: `--show`, `--confirm`, `--rotate` or `--restore` |
+| `config:reset-credentials` | Deletes every stored credential and generated key after a typed confirmation, and makes a new master key |
+| `config:export` | Exports the settings as YAML: `config:export -- [file] [--secrets]` |
+| `config:import` | Imports an export, or parts (`--settings`, `--personality`, `--expressions`, `--secrets`); `--dry-run` writes nothing |
+| `config:backup` | Takes a backup of the settings store |
+| `config:restore` | Restores a backup: `config:restore -- <file>` |
+| `config:check` | Lists every problem that stops the settings store's use; prints `ok` when there is none |
+| `config:project` | Writes every unit's projection (no credentials) under `data/projections/` |
 
 ### Developer tools
 
@@ -107,7 +134,7 @@ Each program under `examples/` that a page tells you to run has a task; the [Ext
 
 ## cohostctl
 
-`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, so `CONTROL_TOKEN`, which gates the dashboard's HTTP routes, does not apply as a credential; it reads it only to derive the `ears` listener key when it copies the secrets. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
+`cohostctl` drives services through [Docker](../../start/glossary.md#docker) Compose, using the same controller as the [dashboard](../../guide/operate/dashboard.md). It runs as you, with your access to the settings store and the master key, so the control token, which gates the dashboard's HTTP routes, does not apply to it; it refuses to start anything while `.env` or its environment defines `CONTROL_TOKEN`. Before each start it writes the projections, and after it delivers the started units' credentials. It honours `CONTROL_ADVANCED` and `REDIS_URL`.
 
 ```bash
 mise run cohostctl -- status
@@ -127,12 +154,13 @@ mise run cohostctl -- restart cortex --mode fresh
 | `rebuild` | The same as `launch` |
 | `stop-all` | Stops every [container](../../start/glossary.md#container) of the stack without removing any, then suggests `cohostctl consolidate` |
 | `restart-all` | Restarts every running application service |
+| `deliver` | Delivers credentials to every running unit that reports `waiting for credentials` or was started since its last delivery, printing one line per unit; exits 1 naming each unit whose delivery failed. Without Redis it warns and judges by the containers' start times alone. Also `mise run deliver` |
 
-Exit codes: 0 for success, 1 for a failure or a refusal, 2 for a usage error. Every command except `status` and `latency` takes a lock shared with the dashboard (`data/control.lock`): while one runs an action, the other refuses with a message naming the action and who holds it, and a lock left by a crashed process is cleared automatically. `launch`, `rebuild`, `stop-all` and `consolidate` never open the bus, so they work when [Redis](../../start/glossary.md#redis) is stopped. Every start, stop and restart is recorded as a `service.lifecycle` event with `by` set to `cohostctl`.
+Exit codes: 0 for success, 1 for a failure or a refusal, 2 for a usage error. Every command except `status` and `latency` takes a lock shared with the dashboard (`data/control.lock`): while one runs an action, the other refuses with a message naming the action and who holds it, and a lock left by a crashed process is cleared automatically. `launch`, `rebuild`, `start`, `restart`, `restart-all`, `deliver`, `consolidate` and `reembed` check the settings store first and refuse, printing why and suggesting `mise run config:check`, when it cannot be used; `stop`, `stop-all`, `status` and `latency` never open it. `launch`, `rebuild`, `stop-all` and `consolidate` never open the bus, so they work when [Redis](../../start/glossary.md#redis) is stopped. Every start, stop and restart is recorded as a `service.lifecycle` event with `by` set to `cohostctl`.
 
 ## Docker Compose
 
-`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you. A hand-run `docker compose up` or `restart` uses the credentials the dashboard or `cohostctl` last copied into `secrets/units/`; after you change `secrets/secrets.yaml`, start or restart through one of those, or run `mise run secrets:project` first.
+`docker compose up -d` starts the core stack. The dashboard is not a Compose service: it runs on the host and its Launch button runs Compose for you, writing each unit's projection first and delivering each started unit's credentials after. A hand-run `docker compose up` or `restart` does neither: run `mise run config:project` first, and the services wait, reporting `waiting for credentials`, until the dashboard delivers them or you run `mise run deliver`.
 
 | Profile | Services | Why it is optional |
 | --- | --- | --- |
@@ -155,11 +183,13 @@ Setting `COMPOSE_PROFILES=discord,ears,mouth` in `.env` keeps those profiles on 
 
 ### One-shot jobs
 
+Run them through `cohostctl` or the tasks, which write the projection and deliver the credentials the job waits for.
+
 | Command | What it does |
 | --- | --- |
-| `docker compose run --rm consolidate` | The viewer-note consolidation pass, the same as `cohostctl consolidate`. Best-effort: `memory` catches up at its next start if you never run it. It starts `postgres` and `ollama` if they are down and leaves them running |
-| `docker compose run --rm reembed` | Re-embeds every stored memory, viewer note and deletion record after you change the embedder to one with another vector size. `memory` refuses to start until you do, and an interrupted run changes nothing, so a rerun resumes |
-| `docker compose run --rm memory node services/memory/dist/reflect.js` | The reflection pass, the same as `mise run reflect` |
+| `mise run cohostctl -- consolidate` | The viewer-note consolidation pass in its container (`docker compose run` of the `consolidate` service), with its credentials delivered. Best-effort: `memory` catches up at its next start if you never run it. It starts `postgres` and `ollama` if they are down and leaves them running |
+| `mise run cohostctl -- reembed` | Re-embeds every stored memory, viewer note and deletion record after you change the embedder to one with another vector size. `memory` refuses to start until you do, and an interrupted run changes nothing, so a rerun resumes |
+| `mise run reflect` | The reflection pass, on the host through the unit runner |
 
 ### The GPU overlay
 

@@ -2,7 +2,7 @@
 title: Discord
 description: Create and invite the one Discord bot, start the discord, ears and mouth services, and choose the voice channel the co-host hears and speaks in.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Discord
@@ -41,43 +41,42 @@ Because only the connector logs in, `ears` and `mouth` need no Discord token, an
 
 4. In Discord's advanced settings, turn on Developer Mode. Then right-click your server and choose to copy its ID, and do the same for the voice channel.
 
-5. Put the bot's token in the **Bot token** secret field of **Settings**, **Discord** (it shows **Set** afterwards and never shows the value; saving needs your control token). Or edit `secrets/secrets.yaml` by hand (copy it from `config/secrets.example.yaml` if it is not there yet). Credentials live only in that file:
+5. Set the bot's token as the credential `connections.discord.token`. On the dashboard's Settings screen, section **Discord**, paste it in the **Bot token** field and save: the field then shows **Set** and never shows the value. Or, from a terminal in the cohost folder, run this and paste the token at the prompt, which does not show it:
 
-   ```yaml
-   connections:
-     discord:
-       token: "your-bot-token"
+   ```bash
+   mise run config:secret -- connections.discord.token
    ```
 
-6. Put the server and voice channel IDs in `config/config.yaml`, in quotes (a YAML number loses digits):
+   cohost keeps the token encrypted in its [settings store](../operate/settings.md), never in `.env` or a file of yours.
 
-   ```yaml
-   connections:
-     discord:
-       enabled: true
-       guild_id: "your-server-id"
-       voice_channel_id: "your-voice-channel-id"
+6. Set the server and voice channel IDs as the settings `connections.discord.guild_id` and `connections.discord.voice_channel_id`, in the same **Discord** section, or from the terminal. An ID is text: on the terminal keep the inner double quotes, because a YAML number loses digits:
+
+   ```bash
+   mise run config:set -- connections.discord.guild_id '"your-server-id"'
+   mise run config:set -- connections.discord.voice_channel_id '"your-voice-channel-id"'
    ```
 
-7. Tell [Compose](../../start/glossary.md#docker-compose) to run the three services, and keep them on across restarts and Launch, by listing the profiles `discord`, `ears` and `mouth` in `.env`:
+7. Tell [Compose](../../start/glossary.md#docker-compose) to run the three services, and keep them on across restarts and Launch, by listing the profiles `discord`, `ears` and `mouth` in `COMPOSE_PROFILES` in the `.env` file in the cohost folder:
 
    ```dotenv
    COMPOSE_PROFILES=discord,ears,mouth
    ```
 
-   If you also turned on vision, add `eyes` to the list.
+   If you also turned on vision, add `eyes` to the list. `.env` holds only names like this one, never a token.
 
-8. Start them. In the dashboard press **Launch** again, or from a terminal in the cohost folder:
+8. Start them. In the dashboard press **Launch** again, or from a terminal:
 
    ```bash
-   docker compose --profile discord --profile ears --profile mouth up -d
+   mise run cohostctl launch
    ```
+
+   Launch starts each service and hands it its credentials, so the connector receives the bot token as it starts.
 
 9. Join the voice channel yourself, unmuted, and say something.
 
 ## Where the voice goes
 
-The co-host's voice goes to the places named under `mouth.outputs` in `config/config.yaml`. There is one output today, `discord`. The connector's connection is set under `connections.discord` (the bot token is `connections.discord.token` in `secrets/secrets.yaml`). Routing, using the keys' defaults:
+The co-host's voice goes to the outputs named under `mouth.outputs`, in the Settings screen's **Speech output** section. The output for the Discord channel is `discord`; `dryrun` is a test output that plays nothing. The connector's connection is set under `connections.discord`, in the **Discord** section, and its bot token is the credential `connections.discord.token`. The routing table, with the keys' defaults:
 
 ```yaml
 connections:
@@ -94,11 +93,11 @@ mouth:
     min_interval_ms: 20000   # at most one fallback line per 20 s on an output
 ```
 
-The `guild_id` and `voice_channel_id` shown are placeholders for your own IDs. Restart the service to apply an edit: `mouth` for a routing key, the connector for `connections.discord`.
+The `guild_id` and `voice_channel_id` shown are placeholders for your own IDs. To change a key from a terminal, use its path, such as `mise run config:set -- mouth.outputs.discord.gain_db -6`. A change applies at the service's next start, so restart it from the Services screen: `mouth` for a routing key, the connector for `connections.discord`.
 
 The dashboard's sink page in a browser (often an [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source)) is a different [sink](../../start/glossary.md#sink), not one of these outputs: open it wherever else you want the voice. See [OBS and the voice on stream](obs.md).
 
-Listening is a list of [audio sources](../../start/glossary.md#audio-source) in `ears.sources`; it defaults to `[discord]`. Two others need no account: `http` (post audio clips to a local address) and `dir` (drop `.wav` files in a folder). The [configuration reference](../../advanced/reference/config.md) lists their keys.
+Listening is a list of [audio sources](../../start/glossary.md#audio-source) in `ears.sources` (the **Hearing** section); it defaults to `[discord]`. Two others need no account: `http` (post audio clips to a local address) and `dir` (drop `.wav` files in a folder). The [configuration reference](../../advanced/reference/config.md) lists their keys.
 
 ## How you know it worked
 
@@ -109,7 +108,8 @@ Listening is a list of [audio sources](../../start/glossary.md#audio-source) in 
 
 ## If it didn't
 
-- **`discord` shows `degraded`.** `connections.discord.token` in `secrets/secrets.yaml` is missing or empty, so the connector idles and registers nothing. Fill it in and restart the connector.
+- **`discord` shows `degraded`.** The credential `connections.discord.token` is not set, so the connector idles and registers nothing. Set it (step 5) and restart the connector.
+- **`discord` stays unhealthy after a reboot, its log saying `waiting for credentials`.** [Docker](../../start/glossary.md#docker) restarted the [container](../../start/glossary.md#container), but only the dashboard or `mise run deliver` hands it the token. Start the dashboard; see [after a reboot](../operate/settings.md#after-a-reboot).
 - **It joins but nothing is heard.** Check you turned on the **Server Members** intent, that the bot has **Connect** and **Speak** in that channel, and that the guild and channel IDs are the right ones.
 - **It hears you but never speaks.** Check that `mouth` is running and that `mouth.outputs.discord.enabled` is `true`.
 - **Voice quality or joining problems.** The Discord voice path depends on native audio libraries that have not yet been run against a real Discord server. If it fails to join, read the connector's log with `docker compose logs connector-discord` and open an issue.

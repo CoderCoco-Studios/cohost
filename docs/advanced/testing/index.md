@@ -2,7 +2,7 @@
 title: Running the tests
 description: Run the whole suite, one package or one file, and see what CI runs and which tests skip themselves.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Running the tests
@@ -30,7 +30,7 @@ mise run test:rust    # the Rust tests only
 mise run typecheck    # tsc -b, the dashboard UI and every test directory
 ```
 
-Every test task runs the tests with a temporary `COHOST_DATA_DIR` and a temporary `CONFIG_DIR` holding copies of the `config/*.example.*` files, with `COHOST_ENV_FILE` and `COHOST_SECRETS_FILE` pointed inside it (`scripts/test-env.sh`), and removes both afterwards, so a test never writes log files into your `data/` or reads your `config.yaml`, `.env` or `secrets.yaml`.
+Every test task runs the tests through `scripts/test-env.sh`, which sets a temporary `COHOST_DATA_DIR` and a temporary `CONFIG_DIR` holding copies of the `config/*.example.*` files, with `COHOST_ENV_FILE` and `COHOST_KEY_FILE` pointed inside it, and removes both afterwards. A test that needs a settings store makes its own under that data directory, under a master key in that folder, so no test writes log files into your `data/`, opens your settings store, or reads your `.env` or your master key. The script also sets `COHOST_TEST_ENV=1`, under which the settings store refuses to fall back to `~/.config/cohost/master.key`: a test that opens a store without `COHOST_KEY_FILE` fails instead of touching your key. A test that starts a program with an environment it builds itself (not a copy of `process.env`) must put `COHOST_KEY_FILE` in it; `packages/config/test/toolchain.test.ts` checks that.
 
 `mise run test` runs the `test:rust` and `build` tasks first (`build` catches type errors in the source; `mise run typecheck`, part of `mise run lint`, also checks the tests), then runs every `test/*.test.ts` under `packages/*` and `services/*`, and the dashboard UI's `.test.tsx` files, with Node's `node:test` runner through `tsx`. Run `mise run test:only` for a quick loop once the workspace is built. `mise run lint` adds oxlint, `cargo fmt --check` and Clippy; CI runs it beside the tests.
 
@@ -44,7 +44,7 @@ A skipped test is not a failed one, but a run with skips is not a full pass. The
 | --- | --- |
 | Bus round trips in `packages/bus/test/bus.test.ts`, each titled with `(needs Redis)` | A Redis answers at `REDIS_URL` |
 | Memory store against real Postgres, `services/memory/test/notes-store.pg.test.ts` | `COHOST_TEST_DATABASE_URL` names a reachable pgvector database, for example `postgres://cohost:cohost@127.0.0.1:5432/cohost_test`. When `CI` is set and the database is unreachable, the test fails instead of skipping |
-| The live-stack test, `services/dashboard/test/live-stack.e2e.test.ts` | `COHOST_LIVE_STACK=1`, [Docker](../../start/glossary.md#docker) answers, `CONTROL_TOKEN` is in the environment, and ports 3000 and 3001 are free |
+| The live-stack test, `services/dashboard/test/live-stack.e2e.test.ts` | `COHOST_LIVE_STACK=1`, [Docker](../../start/glossary.md#docker) answers, `CONTROL_TOKEN` is in the environment of the command (exported from your password manager, never in `.env`), and ports 3000 and 3001 are free |
 | The Claude API smoke test in `packages/llm/test/backends.test.ts` | `ANTHROPIC_API_KEY` and `COHOST_LIVE_CLAUDE_MODEL` are both set |
 
 ## Run one package, one service or one test

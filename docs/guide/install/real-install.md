@@ -1,8 +1,8 @@
 ---
 title: Install for real
-description: Run the installer, fill in config.yaml, secrets.yaml and .env, start the dashboard and launch the real stack with real models.
+description: Run the installer, save the recovery key and control token, start the dashboard, enter your settings and credentials on its Settings screen and launch the real stack with real models.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Install for real
@@ -30,39 +30,37 @@ By the end of this page you will have the real stack running: a language model a
    ./scripts/install.sh
    ```
 
-   This installs [Docker](../../start/glossary.md#docker) and mise if they are missing, installs the project's Node, pnpm, Rust, Zig and Python through mise, builds the code and the connection to the [bus](../../start/glossary.md#bus), writes `.env` and your `config/` files, and downloads the images and models. If it installs Docker, it stops and asks you to log out and back in; do that and run it again. [What you need](prerequisites.md#what-the-installer-does) lists every step.
+   This installs [Docker](../../start/glossary.md#docker) and mise if they are missing, installs the project's Node, pnpm, Rust, Zig and Python through mise, builds the code and the connection to the [bus](../../start/glossary.md#bus), and downloads the images and models. If it installs Docker, it stops and asks you to log out and back in; do that and run it again. [What you need](prerequisites.md#what-the-installer-does) lists every step. Along the way it sets up four things you need to know about:
 
-3. Look at the settings you may want to change. Your accounts and models are keys in `config/config.yaml`, your credentials go in `secrets/secrets.yaml`, and `.env` holds only a few per-machine settings:
+   - **`.env`**, copied from `.env.example`. It holds only a few per-machine settings (which optional services to run, the Docker program, image tags) and never a password or key. The [environment and ports](../../advanced/reference/env.md) page lists them.
+   - **The [settings store](../../start/glossary.md#settings-store)**, `data/store/cohost.db`, seeded with the default settings, personality and avatar expressions from the examples in `config/`. Every setting and credential lives here; you change them on the dashboard, never by editing a file.
+   - **The [master key](../../start/glossary.md#master-key)**, which encrypts your credentials in the store. It lives in your home folder, outside the checkout. When it is made, the installer prints its [recovery key](../../start/glossary.md#recovery-key) once. Save it in your password manager: it is the only way to get your credentials back if the key file is lost. See [the recovery key](../operate/settings.md#the-recovery-key).
+   - **The [control token](../../start/glossary.md#control-token)**, cohost's one lock: the password the dashboard asks for. The installer makes one and prints it once. Save it in your password manager too; the store keeps only a check value, so no file on the machine holds it. If you lose it, `mise run config:token` makes a new one.
 
-   | Where | What it is | When to change it |
-   | --- | --- | --- |
-   | `CONTROL_TOKEN` in `.env` | cohost's one lock: the password the dashboard asks for. The dashboard does not start without it. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`; it must be at least 32 characters. |
-   | `llm.model`, `llm.embed_model`, `vision.model` in `config/config.yaml` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
-   | `ears.stt_model` in `config/config.yaml` | The speech-to-text model name | Rarely. |
-   | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` in `config/config.yaml` | Your accounts and apps | Fill each in on its own page under Connect. |
-   | `secrets/secrets.yaml` (copy of `config/secrets.example.yaml`; Git ignores it) | Every credential: tokens, API keys and the OBS password | Edit it on the same Connect pages, or set each credential from the **Settings** screen: its masked field shows **Set** or **Not set**, never the value, and saving needs your control token. |
-   | `COHOST_DOCKER_BIN` in `.env` | The Docker program to run | On [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration, set it to `docker.exe`. |
+   Running the installer again keeps the store, the key and the token you have, and prints neither again. Backups of the store, moving to a new machine and bringing in settings files from an older install are on [Settings, backups and recovery](../operate/settings.md) ([bringing in settings files from an older install](../operate/settings.md#bringing-in-settings-files-from-an-older-install)).
 
-   A restart of the service that reads a key applies an edit to either file. The [environment and ports](../../advanced/reference/env.md) page lists everything `.env` holds.
-
-4. Open `config/config.yaml`. This is the file for behaviour, and it is yours: the repository does not track it. Set your names near the top:
-
-   ```yaml
-   cohost:
-     name: "Coco"       # what the co-host calls itself and answers to in chat
-     streamer: "Chris"  # your name, as the language model should know it
-     timezone: "America/New_York"
-   ```
-
-   Everything else has working defaults. [Configuration](../../advanced/reference/config.md) lists every key, and the Tune pages explain the ones you will actually want.
-
-5. Start the dashboard. It is the one program you start yourself.
+3. Start the dashboard. It is the one program you start yourself, and you start it before anything else.
 
    ```bash
    mise run dashboard
    ```
 
-6. Open the unlock link the terminal prints (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`; it works once, within 10 minutes). It opens `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`) with this browser unlocked, so the dashboard never asks for the token. Or open `http://localhost:3000` yourself and enter the `CONTROL_TOKEN` from `.env` in the Access dialog when it asks. Press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed.
+4. Open the dashboard at `http://localhost:<dashboard.port>`: `http://localhost:3000` unless you changed the `dashboard.port` setting. The quickest way in is the [unlock link](../../start/glossary.md#unlock-link) the terminal prints (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`; it works once, within 10 minutes), which opens the dashboard with this browser unlocked, so it never asks for the token. If you open the address yourself, enter the control token from your password manager when the Access dialog asks. `mise run dashboard:unlock` prints a fresh link while the dashboard runs.
+
+5. Enter your settings on the **Settings** screen. Everything has working defaults; these are the ones you will usually look at first:
+
+   | Setting | Settings section | What it is | When to change it |
+   | --- | --- | --- | --- |
+   | `cohost.name`, `cohost.streamer`, `cohost.timezone` | Identity | What the co-host calls itself, what it calls you, and your time zone | Now. |
+   | `llm.model`, `llm.embed_model`, `vision.model` | Language model, Vision | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
+   | `ears.stt_model` | Hearing | The speech-to-text model name | Rarely. |
+   | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` | Chat, Discord, Vision, Avatar | Your accounts and apps | Fill each in on its own page under Connect. |
+
+   Each section has a Save button, and a value you saved is marked `saved`. Credentials (tokens, API keys, the OBS password) sit in the same sections as write-only fields: each shows **Set** or **Not set**, never the value, and is kept encrypted in the store. The Connect pages say which ones each account needs. From a shell, `mise run config:set -- cohost.name Coco` sets a setting and `mise run config:secret -- <path>` asks for a credential without showing it; [Settings, backups and recovery](../operate/settings.md) has every command.
+
+   [Configuration](../../advanced/reference/config.md) lists every setting, and the Tune pages explain the ones you will actually want.
+
+6. Press **Launch**. The first Launch pulls anything the installer did not and the models through the `models` service, so it can take a while. Every later Launch rebuilds the images, which is quick when nothing changed. A setting you change later applies when the service that reads it next starts: the Settings screen names those services and offers to restart them.
 
 7. Press **Audio off** in the header (it then reads **Audio on**) so your browser may play sound.
 
@@ -85,13 +83,13 @@ COMPOSE_PROFILES=discord,ears,mouth
 
 Add `eyes` to the list when you turn on vision. You can also start one by hand: `docker compose --profile ears up -d`.
 
-The optional speech engine servers have their own profiles: `pocket` (the Pocket voice engine, `voice.engine: pocket`), `nemotron` and `kyutai` (the streaming transcription servers, `ears.stt_engine: nemotron` or `kyutai`). Add the ones you use to `COMPOSE_PROFILES`, select the engine in `config/config.yaml`, and press Launch. Each is built from source on its first use, which takes minutes.
+The optional speech engine servers have their own profiles: `pocket` (the Pocket voice engine, `voice.engine: pocket`), `nemotron` and `kyutai` (the streaming transcription servers, `ears.stt_engine: nemotron` or `kyutai`). Add the ones you use to `COMPOSE_PROFILES`, select the engine on the **Settings** screen (Voice or Hearing), and press Launch. Each is built from source on its first use, which takes minutes.
 
 ## A graphics card
 
 If the installer found an NVIDIA card it set `COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml` in `.env`, which adds the GPU overlay. You do not need to do anything else.
 
-The GPU overlay runs the [TTS](../../start/glossary.md#tts) engine, [Kokoro](../../start/glossary.md#kokoro), from its CUDA 12.8 build, `ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128`. That build is the one RTX 50-series cards need, and it needs an NVIDIA driver of the R570 series or newer (on WSL2, the Windows driver). If `docker compose ps` shows `tts` restarting, or its log says "no kernel image is available" or names an unsupported driver, update the driver, or switch to the CUDA 12.6 build by adding this line to `.env` and pressing Launch again. Use the CUDA 12.6 build from the start on a GTX 9xx or 10xx card (Maxwell or Pascal), which the CUDA 12.8 build does not support, or on an arm64 host, for which the CUDA 12.8 build is not published:
+The GPU overlay runs the [TTS](../../start/glossary.md#tts) engine, [Kokoro](../../start/glossary.md#kokoro), from its CUDA 12.8 build, `ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu128`. That build is the one RTX 50-series cards need, and it needs an NVIDIA driver of the R570 series or newer (on [WSL2](../../start/glossary.md#wsl2), the Windows driver). If `docker compose ps` shows `tts` restarting, or its log says "no kernel image is available" or names an unsupported driver, update the driver, or switch to the CUDA 12.6 build by adding this line to `.env` and pressing Launch again. Use the CUDA 12.6 build from the start on a GTX 9xx or 10xx card (Maxwell or Pascal), which the CUDA 12.8 build does not support, or on an arm64 host, for which the CUDA 12.8 build is not published:
 
 ```sh
 KOKORO_IMAGE=ghcr.io/remsky/kokoro-fastapi-gpu:v0.10.0-cu126
@@ -113,10 +111,11 @@ Real model, real voice, real me. Try not to get attached. I will remember it if 
 
 ## If it didn't
 
-- **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. The models are the ones `config/config.yaml` names; a failed download of a [hook](../../start/glossary.md#hook) model is only a warning.
-- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (the **Settings** screen, or `config/config.yaml` for settings and `secrets/secrets.yaml` for credentials), then restart that service from the Services screen.
+- **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. The models are the ones the `llm.model`, `llm.embed_model` and `vision.model` settings name; a failed download of a [hook](../../start/glossary.md#hook) model is only a warning.
+- **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (the setting or credential on the **Settings** screen), then restart that service from the Services screen.
 - **Replies are very slow.** There is no GPU, or the model is too big for it. Pick a smaller `llm.model`; see [choose a model](../tune/model.md).
-- **The dashboard refuses to start, naming `CONTROL_TOKEN`.** `.env` has no `CONTROL_TOKEN`, or one shorter than 32 characters. Run `./scripts/install.sh` again, which fills an empty one, or set one made with `openssl rand -hex 24`, then start the dashboard and open the unlock link it prints.
+- **The dashboard refuses to start, naming `CONTROL_TOKEN`.** Either no control token is set, so run `mise run config:token` and save the token it prints, or `.env` or your shell defines `CONTROL_TOKEN`, which the dashboard refuses: the token belongs only in your password manager, so remove that line or variable. See [troubleshooting](../troubleshooting.md#the-dashboard-will-not-start-mentioning-control-token).
+- **Services show `waiting for credentials` after a reboot.** Docker restarted them, and they wait until the dashboard hands them their credentials. Start the dashboard, or run `mise run deliver`. See [after a reboot](../operate/settings.md#after-a-reboot).
 
 More cases are on the [troubleshooting page](../troubleshooting.md).
 

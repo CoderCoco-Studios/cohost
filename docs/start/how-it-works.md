@@ -31,7 +31,7 @@ Every piece is its own program, usually in its own [container](glossary.md#conta
 | 1 | `chat` | Reads the viewer's line from Twitch, drops bots and `!commands`, and announces it | `chat.message` |
 | 2 | `salience` | Scores the line: a question or a mention of the co-host's name scores high, plain chatter low. If the score is high enough, and the co-host is not busy or too soon after its last line, it decides to speak. A matching [reflex](glossary.md#reflex) skips the thinking and speaks at once | `attention.focus` |
 | 3 | `memory` | The `cortex` asks it for similar past moments; it looks them up and answers (it is the only part that touches the database) | `memory.recall.request`, then `memory.recall.reply` |
-| 4 | `cortex` | Builds a prompt from the personality file, the recent events, the mood and the recalled memories, asks the [LLM](glossary.md#llm), and gets a short reply | `brain.say` |
+| 4 | `cortex` | Builds a prompt from the personality, the recent events, the mood and the recalled memories, asks the [LLM](glossary.md#llm), and gets a short reply | `brain.say` |
 | 5 | `voice` | Turns the reply into audio with [text-to-speech](glossary.md#tts) and works out how the mouth should move | `voice.utterance` |
 | 6 | Dashboard [sink](glossary.md#sink) or Discord | The sink page in a browser (often an OBS [Browser Source](glossary.md#browser-source)) plays the audio, or the Discord [connector](glossary.md#connector) plays it into the voice channel, and the player reports that it is playing | `voice.playing`, `voice.done` |
 | 7 | `avatar` | Moves the avatar's mouth in time with the sound and shows the current mood on its face | `avatar.state` |
@@ -51,7 +51,7 @@ Speech from a Discord voice channel takes the same road with a shorter start. Th
 - Messages between programs live on the bus, which is built on [Redis](glossary.md#redis).
 - Memories and viewer notes live in [Postgres](glossary.md#postgres).
 - The language, speech and vision models run on [Ollama](glossary.md#ollama), a text-to-speech server and a speech-to-text server, all on your own machine. If you choose a hosted model instead, only the brain's chat call and the after-stream reflection leave your machine.
-- Your settings live in four files you own: `config/config.yaml` for behaviour and operator settings, `secrets/secrets.yaml` for credentials, `config/personality.md` for who the co-host is, and `.env` for the dashboard's access tokens and a few per-machine settings.
+- Your settings, the co-host's personality, the avatar's expressions and every credential live in one database file, the [settings store](glossary.md#settings-store), changed on the dashboard's Settings screen. The credentials in it are encrypted with a [master key](glossary.md#master-key) kept in your home folder, outside the checkout. `.env` holds only a few per-machine settings and no password or key.
 
 ## Where to go next
 

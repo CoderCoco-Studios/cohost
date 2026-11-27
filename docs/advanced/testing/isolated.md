@@ -2,7 +2,7 @@
 title: One service on its own
 description: Isolation overrides, the mock backends, and how to start a single service from the dashboard, cohostctl or its mise task with only Redis running.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Run one service on its own
@@ -12,11 +12,11 @@ Every service can run with only [Redis](../../start/glossary.md#redis) beside it
 ## What you need
 
 - A built workspace and Redis on `127.0.0.1:6379`. See [Developer setup](../dev-setup.md): `mise run build`, then `docker compose up -d redis`, or `mise run infra:up` for all the infrastructure.
-- A `config/config.yaml`, which the first service you start copies from `config/config.example.yaml` when it is missing. Every key is a literal value with a default, so the example file is fine for local runs.
+- A [settings store](../../start/glossary.md#settings-store), which the first program you start creates, seeded from `config/config.example.yaml` when there is none. Every setting has a default, so the seed is fine for local runs.
 
 ## The overrides
 
-An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the environment that maps an override name to a value. The control plane sets it for an isolated start of one unit, and each name selects one `config.yaml` key for that process. The names are labels inside the JSON object, not environment variables: a plain `LLM_PROVIDER=mock` in `.env` or the shell is read by nothing. You never edit `config.yaml` to use one, and a start without **isolated** gets the live backends. A service on a stand-in logs a warning at start and reports its [heartbeat](../../start/glossary.md#heartbeat) mode as `mock` or `off`. A service missing a config value, such as an empty `chat.twitch.channel` or no `connections.discord.token` in `secrets/secrets.yaml`, idles as `degraded` instead of exiting.
+An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the environment that maps an override name to a value. The control plane sets it for an isolated start of one unit, and each name selects one setting for that process. The names are labels inside the JSON object, not environment variables: a plain `LLM_PROVIDER=mock` in `.env` or the shell is read by nothing. You never change a stored setting to use one, and a start without **isolated** gets the live backends. A service on a stand-in logs a warning at start and reports its [heartbeat](../../start/glossary.md#heartbeat) mode as `mock` or `off`. A service missing a setting or credential, such as an empty `chat.twitch.channel` or no `connections.discord.token` credential, idles as `degraded` instead of exiting.
 
 | Service | Override (key it selects) | Result (mode) |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
 | `eyes` | `VISION_PROVIDER=stub` (`vision.provider`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
 | `ears` | `EARS_SOURCES=[]` (`ears.sources`) | Idles with no Discord client; injected audio is still transcribed |
-| `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips, each carrying the listener key derived from `CONTROL_TOKEN` ([Send audio to ears](../extend/audio-in.md)); no account |
+| `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips, each carrying the listener key derived from the control token ([Send audio to ears](../extend/audio-in.md)); no account |
 | `ears` | `EARS_SOURCES=[dir]` | Hears `.wav` files dropped in `ears.dir.path`, then renames them; no account |
 | `ears` | `EARS_STT_ENGINE=stub` (`ears.stt_engine`) | A fixed transcript and no `stt` server (`mock`) |
 | `mouth` | `MOUTH_DISCORD_ENABLED=false` (`mouth.outputs.discord.enabled`) | Idles and plays nothing (`off`) |
@@ -52,14 +52,14 @@ mise run cohostctl -- restart cortex --mode fresh
 
 `--mode fresh` resets the service's [consumer groups](../../start/glossary.md#consumer-group) so it ignores [events](../../start/glossary.md#event) published while it was away; `--mode resume` keeps its place. Application services default to `fresh`, except `memory`, which resumes.
 
-**From its task.** Run the service on the host with its `dev:<service>` task, which builds what changed and starts the service's built `dist/index.js`; `config/` and `.env` are found from the workspace root whatever the directory. Choose a stand-in either by the real config key (for example `llm.provider: mock` in `config/config.yaml`) or by `COHOST_ISOLATION` in the shell:
+**From its task.** Run the service on the host with its `dev:<service>` task, which builds what changed and starts the service's built `dist/index.js` through the unit runner: it writes the unit's projection from the settings store, found from the workspace root whatever the directory, and passes the unit's credentials on a pipe. Choose a stand-in either by the real setting (for example `mise run config:set -- llm.provider mock`) or by `COHOST_ISOLATION` in the shell:
 
 ```bash
 mise run dev:salience
 COHOST_ISOLATION='{"LLM_PROVIDER":"mock"}' mise run dev:cortex
 ```
 
-`mise watch --restart dev:salience` does the same and rebuilds and restarts the service on every saved change. Its log prints in the terminal as readable lines and goes in full to `data/logs/<service>.log`. Set `logging.level: debug` in `config/config.yaml` for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
+`mise watch --restart dev:salience` does the same and rebuilds and restarts the service on every saved change. Its log prints in the terminal as readable lines and goes in full to `data/logs/<service>.log`. Set `logging.level` to `debug` (`mise run config:set -- logging.level debug`) for more output; stop with ctrl-c. A variable you set in the shell wins over the same variable in `.env`.
 
 ## Scripting the mock's replies
 

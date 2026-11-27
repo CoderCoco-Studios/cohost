@@ -2,7 +2,7 @@
 title: Twitch chat
 description: Point the co-host at a Twitch channel so it reads chat, with an optional login for the full Twitch connection.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Twitch chat
@@ -17,18 +17,15 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Steps
 
-1. Open `config/config.yaml` and set the channel name, without the `#`.
+1. Set the channel name, without the `#`: on the dashboard's Settings screen, section **Chat**, fill in the Twitch channel and save. Or, from a terminal in the cohost folder:
 
-   ```yaml
-   chat:
-     sources: [twitch]
-     twitch:
-       channel: "yourchannel"
+   ```bash
+   mise run config:set -- chat.twitch.channel yourchannel
    ```
 
-2. Check that `chat.sources` lists `twitch`. Every source listed is read at once, so a `fake` in the list also plays scripted messages alongside Twitch.
+2. Check that `chat.sources` lists `twitch` (the **Chat** section, or `mise run config:get -- chat.sources`). To read Twitch alone, run `mise run config:set -- chat.sources "[twitch]"`. Every source listed is read at once, so a `fake` in the list also plays scripted messages alongside Twitch.
 
-3. Restart the `chat` service. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
+3. Restart the `chat` service, because a setting applies at the service's next start. In the dashboard, open the Services screen and restart `chat`. Or, from a terminal in the cohost folder:
 
    ```bash
    mise run cohostctl restart chat
@@ -38,20 +35,18 @@ By the end of this page the co-host will be reading the chat of the Twitch chann
 
 ## Logging in (optional)
 
-Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and put what you get into the secret fields of **Settings**, **Twitch chat** (each shows **Set** or **Not set**; saving needs your control token), or into `secrets/secrets.yaml` by hand:
+Without a login the co-host reads chat anonymously. That works for reading. If you also want the logged-in connection, create an application at the Twitch developer console (`https://dev.twitch.tv/console`), authorise it for the scopes `chat:read` and `chat:edit`, and set what you get as the credentials `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token` and `chat.twitch.refresh_token`. On the dashboard's Settings screen, section **Chat**, each has a write-only field that shows **Set** or **Not set** and never shows the value. Or set each from a terminal, which asks for the value without showing it:
 
-```yaml
-chat:
-  twitch:
-    client_id: "your-client-id"
-    client_secret: "your-client-secret"
-    access_token: "your-access-token"
-    refresh_token: "your-refresh-token"
+```bash
+mise run config:secret -- chat.twitch.client_id
+mise run config:secret -- chat.twitch.client_secret
+mise run config:secret -- chat.twitch.access_token
+mise run config:secret -- chat.twitch.refresh_token
 ```
 
-Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.json`, so a restart does not lose it. If you generate a new pair and put it in the secret fields (or `secrets.yaml`) and restart `chat`, cohost notices and uses the new pair.
+cohost keeps credentials encrypted in its [settings store](../operate/settings.md), never in `.env` or a file of yours. Both tokens are required together: the refresh token must be set whenever the access token is. Twitch tokens expire, and cohost renews them itself. It keeps the renewed token on your machine in `data/chat/twitch-token.enc`, encrypted under a key only the `chat` service is given, so the folder holds no readable token and a restart does not lose it. If you generate a new pair, set it as above and restart `chat`: cohost notices and uses the new pair.
 
-The co-host does not write into Twitch chat today. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
+The co-host does not write into Twitch chat. It reads chat and speaks. The logged-in path has not been run against real Twitch yet, so treat it as the least-tested part of this page.
 
 ## What cohost forgets when a moderator removes chat
 
@@ -74,7 +69,7 @@ If chat is quiet, I will not make things up. Well. Not until the idle chatter ki
 ## If it didn't
 
 - **`chat` shows `degraded`.** `chat.twitch.channel` is empty, so the service is waiting for you. Set it and restart `chat`.
-- **Fake messages keep arriving.** `chat.sources` still lists `fake` in `config/config.yaml`. Remove `fake` from it and restart `chat`.
+- **Fake messages keep arriving.** `chat.sources` still lists `fake`. Remove `fake` from it in the **Chat** section and restart `chat`.
 - **`chat` will not start once the access token is set.** The refresh token is missing. Both are required together.
 - **Nothing appears and the channel is busy.** Check the channel name for a typo, and read the `chat` log with `docker compose logs chat`.
 

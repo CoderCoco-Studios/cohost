@@ -47,13 +47,13 @@ cohost's connection to the shared message channel (the [bus](../../start/glossar
 3. Installs the NVIDIA container toolkit when it finds a GPU.
 4. Installs `curl`, `gnupg` and the CA certificates if any is missing, then mise itself, to `~/.local/bin/mise`, checking its signature and checksum.
 5. Runs `mise install`, which installs the project's Node, pnpm, Rust, Zig and Python, and adds the mise activate line to your shell's startup file so a new terminal has them.
-6. Creates `.env` from `.env.example`, creates your personal files in `config/` (`config.yaml`, `personality.md` and `expressions.yaml`) and your credentials file `secrets/secrets.yaml`, switches on the GPU settings if there is a GPU, and fills in the dashboard's control token.
-7. Runs `mise run build` (the packages, the bus connection, the code and the dashboard page), then `mise run secrets:project`, which copies each service's credentials from `secrets/secrets.yaml` into its own file under `secrets/units/`, then `mise run docs:build`, which builds this documentation for the dashboard to serve.
+6. Creates `.env` from `.env.example` (it holds only a few per-machine settings, never a password or key) and switches on the GPU settings there if there is a GPU.
+7. Runs `mise run build` (the packages, the bus connection, the code and the dashboard page), then `mise run config:project`, which creates the [settings store](../../start/glossary.md#settings-store) (seeded with the default settings, personality and expressions) and the [master key](../../start/glossary.md#master-key) that protects your credentials, and prepares each service's settings. Creating the key prints its [recovery key](../../start/glossary.md#recovery-key) once: save it in your password manager. Then it runs `mise run config:token -- --if-unset`, which makes the [control token](../../start/glossary.md#control-token) and prints it once: save it too. Last it runs `mise run docs:build`, which builds this documentation for the dashboard to serve.
 8. Unless you pass `--no-pull`, downloads the container images and the models.
 9. Starts [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.md#postgres) and checks they answer.
 10. Prints what to do next.
 
-It is safe to run more than once: it keeps the `.env` and `config/` files you already have. The only line it rewrites in `.env` is `COMPOSE_FILE`, which it sets from whether it finds a GPU.
+It is safe to run more than once: it keeps the `.env`, the settings store, the master key and the control token you already have, and prints neither key nor token again. The only line it rewrites in `.env` is `COMPOSE_FILE`, which it sets from whether it finds a GPU. [Settings, backups and recovery](../operate/settings.md) covers the store and the keys in full.
 
 ## Accounts and apps
 

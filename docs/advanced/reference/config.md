@@ -1,29 +1,57 @@
 ---
 title: Configuration
-description: Every key of config.yaml, with its default, range and what it changes, grouped by section.
+description: Every setting of the settings store, with its default, range and what it changes, grouped by section, and every config task.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Configuration reference
 
-`config/config.yaml` holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes. Every value is a literal: no environment variable is read for any key. Credentials live in `secrets/secrets.yaml`, and `.env` holds only what must exist before configuration can be read plus the dashboard's access controls; see [Environment and ports](env.md). This page lists every key of `config/config.example.yaml`, spelled as the dotted path it has in that file. Keys under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and keys inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
+The [settings store](../../start/glossary.md#settings-store) holds all of cohost's behaviour: which model answers, the brain's timings, the voice, the avatar driver and where the co-host's voice goes, together with the personality, the emotion map and every credential. It is one SQLite file, `data/store/cohost.db` in the checkout (`COHOST_DATA_DIR` moves `data/`), and no file is edited by hand: you change it on the dashboard's Settings screen or with the `mise run config:*` tasks below. Every value is a literal: no environment variable is read for any setting, and `.env` holds only non-secret host and [Compose](../../start/glossary.md#docker-compose) variables; see [Environment and ports](env.md). This page lists every setting, spelled as its dotted path. Settings under a named entry are written out in full, such as `mouth.outputs.discord.gain_db`, and settings inside a list item use `[]`, such as `brain.salience.reflexes[].match`.
 
 Terms used in the tables, defined once in the [glossary](../../start/glossary.md): [Ollama](../../start/glossary.md#ollama), [Postgres](../../start/glossary.md#postgres), [pgvector](../../start/glossary.md#pgvector), [embedding](../../start/glossary.md#embedding), [OBS](../../start/glossary.md#obs), [obs-websocket](../../start/glossary.md#obs-websocket), [Redis](../../start/glossary.md#redis), [bus](../../start/glossary.md#bus), [event](../../start/glossary.md#event), [hook](../../start/glossary.md#hook), [reflex](../../start/glossary.md#reflex), [connector](../../start/glossary.md#connector), [sink](../../start/glossary.md#sink), [Whisper](../../start/glossary.md#whisper), [Kokoro](../../start/glossary.md#kokoro), [VTube Studio](../../start/glossary.md#vtube-studio), [VMC](../../start/glossary.md#vmc), [valence and arousal](../../start/glossary.md#valence-arousal), [cortex](../../start/glossary.md#cortex), [salience](../../start/glossary.md#salience), [affect](../../start/glossary.md#affect), [STT](../../start/glossary.md#stt) and [GPU](../../start/glossary.md#gpu).
 
-## How the file works
+## How settings are stored
 
 | Topic | Rule |
 | --- | --- |
-| The files | `config/config.example.yaml` is committed. `config/config.yaml` is yours and git-ignored: `scripts/install.sh` copies it, and any service that finds it missing copies it on first run. `personality.md` and `expressions.yaml` work the same way |
-| Where it is read from | The `config/` folder at the workspace root (the nearest folder holding `pnpm-workspace.yaml`), whatever directory a service starts in. `CONFIG_DIR` overrides the folder. Credentials are read from `secrets/secrets.yaml` at the workspace root, which `CONFIG_DIR` does not move |
-| Literal values | Every value is written as a literal. A `${...}` placeholder anywhere in `config.yaml` is refused when the file loads, with a message naming the key, and the service does not start; the dashboard starts in config recovery mode instead, where each failing key can be fixed ([Dashboard tour](../../guide/operate/dashboard.md#config-recovery)). A blank value means "use the schema's default" for most keys |
-| When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
-| Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
-| Editing | The dashboard's Settings screen edits one section at a time from the same schema, keeps your comments, shows a secret only as set or not set (and writes it to `secrets.yaml` through its own route, never to `config.yaml`), shows a warning beside a sensitive key (one that decides where a credential or private data goes, or who may reach the dashboard; the warning is a hint, and a save is gated by the control token like any other), refuses a save when the file changed under it, and offers to restart the services that read the section |
-| Secrets | The credential keys listed under [Credentials](#credentials-secrets-yaml) live in `secrets/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
+| Sections | Settings are stored per section (`cohost`, `llm`, `brain.salience`, `voice` and so on), each holding only the settings you set. A setting a section does not hold takes the schema's default (`packages/config/src/schema.ts`), so a default changed in a later build reaches every setting you never set |
+| The seed | A new store is seeded from the committed `config/config.example.yaml`, `config/personality.example.md` and `config/expressions.example.yaml`. They stay in the repository as the seed and as the documentation of every setting; editing them changes nothing for a store that exists. Where this page says "in the example", it means the seed's value |
+| Validation | Every write validates the whole configuration against the schema and is refused, naming each key, when it fails; nothing is half-written. A setting the schema does not know, or a value at a credential's path, is refused too. Stored settings that fail a later build's schema start the dashboard in [config recovery mode](http.md#config-recovery-mode), where each failing key is set or reset |
+| When it applies | A change applies at the next start of each unit that reads the section. The Settings screen and `config:set` name those units; restart them from the dashboard. Before every start the control plane writes the unit's projection, `data/projections/<unit>/settings.json`: the sections and documents the unit declares, never a credential. A container reads it read-only at `/app/config`; a host-run service reads it through the unit runner (see [Developer setup](../dev-setup.md)) |
+| Editing | The dashboard's Settings screen edits one section at a time from the schema: a stored value is labelled `saved`, a credential shows only as set or not set and is written through its own write-only field, a warning sits beside a sensitive key (one that decides where a credential or private data goes, or who may reach the dashboard; the warning is a hint, and a save is gated by the control token like any other), and a save is refused when the store changed since the screen read it. From a shell, use the tasks below |
+| Credentials | The paths under [Credentials](#credentials) are stored encrypted (AES-256-GCM) under the [master key](../../start/glossary.md#master-key) and never in a section. A unit receives only the credentials it declares, in memory, after it starts |
+| Documents | The personality (Markdown, at most 64 KiB) and the emotion map (`expressions`) are stored documents beside the sections. The units that declare one get it in their projection |
 
-The defaults shown are the schema's, and where the example file sets a different value that is noted.
+## The `config:*` tasks
+
+Each task opens the settings store (creating and seeding it when there is none), takes its arguments after `--`, prints no credential except where its purpose is to print one, and exits 0 on success and 1 with one message otherwise. A settings or credential change applies to running units at their next start, and the task names the units that read what it changed.
+
+```bash
+mise run config:get -- llm.provider
+mise run config:set -- llm.provider ollama
+mise run config:secret -- llm.claude.api_key
+```
+
+| Task | What it does |
+| --- | --- |
+| `config:get -- <path>` | Prints the effective value of a setting as YAML: the stored value, or the default marked `# default`. A credential's path prints `set` or `not set` |
+| `config:set -- <path> <yaml value>` | Sets one setting, validating the whole configuration. A credential's path is refused, naming `config:secret` |
+| `config:reset -- <path>` | Removes one stored setting so its default applies |
+| `config:secret -- <path> [--clear]` | Sets a credential, read from standard input without echo (never from an argument), or clears it with `--clear` |
+| `config:personality -- [--edit]` | Prints the personality, or with `--edit` opens it in `$EDITOR` and saves it when the editor exits |
+| `config:token -- [--stdin]` | Sets the control token: a generated one, printed once for your password manager, or with `--stdin` your own, at least 32 characters, read without echo on a terminal. The store keeps only its verifier. Setting it again ends every browser session. The installer runs it with `--if-unset` |
+| `config:key -- --show \| --confirm \| --rotate \| --restore` | The master key. `--show` prints the recovery key; `--confirm` prints it once more and marks it saved, which clears the dashboard's banner; `--rotate` makes a new key, re-encrypts every credential, keeps the old file as `master.key.rotated-<stamp>` and shows the new recovery key; `--restore` asks for the recovery key without echo and writes the key file |
+| `config:reset-credentials` | After you type `delete credentials`, deletes every stored credential and generated key and makes a new master key. Re-enter the credentials afterwards, and run `config:token` again for the `ears` listener key |
+| `config:export -- [file] [--secrets]` | Writes the settings, the personality and the emotion map as YAML to the file (mode 0600) or standard output; a comment lists which credentials are set, never a value. `--secrets` also exports the credentials, encrypted with a passphrase of at least 12 characters asked twice |
+| `config:import -- <file> [--dry-run]` | Replaces the settings, the documents and, when the file holds them, the credentials (asking the passphrase) with the file's, after a backup, so the store equals the file. `--dry-run` prints what would change and writes nothing. It also takes parts: `--settings`, `--personality`, `--expressions` and `--secrets` (see [Settings, backups and recovery](../../guide/operate/settings.md)) |
+| `config:backup` | Takes a backup now, to `data/store/backups/cohost-<yyyymmddThhmmssZ>.db` |
+| `config:restore -- <file>` | Restores a backup, after backing up the live store |
+| `config:check` | Lists every problem that stops the store's use (integrity, the master key, settings that fail the schema) and prints `ok` when there is none |
+| `config:project` | Writes every unit's projection under `data/projections/`, which a hand-run `docker compose up` needs first |
+| `deliver` | Runs `cohostctl deliver`: delivers credentials to every running unit that waits for them, as after a reboot when the dashboard is not running |
+
+Backups are also taken at the dashboard's first start of each UTC day and before an import, a restore or a migration; the ten newest are kept. They hold credentials only encrypted, so they need the master key, or a rotated key file kept beside it, to be of use.
 
 ## `cohost`
 
@@ -38,7 +66,7 @@ Who the co-host is and who it talks to.
 
 ## `llm`
 
-Which model answers for the co-host. Embeddings always use local Ollama whatever the provider is, so the memory vectors never change size when the chat model does. Ranges are enforced when the config loads.
+Which model answers for the co-host. Embeddings always use local Ollama whatever the provider is, so the memory vectors never change size when the chat model does. Ranges are enforced on every write.
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -50,14 +78,14 @@ Which model answers for the co-host. Embeddings always use local Ollama whatever
 | `llm.max_tokens` | `120` | Ollama and OpenAI: reply length cap in tokens. Short replies read better as speech |
 | `llm.timeout_ms` | `60000` | Request timeout for chat, embed and ping when the caller sets none |
 | `llm.embed_model` | `nomic-embed-text` | The embedding model, always on Ollama |
-| `llm.openai` | map | Settings for `provider: openai` (the API key is in `secrets.yaml`) |
+| `llm.openai` | map | Settings for `provider: openai` (the API key is a [credential](#credentials)) |
 | `llm.openai.base_url` | `https://api.openai.com/v1` | Any OpenAI-compatible endpoint, such as `http://my-gpu-box:8000/v1` |
-| `llm.claude` | map | Settings for `provider: anthropic` and `provider: bedrock` (the Claude API key is in `secrets.yaml`) |
+| `llm.claude` | map | Settings for `provider: anthropic` and `provider: bedrock` (the Claude API key is a [credential](#credentials)) |
 | `llm.claude.effort` | `low` | Thinking depth: `low`, `medium`, `high`, `xhigh` or `max`. `low` suits one-line replies |
 | `llm.claude.max_tokens` | `2048` | Caps thinking and reply together, so keep it roomier than `llm.max_tokens`. Minimum 256 |
 | `llm.claude.fallbacks` | `true` | Claude API only: retry on another Claude model if a safety classifier declines |
 | `llm.bedrock` | map | Settings for `provider: bedrock` |
-| `llm.bedrock.region` | `""` | The AWS region of the Bedrock endpoint, such as `us-east-1`. Required for `provider: bedrock`, together with the access key id and secret access key in `secrets.yaml`; an empty region leaves Bedrock not configured |
+| `llm.bedrock.region` | `""` | The AWS region of the Bedrock endpoint, such as `us-east-1`. Required for `provider: bedrock`, together with the access key id and secret access key [credentials](#credentials); an empty region leaves Bedrock not configured |
 
 ## `vision`
 
@@ -77,7 +105,7 @@ The `eyes` service: OBS screenshots described by a vision model.
 | `vision.upload_timeout_ms` | `10000` | Injected uploads: timeout for reading the image from Redis |
 | `vision.upload_max_bytes` | `8388608` | Injected uploads: the largest image accepted (8 MiB) |
 | `vision.prompt` | built-in prompt (commented out in the example) | The system prompt of the describe call. Blank uses the built-in one. Keep its rule to reply exactly `SAME` when nothing changed, or every reply counts as a change |
-| `vision.obs` | map | The OBS connection (the obs-websocket password is `vision.obs.password` in `secrets.yaml`) |
+| `vision.obs` | map | The OBS connection (the obs-websocket password is the credential `vision.obs.password`) |
 | `vision.obs.host` | `host.docker.internal` | Where obs-websocket listens |
 | `vision.obs.port` | `4455` | The obs-websocket port |
 | `vision.obs.source` | `Game Capture` | The OBS source to screenshot |
@@ -85,7 +113,7 @@ The `eyes` service: OBS screenshots described by a vision model.
 
 ## `chat`
 
-The `chat` service: chat in from the sources listed in `chat.sources`. The Twitch channel and the YouTube video are here; their credentials are in `secrets.yaml`.
+The `chat` service: chat in from the sources listed in `chat.sources`. The Twitch channel and the YouTube video are here; their credentials are under [Credentials](#credentials).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -93,11 +121,11 @@ The `chat` service: chat in from the sources listed in `chat.sources`. The Twitc
 | `chat.sources` | `[twitch]` | The chat sources read at once: any of `twitch`, `youtube` and `fake` (scripted or stdin messages with no channel), in a list. Empty turns chat off; a name listed twice is read once; any other name fails the load naming `chat.sources` |
 | `chat.fake` | map | Settings for the `fake` source |
 | `chat.fake.interval_ms` | `8000` | The gap between scripted messages |
-| `chat.twitch` | map | Settings for the `twitch` source (the credentials are `chat.twitch.*` keys of `secrets.yaml`); optional, every key defaults |
+| `chat.twitch` | map | Settings for the `twitch` source (the credentials are the `chat.twitch.*` [credentials](#credentials)); optional, every key defaults |
 | `chat.twitch.channel` | empty | The channel to read. Empty makes `chat` idle as `degraded` |
 | `chat.youtube` | map | Settings for the `youtube` source; optional, every key defaults |
 | `chat.youtube.video` | empty | The YouTube video or live stream whose chat is read: a video id, or a `watch`, `youtu.be`, `live`, `embed` or `live_chat` link. A channel or handle URL, a playlist or a search phrase names no video and is a source gap, not a load failure |
-| `chat.youtube.api_key` | empty | The YouTube Data API key. A secret: it is a `chat.youtube.api_key` key of `secrets.yaml`, never of `config.yaml` |
+| `chat.youtube.api_key` | empty | The YouTube Data API key. A [credential](#credentials), stored encrypted and never in the `chat` section |
 | `chat.youtube.transport` | `stream` | `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`; any other value fails the load naming `chat.youtube.transport` |
 | `chat.youtube.poll_floor_ms` | `12000` | The shortest gap between two chat polls, in milliseconds, for transport `poll` and for the polling fallback of transport `stream`. An integer of at least 1000 |
 | `chat.youtube.recheck_ms` | `120000` | How often the video is checked again for a live chat, in milliseconds. An integer of at least 30000 |
@@ -112,7 +140,7 @@ The four [brain regions](../../start/glossary.md#brain-region), which only talk 
 | --- | --- | --- |
 | `brain` | map | The brain |
 | `brain.working_memory_events` | `24` | Recent events each region keeps as its working memory and prompt window. Must stay above `brain.working_memory_own_lines` (default 4) |
-| `brain.working_memory_own_lines` | `4` | How many of the co-host's own recent lines the window never drops, so a flood of chat cannot push them out. An integer of at least 1 that must be less than `brain.working_memory_events`; otherwise the file fails to load |
+| `brain.working_memory_own_lines` | `4` | How many of the co-host's own recent lines the window never drops, so a flood of chat cannot push them out. An integer of at least 1 that must be less than `brain.working_memory_events`; otherwise the write is refused |
 
 ## `brain.input_limits`
 
@@ -279,10 +307,10 @@ The `voice` service: text to speech. Which engine to choose, and what each sends
 | `voice.timeout_ms` | `15000` | The bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks |
 | `voice.openai.base_url` | `""` | The base URL of the OpenAI-compatible speech server, for `engine: openai`. Trailing slashes are dropped |
 | `voice.openai.model` | `""` | The speech model name the server takes, for `engine: openai` |
-| `voice.openai.api_key` | `""` | The server's API key. A secret, in `secrets.yaml` |
+| `voice.openai.api_key` | `""` | The server's API key. A [credential](#credentials) |
 | `voice.pocket` | map | The Pocket speech server |
 | `voice.pocket.url` | `http://tts-pocket:8000` | The Pocket speech server, for `engine: pocket`. Blank is a configuration gap |
-| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights. A secret, in `secrets.yaml` |
+| `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights. A [credential](#credentials) |
 | `voice.speed` | `1.05` | The pace multiplier, 0.25 to 4 |
 | `voice.sample_rate` | `24000` | The sample rate of the silence the stub engine returns. The Kokoro engine ignores it |
 | `voice.lang_code` | unset (commented out in the example) | The Kokoro language code: `a`, `b`, `e`, `f`, `h`, `i`, `j`, `p` or `z`. Blank derives it from the voice name |
@@ -340,7 +368,7 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | --- | --- | --- |
 | `ears` | map | The ears service |
 | `ears.sources` | `[discord]` | The listening sources, all started at once and read at start: `discord`, `http`, `dir`, or another connector's source tag. An empty list idles. Written in flow syntax such as `[http, dir]` |
-| `ears.http` | map | The `http` source's listener. Every `POST /audio` needs `Authorization: Bearer <listener key>`, on loopback too: the key is derived from `CONTROL_TOKEN` and delivered to `ears` alone when the control plane starts it (see [HTTP routes](http.md#ears-capture-endpoint)) |
+| `ears.http` | map | The `http` source's listener. Every `POST /audio` needs `Authorization: Bearer <listener key>`, on loopback too: the key is derived from the control token when it is set and delivered to `ears` alone after the control plane starts it (see [HTTP routes](http.md#ears-capture-endpoint)) |
 | `ears.http.host` | `127.0.0.1` | The address to bind. In [Docker](../../start/glossary.md#docker) bind `0.0.0.0` and publish the port yourself |
 | `ears.http.port` | `8765` | The port. 0 picks a free one |
 | `ears.dir` | map | The `dir` source |
@@ -367,13 +395,13 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | `ears.stt_timeout_ms` | `20000` | The bound on one speech-to-text call: a batch request, a streaming session's connect (aborted at the bound), a readiness ping, and a session's `finish()`. The buffered start of a session is bounded the same way |
 | `ears.max_stt_sessions` | `2` | How many speech-to-text sessions run at once (at least 1) |
 | `ears.openai.base_url` | `""` | The base URL of an OpenAI-compatible transcription server, for `openai`. Trailing slashes are dropped |
-| `ears.openai.api_key` | `""` | Its API key. A secret, in `secrets.yaml` |
+| `ears.openai.api_key` | `""` | Its API key. A [credential](#credentials) |
 | `ears.nemotron` | map | The NVIDIA Nemotron speech-to-text server |
 | `ears.nemotron.url` | `http://stt-nemotron:8080` | The NVIDIA Nemotron STT server, for `stt_engine: nemotron`. Blank is a configuration gap |
-| `ears.nemotron.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.nemotron.api_key` | `""` | Its API key, if it asks for one. A [credential](#credentials) |
 | `ears.kyutai` | map | The Kyutai speech-to-text server |
 | `ears.kyutai.url` | `http://stt-kyutai:8080` | The Kyutai STT server, for `stt_engine: kyutai`. Blank is a configuration gap |
-| `ears.kyutai.api_key` | `""` | Its API key, if it asks for one. A secret, in `secrets.yaml` |
+| `ears.kyutai.api_key` | `""` | Its API key, if it asks for one. A [credential](#credentials) |
 | `ears.kyutai.end_of_turn` | `off` | `on` lets the server's end-of-turn signal close an utterance early, at the last frame received, at most once and only after a word; `off` leaves the close to ears' own endpointing. Ignored under `ears.vad.engine: gap` |
 | `ears.kyutai.end_of_turn_threshold` | `0.5` | The end-of-turn probability (the third `Step` probability) needed, above 0 and below 1 |
 | `ears.drop_phrases` | `[]` | Live transcripts equal to one of these (case, spacing and edge punctuation ignored) are dropped. They are Whisper's usual hallucinations on silence, such as `Thank you.` |
@@ -385,7 +413,7 @@ External connectors that attach to the bus.
 | Key | Default | What it does |
 | --- | --- | --- |
 | `connections` | map | Connectors |
-| `connections.discord` | map | The Discord connector (service `connector-discord`); the bot token is `connections.discord.token` in `secrets.yaml` |
+| `connections.discord` | map | The Discord connector (service `connector-discord`); the bot token is the credential `connections.discord.token` |
 | `connections.discord.enabled` | `true` | `false` makes the connector idle and hold no connection |
 | `connections.discord.guild_id` | empty | The Discord server id |
 | `connections.discord.voice_channel_id` | empty | The voice channel id |
@@ -419,7 +447,7 @@ The `mouth` service: where her voice goes. Each key under `mouth.outputs` is one
 
 ## `dashboard`
 
-The host-run dashboard. Its access controls (`DASHBOARD_HOST`, `CONTROL_TOKEN` and the rest) stay in `.env`; see [Environment and ports](env.md).
+The host-run dashboard. Where it listens (`DASHBOARD_HOST`) is in `.env`, and the control token is set with `mise run config:token`; see [Environment and ports](env.md).
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -447,7 +475,7 @@ Private addresses, `localhost`, `host.docker.internal`, dotless names and `.loca
 
 ## `logging`
 
-How each program logs. Every program's logger reads this section on its own before the rest of the file loads, so a change applies at each program's next start; when the file is missing or the section is invalid the defaults apply until the loader reports the fault. A save on the Settings screen offers to restart every running service.
+How each program logs. Every program's logger reads this section before the rest of the configuration, so a change applies at each program's next start; while the section cannot be read the defaults apply. A save on the Settings screen offers to restart every running service.
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -463,7 +491,7 @@ Values named `token`, `authorization`, `password`, `api_key`, `apikey`, `secret`
 
 ## `tools`
 
-The MCP servers the co-host may call and the tools it may use. Nothing is enabled by absence: a tool runs only when `tools.allow` names it with `enabled: true`, and a server is called only for such a tool. Every server's token lives in `secrets.yaml` (`tools.servers.<name>.token`), never here.
+The MCP servers the co-host may call and the tools it may use. Nothing is enabled by absence: a tool runs only when `tools.allow` names it with `enabled: true`, and a server is called only for such a tool. Every server's token is the credential `tools.servers.<name>.token`, never a setting.
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -502,11 +530,13 @@ The MCP servers the co-host may call and the tools it may use. Nothing is enable
 
 A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, and so on) and never quotes a URL or the user name and password in it.
 
-## Credentials (`secrets.yaml`)
+## Credentials
 
-`secrets/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 in a folder of mode 0700 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), and lives outside `config/` so that no container can read it. Before the dashboard or `cohostctl` starts or restarts a service, it copies into `secrets/units/<service>/secrets.yaml` only the keys that service uses, and that copy is the one the service's container sees; a service reads each key as the dotted path it has here. Edit only `secrets/secrets.yaml`; the copies are rewritten on every start. `ears`' copy also carries `ears.http.verifier`, the `http` listener's key, which the control plane derives from `CONTROL_TOKEN` at each copy; it is not a key of `secrets/secrets.yaml`, and a value written there is ignored. A hand-run `docker compose up` skips that copy, so after an edit start through the dashboard or `cohostctl`, or run `node packages/control/dist/project-secrets.js` first. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+These are the credential paths (`SECRET_PATHS` in `packages/config/src/schema.ts`), and no other credential is stored. Set each on the dashboard's Settings screen, in its write-only field, or with `mise run config:secret -- <path>`, which reads the value without echo; `mise run config:secret -- <path> --clear` clears it. They are stored encrypted (AES-256-GCM) under the master key, never in a section, never in `.env` and never in a file. The Settings screen and `config:get` report each only as set or not set.
 
-| Key | Default | What it is |
+A unit receives only the credentials its manifest entry declares. After a container starts, the control plane writes them into a RAM-only `/run/cohost` tmpfs inside it with `docker exec -i`; the service reads them, deletes the file and keeps them in memory. A host-run service gets them on a pipe from the unit runner. `ears` also receives `ears.http.verifier`, the `http` listener's key, which the store derives from the control token whenever the token is set; it is not a credential path you set. A change applies at each unit's next start. After a reboot the containers wait, reporting `waiting for credentials`, until the dashboard starts or you run `mise run deliver`.
+
+| Path | Default | What it is |
 | --- | --- | --- |
 | `llm.openai.api_key` | `""` | The API key of the endpoint named by `llm.openai.base_url`, for `provider: openai` |
 | `llm.claude.api_key` | `""` | A Claude API key, for `provider: anthropic` |
@@ -524,4 +554,4 @@ A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, a
 | `voice.pocket.hf_token` | `""` | The Hugging Face token for the gated Pocket weights; only an owner who has accepted them needs it |
 | `chat.youtube.api_key` | `""` | The YouTube Data API key for the YouTube chat source |
 | `connections.discord.token` | `""` | The co-host's one Discord bot token, used only by the Discord connector. Invite the bot with Connect and Speak and enable the Server Members intent |
-| `tools.servers.<name>.token` | `""` | The credential sent to the MCP server named `<name>` in `config.yaml`, in the header `tools.servers.<name>.header` names. A token for a server `config.yaml` does not hold is not merged and is listed by path in the warning about keys that are not secret keys |
+| `tools.servers.<name>.token` | `""` | The credential sent to the MCP server named `<name>` in the `tools` section, in the header `tools.servers.<name>.header` names. It can be set only for a server the stored `tools` section holds; the token of a removed server can still be cleared |

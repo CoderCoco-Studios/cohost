@@ -19,7 +19,7 @@ Hello. I am the sidekick. You may call me "the co-host", or just "hey you". I wi
 - **Reads chat.** It watches a Twitch channel, one line at a time, and decides which lines deserve an answer. Most do not. A co-host that answers everything is a co-host nobody wants.
 - **Listens.** In a Discord voice channel it hears you and your guests, turns the speech into text and treats it like chat that outranks everyone else's.
 - **Watches.** With the optional vision service it takes a screenshot of your game every few seconds and describes what changed, so it can react to the screen.
-- **Remembers.** It stores what was said, recalls related moments when it answers, keeps a short note about each viewer, and updates its own personality file after a stream.
+- **Remembers.** It stores what was said, recalls related moments when it answers, keeps a short note about each viewer, and updates its own personality after a stream.
 - **Has moods.** Its mood rises and falls with what happens and shows on the avatar's face.
 - **Speaks and moves.** Its words become audio, played through the dashboard page, OBS or Discord, while the avatar's mouth follows the sound.
 

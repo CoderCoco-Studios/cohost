@@ -58,7 +58,7 @@ In [mock mode](../../start/glossary.md#mock-mode) (the isolated start), timers l
 
 ## If it didn't
 
-- **The stream info answer says a platform is not configured.** Its channel, video or credential is empty. Set it in the chat configuration (`chat.twitch` or `chat.youtube`) and restart `tools`.
+- **The stream info answer says a platform is not configured.** Its channel, video or credential is empty. Set it in the Settings screen's **Chat** section (`chat.twitch` or `chat.youtube`; see [Twitch chat](twitch.md) and [YouTube chat](youtube.md)) and restart `tools`.
 - **The stream info answer says a platform did not answer.** The platform was slow or unreachable, or refused the credential. Check the credential, and try again.
 - **The memory lookup says the memory service did not answer in time.** Check that the memory service is running.
 - **The timer says the limit is reached.** Wait for one to run out, or raise `tools.timer.max_active`.

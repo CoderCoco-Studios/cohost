@@ -2,7 +2,7 @@
 title: Add an avatar driver
 description: Write an avatar driver that sends the co-host's face and gestures to your own program over UDP, then register it so cohost can pick it by name.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Add an avatar driver
@@ -33,7 +33,7 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 
    <<< @/../examples/avatar-driver/udp-json.ts#driver
 
-   Each call becomes one JSON datagram, so the receiving program reads one JSON object per packet. `setExpression` and `trigger` look the name up in `ctx.expressions` and `ctx.gestures`, the two maps cohost reads from `config/expressions.yaml`, and send the canonical name itself when the map has nothing for it. Sending is wrapped in a `try` and has an error callback, because UDP failures arrive both ways, and both end in a log line instead of an exception.
+   Each call becomes one JSON datagram, so the receiving program reads one JSON object per packet. `setExpression` and `trigger` look the name up in `ctx.expressions` and `ctx.gestures`, the two maps of the emotion map that the settings store keeps and the avatar service receives in its projection, and send the canonical name itself when the map has nothing for it. Sending is wrapped in a `try` and has an error callback, because UDP failures arrive both ways, and both end in a log line instead of an exception.
 
 2. See what goes over the wire. Every packet has a `type`, and the rest depends on it:
 
@@ -48,7 +48,7 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 3. Teach cohost the driver's name. The example is not registered, so this is the path your own driver takes, in three files:
 
    - Copy the file into `services/avatar/src/drivers/`, next to the other drivers, and change its one type import to `../types.js`. Then add a `case "udp-json"` to `createDriver` in `services/avatar/src/drivers/index.ts` that builds `new UdpJsonDriver({ host, port })` from the config, as the `vmc` case does.
-   - Add `udp-json` to the `avatar.driver` list in `packages/config/src/schema.ts`, with a section beside `vmc` that holds its `host` and `port`, and the same section with defaults in `config/config.example.yaml`.
+   - Add `udp-json` to the `avatar.driver` list in `packages/config/src/schema.ts`, with a section beside `vmc` that holds its `host` and `port` with defaults, and the same section in `config/config.example.yaml`, which documents the settings and seeds a new store.
    - Add a block named `udp-json` to `config/expressions.example.yaml`, mapping the canonical emotions (`neutral happy laugh surprised smug sad angry confused think`) to the names your app uses. A gesture map is optional:
 
    ```text
@@ -60,13 +60,17 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
        wave: "Wave"
    ```
 
-   cohost copies `config/expressions.example.yaml` to `config/expressions.yaml` the first time it runs and never overwrites it afterwards, so add the same block to your own `config/expressions.yaml` too.
+   The example file seeds only a new settings store, so add the same block to your own emotion map too: copy the `expressions:` block that `mise run config:export` prints into a file, add `udp-json` to it, and import that file as the emotion map alone (`--expressions` replaces that part and nothing else):
 
-4. Choose the driver and restart the avatar service, so it reads the new setting. The setting is the `avatar.driver` key in `config/config.yaml`, which accepts the name once step 2 has added it to the schema:
+   ```bash
+   mise run config:import -- --dry-run --expressions expressions.yaml
+   mise run config:import -- --expressions expressions.yaml
+   ```
 
-   ```text
-   avatar:
-     driver: "udp-json"
+4. Choose the driver and restart the avatar service from the dashboard, so it reads the new setting. The setting is `avatar.driver`, on the Settings screen (section `avatar`) or from a shell, and it accepts the name once step 3 has added it to the schema:
+
+   ```bash
+   mise run config:set -- avatar.driver udp-json
    ```
 
 ## How you know it worked
@@ -87,7 +91,7 @@ Two details matter for what you write. `connect` and `disconnect` bracket the ti
 
 ## If it didn't
 
-- **The avatar service logs `udp-json send failed`.** The host or port is wrong, or the address does not resolve. The driver logs the reason and keeps going, so the service stays up; fix the address in your config and restart it.
+- **The avatar service logs `udp-json send failed`.** The host or port is wrong, or the address does not resolve. The driver logs the reason and keeps going, so the service stays up; fix the address in the settings and restart it.
 - **cohost refuses to start with an `avatar.driver` error.** The name is missing from the list in `packages/config/src/schema.ts`. The config schema rejects any value it does not list.
-- **Packets arrive but the model does not change expression.** The map has no entry for that emotion, so the canonical name went out. Add it to `config/expressions.yaml`.
-- **Nothing arrives and nothing is logged.** UDP never says whether anyone is listening. Check that the service picked the driver (`avatar.driver` in `config/config.yaml`) and that your program listens on the port from the config.
+- **Packets arrive but the model does not change expression.** The map has no entry for that emotion, so the canonical name went out. Add it to your emotion map, as step 3 does.
+- **Nothing arrives and nothing is logged.** UDP never says whether anyone is listening. Check that the service picked the driver (`mise run config:get -- avatar.driver`) and that your program listens on the port from the settings.

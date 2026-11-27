@@ -139,6 +139,10 @@ A [Redis](#redis) feature that lets several readers share one stream, with Redis
 
 A packaged program that runs in isolation from the rest of your machine, with everything it needs inside. Almost every cohost service is a container. [Docker](#docker) runs them.
 
+### control token {#control-token}
+
+cohost's one lock: a long random password that every control on the [dashboard](#dashboard) and every command that changes something asks for. `mise run config:token` makes one and prints it once, so it lives in your password manager; the [settings store](#settings-store) keeps only a check value that can tell the right token from a wrong one, never the token itself. An [unlock link](#unlock-link) unlocks a browser without typing it. See [Settings, backups and recovery](../guide/operate/settings.md).
+
 ### cortex {#cortex}
 
 The part of the brain that writes what the co-host says. It is the only [brain region](#brain-region) that talks to the [LLM](#llm), and it turns "this is worth answering" into the words of a reply.
@@ -187,6 +191,10 @@ A technique for animating a flat 2D drawing (a "2D avatar") by bending and movin
 
 Large language model: the kind of AI that writes text. The co-host's replies come from one. It can run on your own machine through [Ollama](#ollama) or be rented from a provider; see [choose a model](../guide/tune/model.md).
 
+### master key {#master-key}
+
+The key that encrypts the credentials in the [settings store](#settings-store). It is a small file in your home folder (`~/.config/cohost/master.key`), outside the cohost checkout, so a copy of the checkout or a backup of the store carries no key. Its text is the [recovery key](#recovery-key). See [Settings, backups and recovery](../guide/operate/settings.md#the-recovery-key).
+
 ### MCP {#mcp}
 
 Model Context Protocol: an open standard by which a server offers tools to an AI model over the network. The co-host calls the tools of the MCP servers you add over HTTP; see [MCP tool servers](../guide/connect/mcp.md).
@@ -223,6 +231,10 @@ An add-on for [Postgres](#postgres) that stores [embeddings](#embedding) and fin
 
 A database. cohost uses it, in a [container](#container), to keep memories and viewer notes across restarts.
 
+### recovery key {#recovery-key}
+
+The text of the [master key](#master-key), printed once when the key is made. Keep it in your password manager: it is the only way to get your stored credentials back if the key file is lost, and `mise run config:key -- --restore` writes the key file again from it. See [Settings, backups and recovery](../guide/operate/settings.md#the-recovery-key).
+
 ### Redis {#redis}
 
 A fast in-memory data store. cohost runs one in a [container](#container) and builds its [bus](#bus) on it.
@@ -239,6 +251,10 @@ A canned reaction that skips the [LLM](#llm): when an [event](#event) matches a 
 
 How much an [event](#event) deserves a reaction. The `salience` [brain region](#brain-region) scores incoming events, decides when the co-host should speak, and fires [reflexes](#reflex).
 
+### settings store {#settings-store}
+
+The one database file, `data/store/cohost.db` in the checkout, that holds every cohost setting, the personality, the avatar's expression map and every credential (the credentials encrypted with the [master key](#master-key)). You change it on the [dashboard](#dashboard)'s Settings screen or with the `mise run config:*` commands, never by editing a file. See [Settings, backups and recovery](../guide/operate/settings.md).
+
 ### sink {#sink}
 
 A place the co-host's voice is played. The dashboard's sink page in a browser is one, and the Discord channel is another. Compare an [audio source](#audio-source), which is where sound comes in.
@@ -254,6 +270,10 @@ Speech-to-text: turning spoken audio into written words. The `ears` service send
 ### TTS {#tts}
 
 Text-to-speech: turning written words into spoken audio. cohost uses [Kokoro](#kokoro) for this.
+
+### unlock link {#unlock-link}
+
+A one-time address the [dashboard](#dashboard) prints to its terminal each time it starts (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`). Opening it within 10 minutes unlocks that browser, so you never type the [control token](#control-token) there. `mise run dashboard:unlock` prints a fresh one.
 
 ### valence and arousal {#valence-arousal}
 

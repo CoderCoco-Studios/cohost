@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Symptoms, causes and fixes for the problems you are most likely to meet, grouped by the step you were on.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Troubleshooting
@@ -17,9 +17,9 @@ Swap `cortex` for the service you are chasing. The images for every service buil
 
 ### Where the logs are
 
-Each line in the terminal and in `docker compose logs` reads `14:03:22.517 ERROR cortex: message`: the time, the level, the program and the message. A message of several lines, such as the list of problems in an invalid `config.yaml`, prints as indented lines below it, and details such as an error's stack print indented underneath.
+Each line in the terminal and in `docker compose logs` reads `14:03:22.517 ERROR cortex: message`: the time, the level, the program and the message. A message of several lines, such as the list of problems in settings that fail their checks, prints as indented lines below it, and details such as an error's stack print indented underneath.
 
-Every program also writes its full log to `data/logs/<program>.log` in the checkout: `dashboard.log`, `chat.log`, `cortex.log`, `consolidate.log` and so on. Each line there is one JSON entry with every detail, including the exact time. A file that grows past 10 MiB is moved aside as `<program>.1.log` (then `.2.log`, `.3.log`) and the oldest beyond three is deleted; `logging` in `config/config.yaml` changes the level, the terminal format and those limits (see [Configuration](../advanced/reference/config.md#logging)). The `tools` service writes no file: read it with `docker compose logs tools`.
+Every program also writes its full log to `data/logs/<program>.log` in the checkout: `dashboard.log`, `chat.log`, `cortex.log`, `consolidate.log` and so on. Each line there is one JSON entry with every detail, including the exact time. A file that grows past 10 MiB is moved aside as `<program>.1.log` (then `.2.log`, `.3.log`) and the oldest beyond three is deleted; the `logging` settings (the Logging section of the Settings screen) change the level, the terminal format and those limits (see [Configuration](../advanced/reference/config.md#logging)). The `tools` service writes no file: read it with `docker compose logs tools`.
 
 ### `data/logs` or its files belong to root
 
@@ -42,45 +42,69 @@ The full message continues `(...): looked for cohost-bus.linux-x64-gnu.node for 
 
 ### The dashboard will not start, mentioning `CONTROL_TOKEN`
 
-- **Cause:** `CONTROL_TOKEN` in `.env` is missing, empty, or shorter than 32 characters. It is cohost's one lock, so the dashboard does not start without it, in normal mode or in config recovery mode. The message says which (missing or too short) and never prints the value.
-- **Fix:** run `./scripts/install.sh` again, which fills an empty `CONTROL_TOKEN` (it warns about a hand-set one that is too short and leaves it alone), or put a value of at least 32 characters on the `CONTROL_TOKEN=` line yourself: `openssl rand -hex 24` makes one. Then start the dashboard again and open the unlock link it prints.
+The terminal shows `the dashboard cannot start:` followed by the reason.
 
-### The dashboard says the config is invalid
+- **Cause:** one of two things. `.env` or the environment of the shell that started the dashboard defines `CONTROL_TOKEN`: the [control token](../start/glossary.md#control-token) belongs only in your password manager, so the dashboard refuses to start while a copy sits in a file or a variable, and says which of the two it found (never the value). Or the [settings store](../start/glossary.md#settings-store) holds no control token yet. The control plane refuses a `CONTROL_TOKEN` in `.env` or the environment the same way, before it starts any container.
+- **Fix:** for a `CONTROL_TOKEN` in `.env` or the environment, keep the token: run `mise run config:token -- --stdin` and paste it at the hidden prompt, save it in your password manager, then delete the line from `.env` (or `unset CONTROL_TOKEN` in that shell). When no token is set, run `mise run config:token`, which makes one and prints it once: save it. Then start the dashboard again and open the [unlock link](../start/glossary.md#unlock-link) it prints.
 
-The page shows **Config recovery** instead of the usual screens, and the terminal shows `Invalid <path>/config.yaml:` followed by the failing keys and `config recovery mode: <n> problems; fix them at http://127.0.0.1:3000`.
+### The dashboard shows Config recovery
 
-- **Cause:** `config/config.yaml` or `secrets/secrets.yaml` does not pass the checks every program makes when it starts. The usual reasons: a file from an older cohost still holds `${NAME}` placeholders (cohost substitutes none; every value is written as it is), a value is out of range, or the file is not valid YAML. Every other program refuses to start with such a file, so the dashboard starts in recovery mode to let you fix it; Launch, Rebuild and every service start or restart are refused until the file is valid, and so are `cohostctl launch`, `rebuild`, `start`, `restart` and `restart-all`.
-- **Fix:** open the page at the address in the log (the usual one, or `http://localhost:3000` when the `dashboard` section itself is broken). Each failing key has its own row: type a value and press **Set**, press **Use** to keep the value an old placeholder fell back to, or press **Reset to default**. **Reset all failing keys** does that for every key it can, using each placeholder's fallback when it has one; what is left needs a value from you (a model name, for example). A credential written into `config.yaml` is removed there: set it afterwards in **Settings**, in the section the row names, with its masked field. A YAML syntax error (the row says `not valid YAML at line <l>, column <c>`) has **Edit config.yaml as text** (or **Edit secrets.yaml as text**): fix that line in the text box and press **Save**; the box stays open with the new position until the file parses. Opening and saving either file ask for the control token. If you save an empty file by mistake, the button stays there to put the text back. You can also fix the line in a text editor and press **Check again**. If the stack is still running from before, **Stop the stack** stops it without a valid config, as `mise run cohostctl stop-all` does. Every button asks for the control token, unless the browser is unlocked. Nothing changes in the file until you press a button, and your comments are kept. When the last key is fixed the page says the dashboard is starting and reloads into the normal screens; there is nothing to restart.
+The page shows **Config recovery** instead of the usual screens, and the terminal shows `config recovery mode: <cause>, <n> problems; fix them at http://127.0.0.1:3000`.
+
+- **Cause:** the settings store cannot be used, so every other program would refuse to start; the dashboard starts in recovery mode to let you fix it instead of exiting. Launch, Rebuild and every service start or restart are refused until it is fixed, and so are `cohostctl launch`, `rebuild`, `start`, `restart` and `restart-all`. The cause is one of four:
+  - `damaged store`: the store file fails its integrity check.
+  - `newer store`: the store was made by a newer cohost build than this checkout.
+  - `missing key`: the [master key](../start/glossary.md#master-key) file is missing, is not the key the store was encrypted with, or can be read by other users.
+  - `invalid settings`: stored settings fail this build's checks, for example after an update changed a setting's rules.
+- **Fix:** open the page at the address in the log (the usual one, or `http://localhost:3000` when the `dashboard` settings themselves fail). For a damaged store, restore one of the listed backups or import an export; the damaged file is kept aside as `cohost.db.damaged-<stamp>`. For a newer store, update cohost to the build that made it. For a missing key, enter your [recovery key](../start/glossary.md#recovery-key) (from a browser on the same PC), or as a last resort discard the stored credentials and enter them again. For invalid settings, each failing setting has its own row: type a value and press **Set**, or press **Reset to default**; **Reset all failing keys** resets every one it can. If the stack is still running from before, **Stop the stack** stops it, as `mise run cohostctl stop-all` does. When nothing is left to fix, the page says the dashboard is starting and reloads into the normal screens; there is nothing to restart.
+- **The page asks for the token.** Every button asks for the control token unless the browser is unlocked. For a damaged store, a newer store or a missing key there is no unlock link: enter the control token from your password manager. If the store is too damaged even to check the token, the page lists the commands to run on the PC instead: `mise run config:restore -- <backup>`, `mise run config:import -- <file>` or `mise run config:key -- --restore`. `mise run config:check` prints the same problems in a terminal, or `ok`. [Recovery mode](operate/settings.md#recovery-mode) has the details.
 
 ### The address is already in use
 
 - **Cause:** something else on your PC uses port 3000 or 3001.
-- **Fix:** set `dashboard.port` and `dashboard.lan_port` (3000 and 3001 by default, and they must differ) in `config/config.yaml`, then start the dashboard again. The startup log prints the URL it actually uses.
+- **Fix:** set the `dashboard.port` and `dashboard.lan_port` settings (3000 and 3001 by default, and they must differ) with `mise run config:set -- dashboard.port 3100`, then start the dashboard again. The startup log prints the URL it actually uses.
 
 ### The Access dialog rejects my token
 
-- **Cause:** the token you typed is not the `CONTROL_TOKEN` in `.env`, or `.env` changed after the dashboard started (it reads `.env` once, at start).
-- **Fix:** copy the whole value after `CONTROL_TOKEN=` in `.env`, with no spaces or quotes, and restart the dashboard if `.env` changed after it started. The dialog shows the command that prints the line (`grep ^CONTROL_TOKEN= .env`). A rejected token is never kept, so you can try again in the same dialog.
+- **Cause:** the token you typed is not the control token set in the settings store, or a new one was set with `mise run config:token` since you saved yours.
+- **Fix:** paste the whole token from your password manager, with no spaces or quotes. A rejected token is never kept, so you can try again in the same dialog. If the token is lost, see [I forgot the control token](#i-forgot-the-control-token).
 
 ### The unlock link says it is not valid
 
 - **Cause:** each unlock link works once and only for 10 minutes, and a restart of the dashboard ends the links it printed before. The link was already opened, is older than 10 minutes, or came from an earlier start.
 - **Fix:** while the dashboard runs, run `mise run dashboard:unlock` and open the link it prints, or restart the dashboard and open the link in its terminal.
 
-### I changed `CONTROL_TOKEN` and the page is locked again
+### I forgot the control token
 
-- **Cause:** expected. `CONTROL_TOKEN` signs the sessions of browsers unlocked by the unlock link, so a new token ends every one of them.
-- **Fix:** open a fresh unlock link: restart the dashboard (it reads `.env` at start) and open the link it prints, or run `mise run dashboard:unlock`. Then press **Restart all**, so `ears` gets the audio listener key derived from the new token.
+- **Cause:** the settings store keeps only a check value of the token, never the token itself, so nothing on the PC can show it again.
+- **Fix:** run `mise run config:token`, which makes a new token and prints it once; save it in your password manager. This ends every unlocked browser session: open a fresh unlock link (`mise run dashboard:unlock`, which asks for the new token) and press **Restart all**, so `ears` gets its listener key from the new token.
+
+### I set a new control token and the page is locked again
+
+- **Cause:** expected. Setting a token with `mise run config:token` ends the session of every browser the unlock link unlocked.
+- **Fix:** open a fresh unlock link with `mise run dashboard:unlock`, or enter the new token in the Access dialog. Then press **Restart all**, so `ears` gets the audio listener key derived from the new token.
 
 ### My settings are not being read
 
-- **Cause:** the co-host reads `config/` (including `config.yaml`), `secrets/secrets.yaml` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml` (the cohost checkout's top folder). A copy in some other folder is ignored.
-- **Fix:** edit `config/config.yaml`, `secrets/secrets.yaml` and `.env` in the checkout's top folder. Setting `CONFIG_DIR` moves the config folder, and `COHOST_ENV_FILE` moves the `.env` file. A key that is spelled wrong is ignored, and every service logs a warning that names it at startup.
+- **Cause:** the co-host reads the settings store, `data/store/cohost.db`, and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml` (the cohost checkout's top folder). A store or `.env` in some other folder is ignored. The example files under `config/` are only the seed of a new store: editing them changes nothing in a store that exists.
+- **Fix:** change settings on the **Settings** screen or with `mise run config:set -- <path> <value>`; `mise run config:get -- <path>` prints the stored value. Setting `COHOST_DATA_DIR` moves the `data/` folder and the store with it, and `COHOST_ENV_FILE` moves the `.env` file. A changed setting applies when the service that reads it next starts.
 
 ### A program on my PC cannot reach the voice service
 
 - **Cause:** `VOICE_URL` is where programs look for the voice service. On the host it defaults to `http://127.0.0.1:8700`, your own PC, and the stack publishes that port only on your own PC. In the stack, [Compose](../start/glossary.md#docker-compose) sets it to `http://voice:8700` for the containers.
 - **Fix:** if the voice service runs somewhere else, set `VOICE_URL` in `.env`. Otherwise check the voice service is `up` on the Services screen.
+
+### Services say `waiting for credentials` after a reboot
+
+- **Cause:** Docker restarted the containers, but a container gets its credentials only from the control plane, into memory that a restart empties. Until then each service reports `waiting for credentials` and shows as unhealthy. The same happens after a `docker compose up` run by hand.
+- **Fix:** start the dashboard with `mise run dashboard`, which hands every waiting service its credentials when it starts and whenever one waits, or run `mise run deliver` without the dashboard. See [after a reboot](operate/settings.md#after-a-reboot).
+
+### The master key is lost
+
+The dashboard starts in recovery mode with the cause `missing key`, or a `mise run config:*` command refuses, naming the key file `~/.config/cohost/master.key`.
+
+- **Cause:** the key that encrypts your stored credentials is missing (a new PC, a wiped home folder) or is not the key the store was made with. cohost never makes a new key over a store that holds credentials, because the credentials would be lost.
+- **Fix:** run `mise run config:key -- --restore` and paste the [recovery key](../start/glossary.md#recovery-key) from your password manager at the hidden prompt, or enter it on the recovery page. A backup taken with the old key needs that key too. With no recovery key, `mise run config:reset-credentials` (type `delete credentials` when asked) deletes every stored credential and makes a new key; enter the credentials again on the Settings screen, save the new recovery key it prints, and run `mise run config:token` again so `ears` gets its listener key. See [the recovery key](operate/settings.md#the-recovery-key).
 
 ## Docker and Launch
 
@@ -96,7 +120,7 @@ The page shows **Config recovery** instead of the usual screens, and the termina
 
 ### A model did not download
 
-- **Cause:** the `models` one-shot exits with an error if the main, vision or [embedding](../start/glossary.md#embedding) model fails to download. The models are the ones `config/config.yaml` names (`llm.model`, `llm.embed_model` and `vision.model`). A failed download of a hook model is only a warning.
+- **Cause:** the `models` one-shot exits with an error if the main, vision or [embedding](../start/glossary.md#embedding) model fails to download. The models are the ones the `llm.model`, `llm.embed_model` and `vision.model` settings name. A failed download of a hook model is only a warning.
 - **Fix:** check disk space and your connection, then press **Launch** again to retry. `docker compose ps` shows whether `models` ended in an error.
 
 ### Launch, Stop or a restart answers `busy`
@@ -123,20 +147,20 @@ The page shows **Config recovery** instead of the usual screens, and the termina
 
 ### `ears` answers 401, or `deps.http` is `down` with the listener key missing
 
-- **Cause:** the `http` audio listener checks every clip for a key derived from `CONTROL_TOKEN`, on loopback too. Either `ears` was started without the key (a hand-run `docker compose up`, or a start that skipped the control plane: the dashboard, `cohostctl` and `mise run dev` deliver it), `CONTROL_TOKEN` changed since `ears` started, or the client sending the clip has a different `CONTROL_TOKEN` in its shell.
-- **Fix:** start or restart `ears` from the dashboard or `cohostctl`; after changing `CONTROL_TOKEN`, press **Restart all**. Set `CONTROL_TOKEN` in the client's shell to the value in `.env`. See [Send audio to ears](../advanced/extend/audio-in.md).
+- **Cause:** the `http` audio listener checks every clip for a key derived from the control token, on loopback too. Either `ears` has not received its credentials (it says `waiting for credentials`; see above), the control token changed since `ears` started, or the client sending the clip uses a different token.
+- **Fix:** start or restart `ears` from the dashboard or `cohostctl`; after setting a new control token, press **Restart all**. In the client's shell, export `CONTROL_TOKEN` with the token from your password manager (never in `.env`). See [Send audio to ears](../advanced/extend/audio-in.md).
 
 ### The `chat` service does nothing
 
 - **Cause:** `chat.twitch.channel` is empty, so the chat service stays idle and logs a warning.
-- **Fix:** set `chat.twitch.channel` in `config/config.yaml` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `mise run cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
+- **Fix:** set `chat.twitch.channel` on the **Settings** screen (Chat) or with `mise run config:set -- chat.twitch.channel <your channel>` (see [Twitch chat](connect/twitch.md)) and restart `chat`. For scripted messages with no channel, start `chat` isolated (the **Isolated** switch in the **Start** dialog on the Services screen, or `mise run cohostctl start chat --isolated`), or add `fake` to `chat.sources`.
 
 ### The `youtube` chat source stops with a reason
 
 The `chat` log and the Services screen name the reason. Each one has one fix:
 
 - `chat.youtube.video is not a YouTube video URL or id`: the value names no video. Use the watch link or the video id, not a channel or handle.
-- `the API key was rejected` or `authentication failed`: the key is wrong or missing from `secrets.yaml`. Restart `chat` after you change it.
+- `the API key was rejected` or `authentication failed`: the key is wrong or not set. Set the credential `chat.youtube.api_key` on the **Settings** screen or with `mise run config:secret -- chat.youtube.api_key`, then restart `chat`.
 - `live chat is disabled for this broadcast` or `the broadcast has ended`: the source stops and does not retry. Start a new broadcast, set its URL and restart `chat`.
 - `this chat refuses the API key`: the key works for the lookup but not for this chat. Check the key's project and its restrictions.
 - `video ... was not found`: private, deleted or mistyped. Check the URL.
@@ -160,12 +184,12 @@ Work down the list:
 ### It only says canned lines
 
 - **Cause:** a mock backend is on. An isolated start of `cortex` (or `llm.provider: mock`) gives deterministic offline replies. The mode column says `mock`.
-- **Fix:** restart the unit without **Isolated** (see [Install for real](install/real-install.md)), and check that `llm.provider` in `config/config.yaml` names a real provider.
+- **Fix:** restart the unit without **Isolated** (see [Install for real](install/real-install.md)), and check that the `llm.provider` setting (Language model on the **Settings** screen) names a real provider.
 
 ### I changed a setting and nothing happened
 
 - **Cause:** services read their settings when they start.
-- **Fix:** restart the services that read them; the **Settings** screen offers to after a save, and [Starting and stopping](operate/start-stop.md) shows how. A credential saved on the **Settings** screen or in `secrets/secrets.yaml` applies the same way: restart the service that reads it. Changes to `.env` need a **Launch**.
+- **Fix:** restart the services that read them; the **Settings** screen names them after a save and offers to restart them, and [Starting and stopping](operate/start-stop.md) shows how. A credential saved on the **Settings** screen or with `mise run config:secret` applies the same way: restart the service that reads it. Changes to `.env` need a **Launch**.
 
 ### A reflex never fires
 
@@ -182,7 +206,7 @@ Work down the list:
 ### The Viewers screen asks for the token or says 401
 
 - **Cause:** this browser is locked. Viewer notes are personal data, so reading them needs the control token like every change does.
-- **Fix:** enter the `CONTROL_TOKEN` from `.env` in the Access dialog, or open the unlock link the dashboard printed (`mise run dashboard:unlock` prints a fresh one). See [Memory and viewer notes](tune/memory.md).
+- **Fix:** enter the control token from your password manager in the Access dialog, or open the unlock link the dashboard printed (`mise run dashboard:unlock` prints a fresh one). See [Memory and viewer notes](tune/memory.md).
 
 ### The memory service will not start after I changed the embedding model
 

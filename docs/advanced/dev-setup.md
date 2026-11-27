@@ -2,7 +2,7 @@
 title: Developer setup
 description: What a host needs (mise and the system prerequisites), the workspace layout, the build, and the Docker-free loop for working on one service at a time.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Developer setup
@@ -41,13 +41,15 @@ cohost is a pnpm workspace (`pnpm-workspace.yaml` lists `packages/*` and `servic
 | --- | --- |
 | `services/*` | One folder per service. Each is one `src/index.ts` that builds a `Bus` and runs on the shared runtime: `chat`, `eyes`, `ears`, `mouth`, `connector-discord`, `salience`, `affect`, `memory`, `cortex`, `tools`, `voice`, `avatar`, `dashboard` |
 | `packages/bus` | `@cohost/bus`: the typed bus client, the zod [event](../start/glossary.md#event) registry (`src/events.ts`) and the loader for the native addon |
-| `packages/config` | `@cohost/config`: the config schema (`src/schema.ts`), the loader and the settings editor |
+| `packages/config` | `@cohost/config`: the config schema (`src/schema.ts`), the projection loader, the settings editor and `src/units.ts` (what each unit may read) |
+| `packages/store` | `@cohost/store`: the [settings store](../start/glossary.md#settings-store), its keys, projections, credential delivery and the `config:*` tasks |
 | `packages/control` | `@cohost/control`: the service manifest, the [Compose](../start/glossary.md#docker-compose) runtime, the stack controller, the health tracker and the `cohostctl` command |
 | `packages/shared` | `@cohost/shared`: service start-up, shutdown, [heartbeats](../start/glossary.md#heartbeat), retry, the idle plan and the `control` and `inject.request` handlers every service shares |
 | `packages/llm`, `modules`, `working-memory` | The model backends, the [hook](../start/glossary.md#hook) runner and the rolling prompt window |
 | `packages/testing` | `@cohost/testing`: the test helpers, see [Unit-test helpers](testing/helpers.md) |
 | `crates/cohost-bus`, `crates/cohost-bus-node` | The [bus](../start/glossary.md#bus) client in Rust, and the thin napi wrapper that Node loads |
-| `config/` | `config.example.yaml`, `personality.example.md`, `expressions.example.yaml`; your own copies are git-ignored |
+| `config/` | `config.example.yaml`, `personality.example.md`, `expressions.example.yaml`: the seed of a new settings store and the documentation of every setting. Editing them changes nothing for a store that exists |
+| `data/` | Git-ignored: the settings store (`data/store/`), the projections (`data/projections/`), the logs and what services keep across restarts |
 | `scripts/` | The installer, the programs behind the developer tasks in `scripts/dev/` and the checks CI runs |
 | `examples/` | Runnable examples, such as the hook server in `examples/modules/`, each run through an `example:*` task |
 | `mise.toml` | The toolchains and every task |
@@ -82,13 +84,17 @@ The infrastructure runs in containers; the services run on your host and are reb
 
    This runs `docker compose up -d redis postgres ollama tts stt`, which starts the containers `redis`, `postgres`, `ollama`, `tts` and `stt`. Compose publishes them on `127.0.0.1` at the ports the services default to: Redis on 6379, Postgres on 5432, Ollama on 11434, the [TTS](../start/glossary.md#tts) server on 8880 and the [STT](../start/glossary.md#stt) server on 8000. The [Environment and ports](reference/env.md) page lists them all. `mise run infra:down` stops them.
 
-2. Create your `.env` and let the first run seed `config/`:
+2. Create your `.env`, the settings store and the control token:
 
    ```bash
    cp .env.example .env
+   mise run config:check
+   mise run config:token
    ```
 
-   The services read `.env` from the workspace root themselves, without overriding variables already set in your shell. The first service you start copies `config/config.example.yaml`, `personality.example.md` and `expressions.example.yaml` to `config.yaml`, `personality.md` and `expressions.yaml` (all git-ignored). Operator settings are literal keys in `config.yaml`. Credentials go only in `secrets/secrets.yaml`, which you copy from `config/secrets.example.yaml` (`./scripts/install.sh` does that for you); it is git-ignored too. Services you run on your machine read the whole `secrets/secrets.yaml`. Config is read from the `config/` and `secrets/` folders at the workspace root, found by walking up to `pnpm-workspace.yaml`, so it does not depend on the directory you start from. `CONFIG_DIR` moves `config/`, `COHOST_ENV_FILE` moves `.env` and `COHOST_SECRETS_FILE` moves `secrets/secrets.yaml`.
+   `.env` holds only non-secret host and Compose variables. Every setting, the personality, the emotion map and every credential live in the [settings store](../start/glossary.md#settings-store), one SQLite file at `data/store/cohost.db` (`COHOST_DATA_DIR` moves `data/`). The first program that opens it creates it, seeded from the committed `config/*.example.*` files, and creates the master key at `~/.config/cohost/master.key` (outside the checkout). On a terminal it prints the master key's text once: that is the recovery key, the only way to recover the stored credentials if the key file is lost, so save it in your password manager. `mise run config:check` prints `ok` once the store can be used. `mise run config:token` generates the control token, prints it once for your password manager, and keeps only its verifier in the store; the dashboard does not start without one. `./scripts/install.sh` does all three for you.
+
+   Change a setting on the dashboard's Settings screen, or from a shell with `mise run config:set -- <path> <value>`; set a credential with `mise run config:secret -- <path>`, which reads it without echo. The [Configuration](reference/config.md) page lists every setting and every `config:*` task.
 
 3. Run every service:
 
@@ -96,9 +102,9 @@ The infrastructure runs in containers; the services run on your host and are reb
    mise run dev
    ```
 
-   This is one `mise watch --restart` over every `dev:<service>` task, each of which runs its service's built `dist/index.js`. A saved change under a service's `src/` or any package's `src/` rebuilds what changed (`build:ts`, and `build:native` after a Rust change) and restarts the services.
+   This is one `mise watch --restart` over every `dev:<service>` task. Each runs its service through the unit runner (`packages/control/dist/run-unit.js`), which opens the settings store, writes the unit's projection (`data/projections/<unit>/settings.json`: the sections and documents the unit declares, no credential), starts the service's built `dist/index.js` with `CONFIG_DIR` pointed at that projection, and hands it its credentials on a pipe (`COHOST_CREDENTIALS_FD`), so a host-run service reads what its container would and never opens the store itself. A saved change under a service's `src/` or any package's `src/` rebuilds what changed (`build:ts`, and `build:native` after a Rust change) and restarts the services.
 
-   mise puts each task's name in front of its lines, so a log line reads `[dev:chat] 14:03:22.519 INFO  chat: joined channel channel=cocostream`, and the indented lines below an entry (the rest of a long message, an error's stack) carry the same prefix. Each service also writes its full log, one JSON line per entry, to `data/logs/<service>.log` in the checkout (`$COHOST_DATA_DIR/logs` when you set that variable). `logging.level: debug` in `config/config.yaml` shows more; `logging.terminal: json` prints the raw JSON lines instead.
+   mise puts each task's name in front of its lines, so a log line reads `[dev:chat] 14:03:22.519 INFO  chat: joined channel channel=cocostream`, and the indented lines below an entry (the rest of a long message, an error's stack) carry the same prefix. Each service also writes its full log, one JSON line per entry, to `data/logs/<service>.log` in the checkout (`$COHOST_DATA_DIR/logs` when you set that variable). Setting `logging.level` to `debug` shows more (`mise run config:set -- logging.level debug`); `logging.terminal` set to `json` prints the raw JSON lines instead. A setting applies at each service's next start, which under `mise watch` is the next restart.
 
 4. Run the dashboard on the host in a second terminal:
 
@@ -106,7 +112,7 @@ The infrastructure runs in containers; the services run on your host and are reb
    mise run dashboard
    ```
 
-   The [dashboard](../guide/operate/dashboard.md) is a host process. It builds itself, then prints the URL it listens on. Open <http://localhost:3000> (the port is `dashboard.port` in `config.yaml`).
+   The [dashboard](../guide/operate/dashboard.md) is a host process. It builds itself, then prints the URL it listens on. It also prints a one-time unlock link to its terminal (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`): open it to unlock that browser, or enter the control token when the page asks. The port is the setting `dashboard.port` (3000 by default).
 
 To work on one service, start only that one:
 
@@ -114,7 +120,7 @@ To work on one service, start only that one:
 mise watch --restart dev:salience
 ```
 
-`mise run dev:salience` starts it once, without watching. A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with `llm.provider: mock`, `brain.memory.store: memory` and `brain.memory.embedder: hash` in your `config/config.yaml` (or `COHOST_ISOLATION='{"LLM_PROVIDER":"mock","MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}'` in the shell) you can work on the brain with no model server and no database.
+`mise run dev:salience` starts it once, without watching. A service whose outside dependency is missing idles instead of exiting, so you can start any subset. Which backends can be replaced by stand-ins is on [One service on its own](testing/isolated.md); with the settings `llm.provider` set to `mock`, `brain.memory.store` to `memory` and `brain.memory.embedder` to `hash` (or `COHOST_ISOLATION='{"LLM_PROVIDER":"mock","MEMORY_STORE":"memory","MEMORY_EMBEDDER":"hash"}'` in the shell) you can work on the brain with no model server and no database.
 
 ::: aside
 `mise run dev` starts everything at once, including services you have no account for. They sulk in "degraded" and the rest carry on, which is more than I can say for most group projects.
@@ -122,7 +128,7 @@ mise watch --restart dev:salience
 
 ## Adding or changing a service
 
-Every service meets the same four obligations (the [module contract](https://github.com/CoderCoco-Studios/cohost/blob/main/docs/intent/module-contract/module-contract-design.md)): it is configurable from the dashboard, operable on its own, injectable with a test input, and built on the shared runtime. A service declares how it meets them in one entry of `packages/control/src/manifest.ts` and one of `packages/config/src/units.ts` (the settings it reads), and the dashboard and `cohostctl` read those entries. See [Ways to extend cohost](extend/index.md) for the routes that are supported.
+Every service meets the same four obligations (the [module contract](https://github.com/CoderCoco-Studios/cohost/blob/main/docs/intent/module-contract/module-contract-design.md)): it is configurable from the dashboard, operable on its own, injectable with a test input, and built on the shared runtime. A service declares how it meets them in one entry of `packages/control/src/manifest.ts` and one of `packages/config/src/units.ts`: the settings sections it reads (`config`), its credentials (`secrets`), the stored documents it reads (`documents`) and whether it gets a state key (`stateKey`). The projection and the credential delivery hold exactly what those lists name, and the dashboard and `cohostctl` read the same entries. See [Ways to extend cohost](extend/index.md) for the routes that are supported.
 
 ## Checks before you push
 

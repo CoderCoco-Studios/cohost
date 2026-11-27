@@ -13,12 +13,12 @@ convert a recording into the WAV ears reads without resampling.
 
 Each client reads `CONTROL_TOKEN` from its environment, derives the
 listener key from it and sends that key as its bearer, never the token
-itself; it exits 1 when the variable is empty or unset. Set it to the value
-in cohost's `.env`, then run a client from the checkout (a task runs in the
-repository root, so give the clip's path from there or an absolute one):
+itself; it exits 1 when the variable is empty or unset. Paste the token from
+your password manager at `read -rs` (never into `.env`), then run a client from
+the checkout, giving the clip's path from the repository root:
 
 ```sh
-export CONTROL_TOKEN=<the value in cohost's .env>
+read -rs CONTROL_TOKEN && export CONTROL_TOKEN
 mise run example:audio-send:py -- clip.wav
 mise run example:audio-send:ts -- clip.wav
 mise run example:audio-send:sh -- clip.wav

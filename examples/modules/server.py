@@ -11,12 +11,12 @@ Standard library only, so it runs anywhere:
 
 A copy outside the checkout runs as `python3 server.py`.
 
-Then in config/config.yaml (the co-host runs in Docker, so reach the host by name):
+Then point the hooks at it, on the dashboard's Settings screen or from a shell (the
+co-host runs in Docker, so reach the host by name):
 
-    brain:
-      salience: { module: { kind: http, url: "http://host.docker.internal:8900/salience" } }
-      affect:   { module: { kind: http, url: "http://host.docker.internal:8900/affect" } }
-      cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic" } }
+    mise run config:set -- brain.salience.module '{kind: http, url: "http://host.docker.internal:8900/salience"}'
+    mise run config:set -- brain.affect.module '{kind: http, url: "http://host.docker.internal:8900/affect"}'
+    mise run config:set -- brain.cortex.critic '{kind: http, url: "http://host.docker.internal:8900/critic"}'
 
 Any error or timeout makes the region fall back to its built-in rules, so a
 module can crash, be slow, or be redeployed mid-stream without breaking the show.

@@ -158,6 +158,7 @@ run = "scripts/compose-smoke.sh"
 [tasks.dashboard]
 description = "Build and start the dashboard on this machine (it brings up the stack)"
 depends = ["build:native", "build:ui"]
+raw = true
 run = [
   "mise run docs:build || echo 'mise run dashboard: the docs build failed (see above); starting the dashboard anyway' >&2",
   "tsc -b services/dashboard",
@@ -167,6 +168,7 @@ run = [
 [tasks."dashboard:unlock"]
 description = "Print a fresh unlock link for the running dashboard (the control token from CONTROL_TOKEN in this command's environment, else a hidden prompt)"
 depends = ["build:native"]
+raw = true
 run = ["tsc -b services/dashboard", "node services/dashboard/dist/unlock-link.js"]
 
 [tasks."dashboard:ui"]
@@ -179,103 +181,127 @@ run = "node_modules/.bin/vite --config ui/vite.config.ts"
 [tasks.cohostctl]
 description = "Run the cohostctl CLI (arguments after the task name)"
 depends = ["build:native", "install"]
+raw = true
 run = ["tsc -b packages/control", "node packages/control/dist/cli.js"]
 
 # ------------------------------------------------------------------------------------------ the settings store
 # One task per command of the store's entry point (settings-store STORE-TASK-001); arguments after `--` reach it:
 # `mise run config:set -- llm.temperature 0.7`. Each builds @cohost/store first.
+# Each is raw (deployment DEPLOY-TOOL-024): its commands get the terminal mise was started from, not a pipe read by line, so the
+# recovery key (printed to a terminal only, STORE-KEY-002) and the prompts without echo reach the owner. dashboard,
+# dashboard:unlock, deliver and cohostctl open the store too and are raw for the same reason.
+# @spec DEPLOY-TOOL-024
 # @spec STORE-TASK-001
 
 [tasks."config:get"]
 description = "Print the effective value of a setting (a credential prints set or not set)"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js get"]
 
 [tasks."config:set"]
 description = "Set one setting: config:set -- <path> <yaml value>"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js set"]
 
 [tasks."config:reset"]
 description = "Remove one setting so its default applies: config:reset -- <path>"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js reset"]
 
 [tasks."config:secret"]
 description = "Set a credential read without echo, or clear it: config:secret -- <path> [--clear]"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js secret"]
 
 [tasks."config:personality"]
 description = "Print the personality, or edit it in $EDITOR with --edit"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js personality"]
 
 [tasks."config:token"]
 description = "Set the control token: a generated one, or your own with --stdin"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js token"]
 
 [tasks."config:key"]
 description = "The master key: --show, --restore, --rotate or --confirm"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js key"]
 
 [tasks."config:reset-credentials"]
 description = "Delete every stored credential and generated key after a typed confirmation"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js reset-credentials"]
 
 [tasks."config:export"]
 description = "Export the settings as YAML: config:export -- [file] [--secrets]"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js export"]
 
 [tasks."config:import"]
 description = "Import an export, or parts (--settings, --personality, --expressions, --secrets); --dry-run writes nothing"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js import"]
 
 [tasks."config:backup"]
 description = "Take a backup of the settings store"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js backup"]
 
 [tasks."config:restore"]
 description = "Restore a backup into the settings store: config:restore -- <file>"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js restore"]
 
 [tasks."config:check"]
 description = "List every problem that stops the settings store's use"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js check"]
 
 [tasks."config:project"]
 description = "Write every unit's projection (no credentials) under data/projections/"
 depends = ["install"]
+raw = true
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js project"]
 
 [tasks.deliver]
 description = "Deliver credentials to every running unit that waits for them (runs cohostctl deliver)"
 depends = ["build:native", "install"]
+raw = true
 run = ["tsc -b packages/control", "node packages/control/dist/cli.js deliver"]
 
 # The memory one-shots run on the host through the unit runner as the memory unit: its projection and its credentials on a
 # pipe (settings-store STORE-DLV-007); after reflect, the runner applies the personality outbox (STORE-OUT-002).
+# The runner opens the settings store, so they are raw (DEPLOY-TOOL-024).
 [tasks.reflect]
 description = "Run the memory reflection pass once"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/reflect.js"
 
 [tasks.consolidate]
 description = "Run one memory consolidation pass"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/consolidate.js"
 
 [tasks.reembed]
 description = "Re-embed the memory store with the configured embedder"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/reembed.js"
 
 [tasks."infra:up"]

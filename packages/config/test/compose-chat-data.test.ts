@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { PRESENTATION } from "../src/presentation.js";
 
 type Mount = string | { type?: string; source?: string; target?: string; read_only?: boolean; bind?: { create_host_path?: boolean } };
 /** The long-syntax mount of a unit's projection, read-only at /app/config and never created by Compose (DEPLOY-COMPOSE-025). */
@@ -57,6 +58,14 @@ test("connector-discord waits for redis alone, publishes no port, mounts only it
 });
 
 // @spec DEPLOY-README-004
+test("the presentation help of connections.discord.token names the one bot and the Discord connector", () => {
+  const help = PRESENTATION.keys["connections.discord.token"]!.help;
+  assert.match(help, /one Discord bot/);
+  assert.match(help, /Discord connector/);
+  for (const w of ["Connect", "Speak", "Server Members"]) assert.ok(help.includes(w), w);
+});
+
+// @spec DEPLOY-README-004
 test("secrets.example.yaml, the credentials part of config:import, carries the Discord bot token as the one bot, and config.example.yaml its guild and channel", () => {
   const secrets = readFileSync(root("config/secrets.example.yaml"), "utf8");
   assert.match(secrets, /config:import -- --secrets/, "its header names the import it is the input of");
@@ -81,9 +90,10 @@ test("the Discord page describes ears, mouth and the Discord connector as separa
   assert.match(md, /\| `discord` \|[\s\S]*\| `ears` \|[\s\S]*\| `mouth` \|/);
   assert.match(md, /mouth\.outputs/);
   assert.match(md, /COMPOSE_PROFILES=discord,ears,mouth/);
-  assert.match(md, /`secrets\/secrets\.yaml`[\s\S]*?connections:\s+discord:\s+token:/);
-  assert.doesNotMatch(md, /DISCORD_TOKEN/);
-  assert.match(md, /connections:\s+discord:[\s\S]*?guild_id:[\s\S]*?voice_channel_id:/);
+  assert.match(md, /mise run config:secret -- connections\.discord\.token/, "the bot token is a credential set with config:secret or on the Settings screen");
+  assert.match(md, /Settings/);
+  assert.doesNotMatch(md, /secrets\.yaml|config\.yaml|DISCORD_TOKEN/);
+  assert.match(md, /`connections\.discord\.guild_id`[\s\S]*?`connections\.discord\.voice_channel_id`/);
   assert.match(md, /\*\*Connect\*\*/);
   assert.match(md, /Server Members/);
 });

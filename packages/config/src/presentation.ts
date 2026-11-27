@@ -438,7 +438,7 @@ const keys: Record<string, KeyPresentation> = {
   "connections.discord.enabled": { help: "When on, the Discord bot connects to your server's voice channel to hear people and speak. Off, the Discord connector stays idle and holds no connection." },
   "connections.discord.guild_id": { help: "The id of your Discord server (its \"guild\"), copied with Developer Mode on and written in quotes; a plain number would lose digits.", label: "Server id" },
   "connections.discord.voice_channel_id": { help: "The id of the voice channel the bot joins, copied with Developer Mode on and written in quotes.", label: "Voice channel id" },
-  "connections.discord.token": { help: "The Discord bot's token, from the Discord developer portal; the bot must be invited with Connect and Speak permissions and the Server Members intent enabled. It is kept encrypted in the settings store and is never shown again once saved.", label: "Bot token" },
+  "connections.discord.token": { help: "The token of the co-host's one Discord bot, used by the Discord connector, from the Discord developer portal; the bot must be invited with Connect and Speak permissions and the Server Members intent enabled. It is kept encrypted in the settings store and is never shown again once saved.", label: "Bot token" },
 
   // ---- dashboard
   "dashboard.port": { help: "The port of the dashboard's full surface: the page you are using and its controls, including Launch and Stop. It applies at the dashboard's next start, and the page's address then changes to the new port." },

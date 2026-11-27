@@ -73,6 +73,7 @@ Paths are relative to `docs/`; the URL is the path without `.md` under `/cohost/
 | Operate | Service health | `guide/operate/health.md` | Reading the Services screen: up, degraded, off, mock; the live state of each service when the dashboard serves the page |
 | Operate | Starting and stopping | `guide/operate/start-stop.md` | Launch, Stop, Rebuild, one service at a time, `cohostctl` |
 | Operate | After a stream | `guide/operate/after-stream.md` | The consolidation pass, reflection, editing what it learned |
+| Operate | Settings, backups and recovery | `guide/operate/settings.md` | Where settings and credentials live (the settings store, the master key outside the checkout), the recovery key, the control token, the unlock link, delivering credentials after a reboot, backups and restore, export and import, recovery mode's causes, and bringing in settings files from an older install once |
 | | Troubleshooting | `guide/troubleshooting.md` | Symptom → cause → fix, grouped by the step the reader was on |
 | | FAQ | `guide/faq.md` | Short answers that do not fit a step |
 

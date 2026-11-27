@@ -2,7 +2,7 @@
 title: Send audio to ears
 description: Feed a recorded clip to the ears service over HTTP from Python, TypeScript or curl, and convert a recording into the format ears reads.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Send audio to ears
@@ -13,27 +13,27 @@ You will send a clip of speech to the ears service from your own program and wat
 
 - A running `ears` service with its `http` [audio source](../../start/glossary.md#audio-source) turned on. [One service on its own](../testing/isolated.md) shows how to start a service with no accounts.
 - A clip: a WAV file. For anything else (MP3, M4A, Ogg), the converters below turn it into a WAV.
-- The `CONTROL_TOKEN` from cohost's `.env`, set in the shell you run a client in. ears checks a key derived from it on every clip, on loopback too.
+- cohost's [control token](../../start/glossary.md#control-token), from your password manager, exported as `CONTROL_TOKEN` in the shell you run a client in (never written to `.env`). ears checks a key derived from it on every clip, on loopback too.
 - A checkout of cohost with mise: each client runs from it through an `example:audio-send:*` task, with the Python and Node from `mise.toml`. A copy of a client outside the checkout needs Python 3 (standard library only), Node 22.18 or later, or `curl` and `openssl`. The TypeScript client runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
 - For the converters: `sox` or `ffmpeg`, whichever you already have.
 
 ## Turn on the `http` source
 
-The source is a setting of `ears` in `config/config.yaml`. These lines turn it on and name where it listens:
+The source is a setting of `ears`. Set it on the dashboard's Settings screen (section `ears`), or with these commands, which turn it on and name where it listens:
 
-```yaml
-ears:
-  sources: [http]
-  http:
-    host: 127.0.0.1
-    port: 8765
+```bash
+mise run config:set -- ears.sources '[http]'
+mise run config:set -- ears.http.host 127.0.0.1
+mise run config:set -- ears.http.port 8765
 ```
 
-With `stt_engine: stub` the clip is "transcribed" by a stand-in, so nothing else needs to be running. Restart `ears` after the change. In [Docker](../../start/glossary.md#docker), bind `host` to `0.0.0.0` and publish the port yourself, since the default is local only. ears refuses any clip that does not carry the listener key: `Authorization: Bearer <key>`, where the key is HMAC-SHA256 keyed with the trimmed `CONTROL_TOKEN` of the label `cohost/ears-listener/v1`, written as 64 lowercase hex digits. The control plane derives the key and hands it to `ears` when it starts it, so start `ears` through the dashboard or `cohostctl` (or `mise run dev`, which projects the secrets first); ears itself never sees the token. Every client below reads `CONTROL_TOKEN` from the shell it runs in, derives the key and sends it, never the token itself, and exits 1 with a message naming `CONTROL_TOKEN` when the variable is empty or unset:
+With `stt_engine: stub` the clip is "transcribed" by a stand-in, so nothing else needs to be running. Restart `ears` after the change. In [Docker](../../start/glossary.md#docker), bind `host` to `0.0.0.0` and publish the port yourself, since the default is local only. ears refuses any clip that does not carry the listener key: `Authorization: Bearer <key>`, where the key is HMAC-SHA256 keyed with the trimmed control token of the label `cohost/ears-listener/v1`, written as 64 lowercase hex digits. The settings store derives the key whenever the token is set, and the control plane delivers it to `ears` after it starts it, so start `ears` through the dashboard or `cohostctl` (or `mise run dev:ears`, whose unit runner passes it on a pipe); ears itself never sees the token. Every client below reads `CONTROL_TOKEN` from the shell it runs in, derives the key and sends it, never the token itself, and exits 1 with a message naming `CONTROL_TOKEN` when the variable is empty or unset:
 
 ```sh
-export CONTROL_TOKEN=<the value in cohost's .env>
+export CONTROL_TOKEN=<the control token from your password manager>
 ```
+
+To keep the token off the screen and out of the shell's history, run `read -rs CONTROL_TOKEN` instead, paste it at the silent prompt, then `export CONTROL_TOKEN`.
 
 ## What a request looks like
 
@@ -123,8 +123,8 @@ The tests run each converter on a generated clip. `sox` and `ffmpeg` do not come
 ## If it didn't
 
 - **The client says it cannot connect.** `ears` is not running, `http` is not in `ears.sources`, or the port differs. Check the address, and that `ears` was restarted after the change.
-- **The client exits 1 naming `CONTROL_TOKEN`.** The variable is empty or unset in your shell. Export it with the value in cohost's `.env` before running the client.
-- **401 with a message about a bearer token.** The key your client derived does not match the one ears was given. Check that `CONTROL_TOKEN` in your shell is the whole value from `.env`. If ears' health shows `deps.http` down with the listener key missing, ears was started without one: start it through the dashboard or `cohostctl`. After `CONTROL_TOKEN` changes, press **Restart all** so ears gets the new key.
+- **The client exits 1 naming `CONTROL_TOKEN`.** The variable is empty or unset in your shell. Export it with the control token from your password manager before running the client.
+- **401 with a message about a bearer token.** The key your client derived does not match the one ears was given. Check that `CONTROL_TOKEN` in your shell is the whole control token, as `mise run config:token` printed it. If ears' health shows `deps.http` down with the listener key missing, ears was started without one: start it through the dashboard or `cohostctl`. After the token is set again, press **Restart all** so ears gets the new key.
 - **400 with `unknown source`.** The `source` you gave is not an enabled connector source. Leave `--source` out for plain `http`.
 - **415, or 400 about the audio.** The file is not a 16-bit WAV. Convert it with one of the scripts above.
 - **`{"heard":false,"reason":"too-short"}`.** The clip holds less speech than ears will transcribe. Send a longer one.

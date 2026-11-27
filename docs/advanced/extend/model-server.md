@@ -2,7 +2,7 @@
 title: Your own model server
 description: What cohost asks of an OpenAI-compatible model server, and how to check a connection against a stub server before you point the co-host at a real one.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Your own model server
@@ -11,7 +11,7 @@ You will have a [language model](../../start/glossary.md#llm) server that cohost
 
 ## What you need
 
-- A working checkout of cohost with mise, or at least its `config/config.yaml`. [Developer setup](../dev-setup.md) covers it.
+- A working checkout of cohost with mise and its settings store. [Developer setup](../dev-setup.md) covers it.
 - Python 3 for `stub.py`, or Node 22.18 or later for `stub.ts`, both of which the checkout's `mise.toml` provides through `mise install`. The TypeScript file runs with `node` on Node 22.18 or later, which strips the types, so there is nothing to install.
 - `curl`, which `try.sh` uses.
 - For a real server: its own documentation. cohost only needs its address, so this page gives no launch commands for third-party servers. See the documentation of [vLLM](https://docs.vllm.ai/), [llama.cpp's server](https://github.com/ggml-org/llama.cpp/tree/master/tools/server) or [OpenRouter](https://openrouter.ai/docs) for theirs.
@@ -83,17 +83,15 @@ The reply is in the `[emotion] text` form, so a whole co-host pointed at the stu
 
 ## Point cohost at it
 
-The settings are these three, shown here with the stub's address. Merge them into `config/config.yaml`, which keeps every other `llm` key as it was:
+The settings are these three, shown here with the stub's address. Set them on the dashboard's Settings screen (section `llm`), or from a shell; every other `llm` setting stays as it was:
 
-```yaml
-llm:
-  provider: openai
-  model: stub
-  openai:
-    base_url: "http://127.0.0.1:8901/v1"
+```bash
+mise run config:set -- llm.openai.base_url http://127.0.0.1:8901/v1
+mise run config:set -- llm.model stub
+mise run config:set -- llm.provider openai
 ```
 
-`model` is the name the server knows its model by, and the stub accepts any. A real server wants its own model id there. When the server needs a key, put it in `secrets/secrets.yaml` as `llm.openai.api_key`, as [Choose a model](../../guide/tune/model.md) describes. From inside a [container](../../start/glossary.md#container) the services cannot reach your machine as `127.0.0.1`; use `host.docker.internal` in the address instead. Then restart the services that read the `llm` section: `cortex`, `memory`, `salience` and `affect`, and `eyes` when `vision.provider` is `openai`.
+`model` is the name the server knows its model by, and the stub accepts any. A real server wants its own model id there. When the server needs a key, set the credential `llm.openai.api_key` on the Settings screen or with `mise run config:secret -- llm.openai.api_key`, as [Choose a model](../../guide/tune/model.md) describes. From inside a [container](../../start/glossary.md#container) the services cannot reach your machine as `127.0.0.1`; use `host.docker.internal` in the address instead. Then restart the services that read the `llm` section: `cortex`, `memory`, `salience` and `affect`, and `eyes` when `vision.provider` is `openai`.
 
 ## How you know it worked
 

@@ -39,11 +39,11 @@ No. Discord is one way to carry voice in and out. For a stream you can use the d
 
 ## Can I give it a different voice?
 
-Yes. Set `voice.voice` in `config/config.yaml` to another voice name and restart the voice service; the speed is `voice.speed`. Everything about its character, as opposed to its sound, lives in the [personality file](tune/personality.md).
+Yes. Set `voice.voice` to another voice name on the **Settings** screen (Voice), or with `mise run config:set -- voice.voice <name>`, and restart the voice service; the speed is `voice.speed`. Everything about its character, as opposed to its sound, lives in the [personality](tune/personality.md).
 
 ## Can I rename it, or change what it calls me?
 
-Yes: `cohost.name` and `cohost.streamer` in `config/config.yaml`.
+Yes: the `cohost.name` and `cohost.streamer` settings, in the Identity section of the **Settings** screen.
 
 ## Does it remember viewers between streams?
 
@@ -63,14 +63,17 @@ Each reply passes through hearing, deciding, writing and speaking, and the writi
 
 ## Is it safe to open the dashboard to other computers?
 
-Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. Either listener answers only requests that address it by IP address, `localhost` or a name you list in `dashboard.allowed_hosts`. If you open the full dashboard to the network, `CONTROL_TOKEN` guards it as it always does, and the token travels over plain HTTP, so do it only on a network you trust. To reach the dashboard from another machine, set `DASHBOARD_HOST`; never put a port forward or a proxy in front of the dashboard's port on your own PC, because that makes every machine that reaches it look local to the dashboard. An `ssh -L` tunnel opened from your own machine is fine.
+Only the sink page (the audio for a second PC's OBS) listens on the network, on `dashboard.lan_port` (3001 by default). The full dashboard listens on your own PC unless you change `DASHBOARD_HOST`. Either listener answers only requests that address it by IP address, `localhost` or a name you list in `dashboard.allowed_hosts`. If you open the full dashboard to the network, the [control token](../start/glossary.md#control-token) guards it as it always does, and the token travels over plain HTTP, so do it only on a network you trust. To reach the dashboard from another machine, set `DASHBOARD_HOST`; never put a port forward or a proxy in front of the dashboard's port on your own PC, because that makes every machine that reaches it look local to the dashboard. An `ssh -L` tunnel opened from your own machine is fine.
 
 ## Where are my files?
 
-- `config/config.yaml`, `config/personality.md` and `config/expressions.yaml`: your settings, personality and avatar expressions. Git ignores them.
-- `secrets/secrets.yaml`: your credentials (tokens, API keys, the OBS password). Git ignores it. Never share it.
-- `.env`: the dashboard's access tokens and a few per-machine settings. Never share it.
-- `data/`: files the co-host must remember between runs, such as refreshed Twitch tokens. `COHOST_DATA_DIR` moves it.
+- `data/store/cohost.db`: the [settings store](../start/glossary.md#settings-store), one database file with your settings, personality, avatar expressions and credentials (the credentials encrypted). Git ignores it. Change it on the **Settings** screen or with the `mise run config:*` commands, never by hand.
+- `~/.config/cohost/master.key`: the [master key](../start/glossary.md#master-key) that encrypts those credentials, kept in your home folder, outside the checkout. Never share it; its text is the [recovery key](../start/glossary.md#recovery-key) you saved when it was made.
+- `data/store/backups/`: the store's automatic backups, the ten newest. They hold credentials only encrypted, so they need the master key.
+- `.env`: a few per-machine settings, such as which optional services to run. It holds no password or key.
+- `data/`: everything else the co-host must remember between runs, such as refreshed Twitch tokens (encrypted) and the logs. `COHOST_DATA_DIR` moves it.
+
+[Settings, backups and recovery](operate/settings.md) covers backups, moving to a new machine and settings files from an older install.
 
 ## What has been tested against the real services?
 

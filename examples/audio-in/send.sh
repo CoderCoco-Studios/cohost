@@ -1,6 +1,6 @@
 #!/bin/sh
 # Send one WAV clip to cohost's ears `http` source with curl, print the reply, and exit 0 only on a 200.
-#   CONTROL_TOKEN=<the value in cohost's .env> mise run example:audio-send:sh -- <file> [<url>]
+#   CONTROL_TOKEN=<cohost's control token> mise run example:audio-send:sh -- <file> [<url>]
 #   (default url http://127.0.0.1:8765/audio)
 # The listener key is derived from CONTROL_TOKEN with openssl; the token itself is never sent. `openssl dgst -hmac` takes the
 # token as a command-line argument, so another user of this machine can read it in the process list while openssl runs; the
@@ -16,7 +16,7 @@ url="${2:-http://127.0.0.1:8765/audio}"
 # The listener key: HMAC-SHA256 keyed with the trimmed CONTROL_TOKEN of the label cohost/ears-listener/v1, as hex.
 token="$(printf '%s' "${CONTROL_TOKEN:-}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
 if [ -z "$token" ]; then
-  echo "send.sh: set CONTROL_TOKEN to the value in cohost's .env" >&2
+  echo "send.sh: set CONTROL_TOKEN to cohost's control token (from your password manager)" >&2
   exit 1
 fi
 key="$(printf '%s' "cohost/ears-listener/v1" | openssl dgst -sha256 -hmac "$token" | sed 's/^.*= //')" || exit 1

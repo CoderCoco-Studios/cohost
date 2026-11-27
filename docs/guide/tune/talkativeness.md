@@ -2,7 +2,7 @@
 title: When it talks
 description: Control how often the co-host speaks up, when it stays quiet, when it chimes in unprompted, and how to give it instant canned reactions.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # When the co-host talks
@@ -42,7 +42,7 @@ With early reply on (`ears.early.enabled`) and `trigger_on_speech` on, salience 
 
 ## Change the dials
 
-All of these live under `brain.salience` in `config/config.yaml`. The dashboard's **Settings** screen edits the same file: pick the section, change a value, press **Check**, then **Save**. It keeps your comments and never shows a saved secret. Settings apply when the services that read them restart, and after a save the page offers to restart them.
+All of these live under `brain.salience`, in the **Salience** section of the dashboard's **Settings** screen: change a value, press **Check**, then **Save**. From a terminal, `mise run config:set -- brain.salience.speak_threshold 0.8` sets one (see [Changing a setting](../operate/settings.md#changing-a-setting)). Settings apply when the services that read them restart, and after a save the page offers to restart them.
 
 | You want | Change |
 | --- | --- |

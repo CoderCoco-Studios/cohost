@@ -118,7 +118,7 @@ Live audio cannot be paused, so the policy is to bound memory and to lose the ol
 
 ## Discord connector
 
-`services/connector-discord` is the Discord connector. It reads `connections.discord.token` (the one Discord credential in the stack, a key of `secrets.yaml`) and the rest of the `connections.discord` config section, and registers as connector `discord` serving source `discord` and sink `discord`.
+`services/connector-discord` is the Discord connector. It reads `connections.discord.token` (the one Discord credential in the stack, set on the dashboard's Settings screen or with `mise run config:secret` and delivered to the connector in memory) and the rest of the `connections.discord` config section, and registers as connector `discord` serving source `discord` and sink `discord`.
 
 1. **Login and intents.** `Guilds`, `GuildVoiceStates` and `GuildMembers` (the privileged Server Members intent, for display names). A failed login exits 1; a missing token idles `degraded` with `connections.discord.token is not set`, through the shared idle plan, and registers nothing; a disabled connector (`connections.discord.enabled` false) idles `off`, ready, and registers nothing.
 2. **One voice connection.** On the client's `ready` the connector joins `connections.discord.voice_channel_id` of `connections.discord.guild_id` through the shared Discord voice session, **not self-deafened and not self-muted**: the same connection must hear the channel (ears) and speak into it (mouth), and a deafened connection receives no audio. This is the voice-state setting that lets one bot do both. The bot permissions are Connect and Speak.

@@ -58,7 +58,7 @@ Environment and config read by ears:
 | config | `ears.vad.engine` (`silero`), `ears.vad.threshold` (0.5), `ears.max_utterance_ms` (15000) | utterance endpointing (EARS-VAD-*) |
 | config | `ears.partials` (`off`), `ears.partial_step_ms` (1000), `ears.stt_gpu` (false) | partial transcripts (EARS-PART-*) |
 | config | `ears.early.enabled` (false), `ears.early.after_ms` (250), `ears.early.max_per_utterance` (2) | early transcripts ([Early transcripts](#early-transcripts)) |
-| config | `ears.stt_fallback_engine` (`speaches`), `ears.stt_timeout_ms` (20000), `ears.max_stt_sessions` (2), `ears.openai.{base_url, api_key}`, `ears.nemotron.{url, api_key}`, `ears.kyutai.{url, api_key, end_of_turn, end_of_turn_threshold}` | the STT engines ([STT engines](#stt-engines)); the keys are secrets in `secrets.yaml` |
+| config | `ears.stt_fallback_engine` (`speaches`), `ears.stt_timeout_ms` (20000), `ears.max_stt_sessions` (2), `ears.openai.{base_url, api_key}`, `ears.nemotron.{url, api_key}`, `ears.kyutai.{url, api_key, end_of_turn, end_of_turn_threshold}` | the STT engines ([STT engines](#stt-engines)); the `api_key` keys are credentials, held in the settings store and delivered to ears in memory |
 | config | `ears.echo_suppress_sources` (`[desktop]`), `ears.echo_tail_ms` (1500) | the echo gate (EARS-ECHO-*) |
 | config | `ears.sources`, `ears.stt_engine` (`speaches` default, `openai`, `nemotron`, `kyutai` or `stub`), `ears.silence_ms` (700), `ears.min_speech_ms` (400), `ears.stt_model` (`Systran/faster-whisper-small`; the model name `speaches` and `openai` send), `ears.drop_phrases` (default empty) | `packages/config/src/schema.ts` |
 

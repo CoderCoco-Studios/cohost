@@ -167,7 +167,7 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
     assert.match(secrets, /# mine/);
     assert.match(secrets, /api_key: "keep"/);
     assert.doesNotMatch(secrets, /\[a\]/);
-    const nothing = await post(sec, "reset", { etag: etagOf(EXAMPLE), path: "cohost.name" });
+    const nothing = await post(sec, "reset", { etag: etagOf(EXAMPLE), path: "cohost.name" }, { authorization: "Bearer tok" });
     assert.ok(nothing.status === 400 || nothing.status === 200);
   } finally { await sec.close(); }
 });

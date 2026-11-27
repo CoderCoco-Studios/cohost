@@ -209,7 +209,7 @@ test("as: tool never remembers and never carries chat metadata: remember true, u
 });
 
 // @spec DASH-INJ-011, DASH-CTRL-001
-test("as: tool is gated in both control modes: 401 with www-authenticate without the token, 403 when no token is configured, and the chat injection beside it stays open with control off", async () => {
+test("as: tool is gated in both control modes: 401 with www-authenticate without the token, 403 when no token is configured, and the chat injection beside it stays open only with no token configured", async () => {
   const on = await boot({ control: true });
   const r = await on.text(tool, {});
   assert.equal(r.status, 401);
@@ -221,7 +221,8 @@ test("as: tool is gated in both control modes: 401 with www-authenticate without
   assert.equal((await off.text(tool, {})).status, 401, "control off, token configured");
   assert.equal((await off.text(tool, off.bearer("wrong"))).status, 401);
   assert.equal(off.bus.published.length, 0);
-  assert.equal((await off.text({ level: "service", text: "hi" }, {})).status, 202, "chat-level service injection is not gated with control off");
+  assert.equal((await off.text({ level: "service", text: "hi" }, {})).status, 401, "a configured token gates every injection, control off too");
+  assert.equal((await off.text({ level: "service", text: "hi" })).status, 202);
   assert.equal((await off.text(tool)).status, 202, "the right token works with control off");
   assert.deepEqual(off.bus.of("inject.request").map((e) => e.target), ["chat", "tools"]);
 
@@ -254,13 +255,17 @@ test("as: tool is for the tools unit alone: refused 409 while tools is down, and
   assert.equal((await chatDown.text(tool)).status, 202);
 });
 
-// @spec DASH-CTRL-001
-test("with control off the token-required list includes POST /tools/answer and as: tool, while the chat and bus injections and /control stay open", async () => {
+// @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-011
+test("with control off and a token configured every mutation needs it: the answer, as: tool, the chat and bus injections; with no token configured only the always-gated ones refuse", async () => {
   const t = await boot({ token: TOKEN });
   assert.equal((await t.answer({ id: "a", allow: true }, {})).status, 401);
   assert.equal((await t.text(tool, {})).status, 401);
-  assert.equal((await t.text({ level: "bus", text: "hi" }, {})).status, 202);
-  assert.equal((await t.text({ level: "service", text: "hi" }, {})).status, 202);
+  assert.equal((await t.text({ level: "bus", text: "hi" }, {})).status, 401);
+  assert.equal((await t.text({ level: "service", text: "hi" }, {})).status, 401);
+  assert.equal((await t.text({ level: "service", text: "hi" })).status, 202, "with the token");
+  const none = await boot({ token: null });
+  assert.equal((await none.answer({ id: "a", allow: true }, {})).status, 403);
+  assert.equal((await none.text({ level: "bus", text: "hi" }, {})).status, 202, "nothing to check against");
 });
 
 // @spec DASH-TOOL-001

@@ -376,6 +376,21 @@ test("a browser unlocked by the unlock link shows the control token as Unlocked 
   assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Locked/);
 });
 
+// @spec DASH-ACC-007, DASH-ACC-008, DASH-UNL-008
+test("Lock in a browser the unlock link unlocked sends POST /unlock/forget and the panel shows Locked", async () => {
+  const user = userEvent.setup();
+  const app = makeApp();
+  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  app.fetch.on("POST /unlock/forget", { status: 204 });
+  mount(app);
+  act(() => app.rt.access.openPanel());
+  const group = () => within(dlg()).getByRole("group", { name: "Control token" });
+  await within(group()).findByText("Unlocked (this browser)");
+  await user.click(within(group()).getByRole("button", { name: /Lock/ }));
+  await within(group()).findByText("Locked");
+  assert.equal(app.fetch.callsTo("POST /unlock/forget").length, 1);
+});
+
 // @spec DASH-ACC-003
 test("the control token's dialog points at the unlock link printed in the terminal", async () => {
   const { app } = mount();

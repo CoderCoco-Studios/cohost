@@ -18,10 +18,16 @@ function TokenRow({ kind }: { kind: TokenKind }) {
   const api = useApi();
   const [changing, setChanging] = useState(false);
   const t = state[kind];
+  const session = kind === "control" && state.unlocked;
+  // Lock forgets a held token and, in a browser the unlock link unlocked, ends its session cookie too (DASH-ACC-007, DASH-UNL-008).
+  const lock = async (): Promise<void> => {
+    access.lock(kind);
+    if (session && (await api.post("/unlock/forget")).ok) access.markUnlocked(false);
+  };
   const label = TOKEN_LABEL[kind];
   return (
     <div role="group" aria-label={label} className="token-row">
-      <div className="row"><strong>{label}</strong><span className={`tag ${(t.present || (kind === "control" && state.unlocked)) && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t, kind === "control" && state.unlocked)}</span></div>
+      <div className="row"><strong>{label}</strong><span className={`tag ${(t.present || session) && !t.notSetUp ? "tag-set" : ""}`}>{stateText(t, session)}</span></div>
       <p className="help">{UNLOCKS[kind]}</p>
       {kind === "viewers" && t.notSetUp && !changing ? (
         <>
@@ -36,7 +42,7 @@ function TokenRow({ kind }: { kind: TokenKind }) {
       ) : (
         <div className="row">
           <Button onClick={() => setChanging(true)}>Change token</Button>
-          <Button variant="danger" onClick={() => access.lock(kind)} disabled={!t.present}>Lock</Button>
+          <Button variant="danger" onClick={() => void lock()} disabled={!t.present && !session}>Lock</Button>
         </div>
       )}
     </div>

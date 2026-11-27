@@ -42,24 +42,29 @@ const listen = async (h: http.RequestListener): Promise<number> => {
 /** The cookie a 303 from `GET /unlock` sets, as a `Cookie` header value. */
 const cookieOf = (r: Res): string => (r.headers["set-cookie"]?.[0] ?? "").split(";")[0]!;
 
-/** The normal dashboard with control on and `token` configured, on loopback, with its unlock nonces exposed. */
-async function normal(token: string | null = TOKEN) {
+/**
+ * The normal dashboard on loopback with `token` configured (control on unless `controlOff`), with its unlock nonces and log
+ * exposed.
+ */
+async function normal(token: string | null = TOKEN, o: { controlOff?: boolean; links?: UnlockLinks } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cohost-unlock-"));
   const configFile = join(dir, "config.yaml");
   const secretsFile = join(dir, "secrets.yaml");
   writeFileSync(configFile, EXAMPLE);
   const bus = new FakeBus();
-  const links = new UnlockLinks();
+  const links = o.links ?? new UnlockLinks();
+  const rec = recordingLog();
   const snap: StackSnapshot = { state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [] };
   const handler = createDashboardHandler({
-    bus, log: recordingLog().log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
     loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
     stack: { snapshot: () => snap } as unknown as StackService,
     configFile: () => configFile, secretsFile: () => secretsFile, uiDir: join(dir, "no-ui"), docsDir: join(dir, "no-docs"),
     unlock: links,
-    ...(token ? { controlToken: token, control: { token, runtime: "compose", advanced: false, controller: {} as never } } : {}),
+    ...(token ? { controlToken: token } : {}),
+    ...(token && !o.controlOff ? { control: { token, runtime: "compose", advanced: false, controller: {} as never } } : {}),
   });
-  const port = await listen(guardFullSurface(handler, { loopback: true, controlEnabled: !!token }));
+  const port = await listen(guardFullSurface(handler, { loopback: true, controlEnabled: !!token && !o.controlOff }));
   const host = `127.0.0.1:${port}`;
   const same = { origin: `http://${host}` };
   const unlock = async (): Promise<string> => {
@@ -67,7 +72,7 @@ async function normal(token: string | null = TOKEN) {
     assert.equal(r.status, 303);
     return cookieOf(r);
   };
-  return { port, host, same, links, bus, unlock, secrets: () => { try { return readFileSync(secretsFile, "utf8"); } catch { return ""; } } };
+  return { port, host, same, links, bus, rec, unlock, secrets: () => { try { return readFileSync(secretsFile, "utf8"); } catch { return ""; } } };
 }
 
 // @spec DASH-UNL-002
@@ -110,7 +115,7 @@ test("the terminal line names the bound address, 127.0.0.1 for an unspecified on
 });
 
 // @spec DASH-UNL-003, DASH-UNL-004
-test("GET /unlock consumes the nonce and sets the session cookie with HttpOnly, SameSite=Strict, Path=/ and a long Max-Age, then redirects to /; a used or bad nonce is a plain page with no cookie", async () => {
+test("GET /unlock consumes the nonce and sets the session cookie with HttpOnly, SameSite=Strict, Path=/ and a 90-day Max-Age, then redirects to /; a used or bad nonce is a plain page with no cookie", async () => {
   const t = await normal();
   const n = t.links.issue();
   const ok = await call(t.port, "GET", `/unlock?n=${n}`);
@@ -119,7 +124,7 @@ test("GET /unlock consumes the nonce and sets the session cookie with HttpOnly, 
   assert.equal(ok.headers["cache-control"], "no-store");
   assert.equal(ok.headers["referrer-policy"], "no-referrer");
   const cookie = String(ok.headers["set-cookie"]?.[0]);
-  assert.match(cookie, new RegExp(`^${SESSION_COOKIE}=[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+; HttpOnly; SameSite=Strict; Path=/; Max-Age=34560000$`));
+  assert.match(cookie, new RegExp(`^${SESSION_COOKIE}=[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+; HttpOnly; SameSite=Strict; Path=/; Max-Age=7776000$`));
   assert.doesNotMatch(cookie, /Secure/);
   for (const path of [`/unlock?n=${n}`, "/unlock?n=made-up", "/unlock"]) {
     const bad = await call(t.port, "GET", path);
@@ -343,4 +348,61 @@ test("runRecovery on DASHBOARD_HOST=0.0.0.0 with control on: the token gates res
   assert.equal(fixed.status, 200, fixed.text);
   assert.equal((JSON.parse(fixed.text) as { valid: boolean }).valid, true);
   assert.equal(await running, true, "valid: recovery mode ends");
+});
+
+// @spec DASH-UNL-008, DASH-ACC-007
+test("POST /unlock/forget expires the cookie with no token, behind the Origin guard", async () => {
+  const t = await normal();
+  const r = await call(t.port, "POST", "/unlock/forget", { ...t.same });
+  assert.equal(r.status, 204);
+  assert.equal(r.headers["cache-control"], "no-store");
+  assert.equal(String(r.headers["set-cookie"]?.[0]), `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+  assert.equal((await call(t.port, "POST", "/unlock/forget", { origin: "http://evil.example" })).status, 403, "another site cannot send it");
+  assert.equal((await call(t.port, "POST", "/unlock/forget")).status, 204, "a client without an Origin may drop its own cookie");
+});
+
+// @spec DASH-UNL-006, DASH-UNL-001
+test("POST /unlock/link builds its url from the bound address and port once they are known, whatever Host the request names", async () => {
+  const links = new UnlockLinks();
+  links.base = unlockBase("0.0.0.0", 4321);
+  const t = await normal(TOKEN, { links });
+  const r = await call(t.port, "POST", "/unlock/link", { authorization: `Bearer ${TOKEN}`, host: `localhost:${t.port}` });
+  assert.equal(r.status, 200);
+  assert.match((JSON.parse(r.text) as { url: string }).url, /^http:\/\/127\.0\.0\.1:4321\/unlock\?n=[A-Za-z0-9_-]{43}$/);
+});
+
+// @spec DASH-UNL-002, DASH-HTTP-004
+test("a request that fails logs its path, never its query string: a throwing /unlock?n= leaves no nonce in the log", async () => {
+  class Throwing extends UnlockLinks { override consume(): boolean { throw new Error("boom"); } }
+  const t = await normal(TOKEN, { links: new Throwing() });
+  const nonce = "SECRET-NONCE-1234567890";
+  const r = await call(t.port, "GET", `/unlock?n=${nonce}`);
+  assert.equal(r.status, 500);
+  const logged = JSON.stringify(t.rec.lines, (_k, v: unknown) => (v instanceof Error ? { message: v.message } : v));
+  assert.match(logged, /request failed/);
+  assert.match(logged, /"path":"\/unlock"/);
+  assert.ok(!logged.includes(nonce), logged);
+});
+
+// @spec DASH-CTRL-004, DASH-CTRL-011, DASH-CTRL-001
+test("with a token configured and control off, the routes control-off once left open need the token or a session cookie", async () => {
+  const t = await normal(TOKEN, { controlOff: true });
+  for (const [method, path, body] of [["POST", "/control", { cmd: "mute" }], ["PUT", "/personality", "x"], ["POST", "/mouth/routing", { outputs: { obs: { enabled: true } } }], ["POST", "/inject/text", { level: "bus", text: "hi" }]] as const) {
+    assert.equal((await call(t.port, method, path, {}, body)).status, 401, `${method} ${path}`);
+  }
+  assert.equal(t.bus.published.length, 0);
+  assert.equal((await call(t.port, "POST", "/stack/launch", {})).status, 404, "control off: the stack routes stay absent");
+  const cookie = await t.unlock();
+  assert.equal((await call(t.port, "POST", "/control", { cookie, ...t.same }, { cmd: "mute" })).status, 204);
+  assert.equal((await call(t.port, "POST", "/control", { authorization: `Bearer ${TOKEN}` }, { cmd: "unmute" })).status, 204);
+  const open = await normal(null);
+  assert.equal((await call(open.port, "POST", "/control", {}, { cmd: "mute" })).status, 204, "no token configured: nothing to check against");
+});
+
+// @spec DASH-RCV-003
+test("recovery with a token configured and control off: a set needs the token or the cookie; the loopback exemptions still hold", async () => {
+  const r = await recovery({ controlEnabled: false, loopback: true });
+  const s = await r.state();
+  assert.equal((await call(r.port, "POST", "/recovery/set", {}, { etag: s.etag, path: "cohost.name", value: "Coco" })).status, 401);
+  assert.equal((await call(r.port, "POST", "/recovery/fallback", {}, { etag: s.etag, path: "cohost.name" })).status, 200);
 });

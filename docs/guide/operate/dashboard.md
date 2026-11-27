@@ -60,7 +60,7 @@ Anything that changes something needs your control token, or a browser unlocked 
 
 With a `CONTROL_TOKEN` set, `mise run dashboard` prints one line to its terminal when it starts: `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`. Open that link in the browser you use for the dashboard. It works once and only for 10 minutes, and it leaves the browser unlocked: every action that needs the control token works there without the token being pasted, saving secrets and answering tool confirmations included. The link is printed only in the terminal, never in `data/logs/dashboard.log`.
 
-The browser stays unlocked for 400 days, through dashboard restarts and config recovery, until you change `CONTROL_TOKEN` in `.env` (which locks every unlocked browser) or clear the browser's cookies for the dashboard. For another browser, or after the link expired, run `mise run dashboard:unlock` while the dashboard runs: it prints a fresh link. A link that is used, expired or from an earlier start opens a page that says so and how to get a new one.
+The browser stays unlocked for 90 days, through dashboard restarts and config recovery, until you press **Lock** in its Access panel, change `CONTROL_TOKEN` in `.env` (which locks every unlocked browser) or clear the browser's cookies for the dashboard. For another browser, or after the link expired, run `mise run dashboard:unlock` while the dashboard runs: it prints a fresh link. A link that is used, expired or from an earlier start opens a page that says so and how to get a new one.
 
 ### Pasting the token
 

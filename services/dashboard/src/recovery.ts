@@ -1,5 +1,5 @@
 import http from "node:http";
-import { authorized, handleUnlock, hasSession, tokenRefusal, unlockBase, unlockLine, UnlockLinks } from "./access.js";
+import { authorized, handleUnlock, hasSession, pathOf, tokenRefusal, unlockBase, unlockLine, UnlockLinks } from "./access.js";
 import type { AddressInfo } from "node:net";
 import { chmodSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import {
@@ -377,9 +377,9 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const op = method === "POST" ? RECOVERY_POST.exec(url.pathname)?.[1] : undefined;
     if (!op) { req.resume(); json(res, 503, { ok: false, detail: RECOVERY_DETAIL }); return; }
 
-    // With control on every write needs the token, except, on a loopback bind, the ones that write no caller-chosen value; a
+    // With a token configured, whatever CONTROL_ENABLED says, every write needs it or a session cookie, except, on a loopback bind, the ones that write no caller-chosen value; a
     // reset of a secrets.yaml problem and the secrets.yaml part of reset-all are judged below in both modes (DASH-SECRET-003).
-    if (d.controlEnabled && !tokenOk && !(d.loopback && NO_VALUE_OPS.has(op))) { req.resume(); res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
+    if (d.controlToken !== undefined && !tokenOk && !(d.loopback && NO_VALUE_OPS.has(op))) { req.resume(); res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
     if (op === "raw") { await postRaw(req, res, tokenOk); return; }
     let body: { etag?: unknown; path?: unknown; value?: unknown };
     try { body = JSON.parse(await readText(req)) as typeof body; } catch (e) {
@@ -475,7 +475,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   return (req, res) => {
     void handle(req, res).catch((err: unknown) => {
       if (err instanceof BodyTooLarge) { if (!res.headersSent) { res.writeHead(413); res.end("body too large"); } return; }
-      d.log.error({ err, url: req.url }, "config recovery: request failed");
+      d.log.error({ err, path: pathOf(req) }, "config recovery: request failed"); // never the query string (DASH-UNL-002)
       if (res.headersSent) res.destroy();
       else json(res, 500, { ok: false, detail: "the request failed; the dashboard's log has the details" });
     });
@@ -534,6 +534,7 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const url = `http://${addr.family === "IPv6" ? `[${addr.address}]` : addr.address}:${addr.port}`;
   const n = o.error.problems.length;
   o.log.error({ url }, `config recovery mode: ${n} problem${n === 1 ? "" : "s"}; fix them at ${url}`);
+  links.base = unlockBase(bind, addr.port);
   // @spec DASH-UNL-001
   if (controlToken !== undefined) (o.print ?? printToTerminal)(unlockLine(unlockBase(bind, addr.port), links.issue()));
 

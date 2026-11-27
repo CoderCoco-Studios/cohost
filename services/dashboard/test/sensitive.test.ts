@@ -124,9 +124,11 @@ test("a sensitive key left at its schema default, resubmitted at that default, i
   // remove the key from the file so it is only a default
   writeFileSync(t.file, t.text().replace(/^\s*base_url: .*$/m, ""));
   const same = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "https://api.openai.com/v1", temperature: 0.4 } });
-  assert.equal(same.status, 200, await same.clone().text());
+  assert.equal(same.status, 401, "a configured token gates every save");
+  assert.equal(await same.text(), "unauthorized", "no sensitive key changes: the plain refusal");
   const diff = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": "http://other/v1" } });
   assert.equal(diff.status, 401);
+  assert.deepEqual(((await diff.json()) as Refusal).sensitive, [BASE]);
 });
 
 // @spec DASH-CTRL-009
@@ -140,45 +142,54 @@ test("the list names exactly the changed sensitive keys, among unchanged ones an
   assert.equal(t.text(), EXAMPLE);
 });
 
-// @spec DASH-CTRL-009, DASH-CTRL-004
-test("a save that touches no sensitive key keeps today's gating: open with control off, token-gated with it on", async () => {
+// @spec DASH-CTRL-009, DASH-CTRL-004, DASH-CTRL-011
+test("a save that touches no sensitive key is open only with no token configured; a configured token gates it whatever CONTROL_ENABLED says", async () => {
   const open = await boot("no-token");
   assert.equal((await open.put("/config/llm", { etag: open.etag(), values: { temperature: 0.5 } })).status, 200);
-  const tokenOnly = await boot("token-only");
-  assert.equal((await tokenOnly.put("/config/llm", { etag: tokenOnly.etag(), values: { temperature: 0.5 } })).status, 200, "a configured token does not gate a non-sensitive save while control is off");
-  const ctl = await boot("control");
-  assert.equal((await ctl.put("/config/llm", { etag: ctl.etag(), values: { temperature: 0.5 } })).status, 401);
-  assert.equal((await ctl.put("/config/llm", { etag: ctl.etag(), values: { temperature: 0.5 } }, TOKEN)).status, 200);
+  for (const mode of ["token-only", "control"] as const) {
+    const t = await boot(mode);
+    assert.equal((await t.put("/config/llm", { etag: t.etag(), values: { temperature: 0.5 } })).status, 401, mode);
+    assert.equal((await t.put("/config/llm", { etag: t.etag(), values: { temperature: 0.5 } }, TOKEN)).status, 200, mode);
+  }
 });
 
 // @spec DASH-CTRL-009, MOD-CFG-013
-test("a dry run writes nothing and is never gated by the sensitive rule; in control mode it keeps its ordinary gating", async () => {
-  for (const mode of ["no-token", "token-only"] as const) {
-    const t = await boot(mode);
-    const r = await t.put("/config/llm?dryRun=1", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } });
-    assert.equal(r.status, 200, mode);
-    assert.equal(((await r.json()) as { dryRun: boolean }).dryRun, true);
-    assert.equal(t.text(), EXAMPLE);
-    assert.deepEqual(t.writes, []);
+test("a dry run writes nothing and is never gated by the sensitive rule; with a token configured it keeps the ordinary gate", async () => {
+  const t = await boot("no-token");
+  const r = await t.put("/config/llm?dryRun=1", { etag: t.etag(), values: { "openai.base_url": "https://evil.example/v1" } });
+  assert.equal(r.status, 200);
+  assert.equal(((await r.json()) as { dryRun: boolean }).dryRun, true);
+  assert.equal(t.text(), EXAMPLE);
+  assert.deepEqual(t.writes, []);
+  for (const mode of ["token-only", "control"] as const) {
+    const ctl = await boot(mode);
+    assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } })).status, 401, mode);
+    assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } }, TOKEN)).status, 200, mode);
+    assert.deepEqual(ctl.writes, []);
   }
-  const ctl = await boot("control");
-  assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } })).status, 401);
-  assert.equal((await ctl.put("/config/llm?dryRun=1", { etag: ctl.etag(), values: { "openai.base_url": "http://x/v1" } }, TOKEN)).status, 200);
-  assert.deepEqual(ctl.writes, []);
 });
 
 // @spec DASH-CTRL-009
-test("the check runs after the body's size and shape and before the etag and any validation", async () => {
-  const t = await boot("token-only");
+test("with no token configured the sensitive check runs after the body's size and shape and before the etag and any validation", async () => {
+  const t = await boot("no-token");
   assert.equal((await t.put("/config/llm", "not json")).status, 400);
   assert.equal((await t.put("/config/llm", { values: { "openai.base_url": "http://x/v1" } })).status, 400, "no etag: shape first");
   assert.equal((await t.put("/config/llm", { etag: "x", values: [] })).status, 400);
   assert.equal((await t.put("/config/llm", JSON.stringify({ etag: "x", values: { "openai.base_url": "y".repeat(70 * 1024) } }))).status, 413, "size first");
   const stale = await t.put("/config/llm", { etag: "stale", values: { "openai.base_url": "http://x/v1" } });
-  assert.equal(stale.status, 401, "a stale etag does not outrank the token check");
+  assert.equal(stale.status, 403, "a stale etag does not outrank the sensitive check");
   const invalid = await t.put("/config/llm", { etag: t.etag(), values: { "openai.base_url": 12, temperature: "hot" } });
-  assert.equal(invalid.status, 401, "validation does not outrank the token check");
-  // with the token, the ordinary answers return
+  assert.equal(invalid.status, 403, "validation does not outrank the sensitive check");
+  // a save of no sensitive key gets the ordinary answers
+  assert.equal((await t.put("/config/llm", { etag: "stale", values: { temperature: 0.5 } })).status, 409);
+  assert.equal((await t.put("/config/llm", { etag: t.etag(), values: { temperature: "hot" } })).status, 400);
+});
+
+// @spec DASH-CTRL-004, DASH-CTRL-011
+test("with a token configured and control off, every save needs the token (the gate comes before the body), and the token restores the ordinary answers", async () => {
+  const t = await boot("token-only");
+  assert.equal((await t.put("/config/llm", "not json")).status, 401, "the gate first");
+  assert.equal((await t.put("/config/llm", { etag: "stale", values: { "openai.base_url": "http://x/v1" } })).status, 401);
   assert.equal((await t.put("/config/llm", { etag: "stale", values: { "openai.base_url": "http://x/v1" } }, TOKEN)).status, 409);
   assert.equal((await t.put("/config/llm", { etag: t.etag(), values: { temperature: "hot" } }, TOKEN)).status, 400);
 });

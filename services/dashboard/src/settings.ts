@@ -16,9 +16,9 @@ export interface SettingsDeps {
   manifest: readonly ServiceDef[];
   /** The latest stack status. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
-  /** True when `CONTROL_ENABLED=1`: every `PUT /config/:section` then needs the control token (DASH-CTRL-004). */
   /** The operator's secrets file (`secrets/secrets.yaml`), for which secrets are set. Defaults to the loader's `secretsPath()`. */
   secretsFile?: () => string;
+  /** True when a control token is configured: every `PUT /config/:section` then needs it or a session cookie (DASH-CTRL-004). */
   controlMode?: boolean;
   /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
   controlToken?: string;

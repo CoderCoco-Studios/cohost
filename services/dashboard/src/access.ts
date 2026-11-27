@@ -5,8 +5,8 @@ import { originAllowed } from "./host.js";
 
 /** The session cookie the unlock link sets (DASH-UNL-003). */
 export const SESSION_COOKIE = "cohost_session";
-/** 400 days, the longest lifetime a browser keeps a cookie for. */
-export const SESSION_MAX_AGE = 34_560_000;
+/** 90 days (owner decision): a new link is one `mise run dashboard:unlock` away. */
+export const SESSION_MAX_AGE = 7_776_000;
 
 /** Who must present the control token on a route: `required` false lets every request through; `token` is `CONTROL_TOKEN`. */
 export interface TokenGate {
@@ -87,6 +87,8 @@ export function authorized(token: string | undefined, req: http.IncomingMessage)
 // @spec DASH-UNL-002
 export class UnlockLinks {
   private readonly nonces = new Map<string, number>();
+  /** The full-surface address and port links name (`unlockBase`), set once the listener is bound (DASH-UNL-001, DASH-UNL-006). */
+  base: string | undefined;
   constructor(private readonly now: () => number = Date.now, readonly ttlMs = 10 * 60_000, readonly max = 16) {}
 
   /** A fresh nonce. */
@@ -113,6 +115,11 @@ export function unlockBase(bind: string, port: number): string {
   return `http://${host}:${port}`;
 }
 
+/** A request's path without its query string, for logs: `/unlock?n=` carries a one-time nonce that must never be logged. */
+export function pathOf(req: http.IncomingMessage): string {
+  try { return new URL(req.url ?? "/", "http://x").pathname; } catch { return "(unparsable)"; }
+}
+
 /** The terminal line of DASH-UNL-001. */
 export const unlockLine = (base: string, nonce: string): string => `Unlock this browser: ${base}/unlock?n=${nonce}`;
 
@@ -120,10 +127,10 @@ const NO_TOKEN_PAGE = "This dashboard has no control token, so it cannot unlock 
 const BAD_LINK_PAGE = "This unlock link is not valid: it was already used, it expired (a link lasts 10 minutes), or it is from an earlier start of the dashboard.\n\nGet a new one: run `mise run dashboard:unlock` in the cohost folder, or restart the dashboard (mise run dashboard) and open the link it prints in its terminal.\n";
 
 /**
- * `GET /unlock?n=` (DASH-UNL-003, DASH-UNL-004) and `POST /unlock/link` (DASH-UNL-006), shared by normal mode and config
- * recovery mode. Returns false for any other request.
+ * `GET /unlock?n=` (DASH-UNL-003, DASH-UNL-004), `POST /unlock/link` (DASH-UNL-006) and `POST /unlock/forget` (DASH-UNL-008),
+ * shared by normal mode and config recovery mode. Returns false for any other request.
  */
-// @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006
+// @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006, DASH-UNL-008
 export function handleUnlock(d: { token: string | undefined; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
   if (req.method === "GET" && url.pathname === "/unlock") {
     const ok = d.token !== undefined && d.links.consume(url.searchParams.get("n"));
@@ -147,7 +154,15 @@ export function handleUnlock(d: { token: string | undefined; links: UnlockLinks 
     };
     if (d.token === undefined) { json(403, { ok: false, detail: "no control token is configured: set CONTROL_TOKEN in .env (with CONTROL_ENABLED=1 for the stack controls) and restart the dashboard" }); return true; }
     if (!bearerOk(req.headers.authorization, d.token)) { json(401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
-    json(200, { ok: true, url: `http://${req.headers.host ?? "127.0.0.1"}/unlock?n=${d.links.issue()}` });
+    const base = d.links.base ?? `http://${req.headers.host ?? "127.0.0.1"}`;
+    json(200, { ok: true, url: `${base}/unlock?n=${d.links.issue()}` });
+    return true;
+  }
+  // Removing access needs no credential; the Host and Origin checks in front of the handler keep another site from sending it.
+  if (req.method === "POST" && url.pathname === "/unlock/forget") {
+    req.resume();
+    res.writeHead(204, { "cache-control": "no-store", "set-cookie": `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+    res.end();
     return true;
   }
   return false;

@@ -97,6 +97,7 @@ export function dashboardService(deps: DashboardDeps = {}) {
       if (!listeners) relay.stop(); // a listener that could not bind leaves nothing running
       if (listeners) {
         heartbeat.ready(); // only once both listeners are listening
+        links.base = unlockBase(bind, listeners.fullPort);
         // @spec DASH-UNL-001
         if (controlToken !== undefined) (deps.print ?? printToTerminal)(unlockLine(unlockBase(bind, listeners.fullPort), links.issue()));
         if (control) log.info("stack controls are enabled: open the unlock link printed in this terminal, or paste CONTROL_TOKEN from .env when the page asks");

@@ -5,7 +5,7 @@ prefix: STORE
 
 # settings-store
 
-Status: MAPPED. The package `@cohost/store` (`packages/store/`) and its `config:*` tasks are built; no consumer uses them yet: the dashboard, the control plane and the services still read the YAML files until the cut-over (projections, delivery, state keys, the outbox and the consumer clauses of the other specs). Parent: [high-level-design](../../high-level-design.md). Specs: [settings-store-specs.md](settings-store-specs.md).
+Status: MAPPED. The package `@cohost/store` (`packages/store/`) and its `config:*` tasks are built, and so is the library side of the consumers: the units' settings declarations (`UNIT_SETTINGS`, `packages/config/src/units.ts`), the projection loader (`loadProjection`, `packages/config/src/projection.ts`), the credentials receiver and the state-file helpers (`packages/shared/src/credentials.ts`, `state.ts`), and the outbox writer and its applier (`packages/config/src/outbox.ts`, `packages/store/src/outbox.ts`). No consumer uses them yet: the dashboard, the control plane and the services still read the YAML files until the cut-over (the projection writer, delivery, the boot order, state keys, the outbox's use and the consumer clauses of the other specs). Parent: [high-level-design](../../high-level-design.md). Specs: [settings-store-specs.md](settings-store-specs.md).
 
 ## Context and Design Philosophy
 
@@ -36,7 +36,7 @@ Five properties drive the design:
 
 The store is a workspace package, `@cohost/store` (`packages/store`), ESM, AGPL-3.0-only, depending on `@cohost/config` (the zod schema, `SECRET_PATHS`, the presentation table and the section list) and on nothing outside Node's standard library. It exports `openStore(options)`, which returns a `Store` handle with the operations below, and the export and import codecs.
 
-Who imports it (STORE-PKG-001): `services/dashboard`, `packages/control` (the controller, `cohostctl`, the unit runner) and the `config:*` task entry points under `packages/store/src/cli/`. A test fails when any other package or service imports `@cohost/store` or opens a file under `<dataDir()>/store/`. Services keep importing `@cohost/config` for the schema, the loader and the helpers; the loader reads the projection.
+Who imports it (STORE-PKG-001): `services/dashboard`, `packages/control` (the controller, `cohostctl`, the unit runner) and the `config:*` task entry points under `packages/store/src/cli/`. A test fails when any other package or service imports `@cohost/store` or opens a file under `<dataDir()>/store/`. Services keep importing `@cohost/config` for the schema, the loader and the helpers; the loader reads the projection. The store reads each unit's settings declarations (`config`, `secrets`, `documents`, `stateKey`, the Compose name) from `UNIT_SETTINGS` in `@cohost/config`, the same data `SERVICE_MANIFEST` takes them from (module-contract), because it cannot import `@cohost/control`, which imports it.
 
 ## The database
 

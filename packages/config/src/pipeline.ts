@@ -104,7 +104,7 @@ function concreteKeys(node: unknown, segs: string[], prefix: string[] = []): str
 }
 
 /** Sets each override at its key path; a value that parses to nothing removes the key so the schema default applies. */
-function applyIsolation(tree: Record<string, unknown>, overrides: IsolationOverrides): void {
+export function applyIsolation(tree: Record<string, unknown>, overrides: IsolationOverrides): void {
   for (const [name, text] of Object.entries(overrides)) {
     let value: unknown = text;
     if (YAML_VALUED.has(name)) {

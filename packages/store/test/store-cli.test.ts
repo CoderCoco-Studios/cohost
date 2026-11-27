@@ -36,7 +36,10 @@ test("config:set reads the value as YAML and validates; config:reset brings the 
   const sb = sandbox();
   let io = fakeIo();
   assert.equal(await runCli(["set", "llm.temperature", "1.2"], io, sb.opts), 0);
-  assert.match(io.stdout, /saved llm\.temperature; .*llm section.*next start/);
+  assert.equal(io.stdout, "saved llm.temperature; salience, affect, memory, cortex, eyes apply it at their next start\n", "the units whose manifest declares the llm section");
+  io = fakeIo();
+  assert.equal(await runCli(["set", "dashboard.port", "8788"], io, sb.opts), 0);
+  assert.equal(io.stdout, "saved dashboard.port; no unit declares the dashboard section; the dashboard reads it\n");
   io = fakeIo();
   await runCli(["get", "llm.temperature"], io, sb.opts);
   assert.equal(io.stdout, "1.2\n");

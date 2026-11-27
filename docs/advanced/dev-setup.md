@@ -122,7 +122,7 @@ mise watch --restart dev:salience
 
 ## Adding or changing a service
 
-Every service meets the same four obligations (the [module contract](https://github.com/CoderCoco-Studios/cohost/blob/main/docs/intent/module-contract/module-contract-design.md)): it is configurable from the dashboard, operable on its own, injectable with a test input, and built on the shared runtime. A service declares how it meets them in one entry of `packages/control/src/manifest.ts`, and the dashboard and `cohostctl` read that entry. See [Ways to extend cohost](extend/index.md) for the routes that are supported.
+Every service meets the same four obligations (the [module contract](https://github.com/CoderCoco-Studios/cohost/blob/main/docs/intent/module-contract/module-contract-design.md)): it is configurable from the dashboard, operable on its own, injectable with a test input, and built on the shared runtime. A service declares how it meets them in one entry of `packages/control/src/manifest.ts` and one of `packages/config/src/units.ts` (the settings it reads), and the dashboard and `cohostctl` read those entries. See [Ways to extend cohost](extend/index.md) for the routes that are supported.
 
 ## Checks before you push
 

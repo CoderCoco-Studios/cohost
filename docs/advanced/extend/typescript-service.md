@@ -63,7 +63,7 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 The example is not yet a module of cohost: it has no manifest entry and no [Compose](../../start/glossary.md#docker-compose) service, so the dashboard cannot start it and does not know which settings it reads. The contract a module meets has four obligations, and the example meets the last one only. Meeting the first three is a matter of files, in this order:
 
 1. A new folder under `services/`, named for your service, holding your file as `src/index.ts`, a `package.json` that depends on `@cohost/bus`, `@cohost/config` and `@cohost/shared` with `workspace:*`, and a `tsconfig.json` that references the packages it uses. Inside the folder, import the packages by name instead of by path.
-2. An entry in `packages/control/src/manifest.ts`. It names the `config.yaml` sections the service reads, the services it uses, whether it honours `pause`, and its test input. That one entry is what makes the dashboard's settings editor, its start and stop buttons and its test panel know the service.
+2. An entry in `packages/config/src/units.ts`, naming the settings sections, credentials and documents the service reads, and one in `packages/control/src/manifest.ts`, naming the services it uses, whether it honours `pause`, and its test input. Those entries are what make the dashboard's settings editor, its start and stop buttons and its test panel know the service.
 3. A service in `docker-compose.yml`, copied from a neighbour such as `salience`, so it starts with the rest.
 4. A reference to the new folder in the root `tsconfig.json`, so `mise run build` builds it, and a `dev:<service>` task in `mise.toml` beside the others, so `mise run dev` runs it.
 

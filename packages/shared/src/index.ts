@@ -7,3 +7,5 @@ export * from "./audio.js";
 export * from "./boot.js";
 export * from "./utterance.js";
 export * from "./video.js";
+export * from "./credentials.js";
+export * from "./state.js";

@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EVENT_TYPES } from "@cohost/bus";
-import { ISOLATION_OVERRIDES, SECRET_PATHS, schemaAt } from "@cohost/config";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { ISOLATION_OVERRIDES, SECRET_PATHS, UNIT_SETTINGS, schemaAt, unitsReadingSection } from "@cohost/config";
 import { SERVICE_MANIFEST, findService } from "../src/index.js";
 
 const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
@@ -135,4 +138,60 @@ test("the initial declarations: each unit lists the credentials its code reads a
 // @spec TOOL-SVC-010
 test("the tools unit declares secrets as exactly tools.servers.*.token, chat.twitch.client_id, chat.twitch.client_secret and chat.youtube.api_key", () => {
   assert.deepEqual([...findService("tools")!.secrets].toSorted(), [...TOOLS_SECRETS].toSorted());
+});
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+/** Every source file under a unit's `src/`, tests excluded. */
+function unitSources(id: string, dir = join(repo, "services", id, "src"), out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) unitSources(id, p, out);
+    else if (/\.(ts|tsx)$/.test(name)) out.push(p);
+  }
+  return out;
+}
+
+// @spec MOD-MAN-016
+test("documents: cortex and memory read personality, avatar reads expressions, every other unit none", () => {
+  const want: Record<string, string[]> = { cortex: ["personality"], memory: ["personality"], avatar: ["expressions"] };
+  for (const s of SERVICE_MANIFEST) assert.deepEqual([...s.documents], want[s.id] ?? [], s.id);
+});
+
+// @spec MOD-MAN-016
+test("a unit whose source loads a document its documents list lacks fails", () => {
+  const LOADERS: Record<string, RegExp> = {
+    personality: /\b(?:loadPersonality|loadProjectionPersonality)\b/,
+    expressions: /\b(?:loadExpressions|loadProjectionExpressions)\b/,
+  };
+  const offenders: string[] = [];
+  for (const s of units) {
+    const text = unitSources(s.id).map((f) => readFileSync(f, "utf8")).join("\n");
+    for (const [doc, re] of Object.entries(LOADERS)) {
+      if (re.test(text) && !s.documents.includes(doc as never)) offenders.push(`${s.id} loads ${doc}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+  // The check sees the loads it guards against: cortex, memory and avatar each load their document.
+  for (const [id, doc] of [["cortex", "personality"], ["memory", "personality"], ["avatar", "expressions"]] as const) {
+    assert.match(unitSources(id).map((f) => readFileSync(f, "utf8")).join("\n"), LOADERS[doc]!, `${id} loads ${doc}`);
+  }
+});
+
+// @spec MOD-MAN-017
+test("stateKey is true for chat and avatar and false for every other unit", () => {
+  for (const s of SERVICE_MANIFEST) assert.equal(s.stateKey, s.id === "chat" || s.id === "avatar", s.id);
+});
+
+// @spec MOD-MAN-016, MOD-MAN-017, STORE-TASK-002
+test("the manifest takes every unit's settings declarations from UNIT_SETTINGS in @cohost/config, the one copy, in the same order", () => {
+  assert.deepEqual(SERVICE_MANIFEST.map((s) => s.id), UNIT_SETTINGS.map((u) => u.id));
+  for (const u of UNIT_SETTINGS) {
+    const s = findService(u.id)!;
+    assert.deepEqual(
+      { composeName: s.composeName, config: s.config, secrets: s.secrets, documents: s.documents, stateKey: s.stateKey },
+      { composeName: u.composeName, config: u.config, secrets: u.secrets, documents: u.documents, stateKey: u.stateKey }, u.id,
+    );
+  }
+  assert.deepEqual(unitsReadingSection("brain.memory"), ["memory", "cortex"]);
+  assert.deepEqual(unitsReadingSection("dashboard"), []);
 });

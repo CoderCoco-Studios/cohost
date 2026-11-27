@@ -68,7 +68,7 @@ A segment is the territory of one low-level design: the design, its specs, and t
 | Operator | [control-plane](segments/control-plane) | `packages/control` |
 | Operator | [deployment](segments/deployment) | `docker-compose.yml`, `Dockerfile`, `scripts/install.sh`, `.github/workflows` |
 | Operator | [docs-site](segments/docs-site) | `docs/` and `scripts/docs-check.mjs` |
-| Operator | [module-contract](segments/module-contract) | `packages/control/src/manifest.ts` and the dashboard's settings editor |
+| Operator | [module-contract](segments/module-contract) | `packages/control/src/manifest.ts`, `packages/config/src/units.ts` and the dashboard's settings editor |
 
 Some segments cross package boundaries. The [module contract](segments/module-contract), for example, is a set of obligations that every service meets, implemented across the control plane, the config package and the dashboard.
 

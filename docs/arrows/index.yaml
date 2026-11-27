@@ -62,7 +62,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "62 specs: 59 [x], 3 [ ] (MOD-CFG-007, rewritten for #370: no sensitive-key tier; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). Every application unit declares logging (MOD-MAN-002, #349) is built. The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
+    next: "62 specs: 57 [x], 5 [ ] (MOD-CFG-007, MOD-PAUSE-001 and MOD-TEST-001, rewritten for #370: no sensitive-key tier, no control-off state; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). Every application unit declares logging (MOD-MAN-002, #349) is built. The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
     drift: null
 
 
@@ -75,7 +75,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "266 specs: 260 [x], 6 [ ]: CFG-ENV-008, -012, CFG-SEC-003, CFG-SCH-030, -039 and CFG-USR-012 rewritten for #370 (ears.http.token and CONTROL_ENABLED retired, ears reads CONTROL_TOKEN). The structured ConfigError, checkConfig and the recovery editor (CFG-RCV-001 to 006, #360) are built. The logging design (#349) is built: CFG-LOG-002..025, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in). secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "267 specs: 260 [x], 7 [ ]: CFG-ENV-008, -012, CFG-SEC-003, CFG-SCH-030, -039 and CFG-USR-012 rewritten and CFG-SEC-020 added for #370 (ears.http.token and CONTROL_ENABLED retired; ears gets a derived verifier, never CONTROL_TOKEN). The structured ConfigError, checkConfig and the recovery editor (CFG-RCV-001 to 006, #360) are built. The logging design (#349) is built: CFG-LOG-002..025, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in). secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
     drift: null
 
   event-bus:
@@ -171,7 +171,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 186 [x], 7 [ ], 2 [D]; EARS-SRC-013, -021 and EARS-EX-002 rewritten for #370 (the audio listener requires CONTROL_TOKEN, on loopback too); EARS-SRC-023 is [x]: the desktop helper's Linux back end uses the pure-Rust pulseaudio client, with no system library (#344) (the echo gate EARS-ECHO-001 to 009 is [x], including the audible-sink rule of EARS-ECHO-002; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
+    next: "195 specs: 185 [x], 8 [ ], 2 [D]; EARS-SRC-013, -015, -021 and EARS-EX-002 rewritten for #370 (the audio listener requires the CONTROL_TOKEN bearer, on loopback too, checked against a delivered verifier; the helper refuses a remote URL without --allow-remote); EARS-SRC-023 is [x]: the desktop helper's Linux back end uses the pure-Rust pulseaudio client, with no system library (#344) (the echo gate EARS-ECHO-001 to 009 is [x], including the audible-sink rule of EARS-ECHO-002; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
     drift: null
 
   salience:
@@ -279,7 +279,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "459 specs: 414 [x], 45 [ ]: 34 one-lock specs rewritten for #370 (CONTROL_TOKEN always required, one gate, no CONTROL_ENABLED; implementation PR pending) and the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The unlock link (DASH-UNL-001 to 008, DASH-CTRL-011, #366) is built."
+    next: "459 specs: 413 [x], 46 [ ]: 35 one-lock specs rewritten for #370 (CONTROL_TOKEN always required, one gate, no CONTROL_ENABLED; implementation PR pending) and the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The unlock link (DASH-UNL-001 to 008, DASH-CTRL-011, #366) is built."
     drift: null
 
   control-plane:
@@ -291,7 +291,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "117 specs: 113 [x], 2 [ ], 2 [D] (CTRL-CONFIG-001, -002 rewritten for #370: CONTROL_TOKEN always required, CONTROL_ENABLED retired; the config gate CTRL-GATE-001, -002 and CTRL-CLI-018 are built, #360, #362; CTRL-RUNTIME-016, data/logs created before Compose, is built, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
+    next: "118 specs: 113 [x], 3 [ ], 2 [D] (CTRL-CONFIG-001, -002 rewritten for #370: CONTROL_TOKEN always required, CONTROL_ENABLED retired; CTRL-RUNTIME-017 new: the projection derives the ears listener verifier; the config gate CTRL-GATE-001, -002 and CTRL-CLI-018 are built, #360, #362; CTRL-RUNTIME-016, data/logs created before Compose, is built, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:
@@ -303,7 +303,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "166 specs: 161 [x], 5 [ ]; DEPLOY-INST-013 and DEPLOY-HOST-002 rewritten for #370 (a token on every installer run, no CONTROL_ENABLED). TypeScript linting is built (#346: oxlint type-aware, `.oxlintrc.json`, DEPLOY-LINT-001..010; noImplicitReturns, #354; ES2024 and toSorted/toReversed, #355; React rules for the dashboard UI, #352; `typecheck` checks the tests, DEPLOY-TOOL-023, #353). The logging design (#349) is built: the ./data/logs mount, COHOST_DATA_DIR pin and bounded Docker log driver (DEPLOY-COMPOSE-002, -003, -018, -020, -022, -023, -028 to -031), the installer creating data/logs (DEPLOY-INST-017), the test tasks on temporary directories (DEPLOY-TOOL-022). Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "168 specs: 161 [x], 7 [ ]; DEPLOY-INST-013 and DEPLOY-HOST-002 rewritten and DEPLOY-SECRET-012, DEPLOY-COMPOSE-032 added for #370 (a token on every installer run, no CONTROL_ENABLED, the ears verifier delivered, CONTROL_TOKEN pinned empty in containers). TypeScript linting is built (#346: oxlint type-aware, `.oxlintrc.json`, DEPLOY-LINT-001..010; noImplicitReturns, #354; ES2024 and toSorted/toReversed, #355; React rules for the dashboard UI, #352; `typecheck` checks the tests, DEPLOY-TOOL-023, #353). The logging design (#349) is built: the ./data/logs mount, COHOST_DATA_DIR pin and bounded Docker log driver (DEPLOY-COMPOSE-002, -003, -018, -020, -022, -023, -028 to -031), the installer creating data/logs (DEPLOY-INST-017), the test tasks on temporary directories (DEPLOY-TOOL-022). Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
     drift: null
 
   docs-site:

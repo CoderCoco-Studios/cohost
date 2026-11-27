@@ -89,7 +89,7 @@ Initial `secrets` declarations, checked against the credentials each service's c
 |---|---|
 | chat | `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `chat.youtube.api_key` |
 | eyes | `vision.obs.password`, `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
-| ears | `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` (its audio listener's bearer is `CONTROL_TOKEN`, read from the environment, ears EARS-SRC-013) |
+| ears | `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` (plus the derived listener verifier the control plane adds to its delivery, not a declared path, config CFG-SEC-020) |
 | salience, affect, memory, cortex | `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 | tools | `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.youtube.api_key` |
 | voice | `voice.openai.api_key` |
@@ -165,7 +165,7 @@ The route never restarts anything itself.
 
 ### Applying
 
-After a save the Settings screen offers to restart the units in `restart` ([dashboard](../dashboard/dashboard-design.md), DASH-SET-007, DASH-SET-008). Each restart goes through the existing lifecycle route, in its default mode and not isolated, so it is guarded, audited and holds the dashboard's one action slot like any other. A unit not running picks the change up at its next start. With control disabled the lifecycle routes do not exist; the screen then says which units to restart and how (`cohostctl restart`).
+After a save the Settings screen offers to restart the units in `restart` ([dashboard](../dashboard/dashboard-design.md), DASH-SET-007, DASH-SET-008). Each restart goes through the existing lifecycle route, in its default mode and not isolated, so it is guarded, audited and holds the dashboard's one action slot like any other. A unit not running picks the change up at its next start.
 
 The owner may save several sections and apply once.
 

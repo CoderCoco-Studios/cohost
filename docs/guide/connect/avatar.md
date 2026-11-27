@@ -101,15 +101,15 @@ Read the terms the model's author attaches before you stream it: cohost does not
 
 ## Editing the emotion map
 
-The emotion map is kept in cohost's [settings store](../operate/settings.md) with your other settings, as the `expressions` part, with one block per driver (`vtube-studio`, `vmc`, `browser`). A new install starts from the committed example `config/expressions.example.yaml`; editing that example changes nothing for your install. To edit your map, export your settings to a file, change the `expressions` part, check the import with a dry run, and import it:
+The emotion map is kept in cohost's [settings store](../operate/settings.md) with your other settings, as the `expressions` part, with one block per driver (`vtube-studio`, `vmc`, `browser`). A new install starts from the committed example `config/expressions.example.yaml`; editing that example changes nothing for your install. To edit your map, export your settings to a file and copy the block under its `expressions:` key into a file of its own, `my-expressions.yaml`, moved left so the driver names start the lines. Edit that file, check the import with a dry run, and import it as the emotion map alone:
 
 ```bash
 mise run config:export -- my-settings.yaml
-mise run config:import -- --dry-run my-settings.yaml
-mise run config:import -- my-settings.yaml
+mise run config:import -- --dry-run --expressions my-expressions.yaml
+mise run config:import -- --expressions my-expressions.yaml
 ```
 
-Run the dry run after your edit: it shows what would change and writes nothing. The import takes a backup first, and it replaces the settings and the emotion map with the file's; your credentials stay as they are, because the export holds none. The map is read when `avatar` starts, so restart `avatar` after an import.
+The dry run shows what would change and writes nothing. The import takes a backup first and replaces only the emotion map; your settings, personality and credentials stay as they are. The map is read when `avatar` starts, so restart `avatar` after an import.
 
 ## Getting the avatar into OBS
 

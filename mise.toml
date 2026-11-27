@@ -285,19 +285,23 @@ run = ["tsc -b packages/control", "node packages/control/dist/cli.js deliver"]
 
 # The memory one-shots run on the host through the unit runner as the memory unit: its projection and its credentials on a
 # pipe (settings-store STORE-DLV-007); after reflect, the runner applies the personality outbox (STORE-OUT-002).
+# The runner opens the settings store, so they are raw (DEPLOY-TOOL-024).
 [tasks.reflect]
 description = "Run the memory reflection pass once"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/reflect.js"
 
 [tasks.consolidate]
 description = "Run one memory consolidation pass"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/consolidate.js"
 
 [tasks.reembed]
 description = "Re-embed the memory store with the configured embedder"
 depends = ["build:native", "build:ts"]
+raw = true
 run = "node packages/control/dist/run-unit.js memory services/memory/dist/reembed.js"
 
 [tasks."infra:up"]

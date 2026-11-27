@@ -2,7 +2,7 @@
 title: Add a TypeScript service
 description: Run a complete cohost service that watches a file and tells the co-host when the song changes, then see what it takes to make it a module of the repository.
 track: advanced
-verified: a86e930
+verified: f126b94
 ---
 
 # Add a TypeScript service
@@ -41,6 +41,8 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
    ```
 
    With no path it prints a usage line and exits with status 1.
+
+   This step does not work yet: the example service stops at start because no settings projection exists for a unit named `now-playing`. See the open issue on the example service.
 
 3. In a second terminal, watch the events it publishes.
 

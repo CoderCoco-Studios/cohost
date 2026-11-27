@@ -56,7 +56,7 @@ mise run config:personality
 mise run config:personality -- --edit
 ```
 
-The first prints the personality. The second opens it in your `$EDITOR` and stores it when you save and close the editor. The cortex reads text stored this way at its next start, so restart it afterwards (the [Starting and stopping](../operate/start-stop.md) page shows how).
+The first prints the personality. The second opens it in your `$EDITOR` and stores it when you save and close the editor. The cortex reads text stored this way at its next start, so restart it afterwards (the [Starting and stopping](../operate/start-stop.md) page shows how). A restart from the dashboard or `cohostctl` writes the cortex's settings for it first; a hand-run `docker compose restart cortex` does not, so run `mise run config:project` before it (and `mise run deliver` after it, unless the dashboard is running to deliver its credentials).
 
 ## The Learned section
 

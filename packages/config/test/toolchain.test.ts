@@ -757,32 +757,54 @@ function testSources(): string[] {
   return out;
 }
 
-/** Each object literal assigned to `env` (`env: {…}` or `env = {…}`), braces matched, with its line and the text around it. */
+/** The object literal whose `{` is at `open`, braces matched. */
+function literalAt(text: string, open: number): string {
+  let depth = 0;
+  let i = open;
+  for (; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) break;
+  }
+  return text.slice(open, i + 1);
+}
+
+const around = (text: string, from: number, to: number): string => text.slice(Math.max(0, from - 400), to + 400);
+const lineOf = (text: string, at: number): number => text.slice(0, at).split("\n").length;
+
+/**
+ * Each environment a test builds as an object literal, with its line and the text around it: a literal assigned to `env`
+ * (`env: {…}`, `env = {…}`), and a literal assigned to a variable that is then passed as `env: <name>`, whose text around also
+ * holds the text around that use.
+ */
 function envLiterals(text: string): { line: number; body: string; around: string }[] {
   const out: { line: number; body: string; around: string }[] = [];
   for (const m of text.matchAll(/\benv\s*[:=]\s*\{/g)) {
-    let depth = 0;
-    let i = m.index + m[0].length - 1;
-    for (; i < text.length; i++) {
-      if (text[i] === "{") depth++;
-      else if (text[i] === "}" && --depth === 0) break;
-    }
-    out.push({ line: text.slice(0, m.index).split("\n").length, body: text.slice(m.index, i + 1), around: text.slice(Math.max(0, m.index - 400), i + 401) });
+    const body = literalAt(text, m.index + m[0].length - 1);
+    out.push({ line: lineOf(text, m.index), body, around: around(text, m.index, m.index + body.length) });
+  }
+  for (const use of text.matchAll(/\benv\s*:\s*([A-Za-z_$][\w$]*)\b/g)) {
+    const name = use[1]!;
+    if (name === "env" || name === "process") continue; // `env: env` is the literal above; `env: process.env` builds nothing
+    const decl = new RegExp(`\\b(?:const|let|var)\\s+${name.replace(/\$/g, "\\$")}\\s*(?::[^=]+)?=\\s*\\{`).exec(text);
+    if (!decl) continue;
+    const body = literalAt(text, decl.index + decl[0].length - 1);
+    out.push({ line: lineOf(text, decl.index), body, around: `${around(text, decl.index, decl.index + body.length)}\n${around(text, use.index, use.index + use[0].length)}` });
   }
   return out;
 }
 
 // The programs that open the settings store, as a test names them to start them.
-const STORE_PROGRAMS = /dashboard["', /]+dist["', /]+(?:index|unlock-link)\.js|store["', /]+dist["', /]+cli|control["', /]+dist["', /]+(?:cli|run-unit)\.js|mise run config:[a-z]/;
+const STORE_PROGRAMS = /dashboard["', /]+dist["', /]+(?:index|unlock-link)\.js|store["', /]+dist["', /]+cli|control["', /]+dist["', /]+(?:cli|run-unit)\.js|mise run (?:config:[a-z]|dashboard\b|deliver\b|cohostctl\b)/;
 
 /**
- * The lines of `text` holding an environment built from scratch (it names `PATH` and does not spread `process.env`) within 400
- * characters of a store-opening program (the spawn call, or the function that builds the environment for it) and naming no
- * `COHOST_KEY_FILE`.
+ * The lines of `text` holding an environment built from scratch within 400 characters of a store-opening program (the spawn
+ * call, or the function that builds the environment for it) and naming no `COHOST_KEY_FILE`. An environment that spreads
+ * another (`...process.env`, or a test's own environment that already holds the key) is not from scratch, and one that points
+ * the installer's `MISE` at a stub runs no real task.
  */
 function keyFileOffenders(text: string): number[] {
   return envLiterals(text)
-    .filter(({ body, around }) => !/\.\.\.\s*process\.env\b/.test(body) && /\bPATH\b/.test(body) && STORE_PROGRAMS.test(around) && !/\bCOHOST_KEY_FILE\b/.test(body))
+    .filter(({ body, around: near }) => !/\.\.\.\s*[A-Za-z_$]/.test(body) && !/\bMISE\s*:/.test(body) && STORE_PROGRAMS.test(near) && !/\bCOHOST_KEY_FILE\b/.test(body))
     .map((e) => e.line);
 }
 
@@ -804,10 +826,17 @@ test("the environment scan flags a hand-built environment with no COHOST_KEY_FIL
   assert.deepEqual(keyFileOffenders(dash.replace("PATH: process.env.PATH", "...process.env")), []);
   assert.deepEqual(keyFileOffenders('spawnSync("sh", [script], { env: { PATH: process.env.PATH } });'), [], "no store program nearby");
   assert.deepEqual(keyFileOffenders('const env = {\n  PATH: process.env.PATH,\n};\nspawnSync("mise", ["run", "x"]); // mise run config:import'), [1]);
+  assert.deepEqual(keyFileOffenders('spawnSync("sh", ["-c", "mise run deliver"], { env: { HOME: h } });'), [1], "an environment with no PATH counts too");
+  const viaName = 'const childEnv: Record<string, string> = { COHOST_DATA_DIR: d };\nconst x = 1;\nspawn(node, [join(repo, "packages", "control", "dist", "cli.js")], { env: childEnv });';
+  assert.deepEqual(keyFileOffenders(viaName), [1], "a literal passed by name as env");
+  assert.deepEqual(keyFileOffenders(viaName.replace("COHOST_DATA_DIR: d", "COHOST_KEY_FILE: k")), []);
+  for (const t of ["mise run dashboard", "mise run deliver", "mise run cohostctl -- launch"]) assert.match(t, STORE_PROGRAMS, t);
+  assert.deepEqual(keyFileOffenders('runBlock("t", "x", { env: { MISE: stub.mise } }); // mise run config:token'), [], "a stub mise");
+  assert.deepEqual(keyFileOffenders(dash.replace("PATH: process.env.PATH", "...d.env")), [], "a test's own environment, already checked");
 });
 
 // The tasks that open the settings store and may print the recovery key or ask for a value without echo.
-const RAW_TASKS = [...CONFIG_TASKS, "dashboard", "dashboard:unlock", "deliver", "cohostctl"];
+const RAW_TASKS = [...CONFIG_TASKS, "dashboard", "dashboard:unlock", "deliver", "cohostctl", "reflect", "consolidate", "reembed"];
 
 // @spec DEPLOY-TOOL-024, STORE-KEY-002
 test("the tasks that open the settings store are raw, so mise gives them the terminal", () => {

@@ -44,8 +44,6 @@ export interface RunServiceOptions<B extends BootBus = Bus> {
 /** The heartbeat detail while a service waits for its credentials message (settings-store STORE-DLV-004). */
 export const WAITING_FOR_CREDENTIALS = "waiting for credentials";
 
-/** No delivery: the receiver of a service whose configuration loader was replaced. */
-const noCredentials: CredentialsReceiver = async () => ({ revision: 0, credentials: {} });
 
 /** Whether `service`'s unit gets a credentials message: its manifest entry declares a secret path or a state key (STORE-DLV-002). */
 export function getsCredentials(service: string): boolean {
@@ -98,7 +96,9 @@ export async function runService<B extends BootBus = Bus>(opts: RunServiceOption
   let heartbeat: Heartbeat;
   let stateKey: Buffer | undefined;
 
-  if (!getsCredentials(service)) {
+  // A replaced loader with no replaced receiver supplies the credentials itself: nothing is delivered, so nothing is waited for.
+  const waits = getsCredentials(service) && (opts.receiveCredentials !== undefined || opts.loadConfig === undefined);
+  if (!waits) {
     try {
       cfg = load({});
     } catch (err) {
@@ -127,7 +127,7 @@ export async function runService<B extends BootBus = Bus>(opts: RunServiceOption
     };
     let received: ReceivedCredentials;
     try {
-      const receive = opts.receiveCredentials ?? (opts.loadConfig ? noCredentials : defaultReceive);
+      const receive = opts.receiveCredentials ?? defaultReceive;
       received = await receive(service, { signal: waiting.signal, log });
     } catch (err) {
       if (waiting.signal.aborted) return; // a shutdown signal arrived while waiting: the shutdown sequence ends the process

@@ -237,6 +237,7 @@ function smoke(env: Record<string, string> = {}) {
   writeFileSync(join(bin, "docker"), [
     "#!/bin/bash",
     `echo "$*" >> "${cmds}"`,
+    'if [ "$1" = exec ]; then cat > /dev/null; fi',
     'case "$1 $2" in',
     '  "compose up") exit 0;;',
     '  "compose ps") echo "cid-$4"; exit 0;;',

@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ollamaModels, ConfigSchema, type Config } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo } from "./helpers/config-sandbox.js";
+import { ollamaModels, ConfigSchema, OLLAMA_MODEL_SECTIONS, parseYaml, type Config } from "../src/index.js";
+import { isolateEnv, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
@@ -71,6 +72,19 @@ async function fakeOllama(behave: (model: string) => "ok" | "http" | "line"): Pr
   return Object.assign(fake, { close: () => new Promise<void>((r) => { server.close(() => r()); }) });
 }
 
+/**
+ * The `models` projection the control plane writes (settings-store STORE-PROJ-005): the sections `ollamaModels` reads, from the
+ * shipped example, with `over` replacing whole sections.
+ */
+function modelsDir(over: Record<string, unknown> = {}): string {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-models-"));
+  const example = parseYaml(readFileSync(join(repo, "config", "config.example.yaml"), "utf8")) as Record<string, unknown>;
+  const at = (path: string): unknown => path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), example);
+  const sections = Object.fromEntries(OLLAMA_MODEL_SECTIONS.map((p) => [p, over[p] ?? at(p) ?? {}]));
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ format: 1, unit: "models", revision: 1, sections, documents: {} }));
+  return dir;
+}
+
 function run(dir: string, ollama: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script], { env: { ...process.env, CONFIG_DIR: dir, COHOST_ENV_FILE: join(dir, "..", ".env"), OLLAMA_URL: ollama } });
@@ -86,7 +100,7 @@ test("pull-models waits for ollama, pulls the required models then the optional 
   assert.ok(existsSync(script), "run `mise run build` first");
   const fake = await fakeOllama(() => "ok");
   try {
-    const r = await run(shippedSandbox(), fake.url);
+    const r = await run(modelsDir(), fake.url);
     assert.equal(r.code, 0, r.stderr);
     assert.ok(fake.tags >= 1);
     assert.deepEqual(fake.pulls, ["qwen2.5:7b-instruct-q4_K_M", "nomic-embed-text", "qwen2.5vl:3b", "gemma3:4b"]);
@@ -98,7 +112,7 @@ test("pull-models waits for ollama, pulls the required models then the optional 
 test("pull-models tries every model after a failed required pull (request error or error line) and then exits non-zero; a failed optional pull is only a warning", async () => {
   const failing = await fakeOllama((m) => (m === "nomic-embed-text" ? "line" : m === "qwen2.5vl:3b" ? "http" : "ok"));
   try {
-    const r = await run(shippedSandbox(), failing.url);
+    const r = await run(modelsDir(), failing.url);
     assert.notEqual(r.code, 0);
     assert.equal(failing.pulls.length, 4, "the remaining models are still tried");
     assert.match(r.stderr, /nomic-embed-text/);
@@ -106,7 +120,7 @@ test("pull-models tries every model after a failed required pull (request error 
   } finally { await failing.close(); }
   const optional = await fakeOllama((m) => (m === "gemma3:4b" ? "line" : "ok"));
   try {
-    const r = await run(shippedSandbox(), optional.url);
+    const r = await run(modelsDir(), optional.url);
     assert.equal(r.code, 0, r.stderr);
     assert.match(r.stderr, /WARNING.*gemma3:4b/);
   } finally { await optional.close(); }
@@ -116,12 +130,12 @@ test("pull-models tries every model after a failed required pull (request error 
 test("pull-models exits non-zero with the loader's error naming the failing keys and pulls nothing when the config is invalid", async () => {
   const fake = await fakeOllama(() => "ok");
   try {
-    const bad = await run(sandbox({ "config.yaml": MINIMAL_YAML.replace("name: Coco", "name: ''") }), fake.url);
+    const bad = await run(modelsDir({ llm: { model: "", embed_model: "e" } }), fake.url);
     assert.notEqual(bad.code, 0);
-    assert.match(bad.stderr, /cohost\.name/);
-    const placeholder = await run(sandbox({ "config.yaml": MINIMAL_YAML.replace("model: m,", "model: \"${LLM_MODEL}\",") }), fake.url);
-    assert.notEqual(placeholder.code, 0);
-    assert.match(placeholder.stderr, /llm\.model/);
+    assert.match(bad.stderr, /llm\.model/);
+    const provider = await run(modelsDir({ vision: { provider: "nope" } }), fake.url);
+    assert.notEqual(provider.code, 0);
+    assert.match(provider.stderr, /vision\.provider/);
     assert.deepEqual(fake.pulls, []);
     assert.equal(fake.tags, 0, "it does not even wait for ollama");
   } finally { await fake.close(); }

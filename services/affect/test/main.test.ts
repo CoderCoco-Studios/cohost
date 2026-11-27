@@ -101,11 +101,9 @@ test("main: any startup failure logs fatal and exits 1", async () => { // @spec 
     await runAffect({ ...x.env, log });
     assert.deepEqual(x.exits, [1], `${name}: exit code`);
     if (name === "config") {
-      // SHARED-BOOT-002: the loader's own message; the unit gets a credentials message, so its bus and waiting heartbeat
-      // exist before the load (SHARED-BOOT-009), and both are stopped before the exit.
+      // SHARED-BOOT-002: the loader's own message, no bus, no heartbeat.
       assert.deepEqual(lines.filter((l) => l.level === "error").map((l) => l.msg), ["bad config"]);
-      assert.deepEqual(bus.health.map((h) => h.state), ["starting", "stopping"], "config: the waiting heartbeat is stopped");
-      assert.ok(bus.stopped, "config: the bus is stopped");
+      assert.equal(bus.health.length, 0, "config: no heartbeat");
       continue;
     }
     const fatal = lines.filter((l) => l.level === "error" && l.msg === "fatal");

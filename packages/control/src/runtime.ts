@@ -1,4 +1,4 @@
-import { execFile as nodeExecFile } from "node:child_process";
+import { execFile as nodeExecFile, spawn } from "node:child_process";
 import { ISOLATION_ENV, encodeIsolation, findWorkspaceRoot } from "@cohost/config";
 import { findService, SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
@@ -27,17 +27,54 @@ const unknown = (id: string): RuntimeResult => ({ ok: false, detail: `unknown se
 
 // ---- compose ----
 
-/** Runs a program with an argv (no shell); `input` is written to its standard input, which is then closed. */
-export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number; input?: string }) => Promise<{ stdout: string; stderr: string }>;
+/**
+ * Runs a program with an argv (no shell); `input` is written to its standard input, which is then closed. With `onOutput`,
+ * each chunk of standard output and standard error is passed to it as it arrives (CTRL-STACK-021).
+ */
+export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number; input?: string; onOutput?: (chunk: string) => void }) => Promise<{ stdout: string; stderr: string }>;
+
+/** How much of each stream a streamed exec keeps for its result. */
+export const STREAM_TAIL_CHARS = 65_536;
 
 /** A consolidation pass makes model calls and can take minutes; the lifecycle verbs' 120 s would kill it. */
 export const CONSOLIDATE_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
-export const defaultExec: ExecFile = (file, args, opts) =>
+export const defaultExec: ExecFile = (file, args, opts) => (opts.onOutput ? streamExec(file, args, opts) : bufferedExec(file, args, opts));
+
+/**
+ * `spawn` (no shell) that forwards each output chunk and keeps the last `STREAM_TAIL_CHARS` of each stream, so a command that
+ * prints without end (a long image build) never hits a buffer limit and never holds all of its output in memory.
+ */
+// @spec CTRL-STACK-021
+const streamExec: ExecFile = (file, args, opts) =>
+  new Promise((resolve, reject) => {
+    const { timeoutMs, input, onOutput, ...rest } = opts;
+    const child = spawn(file, args, { ...rest, stdio: ["pipe", "pipe", "pipe"] });
+    const tails = { stdout: "", stderr: "" };
+    const take = (which: "stdout" | "stderr") => (chunk: string) => {
+      tails[which] = (tails[which] + chunk).slice(-STREAM_TAIL_CHARS);
+      try { onOutput?.(chunk); } catch { /* a progress callback must not fail the command */ }
+    };
+    child.stdout.setEncoding("utf8").on("data", take("stdout"));
+    child.stderr.setEncoding("utf8").on("data", take("stderr"));
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    child.on("error", (err) => { clearTimeout(timer); reject(Object.assign(err, tails)); });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ ...tails });
+      else reject(Object.assign(new Error(`Command failed: ${file} ${args.join(" ")}${timedOut ? " (timed out)" : signal ? ` (${signal})` : ` (exit ${code})`}`), { code, signal, killed: timedOut }, tails));
+    });
+    child.stdin.on("error", () => { /* the program exited before reading: its status reports the failure */ });
+    if (input !== undefined) child.stdin.end(input);
+    else child.stdin.end();
+  });
+
+const bufferedExec: ExecFile = (file, args, opts) =>
   new Promise((resolve, reject) => {
     // execFile never spawns a shell; args is an argv array.
-    const { timeoutMs, input, ...rest } = opts;
+    const { timeoutMs, input, onOutput: _onOutput, ...rest } = opts;
     const child = nodeExecFile(file, args, { ...rest, timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- `err` is node's ExecFileException, an Error
       if (err) reject(Object.assign(err, { stdout, stderr }));

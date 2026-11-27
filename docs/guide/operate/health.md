@@ -59,7 +59,7 @@ A `—` in the column means no heartbeat has been seen.
 
 - **deps** lists each dependency with `ok` or `down`. A dependency marked `n/a` is not applicable right now.
 - **last seen** is the time since the last heartbeat. It should stay within a few seconds.
-- **restarts** counts how many times the service started in the last minute.
+- **restarts**, under the last-seen time, is how many times Docker has restarted the service's container since it was created. It only grows while the container lives and starts again from 0 when Launch recreates the container. Starts in the last minute are what makes a service `crash-looping`; the **Why** cell then says how many there were.
 - **detail** is the service's own note. `paused` also appears as a badge beside the state, when you have paused a brain part.
 - A line under the state such as `needs cortex (down)` says that a service this one relies on is in trouble. It is a hint about where to look; the service's own state is unchanged.
 

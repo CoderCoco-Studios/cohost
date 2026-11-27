@@ -20,7 +20,13 @@ export interface FeedDeps {
   /** True for a socket that arrived beyond loopback (LAN listener, or a non-loopback full surface): its tool events are sent redacted (DASH-FEED-011). Default: none. */
   redacts?: (ws: FeedSocket) => boolean;
   /** The stack state the feed carries to clients: the `GET /stack` body, and a hook for each change of it. */
-  stack: { snapshot(): object; onChange(cb: (snapshot: object) => void): () => void };
+  stack: {
+    snapshot(): object;
+    onChange(cb: (snapshot: object) => void): () => void;
+    /** The launch progress record (DASH-STACK-011), null before the first; sent as `stack-progress` (DASH-FEED-013). */
+    progress?(): object | null;
+    onProgress?(cb: (progress: object) => void): () => void;
+  };
   /** Where the seed retry's warnings go. */
   log?: { warn(obj: unknown, msg: string): void };
   /** Called when the bus reachability flips (the stack state includes it). */
@@ -86,6 +92,7 @@ const isEmptyPlainObject = (v: unknown): boolean => isPlainObject(v) && Object.g
 
 export const servicesMessage = (services: ServiceHealth[]): string => JSON.stringify({ type: "services", services });
 export const stackMessage = (snapshot: object): string => JSON.stringify({ type: "stack", ...snapshot });
+export const progressMessage = (progress: object): string => JSON.stringify({ type: "stack-progress", ...progress });
 
 /** The bus's own retry delays (250 ms doubling, capped at 30 s), for the seed. */
 const RETRY_BASE_MS = 250;
@@ -126,9 +133,15 @@ export function createFeed(d: FeedDeps) {
   const snapshot = (): ServiceHealth[] => (d.decorate ?? ((s) => s))(d.tracker.snapshot());
   // @spec DASH-FEED-008, DASH-FEED-010
   const offStack = d.stack.onChange((snap) => { broadcast(stackMessage(snap)); if (d.decorate) broadcast(servicesMessage(snapshot())); });
+  // Build output can name host paths and settings: only sockets whose tool events go whole get it.
+  // @spec DASH-FEED-013
+  const offProgress = d.stack.onProgress?.((p) => {
+    const msg = progressMessage(p);
+    for (const c of d.clients()) if (c.readyState === OPEN && !d.redacts?.(c)) c.send(msg);
+  });
 
   return {
-    // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008, DASH-FEED-011, DASH-FEED-012
+    // @spec DASH-FEED-001, DASH-FEED-007, DASH-FEED-008, DASH-FEED-011, DASH-FEED-012, DASH-FEED-013
     /** Wire up a new client: current services, then the stack state, then the recent event replay. */
     // Replayed events carry `replay: true`; a live event that lands meanwhile is held and sent after the replay (once).
     async onConnection(ws: FeedSocket): Promise<void> {
@@ -137,6 +150,8 @@ export function createFeed(d: FeedDeps) {
       try {
         ws.send(servicesMessage(snapshot()));
         ws.send(stackMessage(d.stack.snapshot())); // before the replay read: a client that cannot get a replay still has both snapshots
+        const progress = d.stack.progress?.();
+        if (progress && !d.redacts?.(ws)) ws.send(progressMessage(progress));
         const sent = new Set<string>();
         let failure: { err: unknown } | undefined;
         try {
@@ -195,6 +210,7 @@ export function createFeed(d: FeedDeps) {
       if (timer) clearInterval(timer);
       offChange?.();
       offStack();
+      offProgress?.();
     },
   };
 }

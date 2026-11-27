@@ -7,6 +7,7 @@ import { Status, stackStatus } from "../../components/Status";
 import { useAction, useApi, useFeed } from "../../state/hooks";
 import type { StackActionKind } from "../../state/types";
 import { KIND_LABEL, blockReason, healthySummary, phaseWords, stackCause, stackStep } from "./model";
+import { LaunchPanel } from "./LaunchPanel";
 import { Since } from "./Since";
 
 interface Ask { title: string; body: string; confirm: string; danger?: boolean }
@@ -26,7 +27,7 @@ const STARTED: Record<StackActionKind, string> = { launch: "Launch started", reb
  * Restart all, Rebuild and Stop stack buttons (each behind a confirmation dialog) and the
  * consolidation pass offered after a successful stop. A button is disabled while an action runs or Docker is unavailable.
  */
-// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020
+// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020, DASH-UI-058
 export function StackCard() {
   const api = useApi();
   const stack = useFeed((f) => f.stack);
@@ -91,9 +92,10 @@ export function StackCard() {
                   ) : null}
                 </div>
               ) : null}
+              <LaunchPanel />
               {others.length ? (
                 <ul aria-label="Other containers" className="plain-list muted small">
-                  {others.map((c) => <li key={c.service}>{`${c.service}: ${c.health ? `${c.status}, ${c.health}` : c.status}`}</li>)}
+                  {others.map((c) => <li key={c.service}>{`${c.service}: ${c.stale ? "from the previous run, recreated by this launch" : c.health ? `${c.status}, ${c.health}` : c.status}`}</li>)}
                 </ul>
               ) : null}
             </>

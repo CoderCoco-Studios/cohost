@@ -51,7 +51,7 @@ test("rebuild: reports compose-build, runs --progress plain up -d --build --remo
 test("rebuild: a failing build resolves ok:false with the trimmed stderr and never polls; launch passes --build too (it is the same command)", async () => {
   const h = harness({ upFail: " build failed " });
   assert.deepEqual(await h.stack.rebuild(), { ok: false, detail: "build failed" });
-  assert.deepEqual(h.calls.map((c) => c.args[1]), ["up"]);
+  assert.deepEqual(h.calls.map((c) => c.args[3]), ["up"]);
   const l = harness();
   await l.stack.launch();
   assert.deepEqual(l.calls[0]!.args, h.calls[0]!.args);

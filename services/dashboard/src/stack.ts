@@ -1,6 +1,6 @@
 import type { Logger } from "@cohost/config";
 import {
-  ONE_SHOTS, StackController, stackState,
+  BuildProgress, ONE_SHOTS, StackController, containerService, stackState,
   type ContainerStatus, type RuntimeResult, type ServiceController, type StackActionKind, type StackControllerOptions,
   type LockResult, type StackResult, type StackState, type StackStatus,
 } from "@cohost/control";
@@ -13,8 +13,56 @@ export interface StackSnapshot {
   bus: BusState;
   action: null | { kind: StackActionKind; phase: string; startedAt: number };
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: ContainerStatus[]; finishedAt: number };
-  /** Per container; `overrides` (CTRL-STACK-016) is empty for a container that sets none and absent where the probe could not read it. */
-  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string> }[];
+  /**
+   * Per container; `overrides` (CTRL-STACK-016) is empty for a container that sets none and absent where the probe could not read it;
+   * `stale` marks, while a launch builds, a previous run's container Compose has not yet acted on (DASH-STACK-014).
+   */
+  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: true }[];
+}
+
+export type ProgressRowState = "building" | "cached" | "built" | "failed" | "restarting" | "done";
+
+/** One service of the Launch panel: a build (launch, rebuild) or a unit restart (restart-all). */
+export interface ProgressRow {
+  service: string;
+  state: ProgressRowState;
+  step?: number;
+  of?: number;
+  total?: number;
+  done?: number;
+  cached?: number;
+  current?: string;
+  detail?: string;
+}
+
+/** The progress record of the last launch, rebuild or restart-all (DASH-STACK-011), sent as `stack-progress` (DASH-FEED-013). */
+export interface StackProgress {
+  kind: StackActionKind;
+  startedAt: number;
+  running: boolean;
+  ok?: boolean;
+  finishedAt?: number;
+  rows: ProgressRow[];
+  lines: string[];
+  failure?: { service?: string; lines: string[] };
+}
+
+/** The kinds that keep a progress record. */
+const RECORDED: ReadonlySet<StackActionKind> = new Set(["launch", "rebuild", "restart"]);
+export const PROGRESS_LINES = 200;
+export const PROGRESS_MS = 250;
+const FAILURE_LINES = 10;
+
+interface ProgressState {
+  kind: StackActionKind;
+  startedAt: number;
+  running: boolean;
+  ok?: boolean;
+  finishedAt?: number;
+  lines: string[];
+  parser?: BuildProgress;
+  restarts: ProgressRow[];
+  failure?: { service?: string; lines: string[] };
 }
 
 /** The slice of `StackController` the service drives. */
@@ -35,6 +83,8 @@ export type StackRequest = { ok: true; action: StackActionKind } | { ok: false; 
 /** Callbacks the stack controller reports through (DASH-STACK-007). */
 export interface StackHooks {
   onPhase(kind: StackActionKind, phase: string): void;
+  /** One output line of a launch's or rebuild's `docker compose up` (control-plane CTRL-STACK-020). */
+  onOutput(kind: StackActionKind, line: string): void;
   /** Takes a status the controller read itself (the launch readiness wait) as the current one. */
   observe(status: StackStatus): void;
   /** Runs `fn` after every earlier exclusive job, so two status probes never overlap. */
@@ -51,6 +101,8 @@ export interface StackServiceOptions {
   lock?: { tryAcquire(action: string): LockResult };
   /** This process's pid, named as the holder in an in-process busy refusal; `process.pid` by default. */
   pid?: number;
+  /** The least time between two `stack-progress` pushes (default 250 ms); 0 pushes every change. */
+  progressMs?: number;
 }
 
 export const PROBE_MS = 5000;
@@ -80,6 +132,12 @@ export class StackService {
   private lastKey = "";
   private timer?: NodeJS.Timeout;
   private now: () => number;
+  private record?: ProgressState;
+  private progressListeners = new Set<(p: StackProgress) => void>();
+  private progressTimer?: NodeJS.Timeout;
+  private progressDirty = false;
+  /** The last restart count each service's container had, with that container's id (DASH-STACK-016). */
+  private counts = new Map<string, { id: string; count: number }>();
 
   constructor(private o: StackServiceOptions) {
     this.now = o.now ?? Date.now;
@@ -89,6 +147,7 @@ export class StackService {
 
   readonly hooks: StackHooks = {
     onPhase: (kind, phase) => this.onPhase(kind, phase),
+    onOutput: (kind, line) => this.onOutput(kind, line),
     observe: (s) => this.observe(s),
     exclusive: (fn) => {
       const run = this.chain.then(fn, fn);
@@ -102,6 +161,7 @@ export class StackService {
     const st = this.status;
     const running = this.action?.kind === "launch" || this.action?.kind === "rebuild" ? "launch" : this.action?.kind === "stop" ? "stop" : undefined;
     const docker = st ? st.docker : { ok: false, detail: NOT_PROBED };
+    const stale = this.staleServices();
     return {
       state: st ? stackState(st, running) : "docker-unavailable",
       docker,
@@ -109,7 +169,7 @@ export class StackService {
       action: this.action ? { ...this.action } : null,
       last: this.last ? { ...this.last } : null,
       services: (st?.services ?? [])
-        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}), ...(c.overrides ? { overrides: { ...c.overrides } } : {}) }))
+        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}), ...(c.overrides ? { overrides: { ...c.overrides } } : {}), ...(stale?.(c) ? { stale: true as const } : {}) }))
         .toSorted((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
     };
   }
@@ -129,14 +189,120 @@ export class StackService {
     for (const cb of this.listeners) cb(snap);
   }
 
+  /**
+   * While a launch or rebuild builds, the test for a previous run's container: not running, and its service named by no
+   * Compose container line of this run (DASH-STACK-014). Undefined at any other time.
+   */
+  // @spec DASH-STACK-014
+  private staleServices(): ((c: ContainerStatus) => boolean) | undefined {
+    const a = this.action;
+    const parser = this.record?.running ? this.record.parser : undefined;
+    if (!a || (a.kind !== "launch" && a.kind !== "rebuild") || a.phase === "waiting" || !parser) return undefined;
+    const names = (this.status?.services ?? []).map((c) => c.service);
+    const touched = new Set(parser.touched().map((n) => containerService(n, names)));
+    return (c) => c.status !== "running" && !touched.has(c.service);
+  }
+
+  /** Takes a status as current, keeping each container's restart count across reads that lack one (DASH-STACK-016). */
+  // @spec DASH-STACK-016
   private observe(s: StackStatus): void {
-    this.status = s;
+    const services = s.services.map((c) => {
+      if (c.id === undefined) return c;
+      const prior = this.counts.get(c.service);
+      const same = prior?.id === c.id ? prior : undefined;
+      const count = c.restartCount === undefined ? same?.count : Math.max(c.restartCount, same?.count ?? 0);
+      if (count === undefined) {
+        if (!same) this.counts.delete(c.service);
+        return c;
+      }
+      this.counts.set(c.service, { id: c.id, count });
+      return { ...c, restartCount: count };
+    });
+    this.status = { ...s, services };
     this.refresh();
+  }
+
+  /** The progress record of the last launch, rebuild or restart-all, or null before the first (DASH-STACK-011). */
+  // @spec DASH-STACK-011, DASH-STACK-013, DASH-STACK-017
+  progress(): StackProgress | null {
+    const r = this.record;
+    if (!r) return null;
+    const rows: ProgressRow[] = r.parser
+      ? r.parser.rows().map((b) => ({ ...b, state: r.ok === true && b.state === "building" ? "built" : b.state }))
+      : r.restarts.map((x) => ({ ...x }));
+    return {
+      kind: r.kind, startedAt: r.startedAt, running: r.running,
+      ...(r.ok !== undefined ? { ok: r.ok } : {}), ...(r.finishedAt !== undefined ? { finishedAt: r.finishedAt } : {}),
+      rows, lines: [...r.lines],
+      ...(r.failure ? { failure: { ...r.failure, lines: [...r.failure.lines] } } : {}),
+    };
+  }
+
+  /** Hears each change of the progress record, at most one per `progressMs`, and the end at once (DASH-FEED-013). */
+  onProgress(cb: (p: StackProgress) => void): () => void {
+    this.progressListeners.add(cb);
+    return () => { this.progressListeners.delete(cb); };
+  }
+
+  private emitProgress(): void {
+    this.progressDirty = false;
+    const p = this.progress();
+    if (p) for (const cb of this.progressListeners) cb(p);
+  }
+
+  /** Leading and trailing throttle: a change with no push in the window goes at once; later ones wait for the window's end. */
+  // @spec DASH-FEED-013
+  private progressChanged(flush = false): void {
+    const ms = this.o.progressMs ?? PROGRESS_MS;
+    if (flush || ms <= 0) {
+      if (this.progressTimer) clearTimeout(this.progressTimer);
+      this.progressTimer = undefined;
+      this.emitProgress();
+      return;
+    }
+    if (this.progressTimer) {
+      this.progressDirty = true;
+      return;
+    }
+    this.emitProgress();
+    const window = () => {
+      this.progressTimer = undefined;
+      if (!this.progressDirty) return;
+      this.emitProgress();
+      this.progressTimer = setTimeout(window, ms);
+      this.progressTimer.unref?.();
+    };
+    this.progressTimer = setTimeout(window, ms);
+    this.progressTimer.unref?.();
+  }
+
+  private appendLine(r: ProgressState, line: string): void {
+    r.lines.push(line);
+    if (r.lines.length > PROGRESS_LINES) r.lines.splice(0, r.lines.length - PROGRESS_LINES);
+  }
+
+  /** One `up` output line: into the ring, the parser and the log (DASH-STACK-011, DASH-STACK-012). */
+  // @spec DASH-STACK-011, DASH-STACK-012
+  private onOutput(kind: StackActionKind, line: string): void {
+    const r = this.record;
+    if (!r || !r.running || r.kind !== kind) return;
+    this.appendLine(r, line);
+    this.o.log.info(`${kind} | ${line}`);
+    if (r.parser?.push(line)) this.refresh(); // a container line can end a container's stale mark
+    this.progressChanged();
   }
 
   private onPhase(kind: StackActionKind, phase: string): void {
     if (!this.action || this.action.kind !== kind) return;
     this.action.phase = phase;
+    const r = this.record;
+    if (kind === "restart" && r?.running && r.kind === "restart" && phase.startsWith("restarting ")) { // DASH-STACK-013
+      const id = phase.slice("restarting ".length);
+      for (const row of r.restarts) if (row.state === "restarting") row.state = "done";
+      r.restarts.push({ service: id, state: "restarting" });
+      this.appendLine(r, phase);
+      this.progressChanged();
+    }
     if ((kind === "launch" || kind === "rebuild") && phase === "waiting") this.waiting = true;
     this.refresh();
     if (!this.waiting) void this.probe();
@@ -210,6 +376,10 @@ export class StackService {
     this.slot = kind;
     this.unlock = held.release;
     this.action = { kind, phase: "starting", startedAt: this.now() };
+    if (RECORDED.has(kind)) {
+      this.record = { kind, startedAt: this.action.startedAt, running: true, lines: [], restarts: [], ...(kind === "restart" ? {} : { parser: new BuildProgress() }) };
+      this.progressChanged(true);
+    }
     this.o.log.info({ kind }, `stack ${kind} started`);
     this.refresh();
     void this.run(kind, this.ops, restarter);
@@ -232,6 +402,8 @@ export class StackService {
       .filter((c) => !ONE_SHOTS.includes(c.service) && !isReady(c))
       .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}) }));
     this.last = { kind, ok: res.ok, ...(res.detail ? { detail: res.detail } : {}), ...(notReady.length ? { services: notReady } : {}), finishedAt: this.now() };
+    const r = this.record;
+    if (r?.running && r.kind === kind) this.finishRecord(r, res);
     this.slot = undefined;
     this.unlock?.();
     this.unlock = undefined;
@@ -240,7 +412,35 @@ export class StackService {
     if (res.ok) this.o.log.info({ kind, detail: res.detail }, `stack ${kind} finished`);
     else this.o.log.warn({ kind, detail: res.detail }, `stack ${kind} failed`);
     this.refresh();
+    if (r?.kind === kind) this.progressChanged(true);
     void this.probe();
+  }
+
+  /** Ends the record: its outcome, a restart-all's per-unit rows, and the failure (DASH-STACK-013, DASH-STACK-017). */
+  // @spec DASH-STACK-013, DASH-STACK-017
+  private finishRecord(r: ProgressState, res: StackResult | RuntimeResult): void {
+    r.running = false;
+    r.ok = res.ok;
+    r.finishedAt = this.now();
+    if (r.kind === "restart") {
+      for (const o of (res as StackResult).restarts ?? []) {
+        let row = r.restarts.find((x) => x.service === o.id);
+        if (!row) {
+          row = { service: o.id, state: "restarting" };
+          r.restarts.push(row);
+        }
+        row.state = o.ok ? "done" : "failed";
+        if (!o.ok) row.detail = o.detail ?? "failed";
+        this.appendLine(r, o.ok ? `${o.id} restarted` : `${o.id} failed: ${o.detail ?? "failed"}`);
+      }
+      const failed = r.restarts.find((x) => x.state === "failed");
+      if (failed) r.failure = { service: failed.service, lines: [failed.detail ?? "failed"] };
+      else if (!res.ok) r.failure = { lines: [res.detail ?? "failed"] };
+      return;
+    }
+    if (res.ok) return;
+    const parsed = r.parser?.failure();
+    r.failure = parsed ?? (r.lines.length ? { lines: r.lines.slice(-FAILURE_LINES) } : { lines: [res.detail ?? "failed"] });
   }
 }
 
@@ -256,5 +456,11 @@ export class ObservedStackController extends StackController {
       this.hooks.observe(s);
       return s;
     });
+  }
+
+  /** Serialised like `status`, but observed only by its caller: the plain read inside it never reaches the snapshot (DASH-STACK-015). */
+  // @spec DASH-STACK-015
+  override statusWithRestarts(): Promise<StackStatus> {
+    return this.hooks.exclusive(() => super.statusWithRestarts());
   }
 }

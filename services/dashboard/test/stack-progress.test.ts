@@ -194,14 +194,15 @@ test("a status without restart counts keeps each container's last count while it
 class Sock implements FeedSocket {
   readyState = 1;
   sent: Array<{ type: string } & Record<string, unknown>> = [];
-  constructor(readonly lan = false) {}
+  constructor(lan = false) { if (lan) lanSocks.add(this); }
   send(d: string) { this.sent.push(JSON.parse(d)); }
   progress() { return this.sent.filter((m) => m.type === "stack-progress") as unknown as Array<StackProgress & { type: string }>; }
 }
 
+const lanSocks = new WeakSet<FeedSocket>();
 function feedFor(svc: StackService, socks: Set<Sock>) {
   const bus = { recent: async () => [], tail: async () => {}, recentHealth: async () => [], tailHealth: async () => {} };
-  return createFeed({ bus: bus as never, tracker: new HealthTracker(), clients: () => socks, stack: svc, redacts: (ws) => (ws as Sock).lan });
+  return createFeed({ bus: bus as never, tracker: new HealthTracker(), clients: () => socks, stack: svc, redacts: (ws) => lanSocks.has(ws) });
 }
 
 // @spec DASH-FEED-013

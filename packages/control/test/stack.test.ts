@@ -94,7 +94,7 @@ test("launch: reports compose-build, runs --progress plain up -d --build --remov
 test("launch: a failing up resolves ok:false with trimmed stderr cut to 500 and never polls", async () => {
   const h = harness({ upFail: "pull access denied" });
   assert.deepEqual(await h.stack.launch(), { ok: false, detail: "pull access denied" });
-  assert.deepEqual(h.calls.map((c) => c.args[1]), ["up"]);
+  assert.deepEqual(h.calls.map((c) => c.args[3]), ["up"]);
   assert.deepEqual(h.phases, [["launch", "compose-build"]]);
   assert.equal((await harness({ upFail: "z".repeat(900) }).stack.launch()).detail!.length, 500);
 });

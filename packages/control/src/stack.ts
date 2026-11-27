@@ -10,6 +10,8 @@ import type { Provisioner } from "./provision.js";
 export interface ContainerStatus {
   service: string;
   status: string;
+  /** The container ID Compose reports, so a caller can tell a recreated container from the one before it. */
+  id?: string;
   health?: string;
   exitCode?: number;
   /** Compose's restart count for the container, when `statusWithRestarts` read it. */
@@ -47,6 +49,8 @@ export interface StackControllerOptions {
   env?: NodeJS.ProcessEnv;
   manifest?: readonly ServiceDef[];
   onPhase?: (kind: StackActionKind, phase: string) => void;
+  /** Each line the `docker compose up` of a launch or rebuild prints (CTRL-STACK-020). */
+  onOutput?: (kind: StackActionKind, line: string) => void;
   /** PATH lookup used to find the docker binary (injectable for tests). */
   onPath?: (name: string, env: NodeJS.ProcessEnv) => boolean;
   sleep?: (ms: number) => Promise<void>;
@@ -103,14 +107,42 @@ function parsePs(stdout: string): ContainerStatus[] {
   const rows: unknown[] = text.startsWith("[") ? JSON.parse(text) : text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
   if (!Array.isArray(rows)) throw new Error("unexpected output from docker compose ps");
   return rows.map((r) => {
-    const o = r as { Service?: unknown; State?: unknown; Health?: unknown; ExitCode?: unknown };
+    const o = r as { ID?: unknown; Service?: unknown; State?: unknown; Health?: unknown; ExitCode?: unknown };
     if (typeof o.Service !== "string" || typeof o.State !== "string") throw new Error("unexpected output from docker compose ps");
     return {
       service: o.Service, status: o.State,
+      ...(typeof o.ID === "string" && o.ID !== "" ? { id: o.ID } : {}),
       ...(typeof o.Health === "string" && o.Health !== "" ? { health: o.Health } : {}),
       ...(o.State === "exited" && typeof o.ExitCode === "number" ? { exitCode: o.ExitCode } : {}),
     };
   });
+}
+
+/** Splits streamed output into lines on `\n` and `\r`, trailing whitespace trimmed and empty lines dropped; a partial line waits. */
+export class LineSplitter {
+  private rest = "";
+  push(chunk: string): string[] {
+    const parts = (this.rest + chunk).split(/\r\n|\n|\r/);
+    this.rest = parts.pop() ?? "";
+    return parts.map((l) => l.trimEnd()).filter((l) => l !== "");
+  }
+  end(): string[] {
+    const last = this.rest.trimEnd();
+    this.rest = "";
+    return last === "" ? [] : [last];
+  }
+}
+
+/** The last non-empty line of a captured stream, trimmed. */
+const lastNonEmpty = (text: string | undefined): string => (text ?? "").split(/\r?\n|\r/).map((l) => l.trim()).filter(Boolean).at(-1) ?? "";
+
+/**
+ * The detail of a failed `up`: the last non-empty line it printed (Compose ends with the error), from the stream when it was
+ * streamed, else from the captured standard error or output, else the exec's own detail; cut to 500 characters.
+ */
+function failedUpDetail(streamed: string, err: unknown, fallback: string): string {
+  const e = err as { stdout?: string; stderr?: string } | undefined;
+  return (streamed.trim() || lastNonEmpty(e?.stderr) || lastNonEmpty(e?.stdout) || fallback).slice(0, 500);
 }
 
 /**
@@ -164,19 +196,22 @@ export class StackController {
 
   /** Runs one fixed `docker compose` command with `COHOST_ISOLATION` set to the empty string, so neither this process's environment nor `.env` supplies it (CTRL-STACK-017). */
   // @spec CTRL-STACK-017
-  private async compose(args: string[], timeoutMs: number): Promise<{ ok: true; stdout: string } | { ok: false; detail: string }> {
+  private async compose(args: string[], timeoutMs: number, onOutput?: (chunk: string) => void): Promise<{ ok: true; stdout: string } | { ok: false; detail: string; err?: unknown }> {
     const docker = resolveDockerBin(this.env, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
-      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: dockerEnv(docker.bin, this.env, { [ISOLATION_ENV]: "" }), cwd: this.cwd, timeoutMs });
+      const { stdout } = await this.exec(docker.bin, ["compose", ...args], { env: dockerEnv(docker.bin, this.env, { [ISOLATION_ENV]: "" }), cwd: this.cwd, timeoutMs, ...(onOutput ? { onOutput } : {}) });
       return { ok: true, stdout };
     } catch (err) {
-      return { ok: false, detail: execDetail(err) };
+      return { ok: false, detail: execDetail(err), err };
     }
   }
 
   // @spec CTRL-STACK-008
-  async status(): Promise<StackStatus> {
+  status(): Promise<StackStatus> { return this.readStatus(); }
+
+  /** The status probe itself; `statusWithRestarts` reads it through here so a subclass's `status` sees only its own callers. */
+  protected async readStatus(): Promise<StackStatus> {
     const r = await this.compose(["ps", "--all", "--format", "json"], STATUS_TIMEOUT_MS);
     if (!r.ok) return { docker: { ok: false, detail: r.detail }, services: [] };
     try {
@@ -200,7 +235,7 @@ export class StackController {
    */
   // @spec CTRL-STACK-014, CTRL-STACK-016
   async statusWithRestarts(): Promise<StackStatus> {
-    const st = await this.status();
+    const st = await this.readStatus();
     if (!st.docker.ok) return st;
     const ids = await this.compose(["ps", "--all", "-q"], STATUS_TIMEOUT_MS);
     if (!ids.ok) return st;
@@ -241,7 +276,7 @@ export class StackController {
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005, CTRL-STACK-018
   launch(): Promise<StackResult> { return this.bringUp("launch"); }
 
-  // @spec CTRL-RUNTIME-016, CTRL-RUNTIME-014, CTRL-RUNTIME-018
+  // @spec CTRL-RUNTIME-016, CTRL-RUNTIME-014, CTRL-RUNTIME-018, CTRL-STACK-020
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
     const docker = resolveDockerBin(this.env, this.o.onPath);
@@ -250,8 +285,15 @@ export class StackController {
     const before = await this.provisioner.before();
     if (!before.ok) return { ok: false, detail: before.detail };
     ensureLogsDir(this.cwd, this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
-    const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
-    if (!up.ok) return { ok: false, detail: up.detail };
+    const lines = new LineSplitter();
+    let lastLine = "";
+    const emit = (line: string) => {
+      lastLine = line;
+      try { this.o.onOutput?.(kind, line); } catch { /* a progress callback must not fail the action */ }
+    };
+    const up = await this.compose(["--progress", "plain", "up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS, (chunk) => { for (const l of lines.push(chunk)) emit(l); });
+    for (const l of lines.end()) emit(l);
+    if (!up.ok) return { ok: false, detail: failedUpDetail(lastLine, up.err, up.detail) };
     const delivered = await before.after();
     if (!delivered.ok) return { ok: false, detail: delivered.detail ?? "a delivery failed" };
     this.phase(kind, "waiting");

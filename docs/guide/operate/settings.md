@@ -189,7 +189,7 @@ An install from before the settings store kept its settings in files: `config/co
    It prints `ok`.
 
 4. Keep the control token: run `mise run config:token -- --stdin` and paste the old `CONTROL_TOKEN` value at the hidden prompt (or set a new one with `mise run config:token`), and save it in your password manager. Then remove the `CONTROL_TOKEN` line from `.env`.
-5. Delete `config/config.yaml`, `config/config.yaml.bak`, `config/personality.md`, `config/expressions.yaml`, `config/.vts-token` and `secrets/secrets.yaml`. The store holds everything they held.
+5. Delete `config/config.yaml`, `config/config.yaml.bak`, `config/personality.md`, `config/expressions.yaml`, `config/.vts-token`, `secrets/secrets.yaml`, `data/chat/twitch-token.json` and the `data/tts-pocket-secret/` folder. The store holds the settings and credentials they held; the runtime tokens of chat and avatar are kept encrypted under `data/chat/` and `data/avatar/` from their next start.
 
 ## How you know it worked
 

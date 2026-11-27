@@ -4,7 +4,7 @@ Compose topology, the single parameterised Dockerfile, the project's toolchains 
 
 ## Status
 
-**#376 in-repo CLA check (spec stage):** DEPLOY-CI-005 rewritten and DEPLOY-CI-013 to -017 added for `scripts/cla/cla.mjs`, which replaces the archived CLA Assistant Lite action; 176 specs: 119 `[x]`, 57 `[ ]`, 0 `[D]`.
+**#376 in-repo CLA check (built):** DEPLOY-CI-005 and DEPLOY-CI-013 to -017 cover `scripts/cla/cla.mjs`, run by the `cla` workflow from the base commit through `mise run cla`, which replaces the archived CLA Assistant Lite action and keeps its `cla-signatures` record format; tested on fixtures against a mocked GitHub API (`packages/config/test/cla.test.ts`), the workflow itself unexercised until a pull request after merge. 176 specs: 125 `[x]`, 51 `[ ]`, 0 `[D]`.
 
 **#372 settings-store design (docs only, not built):** projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
@@ -93,7 +93,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Linting | DEPLOY-LINT-001 to DEPLOY-LINT-010 | 10 | 10 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-017 | 17 | 16 | 0 | 1 |
-| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-017 | 17 | 11 | 0 | 6 |
+| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-017 | 17 | 17 | 0 | 0 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-007 | 7 | 7 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
 | Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-006 | 6 | 5 | 0 | 1 |

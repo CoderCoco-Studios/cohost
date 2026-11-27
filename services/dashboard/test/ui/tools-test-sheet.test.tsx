@@ -2,23 +2,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { act, screen, userEvent, waitFor, within } from "./helpers/render";
 import { UNITS, mountServices, push, svc } from "./services-fixtures";
-import type { UnitDescriptor } from "../../ui/src/state/types";
+import type { ControlInfo, UnitDescriptor } from "../../ui/src/state/types";
 
 // The Test sheet of the `tools` unit is a text injection naming a tool and its arguments. Its text goes out as
 // `as: "tool"`, never as a chat message: a `tools` row that sent plain `text` would feed chat. The tool route is always
-// token-gated (DASH-INJ-011). Contract for the form: a textbox named for the tool (/tool/i) and one for its arguments
+// gated like every mutation (DASH-INJ-011). Contract for the form: a textbox named for the tool (/tool/i) and one for its arguments
 // (/argument/i), and the button `Send text`.
 
 const toolsUnit: UnitDescriptor = { id: "tools", config: [], uses: [], requires: [], pause: false, infra: false, defaultMode: "fresh", test: { inputs: ["text"], observe: ["tool.result", "inject.result"] } };
 const manifest = [...UNITS, toolsUnit];
-const open = async (control: { enabled: false } | { enabled: true; runtime: string; advanced: boolean }) => {
+const open = async (control: ControlInfo) => {
   const m = await mountServices({ control, manifest, services: [...UNITS, toolsUnit].map((u) => svc(u.id)) });
   const row = within(screen.getByRole("table", { name: "Services" })).getAllByRole("row").find((r) => within(r).queryByRole("rowheader", { name: "tools" }) !== null)!;
   await userEvent.setup().click(within(row).getByRole("button", { name: "Test tools" }));
   return { ...m, sheet: screen.getByRole("dialog", { name: "Test tools" }) };
 };
-const ON = { enabled: true, runtime: "compose", advanced: false } as const;
-const OFF = { enabled: false } as const;
+const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
+const OFF = { enabled: false, unlocked: false } as const;
 
 async function fill(sheet: HTMLElement, toolName: string, args: string) {
   const user = userEvent.setup();
@@ -48,17 +48,25 @@ test("a tools Test sheet sends service-level text as: tool, never as a chat mess
   assert.equal(app.fetch.callsTo("POST /inject/event").length, 0);
 });
 
-// @spec MOD-MAN-010, DASH-INJ-011
-test("the tool route is gated even with control mode off: no token held asks for one first and sends nothing; Cancel sends nothing", async () => {
+// @spec MOD-MAN-010, DASH-INJ-011, DASH-UI-006
+test("the tool call goes out without a token when none is held: when it succeeds no Access dialog opens; a 401 asks for one, and Cancel sends nothing more", async () => {
   const { app, sheet } = await open(OFF);
   app.fetch.on("POST /inject/text", { status: 202, json: { id: "req-2" } });
   const user = await fill(sheet, "stream_info", "{}");
   await user.click(within(sheet).getByRole("button", { name: "Send text" }));
-  await waitFor(() => assert.ok(app.rt.access.state.get().prompt, "the Access dialog is asked"));
-  assert.equal(app.fetch.callsTo("POST /inject/text").length, 0, "nothing goes out without a token");
-  act(() => app.rt.access.resolvePrompt(false));
+  await waitFor(() => assert.equal(app.fetch.callsTo("POST /inject/text").length, 1));
+  assert.equal(app.fetch.callsTo("POST /inject/text")[0]!.headers.authorization, undefined);
+  assert.equal(app.rt.access.state.get().prompt, null);
+  document.body.innerHTML = "";
+
+  const remote = await open(ON);
+  remote.app.fetch.on("POST /inject/text", { status: 401, text: "unauthorized" });
+  const u2 = await fill(remote.sheet, "stream_info", "{}");
+  await u2.click(within(remote.sheet).getByRole("button", { name: "Send text" }));
+  await waitFor(() => assert.ok(remote.app.rt.access.state.get().prompt, "the Access dialog is asked after the 401"));
+  act(() => remote.app.rt.access.resolvePrompt(false));
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  assert.equal(app.fetch.callsTo("POST /inject/text").length, 0);
+  assert.equal(remote.app.fetch.callsTo("POST /inject/text").length, 1, "the refused try only");
 });
 
 // @spec MOD-MAN-010, MOD-TEST-005

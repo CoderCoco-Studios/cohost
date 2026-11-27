@@ -1,6 +1,6 @@
 import type http from "node:http";
+import { authorized } from "./access.js";
 import type { Publisher } from "@cohost/bus";
-import { bearerOk } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 
 export interface ToolRouteDeps {
@@ -25,7 +25,7 @@ const send = (res: http.ServerResponse, status: number, body?: unknown, headers:
 // @spec DASH-TOOL-002, DASH-INJ-011
 export function requireToolToken(token: string | undefined, req: http.IncomingMessage, res: http.ServerResponse): boolean {
   if (token === undefined) { send(res, 403, { ok: false, detail: NO_TOKEN_DETAIL }); return false; }
-  if (!bearerOk(req.headers.authorization, token)) { send(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return false; }
+  if (!authorized(token, req)) { send(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return false; }
   return true;
 }
 

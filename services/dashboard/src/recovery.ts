@@ -1,4 +1,5 @@
 import http from "node:http";
+import { authorized, handleUnlock, hasSession, pathOf, tokenRefusal, unlockBase, unlockLine, UnlockLinks } from "./access.js";
 import type { AddressInfo } from "node:net";
 import { chmodSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import {
@@ -6,11 +7,11 @@ import {
   parseConfigText, placeholderFallback, rawSection, resetConfigKey, resetPathOf, secretPathOf, secretRepair, secretsPath, setConfigKey, updateSecrets,
   writeFileAtomic, type Config, type ConfigIssue, type ConfigProblem, type Logger,
 } from "@cohost/config";
-import { LifecycleLock, StackController, bearerOk, configRefusal, isLoopback, type LockResult, type StackResult } from "@cohost/control";
+import { LifecycleLock, StackController, configRefusal, isLoopback, type LockResult, type StackResult } from "@cohost/control";
 import { BodyTooLarge, readBody, readText } from "./body.js";
 import { fullSurfaceBind } from "./control.js";
 import { guardFullSurface } from "./host.js";
-import { controlTokenFromEnv } from "./secrets.js";
+import { controlTokenFromEnv, refuseSecretToken } from "./secrets.js";
 import { noTokenDetail } from "./sensitive.js";
 import { handleUi, locateUiDir } from "./static.js";
 
@@ -136,8 +137,15 @@ export interface RecoveryHandlerDeps {
   controlEnabled: boolean;
   /** `CONTROL_ADVANCED`, reported by `GET /services/control` as in normal mode. */
   advanced?: boolean;
-  /** The control token whenever one is configured, in either control mode. */
+  /** The control token whenever one is configured, in either control mode; it also keys the session cookies (DASH-UNL-005). */
   controlToken?: string;
+  /**
+   * The full surface is bound to a loopback address (CTRL-CONFIG-002): a `config.yaml` reset, a fallback and the `config.yaml`
+   * part of reset-all then need no token in either control mode (DASH-RCV-003). Default false.
+   */
+  loopback?: boolean;
+  /** The unlock link's nonces (DASH-UNL-002); a private set by default. */
+  unlock?: UnlockLinks;
   /**
    * Replaces `config.yaml` atomically, with `mode` as the new file's permission bits when given; `writeFileAtomic` by default.
    * `secrets.yaml` is never written through it: `updateSecrets` and the raw editor write it with `writeFileAtomic` at mode 0600.
@@ -164,7 +172,9 @@ const json = (res: http.ServerResponse, status: number, value: unknown, headers:
 
 const STACK_POST = /^\/stack\/[^/]+$/;
 const LIFECYCLE = /^\/services\/[^/]+\/(start|stop|restart)$/;
-const RECOVERY_POST = /^\/recovery\/(set|reset|reset-all|raw)$/;
+const RECOVERY_POST = /^\/recovery\/(set|reset|reset-all|fallback|raw)$/;
+/** The recovery writes that put no caller-chosen value in a file: ungated on a loopback bind (DASH-RCV-003). */
+const NO_VALUE_OPS = new Set(["reset", "reset-all", "fallback"]);
 const RECOVERY_DETAIL = "the dashboard is in config recovery mode: fix the config on its recovery screen first";
 
 /**
@@ -173,11 +183,12 @@ const RECOVERY_DETAIL = "the dashboard is in config recovery mode: fix the confi
  * everything else is a 503. The Host and Origin checks wrap it at the listener.
  */
 // @spec DASH-RCV-003, DASH-RCV-004, DASH-RCV-005, DASH-RCV-006, DASH-RCV-007, DASH-RCV-009, DASH-RCV-010, DASH-RCV-012, DASH-RCV-015
-// @spec DASH-RCV-011, DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019
+// @spec DASH-RCV-011, DASH-RCV-016, DASH-RCV-017, DASH-RCV-018, DASH-RCV-019, DASH-RCV-022, DASH-RCV-023, DASH-CTRL-011
 export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListener {
   const write = d.write ?? writeFileAtomic;
   const uiDir = d.uiDir ?? locateUiDir();
   const { configFile, secretsFile } = d.files;
+  const links = d.unlock ?? new UnlockLinks();
   const check = (configText?: string): ConfigProblem[] => checkConfig({ configFile, secretsFile, ...(configText !== undefined ? { configText } : {}) });
   let left = false;
   let fired = false;
@@ -329,7 +340,17 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     if (handleUi(uiDir, "cohost", req, res, url)) return;
     if (url.pathname === "/health") { res.writeHead(200); res.end("ok"); return; }
     if (method === "GET" && url.pathname === "/services/control") {
-      json(res, 200, d.controlEnabled ? { enabled: true, runtime: "compose", advanced: !!d.advanced } : { enabled: false });
+      const unlocked = hasSession(d.controlToken, req);
+      json(res, 200, d.controlEnabled ? { enabled: true, runtime: "compose", advanced: !!d.advanced, unlocked } : { enabled: false, unlocked });
+      return;
+    }
+    if (handleUnlock({ token: d.controlToken, links }, req, res, url)) return;
+    // The Access dialog's token check (DASH-RCV-022): the secret route's token order, then "unknown secret" for every path. It
+    // reads no body and no file and writes nothing; a secret is set on the Settings screen once the dashboard is back.
+    if (method === "PUT" && url.pathname.startsWith("/secrets/")) {
+      req.resume();
+      if (refuseSecretToken(res, tokenRefusal({ required: true, token: d.controlToken }, req))) return;
+      json(res, 404, { ok: false, detail: "unknown secret" });
       return;
     }
     if (method === "GET" && url.pathname === "/recovery") {
@@ -339,7 +360,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       json(res, 200, { active: true, file: configFile, secretsFile, etag: etagOf(text), problems: recoveryProblems(problems, text, readSecrets()) });
       return;
     }
-    const tokenOk = d.controlToken !== undefined && bearerOk(req.headers.authorization, d.controlToken);
+    const tokenOk = d.controlToken !== undefined && authorized(d.controlToken, req);
     if (method === "GET" && url.pathname === "/recovery/raw") { getRaw(res, url, tokenOk); return; }
     if (method === "POST" && url.pathname === "/stack/stop" && d.controlEnabled) {
       req.resume();
@@ -356,7 +377,9 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const op = method === "POST" ? RECOVERY_POST.exec(url.pathname)?.[1] : undefined;
     if (!op) { req.resume(); json(res, 503, { ok: false, detail: RECOVERY_DETAIL }); return; }
 
-    if (d.controlEnabled && !tokenOk) { req.resume(); res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
+    // With a token configured, whatever CONTROL_ENABLED says, every write needs it or a session cookie, except, on a loopback bind, the ones that write no caller-chosen value; a
+    // reset of a secrets.yaml problem and the secrets.yaml part of reset-all are judged below in both modes (DASH-SECRET-003).
+    if (d.controlToken !== undefined && !tokenOk && !(d.loopback && NO_VALUE_OPS.has(op))) { req.resume(); res.writeHead(401, { "www-authenticate": "Bearer" }); res.end("unauthorized"); return; }
     if (op === "raw") { await postRaw(req, res, tokenOk); return; }
     let body: { etag?: unknown; path?: unknown; value?: unknown };
     try { body = JSON.parse(await readText(req)) as typeof body; } catch (e) {
@@ -393,6 +416,16 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
 
     const secretsText = readSecrets();
     const problems = recoveryProblems(check(), text, secretsText);
+    // @spec DASH-RCV-023
+    if (op === "fallback") {
+      const p = problems.find((x) => x.file === "config" && x.actions.fallback && x.path === path);
+      if (!p) { refuse(res, [{ path, message: "no failing key at this path has a placeholder fallback to use" }]); return; }
+      const edit = setConfigKey(text, p.path, p.fallback);
+      if (!edit.ok) { refuse(res, edit.issues); return; }
+      write(configFile, edit.text);
+      written(res, `fallback ${p.path}`);
+      return;
+    }
     if (op === "reset") {
       const p = problems.find((x) => x.actions.reset && (x.path === path || x.resetPath === path));
       if (!p) { refuse(res, [{ path, message: "no failing key at this path can be reset" }]); return; }
@@ -442,7 +475,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   return (req, res) => {
     void handle(req, res).catch((err: unknown) => {
       if (err instanceof BodyTooLarge) { if (!res.headersSent) { res.writeHead(413); res.end("body too large"); } return; }
-      d.log.error({ err, url: req.url }, "config recovery: request failed");
+      d.log.error({ err, path: pathOf(req) }, "config recovery: request failed"); // never the query string (DASH-UNL-002)
       if (res.headersSent) res.destroy();
       else json(res, 500, { ok: false, detail: "the request failed; the dashboard's log has the details" });
     });
@@ -459,7 +492,12 @@ export interface RecoveryOptions {
   uiDir?: string;
   /** Install SIGINT and SIGTERM handlers that close the listener and exit 0 (default true). */
   signals?: boolean;
+  /** Writes the unlock line to the terminal (DASH-UNL-001); standard output by default, never the logger. */
+  print?: (line: string) => void;
 }
+
+/** The terminal alone: the unlock line goes to standard output and never through the logger, so never to its log file (DASH-UNL-001). */
+export const printToTerminal = (line: string): void => { process.stdout.write(`${line}\n`); };
 
 /**
  * Runs config recovery mode: one full-surface listener with the recovery routes, until a request finds the files valid. Resolves
@@ -470,13 +508,15 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const exit = o.exit ?? ((c: number) => process.exit(c));
   const files = o.files ?? { configFile: ensureFromExample("config.yaml", "config.example.yaml"), secretsFile: secretsPath() };
   const { bind, cfg } = fullSurfaceBind(o.env);
+  const controlToken = controlTokenFromEnv(o.env);
+  const links = new UnlockLinks();
   let text: string | undefined;
   try { text = readFileSync(files.configFile, "utf8"); } catch { text = undefined; }
   const { port, allowedHosts, fromFile } = recoveryAddress(text);
   let resolveValid: () => void = () => {};
   const valid = new Promise<void>((r) => { resolveValid = r; });
   const handler = createRecoveryHandler({
-    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken: controlTokenFromEnv(o.env), boundPort: port, env: o.env,
+    log: o.log, files, controlEnabled: cfg.enabled, advanced: cfg.enabled && cfg.advanced, controlToken, loopback: isLoopback(bind), unlock: links, boundPort: port, env: o.env,
     ...(o.uiDir ? { uiDir: o.uiDir } : {}), onValid: () => resolveValid(),
   });
   const server = http.createServer(guardFullSurface(handler, { loopback: isLoopback(bind), controlEnabled: cfg.enabled, allowedHosts }));
@@ -494,6 +534,9 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const url = `http://${addr.family === "IPv6" ? `[${addr.address}]` : addr.address}:${addr.port}`;
   const n = o.error.problems.length;
   o.log.error({ url }, `config recovery mode: ${n} problem${n === 1 ? "" : "s"}; fix them at ${url}`);
+  links.base = unlockBase(bind, addr.port);
+  // @spec DASH-UNL-001
+  if (controlToken !== undefined) (o.print ?? printToTerminal)(unlockLine(unlockBase(bind, addr.port), links.issue()));
 
   const stop = (): void => { server.close(); server.closeAllConnections(); exit(0); };
   if (o.signals !== false) { process.once("SIGINT", stop); process.once("SIGTERM", stop); }

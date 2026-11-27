@@ -39,7 +39,7 @@ function ConfirmBar({ call, seconds }: { call: PendingConfirm; seconds: number }
   // The route needs the control token whether or not control mode is on: with none held the Access dialog is asked first and nothing is sent.
   const answer = async (allow: boolean): Promise<void> => {
     setPhase("sending"); setFailure(undefined);
-    const r = await api.post("/tools/answer", { id: call.id, allow }, { auth: "control", requireToken: true, action: `${allow ? "Allow" : "Deny"} a tool call` });
+    const r = await api.post("/tools/answer", { id: call.id, allow }, { auth: "control", action: `${allow ? "Allow" : "Deny"} a tool call` });
     if (!alive.current) return;
     if (r.ok) { setPhase("answered"); return; }
     setPhase("idle");

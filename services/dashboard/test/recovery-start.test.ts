@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { request } from "node:http";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
@@ -179,4 +180,84 @@ test("the built dashboard on a config.yaml syntax error stops the stack and is f
     const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 15_000))]);
     if (code === "timeout") child.kill("SIGKILL");
   }
+});
+
+/** A raw request, so `Cookie` and `Origin` go out as a browser sends them. */
+function raw(port: number, method: string, path: string, headers: Record<string, string> = {}, body?: unknown): Promise<{ status: number; headers: Record<string, unknown>; text: string }> {
+  return new Promise((resolve, reject) => {
+    const data = body === undefined ? undefined : JSON.stringify(body);
+    const req = request({ host: "127.0.0.1", port, method, path, headers: { ...(data ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(data)) } : {}), ...headers } }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text: Buffer.concat(chunks).toString("utf8") }));
+    });
+    req.on("error", reject);
+    req.end(data);
+  });
+}
+
+/**
+ * The owner's case of issue #366: the stale config.yaml with control on and a token. The dashboard prints an unlock link to its
+ * terminal and never to its log file; the link unlocks the browser in recovery mode (the Access dialog's check passes with the
+ * cookie), Reset all fixes config.yaml with no token, the normal dashboard prints a fresh link, `dashboard:unlock` mints another,
+ * and a client with neither token nor cookie is refused.
+ */
+// @spec DASH-UNL-001, DASH-UNL-003, DASH-UNL-007, DASH-RCV-003, DASH-RCV-022, DASH-CTRL-011
+test("the built dashboard prints an unlock link to the terminal only, and the link, Reset all and dashboard:unlock work without the token", async () => {
+  const root = mkdtempSync(join(tmpdir(), "cohost-dash-unlock-"));
+  const config = join(root, "config");
+  const data = join(root, "data");
+  mkdirSync(config);
+  const [port, lanPort] = [await freePort(), await freePort()];
+  const stale = readFileSync(join(repo, "services", "dashboard", "test", "fixtures", "stale-config.yaml"), "utf8");
+  const configFile = join(config, "config.yaml");
+  writeFileSync(configFile, stale.replace(/^ {2}port: 3000$/m, `  port: ${port}\n  lan_port: ${lanPort}`));
+  const env = {
+    PATH: process.env.PATH, CONFIG_DIR: config, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(root, ".env"), COHOST_SECRETS_FILE: join(root, "secrets.yaml"),
+    REDIS_URL: "redis://127.0.0.1:1", COHOST_DOCKER_BIN: join(root, "no-docker"), CONTROL_ENABLED: "1", CONTROL_TOKEN: "tok",
+  };
+  const child = spawn(process.execPath, [join(repo, "services", "dashboard", "dist", "index.js")], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (c: Buffer) => { out += c.toString(); });
+  child.stderr.on("data", (c: Buffer) => { out += c.toString(); });
+  const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
+  const LINK = new RegExp(`Unlock this browser: http://127\\.0\\.0\\.1:${port}(/unlock\\?n=[A-Za-z0-9_-]{43})`, "g");
+  const links = (): string[] => [...out.matchAll(LINK)].map((m) => m[1]!);
+  const same = { origin: `http://127.0.0.1:${port}` };
+  try {
+    await until("the recovery unlock line", async () => (links().length >= 1 ? true : undefined));
+    const first = links()[0]!;
+    const opened = await raw(port, "GET", first);
+    assert.equal(opened.status, 303);
+    const cookie = String((opened.headers["set-cookie"] as string[])[0]).split(";")[0]!;
+    assert.equal((await raw(port, "GET", first)).status, 400, "single use");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", { cookie, ...same }, { value: null })).status, 404, "the Access dialog's check passes with the cookie");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", {}, { value: null })).status, 401, "a client with neither token nor cookie is refused");
+
+    const s = JSON.parse((await raw(port, "GET", "/recovery")).text) as { etag: string };
+    const res = await raw(port, "POST", "/recovery/reset-all", {}, { etag: s.etag });
+    assert.equal(res.status, 200, "Reset all needs no token on loopback");
+    assert.equal((JSON.parse(res.text) as { valid: boolean }).valid, true);
+
+    await until("the normal dashboard's unlock line", async () => (links().length >= 2 ? true : undefined));
+    assert.equal((await raw(port, "PUT", "/secrets/x", {}, { value: "v" })).status, 401, "normal mode: no token, no cookie, refused");
+    assert.equal((await raw(port, "PUT", "/secrets/access-check", { cookie, ...same }, { value: null })).status, 404, "the session holds across the switch to normal mode");
+
+    const cli = spawnSync(process.execPath, [join(repo, "services", "dashboard", "dist", "unlock-link.js")], { cwd: repo, env, encoding: "utf8" });
+    assert.equal(cli.status, 0, cli.stderr);
+    const fresh = /\/unlock\?n=[A-Za-z0-9_-]{43}/.exec(cli.stdout)?.[0];
+    assert.ok(fresh, cli.stdout);
+    assert.equal((await raw(port, "GET", fresh)).status, 303, "dashboard:unlock's link unlocks");
+
+    const logged = readFileSync(join(data, "logs", "dashboard.log"), "utf8");
+    for (const l of [...links(), fresh]) assert.ok(!logged.includes(l.split("n=")[1]!), "no nonce in the log file");
+    assert.doesNotMatch(logged, /Unlock this browser/);
+  } finally {
+    child.kill("SIGTERM");
+    const code = await Promise.race([exited, new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 15_000))]);
+    if (code === "timeout") child.kill("SIGKILL");
+  }
+  const down = spawnSync(process.execPath, [join(repo, "services", "dashboard", "dist", "unlock-link.js")], { cwd: repo, env, encoding: "utf8" });
+  assert.equal(down.status, 1);
+  assert.match(down.stderr, /not running/);
 });

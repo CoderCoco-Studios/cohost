@@ -62,6 +62,16 @@ The page shows **Config recovery** instead of the usual screens, and the termina
 - **Cause:** the token you typed is not the `CONTROL_TOKEN` in `.env`, or `.env` changed after the dashboard started (it reads `.env` once, at start).
 - **Fix:** copy the whole value after `CONTROL_TOKEN=` in `.env`, with no spaces or quotes, and restart the dashboard if `.env` changed after it started. The dialog shows the command that prints the line (`grep ^CONTROL_TOKEN= .env`). A rejected token is never kept, so you can try again in the same dialog.
 
+### The unlock link says it is not valid
+
+- **Cause:** each unlock link works once and only for 10 minutes, and a restart of the dashboard ends the links it printed before. The link was already opened, is older than 10 minutes, or came from an earlier start.
+- **Fix:** while the dashboard runs, run `mise run dashboard:unlock` and open the link it prints, or restart the dashboard and open the link in its terminal. If the page says no control token is configured, set `CONTROL_TOKEN` in `.env` and restart the dashboard.
+
+### I changed `CONTROL_TOKEN` and the page is locked again
+
+- **Cause:** expected. `CONTROL_TOKEN` signs the sessions of browsers unlocked by the unlock link, so a new token ends every one of them.
+- **Fix:** open a fresh unlock link: restart the dashboard (it reads `.env` at start) and open the link it prints, or run `mise run dashboard:unlock`.
+
 ### My settings are not being read
 
 - **Cause:** the co-host reads `config/` (including `config.yaml`), `secrets/secrets.yaml` and `.env` from the workspace root, the nearest folder above where it runs that holds `pnpm-workspace.yaml` (the cohost checkout's top folder). A copy in some other folder is ignored.

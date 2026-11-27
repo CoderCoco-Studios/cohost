@@ -533,7 +533,7 @@ test("where control is disabled the banner names the units and the cohostctl com
 });
 
 // @spec DASH-SET-028, DASH-UI-006
-test("a sensitive key carries a control-token note; saving it asks for the token naming the change, keeps the edits on Cancel and retries once unlocked", async () => {
+test("a sensitive key carries a control-token note; with no token held its save goes out without one (an unlocked browser's cookie counts) and no Access dialog opens before a 401", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { json: { ok: true, etag: "e2", restart: [], warnings: [] } } } });
   const user = userEvent.setup();
   assert.ok(within(row("url")).getByText(/Changing this needs the control token/));
@@ -541,10 +541,24 @@ test("a sensitive key carries a control-token note; saving it asks for the token
   await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
   await user.click(bar("Save"));
   await settle();
+  assert.equal(b.app.rt.access.state.get().prompt, null, "no Access dialog without a 401");
+  assert.equal(screen.queryByRole("dialog", { name: /access|token/i }), null);
+  const sent = b.app.fetch.callsTo("PUT /config/demo");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.headers.authorization, undefined);
+  assert.equal(screen.queryByText("1 edit in this section"), null, "saved");
+});
+
+// @spec DASH-SET-028, DASH-UI-006
+test("a sensitive save answered 401 asks for the token naming the change, keeps the edits on Cancel and retries once unlocked", async () => {
+  const b = await open("demo", { routes: { "PUT /config/demo": { status: 401, json: { ok: false, detail: "changing demo.url needs the control token", sensitive: ["demo.url"] } } } });
+  const user = userEvent.setup();
+  await user.type(within(row("url")).getByRole("textbox", { name: "Url" }), "x");
+  await user.click(bar("Save"));
+  await settle();
   const prompt = b.app.rt.access.state.get().prompt;
-  assert.ok(prompt, "the Access dialog is asked for the token");
+  assert.ok(prompt, "the Access dialog is asked for the token after the 401");
   assert.match(prompt!.action, /demo\.url/);
-  assert.equal(b.app.fetch.callsTo("PUT /config/demo").length, 0, "nothing was sent without a token");
   act(() => b.app.rt.access.resolvePrompt(false));
   await settle();
   assert.match(text(screen.getByRole("alert")), /not done: locked/);
@@ -554,8 +568,9 @@ test("a sensitive key carries a control-token note; saving it asks for the token
   act(() => { b.app.rt.access.setToken("control", "tok", "tab"); b.app.rt.access.resolvePrompt(true); });
   await settle();
   const sent = b.app.fetch.callsTo("PUT /config/demo");
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0]!.headers.authorization, "Bearer tok");
+  assert.equal(sent.length, 3, "the first try, the second, and its retry once unlocked");
+  assert.equal(sent[0]!.headers.authorization, undefined);
+  assert.equal(sent[2]!.headers.authorization, "Bearer tok");
 });
 
 // @spec DASH-SET-028

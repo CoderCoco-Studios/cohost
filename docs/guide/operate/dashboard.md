@@ -14,7 +14,7 @@ The dashboard is a web page that runs on your own PC. It is where you watch what
 
 - A running dashboard. If you followed [Try it with no accounts](../install/first-run.md) or [Install for real](../install/real-install.md), you started it with `mise run dashboard`.
 - A browser pointed at `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`).
-- Your control token, for anything that changes something. The dashboard asks for it in the [Access dialog](#the-access-dialog) the first time you need it.
+- Your control token, for anything that changes something, or the unlock link the dashboard prints when it starts, which unlocks your browser without the token. See [The Access dialog](#the-access-dialog).
 
 ## Open it
 
@@ -24,7 +24,13 @@ mise run dashboard
 
 `mise run dashboard` builds the page before it starts. If the page's build fails, it prints the error and stops without starting the dashboard, so you never get an old or missing page; fix the error it printed and run it again. (A failed build of the documentation alone does not stop it.)
 
-Then visit `http://localhost:3000`. (The number is `dashboard.port` in `config/config.yaml`; the startup log prints the address it actually uses.) The dashboard listens only on your own PC by default. It is separate from the other pieces of cohost, which run in [containers](../../start/glossary.md#container); the dashboard sits outside them and starts them for you.
+Then visit `http://localhost:3000`. (The number is `dashboard.port` in `config/config.yaml`; the startup log prints the address it actually uses.) Better, open the unlock link the terminal prints:
+
+```text
+Unlock this browser: http://127.0.0.1:3000/unlock?n=...
+```
+
+It opens the dashboard already unlocked, so you never paste the control token. The dashboard listens only on your own PC by default. To reach it from another machine, set `DASHBOARD_HOST` (see [Environment and ports](../../advanced/reference/env.md#the-dashboard-s-access-controls)); never put a port forward or a proxy in front of its port on your PC, because that makes every machine that reaches it look local. An `ssh -L` tunnel you open from your own machine is fine. It is separate from the other pieces of cohost, which run in [containers](../../start/glossary.md#container); the dashboard sits outside them and starts them for you.
 
 The address after the `#` picks the screen: `#live`, `#services`, `#viewers`, `#settings` and `#settings/<section>`. The browser's back and forward buttons move between screens, and you can bookmark any of them.
 
@@ -41,21 +47,31 @@ The strip across the top is the same on every screen. On a narrow window the nav
 | Stack status | `Stack: Up`, `Starting`, `Stopping`, `Degraded`, `Down` or `Docker unavailable`. |
 | **Audio on** / **Audio off** | Whether this browser tab plays the co-host's voice. Browsers insist you press it once; the OBS sink page turns it on by itself. |
 | **Mute co-host** / **Unmute co-host** | Silences the co-host, or lets it speak again. There is one Mute button, here, on every screen. After it works the header says `Muted`. |
-| **Locked** / **Unlocked** | Whether this page holds your control token. It opens the [Access panel](#the-access-dialog). |
+| **Locked** / **Unlocked** | Whether this page can act with your control token: **Unlocked** when it holds the token or this browser was unlocked by the unlock link. It opens the [Access panel](#the-access-dialog). |
 | **Theme** | **Auto** follows your system's light or dark setting; **Light** and **Dark** override it. Your choice other than Auto is remembered in this browser. |
 
 If the connection to the dashboard drops, a banner says that live updates stopped and when the next attempt is; the page reconnects by itself every two seconds, and the lists and feeds are dimmed until it does.
 
 ## The Access dialog
 
-Anything that changes something needs your control token. When you press a button that needs it, a dialog opens naming what is waiting ("Restart voice", say), and the action runs once the token is accepted. Cancelling does nothing and the control reports `not done: locked`. You can also press **Locked** or **Unlocked** in the header to see both tokens at any time.
+Anything that changes something needs your control token, or a browser unlocked by the unlock link.
+
+### The unlock link
+
+With a `CONTROL_TOKEN` set, `mise run dashboard` prints one line to its terminal when it starts: `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`. Open that link in the browser you use for the dashboard. It works once and only for 10 minutes, and it leaves the browser unlocked: every action that needs the control token works there without the token being pasted, saving secrets and answering tool confirmations included. The link is printed only in the terminal, never in `data/logs/dashboard.log`.
+
+The browser stays unlocked for 90 days, through dashboard restarts and config recovery, until you press **Lock** in its Access panel, change `CONTROL_TOKEN` in `.env` (which locks every unlocked browser) or clear the browser's cookies for the dashboard. For another browser, or after the link expired, run `mise run dashboard:unlock` while the dashboard runs: it prints a fresh link. A link that is used, expired or from an earlier start opens a page that says so and how to get a new one.
+
+### Pasting the token
+
+When you press a button that needs the token and the browser is not unlocked, a dialog opens naming what is waiting ("Restart voice", say), and the action runs once the token is accepted. Cancelling does nothing and the control reports `not done: locked`. You can also press **Locked** or **Unlocked** in the header to see both tokens at any time.
 
 | Token | Where it comes from | What it unlocks |
 | --- | --- | --- |
-| Control token (`CONTROL_TOKEN`) | The installer generated it into `.env`. In the cohost folder, `grep ^CONTROL_TOKEN= .env` prints the line; paste the value after the equals sign. | Muting, saying lines, saving settings, saving secrets, test inputs and controlling services. |
+| Control token (`CONTROL_TOKEN`) | The installer generated it into `.env`. In the cohost folder, `grep ^CONTROL_TOKEN= .env` prints the line; paste the value after the equals sign. Or open the unlock link printed in the terminal running `mise run dashboard`, which unlocks this browser without the token. | Muting, saying lines, saving settings, saving secrets, test inputs and controlling services. |
 | Viewers token (`VIEWERS_TOKEN`) | The installer does not generate it. Add one with `echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env`, then restart the dashboard. | Reading and editing viewer notes on the Viewers screen. |
 
-The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value after the name, with no spaces or quotes, and a restart of the dashboard if `.env` changed after it started). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). In the Access panel, **Change token** replaces a token and **Lock** forgets it. Both tokens are read from `.env` once when the dashboard starts, so a change there takes effect after you restart the dashboard.
+The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value after the name, with no spaces or quotes, and a restart of the dashboard if `.env` changed after it started). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). The Access panel shows each token's state: **Unlocked** with where it is kept, **Unlocked (this browser)** when the unlock link unlocked this browser and no token is held, **Locked**, or **Not set up on the server**. **Change token** replaces a token and **Lock** forgets a held one; a browser unlocked by the link stays unlocked until its cookies are cleared or `CONTROL_TOKEN` changes. Both tokens are read from `.env` once when the dashboard starts, so a change there takes effect after you restart the dashboard.
 
 ## The Live screen
 
@@ -148,7 +164,7 @@ The dashboard has a lot of buttons. Only one of them says **Mute co-host**. Lear
 When `config/config.yaml` or `secrets/secrets.yaml` does not validate, for example a file from an older cohost that still holds `${NAME}` placeholders, the dashboard still starts, but only to fix it. The page shows **Config recovery** in place of the usual screens: one row per failing key with the reason, and the buttons that apply to it.
 
 - **Set** writes the value you type (`3000` is a number, other text a string).
-- **Use** writes the value an old `${NAME:-value}` placeholder fell back to.
+- **Use** followed by a value (**Use 3000**, say) writes the value an old `${NAME:-value}` placeholder fell back to; the dashboard takes the value from the problem itself, not from the page.
 - **Reset to default** removes the key so its default applies; for a key inside a list it resets the whole list.
 - **Remove from config.yaml** takes a credential out of `config.yaml`. Credentials live in `secrets/secrets.yaml`: set it in **Settings**, in the section the row names, once the dashboard is back.
 - **Reset all failing keys** does the above for every key it can. Keys that have no default and no fallback stay in the list for you to set.
@@ -156,13 +172,14 @@ When `config/config.yaml` or `secrets/secrets.yaml` does not validate, for examp
 - **Stop the stack** (with control enabled) runs `docker compose stop` for the whole stack, as the Stop button on the Services screen does, without needing a valid config. It asks for the control token.
 - **Check again** reads the files again after you edit one by hand.
 
-Every write keeps the rest of the file and its comments, needs the control token where every other change does, and is checked at once. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file; stopping the whole stack works (**Stop the stack**, or `mise run cohostctl stop-all`). See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
+Every write keeps the rest of the file and its comments and is checked at once. While the dashboard listens only on your own PC (the default), **Reset to default** on a `config.yaml` key, **Use**, and the `config.yaml` part of **Reset all failing keys** need no token, because none of them writes a value you choose. Everything else needs the control token where every other change does: **Set**, the raw editor, **Stop the stack**, and any change to `secrets.yaml` (without the token, **Reset all failing keys** leaves `secrets.yaml` alone and names the keys that need it). The unlock link works here too: open it, or a fresh one from `mise run dashboard:unlock`, and the page is unlocked. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file; stopping the whole stack works (**Stop the stack**, or `mise run cohostctl stop-all`). See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
 
 ## If it didn't
 
 - The page shows **Config recovery**: a setting does not validate; fix it there ([Config recovery](#config-recovery)).
 - The page does not load, or a banner says live updates stopped: the dashboard is not running. Start it again with `mise run dashboard`. If that command stops with a build error instead of starting, the dashboard is deliberately not started; fix the error and run it again.
 - The Stack card says service control is off: check that `CONTROL_ENABLED=1` is set in `.env`, restart the dashboard, and see [Troubleshooting](../troubleshooting.md).
-- The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`.
+- The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`, or open the unlock link from the terminal running `mise run dashboard` (`mise run dashboard:unlock` prints a fresh one).
+- The unlock link says it is not valid: it was used, it is older than 10 minutes, or it came from an earlier start. Run `mise run dashboard:unlock`, or restart the dashboard, and open the new link.
 - The Viewers screen says it is not set up: add a `VIEWERS_TOKEN` as above and restart the dashboard.
 - No sound: turn audio on in the header first, and see [Troubleshooting](../troubleshooting.md).

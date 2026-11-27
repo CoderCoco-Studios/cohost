@@ -59,7 +59,7 @@ test("disabled: service routes 404, /control and /personality stay open, flag re
   for (const k of ["launch", "stop", "restart", "consolidate"]) assert.equal((await t.send(`/stack/${k}`)).status, 404);
   assert.equal((await t.send("/control", { body: { cmd: "mute" } })).status, 204);
   assert.equal((await t.send("/personality", { method: "PUT", body: "hi" })).status, 204);
-  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: false });
+  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: false, unlocked: false });
   assert.deepEqual(t.calls, []);
 });
 
@@ -151,7 +151,7 @@ test("enabled + token: POST /control (incl. targeted pause) and PUT /personality
 // @spec DASH-CTRL-005, DASH-CTRL-007
 test("GET /services/control reports enabled without needing a token", async () => {
   const t = await boot(ON);
-  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "compose", advanced: false });
+  assert.deepEqual(await (await t.send("/services/control", { method: "GET" })).json(), { enabled: true, runtime: "compose", advanced: false, unlocked: false });
 });
 
 // @spec DASH-CTRL-005, DASH-DOCS-001

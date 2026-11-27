@@ -1,7 +1,8 @@
 import type http from "node:http";
+import { authorized, handleUnlock, hasSession, pathOf, UnlockLinks } from "./access.js";
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
 import { ConfigSchema, ensureFromExample, urls, type Logger } from "@cohost/config";
-import { bearerOk, SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
+import { SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import { AppliedView } from "./applied.js";
 import { handleDocs, locateDocsDir } from "./docs.js";
@@ -43,8 +44,10 @@ export interface DashboardDeps {
    * token requirement on every mutating route (`POST /control`, `PUT /personality`).
    */
   control?: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
-  /** The control token whenever one is configured (`CONTROL_TOKEN`), in either control mode: the secret write and a sensitive config change need it even with control off. */
+  /** The control token whenever one is configured (`CONTROL_TOKEN`), in either control mode: the secret write and a sensitive config change need it even with control off. It also keys the session cookies (DASH-UNL-005). */
   controlToken?: string;
+  /** The unlock link's nonces (DASH-UNL-002); a private set by default. */
+  unlock?: UnlockLinks;
   /** The secrets file for `PUT /secrets`. Defaults to the loader's `secrets/secrets.yaml`; tests pin it. */
   secretsFile?: () => string;
   /** The pick-list routes' backing servers. Defaults to `urls.tts()` and `urls.ollama()` and a 3 s timeout; tests pin them. */
@@ -70,6 +73,8 @@ const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 // @spec DASH-CTRL-001, DASH-CTRL-004, DASH-CTRL-005
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
+  /** The control token whenever one is configured: every mutation then needs it or a session cookie, whatever CONTROL_ENABLED says (DASH-CTRL-004, DASH-CTRL-011). */
+  const gateToken = d.control?.token ?? d.controlToken;
   const uploads = d.uploads ?? uploadLimits(ConfigSchema.shape.dashboard.parse({}).inject);
   const inject = {
     bus: d.bus,
@@ -77,14 +82,14 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     toolToken: d.control?.token ?? d.controlToken,
     stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
     authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
-      if (d.control && !bearerOk(req.headers.authorization, d.control.token)) { unauthorized(res); return false; }
+      if (gateToken !== undefined && !authorized(gateToken, req)) { unauthorized(res); return false; }
       return true;
     },
   };
   const applied = d.models?.applied ?? new AppliedView(d.log);
   const store = d.models?.store ?? new ModelStore(modelsDir());
   const modelRoutes: ModelRoutes = {
-    store, applied, maxBytes: d.models?.maxBytes ?? ConfigSchema.shape.dashboard.parse({}).models.max_bytes, token: d.control?.token, slot: { busy: false },
+    store, applied, maxBytes: d.models?.maxBytes ?? ConfigSchema.shape.dashboard.parse({}).models.max_bytes, token: gateToken, slot: { busy: false },
   };
   const settings = {
     file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
@@ -92,7 +97,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),
     secretsFile: d.secretsFile,
-    controlMode: !!d.control,
+    controlMode: gateToken !== undefined,
     controlToken: d.control?.token ?? d.controlToken,
     body: readText,
     models: { store, applied },
@@ -102,6 +107,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: d.viewersToken };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
+  const unlock = { token: gateToken, links: d.unlock ?? new UnlockLinks() };
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
@@ -117,6 +123,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-DOCS-001, DASH-DOCS-011
       if (handleDocs(docsDir, req, res, url)) return;
+      // @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006
+      if (handleUnlock(unlock, req, res, url)) return;
       // @spec DASH-SINK-001
       if (req.method === "GET" && url.pathname.startsWith("/audio/")) {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);
@@ -130,7 +138,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-MDL-004, DASH-MDL-008, DASH-MDL-009, DASH-MDL-010, DASH-MDL-015, DASH-MDL-033
       if (await handleModels(modelRoutes, req, res, url)) return;
       // @spec DASH-TOOL-001, DASH-TOOL-002
-      if (await handleToolAnswer({ bus: d.bus, token: d.control?.token ?? d.controlToken }, req, res, url)) return;
+      if (await handleToolAnswer({ bus: d.bus, token: gateToken }, req, res, url)) return;
       // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003
@@ -147,7 +155,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
         res.end(JSON.stringify({ active: false }));
         return;
       }
-      if ((req.method === "POST" && /^\/recovery\/(set|reset|reset-all|raw)$/.test(url.pathname)) || (req.method === "GET" && url.pathname === "/recovery/raw")) {
+      if ((req.method === "POST" && /^\/recovery\/(set|reset|reset-all|fallback|raw)$/.test(url.pathname)) || (req.method === "GET" && url.pathname === "/recovery/raw")) {
         req.resume();
         res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the config is valid" }));
@@ -170,7 +178,8 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-CTRL-007
       if (req.method === "GET" && url.pathname === "/services/control") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-        res.end(JSON.stringify(d.control ? { enabled: true, runtime: d.control.runtime, advanced: d.control.advanced } : { enabled: false }));
+        const unlocked = hasSession(unlock.token, req);
+        res.end(JSON.stringify(d.control ? { enabled: true, runtime: d.control.runtime, advanced: d.control.advanced, unlocked } : { enabled: false, unlocked }));
         return;
       }
       // @spec DASH-SVC-001, DASH-SVC-002, DASH-SVC-003
@@ -178,7 +187,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (life) {
         const ctl = d.control;
         if (!ctl) { res.writeHead(404); res.end("not found"); return; }
-        if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
+        if (!authorized(ctl.token, req)) return unauthorized(res);
         let id: string;
         try { id = decodeURIComponent(life[1]!); } catch { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: "unknown service" })); return; } // @spec DASH-HTTP-013
         const opts = parseLifecycleBody(await readText(req));
@@ -208,7 +217,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       if (stackAct) {
         const ctl = d.control;
         if (!ctl) { res.writeHead(404); res.end("not found"); return; }
-        if (!bearerOk(req.headers.authorization, ctl.token)) return unauthorized(res);
+        if (!authorized(ctl.token, req)) return unauthorized(res);
         req.resume(); // any body is ignored: nothing from the request reaches an argv
         const out = d.stack.request(stackAct[1] as StackActionKind, ctl.controller);
         res.writeHead(out.ok ? 202 : out.status, { "content-type": "application/json" });
@@ -223,7 +232,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-HTTP-006
       if (req.method === "PUT" && url.pathname === "/personality") {
-        if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
+        if (gateToken !== undefined && !authorized(gateToken, req)) return unauthorized(res);
         d.savePersonality(await readText(req));
         await d.bus.publish("control", { cmd: "reload_personality" });
         res.writeHead(204); res.end();
@@ -231,7 +240,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       }
       // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-017
       if (req.method === "POST" && url.pathname === "/control") {
-        if (d.control && !bearerOk(req.headers.authorization, d.control.token)) return unauthorized(res);
+        if (gateToken !== undefined && !authorized(gateToken, req)) return unauthorized(res);
         const { cmd, text, target, route } = JSON.parse(await readText(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string; route?: string[] };
         await d.bus.publish("control", { cmd, text, target, ...(route !== undefined ? { route } : {}) });
         res.writeHead(204); res.end();
@@ -267,11 +276,11 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-HTTP-011
       if (err instanceof BodyTooLarge) { sendUnlessStarted(res, 413, "body too large"); return; }
       // @spec DASH-HTTP-004
-      d.log.error({ err, url: req.url }, "request failed");
+      d.log.error({ err, path: pathOf(req) }, "request failed"); // the path only: a query string can hold a nonce (DASH-UNL-002)
       sendUnlessStarted(res, 500, String(err));
     }
   };
-  return (req, res) => { void handle(req, res).catch((err: unknown) => d.log.error({ err, url: req.url }, "request handler failed")); };
+  return (req, res) => { void handle(req, res).catch((err: unknown) => d.log.error({ err, path: pathOf(req) }, "request handler failed")); };
 }
 
 function unauthorized(res: http.ServerResponse): void {

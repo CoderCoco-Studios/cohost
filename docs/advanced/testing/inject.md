@@ -96,7 +96,7 @@ chat.message -> affect.state (mood: happy)
 
 `cortex` logs `memory region did not answer in time` because no `memory` is running. That is expected.
 
-Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token while stack control is on, which is the default:
+Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token whenever one is configured (the installer writes one), whatever `CONTROL_ENABLED` says:
 
 ```bash
 curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'

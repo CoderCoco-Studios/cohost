@@ -83,7 +83,7 @@ function failure(r: Extract<ApiResult<unknown>, { ok: false }>): string {
  * The screen config recovery mode shows in place of the shell: every failing key of `config.yaml` and `secrets.yaml` with its
  * actions, Reset all, Check again, and, once the files validate, a wait for the normal dashboard and a reload.
  */
-// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015, DASH-RCV-020, DASH-RCV-021
+// @spec DASH-RCV-013, DASH-RCV-014, DASH-RCV-015, DASH-RCV-020, DASH-RCV-021, DASH-RCV-023
 export function RecoveryScreen({ initial, reload = defaultReload, navigate = defaultNavigate, probe = defaultProbe, here = location, pollMs = 1000 }: {
   initial: RecoveryState;
   reload?: () => void;
@@ -144,7 +144,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
     setErrors({});
   };
 
-  const send = async (key: string, op: "set" | "reset" | "reset-all", body: Record<string, unknown>, action: string): Promise<void> => {
+  const send = async (key: string, op: "set" | "reset" | "reset-all" | "fallback", body: Record<string, unknown>, action: string): Promise<void> => {
     setBusy(key);
     const r = await api.post<WriteResult>(`/recovery/${op}`, { etag: state.etag, ...body }, { auth: "control", action });
     setBusy(null);
@@ -272,7 +272,7 @@ export function RecoveryScreen({ initial, reload = defaultReload, navigate = def
                     </form>
                   ) : null}
                   <div className="row">
-                    {p.actions.fallback ? <Button disabled={busy !== null} onClick={() => void send(key, "set", { path: p.path, value: p.fallback }, `Set ${p.path}`)}>Use {shown(p.fallback)}</Button> : null}
+                    {p.actions.fallback ? <Button disabled={busy !== null} onClick={() => void send(key, "fallback", { path: p.path }, `Use the fallback of ${p.path}`)}>Use {shown(p.fallback)}</Button> : null}
                     {p.actions.reset ? <Button disabled={busy !== null} onClick={() => void send(key, "reset", { path: p.path }, `Reset ${p.path}`)}>{resetLabel(p)}</Button> : null}
                   </div>
                   {errors[key] ? <Banner tone="bad">{errors[key]}</Banner> : null}

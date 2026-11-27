@@ -1,7 +1,7 @@
 import http from "node:http";
+import { authorized } from "./access.js";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
-import { bearerOk } from "@cohost/control";
 import { AppliedView } from "./applied.js";
 import {
   derivedName, findStored, judgeHead, MODEL_MAX_COUNT, MODEL_MAX_TOTAL_BYTES, modelNameOk, ModelStore, READ_FLAGS, sameModel, type Stored,
@@ -109,7 +109,7 @@ async function serveNamed(m: ModelRoutes, req: http.IncomingMessage, res: http.S
   return serveFile(req, res, s);
 }
 
-const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => m.token !== undefined && !bearerOk(req.headers.authorization, m.token);
+const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => m.token !== undefined && !authorized(m.token, req);
 
 /**
  * Answers a request and closes its connection, writing the answer to the socket as it is (`connection: close`) and ending the

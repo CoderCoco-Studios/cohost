@@ -21,8 +21,9 @@ cd cohost
 mise run dashboard
 ```
 
-Open the URL the dashboard prints (<http://localhost:3000> by default), enter
-the `CONTROL_TOKEN` from `.env`, and press Launch. To reach mock mode, edit no
+Open the unlock link the dashboard prints (`Unlock this browser:
+http://127.0.0.1:3000/unlock?n=...`), which unlocks your browser without the
+`CONTROL_TOKEN` from `.env`, and press Launch. To reach mock mode, edit no
 file: on the Services screen, tick **isolated** and press Start (or Restart) on
 `chat`, `memory`, `cortex` and `voice`, which gives each a stand-in backend.
 Nothing is appended to `.env`. For real accounts, follow

@@ -1,7 +1,8 @@
 import type http from "node:http";
+import { authorized } from "./access.js";
 import { readFileSync } from "node:fs";
 import { GROUPS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets, secretsPath, setSecretPaths, writeFileAtomic, type RunningOverrides } from "@cohost/config";
-import { bearerOk, type ServiceDef } from "@cohost/control";
+import type { ServiceDef } from "@cohost/control";
 import { modelIssue, type AppliedView, type Framing, type Loadable } from "./applied.js";
 import type { ModelStore } from "./models.js";
 import { changedSensitiveKeys, noTokenDetail } from "./sensitive.js";
@@ -15,9 +16,9 @@ export interface SettingsDeps {
   manifest: readonly ServiceDef[];
   /** The latest stack status. */
   stack: () => Pick<StackSnapshot, "docker" | "services">;
-  /** True when `CONTROL_ENABLED=1`: every `PUT /config/:section` then needs the control token (DASH-CTRL-004). */
   /** The operator's secrets file (`secrets/secrets.yaml`), for which secrets are set. Defaults to the loader's `secretsPath()`. */
   secretsFile?: () => string;
+  /** True when a control token is configured: every `PUT /config/:section` then needs it or a session cookie (DASH-CTRL-004). */
   controlMode?: boolean;
   /** The control token whenever one is configured (`CONTROL_TOKEN`, in either control mode); undefined when none is. */
   controlToken?: string;
@@ -127,7 +128,7 @@ export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, r
 
   // @spec DASH-CTRL-004, DASH-CTRL-009, DASH-CTRL-010
   const dryRun = url.searchParams.get("dryRun") === "1";
-  const tokenOk = d.controlToken !== undefined && bearerOk(req.headers.authorization, d.controlToken);
+  const tokenOk = d.controlToken !== undefined && authorized(d.controlToken, req);
   if (d.controlMode && !tokenOk) {
     // The ordinary refusal; it names the sensitive keys when the body shows a change to one.
     const sensitive = dryRun ? [] : await sensitiveInBody(d, req, name);

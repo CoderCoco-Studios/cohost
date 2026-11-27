@@ -1,8 +1,9 @@
 import type http from "node:http";
+import { tokenRefusal, type TokenRefusal } from "./access.js";
 import { readFileSync } from "node:fs";
 import { secretPathMatches, secretPathOf, secretsPath, setSecretPaths, toolServerNames, updateSecrets } from "@cohost/config";
 import type { Logger } from "@cohost/config";
-import { bearerOk, type ServiceDef } from "@cohost/control";
+import type { ServiceDef } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import type { StackSnapshot } from "./stack.js";
 
@@ -81,16 +82,7 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
   const multi = url.pathname === "/secrets";
   if (req.method !== "PUT" || !(multi || url.pathname.startsWith("/secrets/"))) return false;
 
-  if (d.token === undefined) {
-    req.resume();
-    json(res, 403, { ok: false, detail: "secrets cannot be written: no control token is configured. Set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard" });
-    return true;
-  }
-  if (!bearerOk(req.headers.authorization, d.token)) {
-    req.resume();
-    json(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" });
-    return true;
-  }
+  if (refuseSecretToken(res, tokenRefusal({ required: true, token: d.token }, req))) { req.resume(); return true; }
   let raw: string;
   try { raw = await readText(req); } catch (e) {
     if (e instanceof BodyTooLarge) { json(res, 413, { ok: false, detail: "body too large" }); return true; }
@@ -153,6 +145,18 @@ export async function handleSecrets(d: SecretsDeps, req: http.IncomingMessage, r
     ? { ok: true, set: Object.fromEntries(changes.map(([p, v]) => [p, v !== null])), restart }
     : { ok: true, set: changes[0]![1] !== null, restart });
   return true;
+}
+
+/**
+ * Answers the control-token refusal of the secret routes, shared with config recovery mode's token check (DASH-RCV-022): 403
+ * naming `CONTROL_TOKEN` and `CONTROL_ENABLED` when none is configured, 401 with `www-authenticate: Bearer` when the request
+ * presents neither the token nor a counted session cookie. True when it answered.
+ */
+// @spec DASH-SECRET-003, DASH-SECRET-004
+export function refuseSecretToken(res: http.ServerResponse, refusal: TokenRefusal | undefined): boolean {
+  if (refusal === "none") { json(res, 403, { ok: false, detail: "secrets cannot be written: no control token is configured. Set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard" }); return true; }
+  if (refusal === "wrong") { json(res, 401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
+  return false;
 }
 
 function parseObject(raw: string): Record<string, unknown> | undefined {

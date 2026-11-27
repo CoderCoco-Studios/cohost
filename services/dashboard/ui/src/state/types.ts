@@ -45,7 +45,10 @@ export interface FeedEvent {
 }
 
 /** The `GET /services/control` answer. */
-export type ControlInfo = { enabled: false } | { enabled: true; runtime: string; advanced: boolean };
+export type ControlInfo = ({ enabled: false } | { enabled: true; runtime: string; advanced: boolean }) & {
+  /** The request carried a valid session cookie: this browser was unlocked by the unlock link (DASH-CTRL-007). */
+  unlocked: boolean;
+};
 
 /** The `GET /services/manifest` unit descriptors (only what the shell and screens read). */
 export interface UnitDescriptor {

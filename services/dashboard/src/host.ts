@@ -44,8 +44,6 @@ export function lanHandler(full: http.RequestListener, allowedHosts: readonly st
   };
 }
 
-/** `localhost`, `::1` or an IPv4 address in 127.0.0.0/8 (a name that merely starts with `127.` is not one). */
-const LOOPBACK_HOST = (h: string): boolean => h === "localhost" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
 
 /** The Host header's hostname (port and IPv6 brackets removed, lower-cased), or undefined when absent or unparsable. */
 function hostnameOf(host: string | undefined): string | undefined {
@@ -60,7 +58,7 @@ function hostnameOf(host: string | undefined): string | undefined {
 // @spec DASH-HOST-004
 export function hostAllowed(host: string | undefined): boolean {
   const h = hostnameOf(host);
-  return h !== undefined && LOOPBACK_HOST(h);
+  return h !== undefined && isLoopback(h); // the control plane's rule (CTRL-CONFIG-002)
 }
 
 const DEFAULT_PORT: Record<string, string> = { "http:": "80" };

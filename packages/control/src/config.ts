@@ -23,9 +23,15 @@ export function isLoopbackPeer(addr: string | undefined): boolean {
   return v4 === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(v4);
 }
 
+/**
+ * True for exactly `localhost`, `::1` and an IPv4 address in 127.0.0.0/8 written as four decimal octets of 0 to 255; a name
+ * that merely starts with `127.` (`127.example.com`) is not loopback. The dashboard's Host rule shares it.
+ */
 // @spec CTRL-CONFIG-002
 export function isLoopback(host: string): boolean {
-  return host === "localhost" || host === "::1" || host.startsWith("127.");
+  if (host === "localhost" || host === "::1") return true;
+  const m = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  return m !== null && m.slice(1).every((o) => Number(o) <= 255);
 }
 
 /** Parses CONTROL_* env. Throws (fail fast) when enabled without a token. There is no runtime setting: compose is the only runtime. */

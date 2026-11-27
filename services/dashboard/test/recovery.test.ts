@@ -167,7 +167,7 @@ test("reset removes the key (a credential leaves config.yaml), clears a secrets 
     assert.match(secrets, /# mine/);
     assert.match(secrets, /api_key: "keep"/);
     assert.doesNotMatch(secrets, /\[a\]/);
-    const nothing = await post(sec, "reset", { etag: etagOf(EXAMPLE), path: "cohost.name" });
+    const nothing = await post(sec, "reset", { etag: etagOf(EXAMPLE), path: "cohost.name" }, { authorization: "Bearer tok" });
     assert.ok(nothing.status === 400 || nothing.status === 200);
   } finally { await sec.close(); }
 });
@@ -231,7 +231,7 @@ test("stack posts other than stop and every lifecycle post are refused with the 
       assert.match(((await res.json()) as { detail: string }).detail, /^the config is invalid \(3 problems; first: .*recovery screen/);
     }
     assert.equal((await fetch(`${on.url}/health`)).status, 200);
-    assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { enabled: true, runtime: "compose", advanced: false });
+    assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { enabled: true, runtime: "compose", advanced: false, unlocked: false });
     const other = await fetch(`${on.url}/stack`);
     assert.equal(other.status, 503);
     assert.match(((await other.json()) as { detail: string }).detail, /config recovery mode/);

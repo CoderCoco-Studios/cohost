@@ -13,10 +13,8 @@ export type ApiResult<T> =
 export interface RequestOptions {
   /** Which token the route takes: `control` for every gated route, `viewers` for `/viewers`. A read sends none. */
   auth?: TokenKind;
-  /** What is waiting, named in the Access dialog when the request needs a token ("Restart voice"). */
+  /** What is waiting, named in the Access dialog when the request is answered 401 ("Restart voice"). */
   action?: string;
-  /** Ask for the token before sending when none is held (the secret write always needs one). */
-  requireToken?: boolean;
   /**
    * Send exactly this bearer token, never prompting and never touching the stored one: the Access dialog uses it to check
    * a token the operator typed before it is stored (DASH-ACC-004). Without `auth` a 401 is returned as it is.
@@ -99,11 +97,9 @@ export function createApi(deps: ApiDeps): Api {
     if (opts.token !== undefined) return once<T>(method, path, body, opts, opts.token);
     const kind = opts.auth;
     const action = opts.action ?? `${method} ${path}`;
-    let token = kind ? deps.access.getToken(kind) : undefined;
-    if (kind && !token && opts.requireToken) {
-      if (!(await deps.access.ask(kind, action))) return LOCKED(401);
-      token = deps.access.getToken(kind);
-    }
+    // A request goes out with the token the page holds, or without one: a browser opened through the unlock link carries its
+    // session cookie, which stands in for the control token (DASH-CTRL-011), so only the server's 401 opens the Access dialog.
+    const token = kind ? deps.access.getToken(kind) : undefined;
     const first = await once<T>(method, path, body, opts, token);
     if (first.ok || first.status !== 401 || !kind) return first;
     // A 401: the token was missing or wrong. A stored token the server rejects is cleared (the button shows Locked).

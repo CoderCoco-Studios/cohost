@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseYaml, secretPathOf, stringifyYaml, writeFileAtomic } from "@cohost/config";
+import { parseYaml, secretPathOf, stringifyYaml, unitsReadingSection, writeFileAtomic } from "@cohost/config";
 import { exportStore, importPlan, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
 import { StoreError, type StoreIssue } from "../errors.js";
 import { storeFile } from "../paths.js";
@@ -121,8 +121,14 @@ function get(s: Store, args: readonly string[], io: CliIo): number {
   return 0;
 }
 
-const appliesNote = (path: string): string =>
-  `the units that read the ${sectionOf(path)} section apply it at their next start\n`;
+/** The units whose manifest entry declares the path's section, which apply a change at their next start (STORE-TASK-002). */
+const appliesNote = (path: string): string => {
+  const section = sectionOf(path) ?? path;
+  const units = unitsReadingSection(section);
+  return units.length === 0
+    ? `no unit declares the ${section} section; the dashboard reads it\n`
+    : `${units.join(", ")} apply it at their next start\n`;
+};
 
 // @spec STORE-TASK-002
 function set(s: Store, args: readonly string[], io: CliIo): number {

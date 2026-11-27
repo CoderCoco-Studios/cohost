@@ -2,7 +2,11 @@
  * The service manifest: the ONLY source of ids, compose names, pnpm filters and consumer groups that
  * the runtime adapters may act on. Nothing from a request ever reaches an argv except by picking an
  * entry from this list. See docs/intent/control-plane/control-plane-specs.md.
+ *
+ * Each unit's settings declarations (`config`, `secrets`, `documents`, `stateKey`) and its Compose name come from
+ * `UNIT_SETTINGS` in `@cohost/config`, the leaf the settings store reads too; this file adds the runtime fields.
  */
+import { UNIT_SETTINGS, type DocumentName, type UnitSettings } from "@cohost/config";
 
 export type StartMode = "resume" | "fresh";
 
@@ -31,6 +35,10 @@ export interface ServiceDef {
    * the list is explicit, not every secret under the unit's sections. Empty when the unit reads none.
    */
   secrets: readonly string[];
+  /** The stored documents (`personality`, `expressions`) this unit reads (MOD-MAN-016). */
+  documents: readonly DocumentName[];
+  /** Whether the unit receives a per-unit state key to encrypt a credential it obtains at run time (MOD-MAN-017). */
+  stateKey: boolean;
   /** Units whose absence degrades one of this unit's features; `requires` is the subset an isolated start brings up. */
   uses: readonly string[];
   /** Whether the unit honours the `pause` and `resume` control commands. */
@@ -46,81 +54,78 @@ export interface UnitTest {
   observe: readonly string[];
 }
 
-const svc = (
-  id: string,
-  over: Partial<Omit<ServiceDef, "id" | "composeName">> = {},
-): ServiceDef => ({
-  id, composeName: id, pnpmFilter: `@cohost/${id}`, groups: [], defaultMode: "resume", infra: false, isolatedEnv: {},
-  config: [], secrets: [], uses: [], pause: false, test: { inputs: [], observe: [] }, ...over,
+/** The runtime fields a manifest entry sets; the settings declarations come from `UNIT_SETTINGS`. */
+type RuntimeFields = Partial<Omit<ServiceDef, "id" | "composeName" | keyof UnitSettings>>;
+
+/** The settings declarations of `id`; an id `UNIT_SETTINGS` lacks is a programming error. */
+function declared(id: string): Pick<ServiceDef, "composeName" | "config" | "secrets" | "documents" | "stateKey"> {
+  const u = UNIT_SETTINGS.find((x) => x.id === id);
+  if (u === undefined) throw new Error(`manifest unit ${id} has no entry in UNIT_SETTINGS (@cohost/config)`);
+  return { composeName: u.composeName, config: u.config, secrets: u.secrets, documents: u.documents, stateKey: u.stateKey };
+}
+
+const svc = (id: string, over: RuntimeFields = {}): ServiceDef => ({
+  id, pnpmFilter: `@cohost/${id}`, groups: [], defaultMode: "resume", infra: false, isolatedEnv: {},
+  uses: [], pause: false, test: { inputs: [], observe: [] }, ...over, ...declared(id),
 });
 
-/** The chat-model credentials of the `llm` section: every unit that builds the model client declares them (MOD-MAN-015). */
-const LLM_SECRETS = ["llm.openai.api_key", "llm.claude.api_key", "llm.bedrock.access_key_id", "llm.bedrock.secret_access_key"] as const;
-
-const compose = (id: string, over: Partial<Omit<ServiceDef, "id" | "composeName" | "pnpmFilter">> = {}): ServiceDef =>
+const compose = (id: string, over: Omit<RuntimeFields, "pnpmFilter"> = {}): ServiceDef =>
   ({ ...svc(id, over), pnpmFilter: undefined });
 
-// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014, MOD-MAN-015
+// @spec CTRL-MANIFEST-001, CTRL-MANIFEST-002, CTRL-MANIFEST-003, CTRL-GUARD-008, MOD-MAN-001, MOD-MAN-002, MOD-MAN-003, MOD-MAN-004, MOD-MAN-005, CTRL-MANIFEST-006, MOD-MAN-013, MOD-MAN-014, MOD-MAN-015, MOD-MAN-016, MOD-MAN-017
 export const SERVICE_MANIFEST: readonly ServiceDef[] = [
   svc("chat", {
     groups: ["chat"], defaultMode: "fresh", isolatedEnv: { CHAT_SOURCES: "[fake]" },
-    config: ["chat", "viewer_text", "cohost", "logging"],
-    secrets: ["chat.twitch.client_id", "chat.twitch.client_secret", "chat.twitch.access_token", "chat.twitch.refresh_token", "chat.youtube.api_key"], test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
+    test: { inputs: ["text"], observe: ["chat.message", "inject.result"] },
   }),
   svc("salience", {
-    groups: ["salience"], defaultMode: "fresh",
-    config: ["brain.salience", "brain.cortex", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools", "logging"], secrets: LLM_SECRETS, uses: ["affect", "cortex"], pause: true,
+    groups: ["salience"], defaultMode: "fresh", uses: ["affect", "cortex"], pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary"], observe: ["attention.focus", "brain.say"] },
   }),
   svc("affect", {
-    groups: ["affect"], defaultMode: "fresh",
-    config: ["brain.affect", "brain.input_limits", "viewer_text", "cohost", "llm", "logging"], secrets: LLM_SECRETS, pause: true,
+    groups: ["affect"], defaultMode: "fresh", pause: true,
     test: { inputs: ["chat.message", "speech.heard", "vision.summary", "brain.say"], observe: ["affect.state"] },
   }),
   svc("memory", {
     groups: ["memory", "memory-recall", "memory-notes"], isolatedEnv: { MEMORY_STORE: "memory", MEMORY_EMBEDDER: "hash" },
-    config: ["brain.memory", "brain.input_limits", "viewer_text", "cohost", "llm", "logging"], secrets: LLM_SECRETS,
     test: { inputs: ["chat.message", "memory.recall.request"], observe: ["memory.recall.reply", "memory.viewer"] },
   }),
   svc("cortex", {
     requires: ["salience", "affect"], groups: ["cortex"], defaultMode: "fresh", isolatedEnv: { LLM_PROVIDER: "mock" },
-    config: ["brain.cortex", "brain.memory", "brain.salience", "brain.working_memory_events", "brain.working_memory_own_lines", "brain.input_limits", "viewer_text", "cohost", "llm", "tools", "logging"], secrets: LLM_SECRETS, uses: ["salience", "affect", "memory", "tools"], pause: true,
+    uses: ["salience", "affect", "memory", "tools"], pause: true,
     test: { inputs: ["attention.focus"], observe: ["brain.status", "brain.say"] },
   }),
   // The tool-calling unit (services/tools, TOOL-SVC-*): it answers a tool call from cortex over the bus and reads no
   // model server. Its isolated start uses canned results (TOOLS_MODE=mock) and brings up no other unit.
   svc("tools", {
-    groups: ["tools"], defaultMode: "fresh", isolatedEnv: { TOOLS_MODE: "mock" },
-    config: ["tools", "cohost", "chat", "viewer_text", "network", "logging"], uses: ["memory"],
-    // The MCP tokens and the stream-info credentials; it reads the chat section but uses no chat user token (TOOL-SVC-010).
-    secrets: ["tools.servers.*.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.youtube.api_key"],
+    groups: ["tools"], defaultMode: "fresh", isolatedEnv: { TOOLS_MODE: "mock" }, uses: ["memory"],
     test: { inputs: ["text"], observe: ["tool.result", "inject.result"] },
   }),
   svc("voice", {
     groups: ["voice"], defaultMode: "fresh", isolatedEnv: { VOICE_ENGINE: "stub" },
-    config: ["voice", "network", "logging"], secrets: ["voice.openai.api_key"], test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
+    test: { inputs: ["brain.say"], observe: ["voice.utterance", "voice.playing", "voice.done"] },
   }),
   svc("avatar", {
     groups: ["avatar"], defaultMode: "fresh", isolatedEnv: { AVATAR_DRIVER: "null" },
-    config: ["avatar", "logging"], uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
+    uses: ["voice"], test: { inputs: ["brain.say", "affect.state"], observe: ["avatar.state"] },
   }),
   svc("eyes", {
     groups: ["eyes"], defaultMode: "fresh", isolatedEnv: { VISION_ENABLED: "false", VISION_PROVIDER: "stub" },
-    config: ["vision", "llm", "network", "logging"], secrets: ["vision.obs.password", ...LLM_SECRETS], test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
+    test: { inputs: ["image"], observe: ["vision.summary", "inject.result"] },
   }),
   svc("ears", {
     groups: ["ears"], defaultMode: "fresh", isolatedEnv: { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" },
-    config: ["ears", "network", "logging"], secrets: ["ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"], test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
+    test: { inputs: ["audio"], observe: ["speech.heard", "inject.result"] },
   }),
   svc("mouth", {
     groups: ["mouth"], defaultMode: "fresh", isolatedEnv: { MOUTH_DISCORD_ENABLED: "false", MOUTH_DRYRUN_ENABLED: "true" },
-    config: ["mouth", "logging"], uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
+    uses: ["voice"], test: { inputs: ["brain.say"], observe: ["voice.playing", "voice.done", "voice.failed"] },
   }),
   // The Discord connector (CONN-*): it subscribes to `inject.request` only, for its test input (CONN-INJ-001), so its one
   // group is that subscription's. Its unit id is the process name; the platform name `discord` is its connector id, tags and
   // config section. The injected clip is answered with Discord off, so the isolation preset keeps the input working.
   svc("connector-discord", {
-    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" }, config: ["connections", "logging"], secrets: ["connections.discord.token"],
+    groups: ["connector-discord"], defaultMode: "fresh", isolatedEnv: { CONNECTIONS_DISCORD_ENABLED: "false" },
     test: { inputs: ["audio"], observe: ["inject.result"] },
   }),
   compose("redis", { infra: true }),

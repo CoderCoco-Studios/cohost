@@ -6,8 +6,9 @@ import { ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, type Config, type Expressi
 import { parseConfigText, unknownKeys, decodeIsolation, ISOLATION_ENV, type ConfigIssue } from "./pipeline.js";
 import { loadSecrets } from "./secrets.js";
 import { configDir, findWorkspaceRoot, loadDotEnv } from "./paths.js";
-import { configLogger, type Logger } from "./logging.js";
+import { diag } from "./diag.js";
 import { ConfigError, bracketIndexes, type ConfigProblem } from "./errors.js";
+import { EARS_VERIFIER_PATH } from "./projection.js";
 
 export * from "./schema.js";
 export {
@@ -25,6 +26,12 @@ export * from "./egress.js";
 export { findWorkspaceRoot, configDir, dataDir, dotEnvPath, loadDotEnv } from "./paths.js";
 export { createLogger, configLogger, loggingSettings, redact, resetLoggingForTest, type Logger, type CreateLoggerOptions, type TerminalOut } from "./logging.js";
 export { formatPretty, escapeTerminal } from "./log-pretty.js";
+export { UNIT_SETTINGS, unitSettings, unitsReadingSection, type UnitSettings, type DocumentName } from "./units.js";
+export {
+  loadProjection, loadProjectionPersonality, loadProjectionExpressions, readProjection, PROJECTION_FILE, PROJECTION_FORMAT, EARS_VERIFIER_PATH,
+  type Projection, type ProjectionOptions,
+} from "./projection.js";
+export { outboxPath, writePersonalityOutbox, readPersonalityOutbox, sha256Hex, type PersonalityOutbox } from "./outbox.js";
 /**
  * The YAML reader and writer of this package, for `@cohost/store`'s export and import, which depends on no package outside the
  * workspace (settings-store STORE-PKG-002).
@@ -55,11 +62,7 @@ export function setSecretPaths(file: string = secretsPath()): string[] {
   return Object.keys(loadSecrets(file).values).toSorted();
 }
 
-let diagnostics: Pick<Logger, "warn"> | undefined;
-/** Replace (or, with `undefined`, restore) the logger the loader reports its notices and warnings through. */
-// @spec CFG-LOG-001
-export function setConfigLogger(l: Pick<Logger, "warn"> | undefined): void { diagnostics = l; }
-const diag = (): Pick<Logger, "warn"> => diagnostics ?? configLogger();
+export { setConfigLogger } from "./diag.js";
 
 const formatIssues = (issues: ConfigIssue[]): string => issues.map((i) => `  ${i.path || "(file)"}: ${i.message}`).join("\n");
 
@@ -96,7 +99,6 @@ export function loadConfig(force = false): Config {
   return cached;
 }
 
-const EARS_VERIFIER_PATH = "ears.http.verifier";
 
 /**
  * The ears listener key the loader merged from the secrets file it read (`ears.http.verifier`, CFG-SEC-020), or undefined when

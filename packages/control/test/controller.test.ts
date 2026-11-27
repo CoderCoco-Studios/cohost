@@ -162,7 +162,7 @@ test("a non-isolated start, and isolated restart or stop, never apply the closur
 // @spec CTRL-GUARD-008
 test("the closure is transitive and deduplicated, and tolerates cycles", async () => {
   const mk = (id: string, requires?: string[]): ServiceDef => ({ id, composeName: id, groups: [], defaultMode: "resume", infra: false, isolatedEnv: {},
-    config: [], secrets: [], uses: [], pause: false, test: { inputs: [], observe: [] }, ...(requires ? { requires } : {}) });
+    config: [], secrets: [], documents: [], stateKey: false, uses: [], pause: false, test: { inputs: [], observe: [] }, ...(requires ? { requires } : {}) });
   const manifest = [mk("a", ["b", "c"]), mk("b", ["c"]), mk("c", ["a"])];
   const { c, log } = setup({ manifest });
   assert.equal((await c.start("a", { isolated: true })).ok, true);

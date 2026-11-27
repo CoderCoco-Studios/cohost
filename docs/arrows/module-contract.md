@@ -4,7 +4,7 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 65 specs: 48 `[x]`, 17 `[ ]`, 0 `[D]`; the settings routes over the store, the manifest's `documents` and `stateKey` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store:** 65 specs: 50 `[x]`, 15 `[ ]`, 0 `[D]`. The manifest's `documents` and `stateKey` are built (MOD-MAN-016, -017): every unit's settings declarations (`config`, `secrets`, `documents`, `stateKey`, the Compose name) live in `UNIT_SETTINGS` (`packages/config/src/units.ts`), which `SERVICE_MANIFEST` takes them from and the settings store reads too. Open: the settings routes over the store (MOD-CFG-003..017), the seed (MOD-MAN-011) and the per-unit boot test against a projection (MOD-MAN-018), which needs the services to load their configuration from the projection ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Under the one-place configuration design ([decision](../decisions/config-in-one-place.md)) the settings editor reports secrets as set or not set, lists the units that run an isolation override, serves the presentation table with the schema and answers the success and error shapes of MOD-CFG-001 to -021, `?dryRun=1` (MOD-CFG-013) included, both realized by the dashboard's Settings screen. MOD-UI-001 to -006 are retired lines whose behaviour is the dashboard's DASH-SET-*, marked `[x]` like the dashboard's other retired lines. The MOD-CFG and MOD-UI specs total 28: 25 `[x]`, 3 `[ ]`, 0 `[D]`.
 
@@ -42,6 +42,7 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 
 ### Code
 - packages/control/src/manifest.ts, health.ts
+- packages/config/src/units.ts
 - packages/testing/src/unit-contract.ts
 - packages/config/src/index.ts, schema.ts, editor.ts, pipeline.ts
 - services/dashboard/src/routes.ts, inject.ts, settings.ts, services/dashboard/ui/src/screens/services/, services/dashboard/ui/src/screens/settings/

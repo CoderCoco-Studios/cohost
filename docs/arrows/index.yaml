@@ -51,7 +51,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "113 specs: 108 [x], 5 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): SHARED-BOOT-009 to 011 new: the boot order for a unit that waits for its credentials. Earlier: (the untrusted tool notice and the head-rotation module are built)."
+    next: "113 specs: 109 [x], 4 [ ], 0 [D]. #372 step 2 built receiveCredentials (SHARED-BOOT-010) and the state-file helpers, unused by runService. Open: SHARED-BOOT-002, 008, 009, 011, the boot order for a unit that waits for its credentials (step 3a). Earlier: (the untrusted tool notice and the head-rotation module are built)."
     drift: null
 
   module-contract:
@@ -63,7 +63,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "65 specs: 48 [x], 17 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): the settings routes over the store (MOD-CFG-003..017), the seed (MOD-MAN-011), the manifest's documents and stateKey (MOD-MAN-016, -017 new). Earlier: (MOD-CFG-007, MOD-PAUSE-001 and MOD-TEST-001, rewritten for #370: no sensitive-key tier, no control-off state; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). Every application unit declares logging (MOD-MAN-002, #349) is built. The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
+    next: "65 specs: 50 [x], 15 [ ], 0 [D]. #372: the manifest's documents and stateKey are built (MOD-MAN-016, -017; the settings declarations live in UNIT_SETTINGS in @cohost/config). Open: the settings routes over the store (MOD-CFG-003..017), the seed (MOD-MAN-011), the per-unit boot test against a projection (MOD-MAN-018, needs the cut-over). Earlier: (MOD-CFG-007, MOD-PAUSE-001 and MOD-TEST-001, rewritten for #370: no sensitive-key tier, no control-off state; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). Every application unit declares logging (MOD-MAN-002, #349) is built. The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
     drift: null
 
 
@@ -328,7 +328,7 @@ arrows:
     blocks: [control-plane, dashboard, deployment, module-contract, shared-runtime, memory, chat, avatar]
     blockedBy: [config]
     detail: settings-store.md
-    next: "68 specs: 35 [x], 33 [ ], 0 [D]. #372 step 1 built: the @cohost/store package (node:sqlite wrapper, schema, integrity, master key file, AES-256-GCM values, token verifier, session and listener keys, the write operation, backups, restore, export and import, checkStore) and the config:* tasks; inert, no consumer uses it. Next: step 2 (the projection loader, the credentials receiver, manifest documents and stateKey, state-key helpers, the reflect outbox), then the step 3 cut-over (projections, delivery, config:project, deliver)."
+    next: "68 specs: 36 [x], 32 [ ], 0 [D]. #372 steps 1 and 2 built, inert: the @cohost/store package and the config:* tasks (config:set names the units, STORE-TASK-002); the projection loader (loadProjection), the credentials receiver, the state-file helpers, the outbox writer and its applier, the manifest's documents and stateKey. Nothing uses them yet. Next: the step 3 cut-over (projections, delivery, config:project, deliver, the boot order, the wiring of the loader, the outbox and the state files)."
     drift: null
 
 

@@ -5,7 +5,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
-import { ON, TOKEN } from "./control-fixture.js";
+import { TEST_GATE, TOKEN, UNUSED_STORE } from "./control-fixture.js";
 
 /** Every unit up: the not-running refusal (MOD-TEST-005) has its own tests in inject-event.test.ts. */
 const UP = ["chat", "eyes", "ears"].map((service) => ({ service, state: "up" as const, restarts: 0 }));
@@ -25,10 +25,10 @@ async function boot(env: NodeJS.ProcessEnv = {}, maxImage = 64, ttlMs = 300_000)
   const bus = new CtlBus();
   const rec = recordingLog();
   const uploads = { maxImageBytes: maxImage, maxAudioBytes: 64, ttlMs };
-  const setup = setupControl({ ...ON, ...env }, bus, rec.log);
+  const setup = setupControl(env, bus, rec.log, TEST_GATE);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => UP,
+    store: UNUSED_STORE, services: () => UP,
     control: setup.control, uploads, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { loadConfigFile } from "@cohost/config";
+import type { Config } from "@cohost/config";
 
 /** How long a pick-list route waits for its backing server, connection and body together. */
 export const OPTIONS_TIMEOUT_MS = 3000;
@@ -9,6 +9,8 @@ export const OPTIONS_MAX_BYTES = 1024 * 1024;
 export interface OptionsDeps {
   /** The backing servers' base URLs: the service-URL helpers, never a request's text or a config value a caller can change. */
   urls: { tts: () => string; ollama: () => string };
+  /** The stored settings as the store assembles them (settings-store STORE-DB-010), read per request: the voice engine. */
+  config: () => Config;
   /** Defaults to `OPTIONS_TIMEOUT_MS`; tests shorten it. */
   timeoutMs?: number;
 }
@@ -91,7 +93,7 @@ export async function handleOptions(d: OptionsDeps, req: http.IncomingMessage, r
       // @spec DASH-OPT-001, DASH-OPT-005
       let engine: string;
       try {
-        engine = loadConfigFile(true).voice.engine;
+        engine = d.config().voice.engine;
       } catch (e) {
         res.writeHead(500, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ ok: false, detail: e instanceof Error ? e.message : String(e) }));

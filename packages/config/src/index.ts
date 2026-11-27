@@ -1,10 +1,9 @@
 
 export * from "./schema.js";
 export {
-  unknownKeys, parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
+  unknownKeys, parseConfigText, placeholderIssues, coerceEmptyNumbers, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
   type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
 } from "./pipeline.js";
-export { updateSecrets, secretRepair } from "./secrets.js";
 export { setConfigLogger } from "./diag.js";
 export { ConfigError, type ConfigProblem, type ConfigProblemKind } from "./errors.js";
 export { writeFileAtomic } from "./atomic.js";
@@ -23,9 +22,6 @@ export {
   type Projection, type LoadOptions,
 } from "./projection.js";
 export { OLLAMA_MODEL_SECTIONS } from "./models.js";
-export {
-  loadConfigFile, checkConfig, ensureFromExample, personalityPath, loadPersonalityFile, savePersonality, loadExpressionsFile, secretsPath, setSecretPaths,
-} from "./files.js";
 export { outboxPath, writePersonalityOutbox, readPersonalityOutbox, sha256Hex, type PersonalityOutbox } from "./outbox.js";
 /**
  * The YAML reader and writer of this package, for `@cohost/store`'s export and import, which depends on no package outside the

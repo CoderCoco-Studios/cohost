@@ -1,13 +1,9 @@
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import type { BearerResult } from "@cohost/store";
 
-/** The control configuration: the one lock (`CONTROL_TOKEN`, trimmed) and the infrastructure safety switch (`CONTROL_ADVANCED`). */
+/** The control configuration: the infrastructure safety switch (`CONTROL_ADVANCED`). */
 export interface ControlConfig {
-  token: string;
   advanced: boolean;
 }
-
-/** The shortest `CONTROL_TOKEN` accepted, after trimming (CTRL-CONFIG-001). */
-export const MIN_CONTROL_TOKEN_LENGTH = 32;
 
 export const LOOPBACK_BIND = "127.0.0.1";
 
@@ -36,47 +32,24 @@ export function isLoopback(host: string): boolean {
 }
 
 /**
- * Why `CONTROL_TOKEN` cannot be used, naming the variable and never its value: unset or empty, or shorter than 32 characters
- * after trimming. Undefined when it is usable.
- */
-export function controlTokenProblem(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  const token = (env.CONTROL_TOKEN ?? "").trim();
-  if (token.length >= MIN_CONTROL_TOKEN_LENGTH) return undefined;
-  const what = token === "" ? "CONTROL_TOKEN is missing" : "CONTROL_TOKEN is too short";
-  return `${what}: it must be at least ${MIN_CONTROL_TOKEN_LENGTH} characters. The installer writes one into .env; to make one by hand, run \`openssl rand -hex 24\` and put the result in .env as CONTROL_TOKEN=<that value>`;
-}
-
-/**
- * Parses CONTROL_* env. `CONTROL_TOKEN` is cohost's one lock and always required: throws (fail fast) when it is unset or shorter
- * than 32 characters after trimming, never including the value. `CONTROL_ENABLED` is not read: no variable switches control off.
- * There is no runtime setting: compose is the only runtime.
+ * Parses CONTROL_* env: the infrastructure safety switch (`CONTROL_ADVANCED`). No control token is read: the dashboard checks a
+ * bearer against the settings store's verifier (settings-store STORE-TOK-003) and refuses to start while the store holds none
+ * (dashboard DASH-CTRL-002). `CONTROL_ENABLED` is not read: no variable switches control off. There is no runtime setting:
+ * compose is the only runtime.
  */
 // @spec CTRL-CONFIG-001, CTRL-CONFIG-002
 export function loadControlConfig(env: NodeJS.ProcessEnv = process.env): ControlConfig {
-  const problem = controlTokenProblem(env);
-  if (problem !== undefined) throw new Error(problem);
-  return { token: (env.CONTROL_TOKEN ?? "").trim(), advanced: env.CONTROL_ADVANCED === "1" };
+  return { advanced: env.CONTROL_ADVANCED === "1" };
 }
-
-/** The label the ears listener key is an HMAC of (CTRL-RUNTIME-017); it differs from the dashboard's session-key label. */
-export const EARS_LISTENER_LABEL = "cohost/ears-listener/v1";
 
 /**
- * The ears listener key: HMAC-SHA256 keyed with the trimmed control token, of `EARS_LISTENER_LABEL`, as 64 lowercase hex digits
- * (CTRL-RUNTIME-017). The token cannot be recovered from it, and it only lets a client post audio.
+ * Checks an `Authorization` header: accepted only in the form `Bearer <token>` with a non-empty token that `verify` (the
+ * settings store's verifier, STORE-TOK-003) accepts. A missing header, another scheme or an empty bearer is `bad` without a
+ * check; `busy` passes through from a verifier with too many checks waiting.
  */
-// @spec CTRL-RUNTIME-017
-export function earsListenerKey(token: string): string {
-  return createHmac("sha256", token.trim()).update(EARS_LISTENER_LABEL).digest("hex");
-}
-
-/** Constant-time check of an `Authorization: Bearer <token>` header. */
 // @spec CTRL-CONFIG-003
-export function bearerOk(header: string | undefined, token: string): boolean {
+export async function bearerOk(header: string | undefined, verify: (token: string) => Promise<BearerResult>): Promise<BearerResult> {
   const m = /^Bearer (.+)$/.exec(header ?? "");
-  if (!m || !token) return false;
-  // Hash both sides so the comparison is fixed-length (timingSafeEqual requires equal lengths).
-  const a = createHash("sha256").update(m[1]!).digest();
-  const b = createHash("sha256").update(token).digest();
-  return timingSafeEqual(a, b);
+  if (!m || m[1]!.trim() === "") return "bad";
+  return verify(m[1]!);
 }

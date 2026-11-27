@@ -1,9 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { glb, model, open, rig, send, type Rig } from "./models-rig.js";
-import { configText } from "./config-fixture.js";
 
 // DELETE /avatar/models/<name> (DASH-MDL-033..036), the renderer save check (DASH-MDL-037) and the applied view
 // (DASH-AVR-023, 024, 026..029), observed through the model routes and the settings route.
@@ -107,13 +105,13 @@ test("a renderer.model that names no stored model, or one listed with an error, 
 // @spec DASH-MDL-037, DASH-AVR-024
 test("a PUT /config/renderer, a dry run included, that would leave a model that is not stored or has an error is 400 with an issue on renderer.model and writes nothing", async (t) => {
   const r = await rig(t, { seed: { "Aiko.vrm": model("a"), "Broken.vrm": glb({ asset: { version: "2.0" } }, { bin: 4 }) } });
-  const before = readFileSync(r.cfgFile, "utf8");
+  const before = r.settings();
   for (const dryRun of [false, true]) {
     for (const m of ["Ghost.vrm", "Broken.vrm"]) {
       const res = await r.save({ model: m }, { dryRun });
       assert.equal(res.status, 400, `${m} dryRun=${dryRun}`);
       assert.ok(res.json().issues.some((i: { path: string }) => i.path === "renderer.model"));
-      assert.equal(readFileSync(r.cfgFile, "utf8"), before);
+      assert.equal(r.settings(), before);
     }
   }
   assert.equal((await r.save({ model: "" }, { dryRun: true })).status, 200, "blank is allowed");
@@ -121,14 +119,14 @@ test("a PUT /config/renderer, a dry run included, that would leave a model that 
 });
 
 // @spec DASH-MDL-037, DASH-AVR-024
-test("the check is on the section as the file would hold it: a save that does not send model still fails when the file's model is not stored", async (t) => {
+test("the check is on the section as the store would hold it: a save that does not send model still fails when the stored model is not stored", async (t) => {
   const r = await rig(t, { folder: true });
-  writeFileSync(r.cfgFile, configText({ renderer: { model: "Ghost.vrm" } }));
-  const before = readFileSync(r.cfgFile, "utf8");
+  r.handEdit({ model: "Ghost.vrm" });
+  const before = r.settings();
   const res = await r.save({ zoom: 2 });
   assert.equal(res.status, 400);
   assert.ok(res.json().issues.some((i: { path: string }) => i.path === "renderer.model"));
-  assert.equal(readFileSync(r.cfgFile, "utf8"), before);
+  assert.equal(r.settings(), before);
   assert.equal((await r.save({ zoom: 2, model: "" })).status, 200, "sending a blank model fixes it");
 });
 
@@ -153,22 +151,22 @@ test("a successful save sets the applied view before it answers, with no restart
 });
 
 // @spec DASH-AVR-024
-test("a value edited by hand into the file goes live with the next save of any key, the model by the rule of DASH-AVR-023", async (t) => {
+test("a value set in the store outside the dashboard goes live with the next save of any key, the model by the rule of DASH-AVR-023", async (t) => {
   const r = await rig(t, { seed: { "Aiko.vrm": model("a"), "Bea.vrm": model("b") }, renderer: { model: "Aiko.vrm" } });
-  writeFileSync(r.cfgFile, configText({ renderer: { model: "Bea.vrm" } }));
+  r.handEdit({ model: "Bea.vrm" });
   assert.deepEqual(await served(r), model("a"), "not applied until a save");
   assert.equal((await r.save({ turn: 10 })).status, 200);
   assert.deepEqual(await served(r), model("b"));
 });
 
 // @spec DASH-AVR-026
-test("/avatar/model, the active field and the delete guard read the applied view and never config.yaml", async (t) => {
+test("/avatar/model, the active field and the delete guard read the applied view and never the stored section", async (t) => {
   const r = await rig(t, { seed: { "Aiko.vrm": model("a"), "Bea.vrm": model("b") }, renderer: { model: "Aiko.vrm" } });
-  writeFileSync(r.cfgFile, configText({ renderer: { model: "Bea.vrm" } })); // a hand edit, not saved through the dashboard
+  r.handEdit({ model: "Bea.vrm" }); // a hand edit, not saved through the dashboard
   assert.deepEqual(await served(r), model("a"));
   assert.equal((await r.get("/avatar/models")).json().active, "Aiko.vrm");
-  assert.equal((await del(r, "Aiko.vrm")).status, 409, "the applied model, not the file's");
-  assert.equal((await del(r, "Bea.vrm")).status, 200, "the file's model is not applied");
+  assert.equal((await del(r, "Aiko.vrm")).status, 409, "the applied model, not the stored one");
+  assert.equal((await del(r, "Bea.vrm")).status, 200, "the stored model is not applied");
 });
 
 // @spec DASH-AVR-027
@@ -207,10 +205,10 @@ test("a delete and a save that selects the same model never both succeed", async
 // @spec DASH-AVR-029
 test("a dry run writes nothing and changes neither the applied view nor what is served", async (t) => {
   const r = await rig(t, { seed: { "Aiko.vrm": model("a"), "Bea.vrm": model("b") }, renderer: { model: "Aiko.vrm" } });
-  const before = readFileSync(r.cfgFile, "utf8");
+  const before = r.settings();
   const res = await r.save({ model: "Bea.vrm", zoom: 3 }, { dryRun: true });
   assert.equal(res.status, 200);
-  assert.equal(readFileSync(r.cfgFile, "utf8"), before);
+  assert.equal(r.settings(), before);
   assert.deepEqual(await served(r), model("a"));
   assert.equal((await r.get("/avatar/models")).json().active, "Aiko.vrm");
   assert.equal((await del(r, "Bea.vrm")).status, 200, "Bea was never selected");

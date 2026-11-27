@@ -420,7 +420,7 @@ test("each dev:<service> runs the unit runner with its unit over its and the pac
     assert.ok(table.length > 0, `[tasks."dev:${s}"] is in mise.toml`);
     assert.doesNotMatch(table, /^\s*(dir|env)\s*=/m, `dev:${s} has no dir and no env`);
     assert.doesNotMatch(rel(t.dir ?? ""), /services\//, `dev:${s} runs from the repository root`);
-    assert.doesNotMatch(JSON.stringify(t.env ?? null), /CONTROL_TOKEN|COHOST_SECRETS_FILE/, `dev:${s} env`);
+    assert.doesNotMatch(JSON.stringify(t.env ?? null), /CONTROL_TOKEN/, `dev:${s} env`);
     assert.deepEqual(t.sources.map(rel), [`services/${s}/src/**`, "packages/*/src/**"]);
     assert.deepEqual(t.outputs, [], `dev:${s} declares outputs = []`);
   }
@@ -723,7 +723,7 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
     for (const line of task(name).run) assert.match(line, /^scripts\/test-env\.sh node /, `${name}: ${line}`);
   }
   const script = join(repoRoot, "scripts", "test-env.sh");
-  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_SECRETS_FILE COHOST_KEY_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
+  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_KEY_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
   const r = spawnSync(script, ["bash", "-c", probe], { encoding: "utf8", cwd: repoRoot, env: { PATH: process.env.PATH!, COHOST_DATA_DIR: "/owner/data", CONFIG_DIR: "/owner/config", COHOST_KEY_FILE: "/owner/master.key" } });
   assert.equal(r.status, 3, `the command's status is the run's status: ${r.stderr}`);
   const vars = Object.fromEntries(r.stdout.split("\n").filter((l) => l.includes("=")).map((l) => l.split("=") as [string, string]));
@@ -733,7 +733,6 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
   for (const dir of [data, conf]) assert.ok(dir.startsWith(tmpdir()) || dir.startsWith("/tmp"), `${dir} is a temporary directory`);
   assert.ok(!data.startsWith(repoRoot) && !conf.startsWith(repoRoot));
   assert.equal(vars.COHOST_ENV_FILE, join(conf, ".env"));
-  assert.equal(vars.COHOST_SECRETS_FILE, join(conf, "secrets", "secrets.yaml"));
   assert.equal(vars.COHOST_KEY_FILE, join(conf, "master.key"), "no test reads or creates the owner's master key");
   const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).toSorted();
   for (const f of examples) assert.ok(r.stdout.split("\n").includes(f), `${f} copied`);

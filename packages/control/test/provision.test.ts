@@ -166,3 +166,41 @@ test("redeliver: a waiting unit and a unit whose StartedAt differs from its reco
   assert.deepEqual(second.delivered, [], "at most once per container start");
   w.source.close();
 });
+
+// @spec STORE-DLV-003
+test("after delivers to a container Docker restarted since its recorded delivery, though the command itself did not start it", async () => {
+  const w = await world();
+  let state = [box("aaa", "cortex", "t1")];
+  const d = fakeDocker(() => state);
+  const p = new ComposeProvisioner({ root: w.root, docker: d.docker, env: {}, envFile: w.envFile, source: w.source });
+  const first = await p.before();
+  assert.ok(first.ok);
+  state = [box("aaa", "cortex", "t2")];
+  assert.ok((await first.after()).ok);
+  assert.equal(d.deliveries().length, 1, "started by the command: delivered");
+  // Docker restarts it by its policy: a later command that leaves it untouched still delivers, because the record is stale.
+  state = [box("aaa", "cortex", "t3")];
+  const second = await p.before();
+  assert.ok(second.ok);
+  assert.ok((await second.after()).ok);
+  assert.equal(d.deliveries().length, 2, "StartedAt differs from the record: delivered again");
+  const third = await p.before();
+  assert.ok(third.ok);
+  assert.ok((await third.after()).ok);
+  assert.equal(d.deliveries().length, 2, "record current and not started: nothing delivered");
+  assert.equal(readDeliveries(w.root).cortex?.startedAt, "t3");
+  w.source.close();
+});
+
+// @spec STORE-DLV-003
+test("before fails, delivering nothing, when the project's containers cannot be listed", async () => {
+  const w = await world();
+  const docker: DockerRun = async (args) => {
+    if (args[0] === "compose" && args[1] === "ps") throw new Error("Cannot connect to the Docker daemon");
+    return { stdout: "", stderr: "" };
+  };
+  const r = await new ComposeProvisioner({ root: w.root, docker, env: {}, envFile: w.envFile, source: w.source }).before();
+  assert.equal(r.ok, false);
+  assert.match((r as { detail: string }).detail, /docker compose ps failed: Cannot connect to the Docker daemon/);
+  w.source.close();
+});

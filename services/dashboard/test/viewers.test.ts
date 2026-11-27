@@ -6,7 +6,7 @@ import { createDashboardHandler } from "../src/routes.js";
 import { StackService } from "../src/stack.js";
 import { ViewersClient } from "../src/viewers.js";
 import { SESSION_COOKIE, newSession } from "../src/access.js";
-import { testControl } from "./control-fixture.js";
+import { SESSION_KEY, UNUSED_STORE, gateFor, testControl } from "./control-fixture.js";
 
 const TOKEN = "s3cret-control-token-for-viewers-0001";
 
@@ -30,7 +30,7 @@ async function boot(o: BootOpts = {}) {
   const rec = recordingLog();
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], viewers, control: testControl({ token: TOKEN }), stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    store: UNUSED_STORE, services: () => [], viewers, control: testControl({ gate: gateFor(TOKEN) }), stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -134,14 +134,14 @@ test("every /viewers route, reads included, needs the control token or a session
 test("an unlocked browser's session cookie opens every /viewers route: a read with no Origin or its own, a write with its own Origin only", async () => {
   const t = await boot();
   const host = new URL(t.base).host;
-  const cookie = `${SESSION_COOKIE}=${newSession(TOKEN)}`;
+  const cookie = `${SESSION_COOKIE}=${newSession(SESSION_KEY)}`;
   const same = { cookie, origin: `http://${host}` };
   assert.equal((await t.call("GET", "/viewers", undefined, null, { cookie })).status, 200, "a read with no Origin");
   assert.equal((await t.call("GET", "/viewers/k", undefined, null, same)).status, 200, "a read with its own Origin");
   assert.equal((await t.call("POST", "/viewers/regular", { name: "x", regular: true }, null, same)).status, 200, "a write with its own Origin");
   assert.equal(t.requests().length, 3);
   assert.equal((await t.call("POST", "/viewers/regular", { name: "x", regular: true }, null, { cookie })).status, 401, "a write without an Origin does not count the cookie");
-  assert.equal((await t.call("GET", "/viewers", undefined, null, { cookie: `${SESSION_COOKIE}=${newSession("another-token")}` })).status, 401, "a session made under another token");
+  assert.equal((await t.call("GET", "/viewers", undefined, null, { cookie: `${SESSION_COOKIE}=${newSession(Buffer.alloc(32, 9))}` })).status, 401, "a session made under another session key");
   assert.equal((await t.call("GET", "/viewers", undefined, "Bearer wrong", { cookie })).status, 401, "a request with Authorization is judged by it alone");
   assert.equal(t.requests().length, 3, "nothing published for a refused request");
 });

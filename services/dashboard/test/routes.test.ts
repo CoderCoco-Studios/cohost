@@ -1,13 +1,15 @@
 import { test, after } from "node:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { HealthTracker } from "@cohost/control";
+import { personalityUnits, projectionDir, projectionsDir } from "@cohost/store";
 import { createDashboardHandler } from "../src/routes.js";
 import { AUTH, testControl } from "./control-fixture.js";
+import { testStore } from "./store-fixture.js";
 import { StackService } from "../src/stack.js";
 
 // The voice service the dashboard proxies audio from.
@@ -30,14 +32,17 @@ after(() => rmSync(uiDir, { recursive: true, force: true }));
 const bus = new FakeBus();
 const tracker = new HealthTracker();
 const rec = recordingLog();
-let personality = "# Coco\n";
+const st = await testStore();
+after(() => st.close());
+assert.equal(st.store.write({ personality: "# Coco\n" }).ok, true);
+const personality = (): string | undefined => st.store.personality();
 const server = http.createServer(createDashboardHandler({
   bus, log: rec.log,
   uiDir,
   cohostName: "Coco",
   voiceUrl: `http://127.0.0.1:${(voice.address() as { port: number }).port}`,
-  loadPersonality: () => personality,
-  savePersonality: (t) => { personality = t; },
+  store: st.store,
+  root: st.root,
   services: () => tracker.snapshot(),
   stack: new StackService({ log: rec.log, bus: () => "connected" }),
   control: testControl(),
@@ -74,13 +79,104 @@ test("GET /audio/* proxies the voice service, passing its status through, uncach
 });
 
 // @spec DASH-HTTP-005, DASH-HTTP-006
-test("personality: GET reads it; PUT saves it and tells the cortex to reload", async () => {
+test("personality: GET reads the store's document; PUT writes it to the store and tells the cortex to reload", async () => {
   assert.equal(await (await fetch(`${base}/personality`)).text(), "# Coco\n");
   bus.clear();
   const r = await post("/personality", "# Coco v2\n", "PUT");
   assert.equal(r.status, 204);
-  assert.equal(personality, "# Coco v2\n");
+  assert.equal(personality(), "# Coco v2\n");
   assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
+});
+
+// @spec DASH-HTTP-006, STORE-PROJ-006
+test("a personality save rewrites the projection of every unit that declares the personality, before the reload is published", async () => {
+  rmSync(projectionsDir(st.root), { recursive: true, force: true });
+  bus.clear();
+  let projected: string[] = [];
+  const publish = bus.publish.bind(bus);
+  bus.publish = (async (...args: Parameters<typeof bus.publish>) => {
+    projected = existsSync(projectionsDir(st.root)) ? readdirSync(projectionsDir(st.root)).toSorted() : [];
+    return publish(...args);
+  }) as typeof bus.publish;
+  try {
+    assert.equal((await post("/personality", "# Coco v3\n", "PUT")).status, 204);
+  } finally {
+    bus.publish = publish;
+  }
+  const units = personalityUnits();
+  assert.ok(units.length > 0, "some unit declares the personality");
+  assert.deepEqual(projected, units.map((u) => u.composeName).toSorted(), "only the personality units, written before the publish");
+  for (const u of units) {
+    const p = JSON.parse(readFileSync(join(projectionDir(st.root, u.composeName), "settings.json"), "utf8")) as { documents: { personality?: string }; revision: number };
+    assert.equal(p.documents.personality, "# Coco v3\n", u.id);
+    assert.equal(p.revision, st.store.revision(), u.id);
+  }
+  assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
+});
+
+// @spec DASH-HTTP-006
+test("a personality save whose projections cannot be written is still saved and reloaded: 204 with a warning header and a log line", async () => {
+  rmSync(join(st.root, "data"), { recursive: true, force: true });
+  mkdirSync(st.root, { recursive: true });
+  const elsewhere = mkdtempSync(join(tmpdir(), "dash-routes-elsewhere-"));
+  symlinkSync(elsewhere, join(st.root, "data")); // the projections refuse a symbolic link
+  bus.clear();
+  try {
+    const r = await post("/personality", "# Coco v4\n", "PUT");
+    assert.equal(r.status, 204);
+    assert.match(r.headers.get("x-cohost-warning") ?? "", /saved, but its projections could not be rewritten/);
+    assert.equal(personality(), "# Coco v4\n");
+    assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
+    assert.ok(rec.lines.some((l) => l.level === "warn" && /projections could not be rewritten/.test(String(l.msg))));
+  } finally {
+    rmSync(join(st.root, "data"), { force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+// @spec MOD-CFG-003
+test("a /config/ path with a malformed percent escape is 404 unknown section", async () => {
+  const r = await fetch(`${base}/config/%E0%A4%A`);
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { ok: false, detail: "unknown section" });
+});
+
+// @spec DASH-HTTP-006
+test("a personality PUT without the token is 401: nothing written, nothing projected or published", async () => {
+  bus.clear();
+  rmSync(projectionsDir(st.root), { recursive: true, force: true });
+  const before = personality();
+  const r = await fetch(`${base}/personality`, { method: "PUT", body: "# not mine\n" });
+  assert.equal(r.status, 401);
+  assert.equal(personality(), before);
+  assert.equal(existsSync(projectionsDir(st.root)), false);
+  assert.equal(bus.published.length, 0);
+});
+
+// @spec DASH-RCV-004, DASH-RCV-010, DASH-RCV-029
+test("in normal mode GET /recovery is {active: false} plus recoveryKeyUnconfirmed while the store's flag is set; the gated confirm clears it; other recovery writes are 409", async () => {
+  if (!st.store.recoveryKeyUnconfirmed()) {
+    // A new store's first key sets the flag (settings-store STORE-KEY-002); make sure it is set whatever made this one.
+    const { DatabaseSync } = await import("node:sqlite");
+    const { storeFile } = await import("@cohost/store");
+    const db = new DatabaseSync(storeFile(st.opts.dataDir!));
+    db.exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('recovery_key_unconfirmed', '1')");
+    db.close();
+  }
+  const get = async () => (await (await fetch(`${base}/recovery`)).json()) as Record<string, unknown>;
+  assert.deepEqual(await get(), { active: false, recoveryKeyUnconfirmed: true });
+  const refused = await fetch(`${base}/recovery/key-confirmed`, { method: "POST" });
+  assert.equal(refused.status, 401, "the confirm passes the one gate");
+  assert.equal(st.store.recoveryKeyUnconfirmed(), true);
+  const ok = await fetch(`${base}/recovery/key-confirmed`, { method: "POST", headers: AUTH });
+  assert.equal(ok.status, 204);
+  assert.equal(st.store.recoveryKeyUnconfirmed(), false);
+  assert.deepEqual(await get(), { active: false });
+  for (const op of ["set", "reset", "reset-all", "restore", "import", "key", "discard-credentials", "raw"]) {
+    const r = await post(`/recovery/${op}`, {});
+    assert.equal(r.status, 409, op);
+    assert.match(((await r.json()) as { detail: string }).detail, /not in config recovery mode/, op);
+  }
 });
 
 // @spec DASH-HTTP-007
@@ -153,16 +249,16 @@ test("POST /sink with an event other than playing/done is a 400 and publishes no
 // @spec DASH-HTTP-011
 test("bodies over 64 KiB are a 413 on /control, /personality and /sink: nothing published or saved", async () => {
   bus.clear();
-  const before = personality;
+  const before = personality();
   const big = "x".repeat(64 * 1024 + 1);
   assert.equal((await post("/control", JSON.stringify({ cmd: "say", text: big }))).status, 413);
   assert.equal((await post("/personality", big, "PUT")).status, 413);
   assert.equal((await post("/sink", JSON.stringify({ event: "playing", id: big }))).status, 413);
-  assert.equal(personality, before);
+  assert.equal(personality(), before);
   assert.equal(bus.published.length, 0);
   // exactly at the cap is still accepted
   assert.equal((await post("/personality", "y".repeat(64 * 1024), "PUT")).status, 204);
-  assert.equal(personality.length, 64 * 1024);
+  assert.equal(personality()?.length, 64 * 1024);
 });
 
 // @spec DASH-HTTP-004

@@ -33,6 +33,7 @@ import { configRefusal } from "./config-gate.js";
 import { ComposeProvisioner, storeSource } from "./provision.js";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import { defaultExec, type ExecFile } from "./runtime.js";
+import { WAITING_DETAIL as WAITING } from "./healthcheck.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
@@ -210,8 +211,11 @@ async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
   return 0;
 }
 
-/** The delivery over the settings store and the docker CLI, under the workspace root. */
-function defaultRedeliver(env: NodeJS.ProcessEnv, exec: ExecFile = defaultExec): NonNullable<CliWiring["redeliver"]> {
+/**
+ * The re-delivery over the settings store and the docker CLI, under the workspace root (STORE-DLV-005, CTRL-CLI-019): what
+ * `cohostctl deliver` runs once and the dashboard runs at its start and while it runs.
+ */
+export function storeRedeliver(env: NodeJS.ProcessEnv, exec: ExecFile = defaultExec): NonNullable<CliWiring["redeliver"]> {
   return async (sets) => {
     const docker = resolveDockerBin(env);
     if (!docker.ok) return { delivered: [], failures: [docker.detail] };
@@ -265,8 +269,6 @@ export interface CliWiring {
 /** The commands that start a service or deliver credentials, refused while the settings store cannot be used (CTRL-CLI-018). */
 const GATED = new Set(["launch", "rebuild", "start", "restart", "restart-all", "deliver", "consolidate", "reembed"]);
 
-/** The heartbeat detail of a unit waiting for its credentials message (shared-runtime SHARED-BOOT-009). */
-const WAITING = "waiting for credentials";
 
 /**
  * The units waiting for credentials and the units ready, by each unit's newest heartbeat. A unit whose newest heartbeat is
@@ -358,7 +360,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
         if (reason === undefined) throw e;
         warning = `cannot reach Redis at ${redisUrl(w.env)}: ${reason}; delivering to the units started since their last delivery only`;
       }
-      const redeliver = w.redeliver ?? defaultRedeliver(w.env ?? process.env, w.exec);
+      const redeliver = w.redeliver ?? storeRedeliver(w.env ?? process.env, w.exec);
       const r = await redeliver(heartbeatSets(beats));
       return { ...r, ...(warning ? { warning } : {}) };
     };

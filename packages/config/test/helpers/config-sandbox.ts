@@ -1,14 +1,14 @@
 import { afterEach } from "node:test";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setConfigLogger } from "../../src/index.js";
+import { setConfigLogger, parseYaml, loadConfig, SECTION_PATHS, type Config, type LoadOptions } from "../../src/index.js";
 
 /** The repository root, where the shipped example files live. */
 export const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..", "..");
 
-/** A config.yaml with every required section and no placeholder: the smallest file that loads. */
+/** Settings with every required section and no placeholder: the smallest settings that load. */
 export const MINIMAL_YAML = `cohost: { name: Coco, streamer: Chris }
 llm: { model: m, embed_model: e }
 vision: { model: v, obs: {} }
@@ -20,6 +20,9 @@ ears: {}
 dashboard: {}
 `;
 
+/** The shipped settings example's text. */
+export const exampleYaml = (): string => readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
+
 /** Call once at the top of a test file: each test starts from the environment the file started with. */
 export function isolateEnv(): void {
   const initial = { ...process.env };
@@ -30,34 +33,57 @@ export function isolateEnv(): void {
   });
 }
 
-/** Where the operator's credentials file lives for a sandbox whose config directory is `dir`: `secrets/secrets.yaml` beside it (CFG-SEC-001). */
-export const secretsIn = (dir: string): string => join(dir, "..", "secrets", "secrets.yaml");
-
 /**
- * A fresh root/config directory pair; CONFIG_DIR, COHOST_ENV_FILE and COHOST_SECRETS_FILE point into it. `.env` goes in the
- * root, `secrets.yaml` in the root's `secrets/` directory (mode 0700), the rest in config/. The tests run inside the real
- * workspace, so COHOST_SECRETS_FILE keeps the loader off the repository's own `secrets/`.
+ * A fresh root/config directory pair; CONFIG_DIR and COHOST_ENV_FILE point into it. `.env` goes in the root, the rest in
+ * config/.
  */
 export function sandbox(files: Record<string, string> = {}): string {
   const root = mkdtempSync(join(tmpdir(), "cohost-cfg-"));
   const dir = join(root, "config");
   mkdirSync(dir);
-  mkdirSync(join(root, "secrets"), { mode: 0o700 });
-  for (const [name, text] of Object.entries(files)) {
-    writeFileSync(name === ".env" ? join(root, name) : name === "secrets.yaml" ? secretsIn(dir) : join(dir, name), text);
-  }
+  for (const [name, text] of Object.entries(files)) writeFileSync(name === ".env" ? join(root, name) : join(dir, name), text);
   process.env.CONFIG_DIR = dir;
   process.env.COHOST_ENV_FILE = join(root, ".env");
-  process.env.COHOST_SECRETS_FILE = secretsIn(dir);
   delete process.env.COHOST_ISOLATION;
   return dir;
 }
 
-/** A sandbox holding the shipped example files, so the loader seeds `config.yaml` from the real example. */
-export function shippedSandbox(files: Record<string, string> = {}): string {
-  const dir = sandbox(files);
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+
+/**
+ * A settings tree split into stored sections by their dotted path (CFG-PRES), as the settings store holds them: every declared
+ * section, `null` where the tree holds none. A top-level key, or a key of `brain`, that is no section is kept as a stray section
+ * under its own path, so the loader reports it as an unknown key.
+ */
+export function sectionsOf(tree: unknown): Record<string, unknown> {
+  const t = isObj(tree) ? tree : {};
+  const out: Record<string, unknown> = {};
+  for (const path of SECTION_PATHS) {
+    const v = path.split(".").reduce<unknown>((o, k) => (isObj(o) ? o[k] : undefined), t);
+    out[path] = v === undefined ? null : v;
+  }
+  for (const [k, v] of Object.entries(t)) {
+    if (k === "brain" && isObj(v)) {
+      for (const [sub, sv] of Object.entries(v)) if (!SECTION_PATHS.includes(`brain.${sub}`)) out[`brain.${sub}`] = sv;
+    } else if (!SECTION_PATHS.includes(k) && k !== "brain") out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * A projection directory (settings-store STORE-PROJ-002) whose `settings.json` holds, for `unit` (default `test`), every
+ * section of the YAML settings `text` and the given documents.
+ */
+export function projectionDir(text: string, opts: { unit?: string; documents?: Record<string, unknown> } = {}): string {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-proj-"));
+  const projection = { format: 1, unit: opts.unit ?? "test", revision: 1, sections: sectionsOf(parseYaml(text)), documents: opts.documents ?? {} };
+  writeFileSync(join(dir, "settings.json"), JSON.stringify(projection));
   return dir;
+}
+
+/** `loadConfig` on a fresh projection of the YAML settings `text` holding every section, read anew (never the cache). */
+export function loadSettings(text: string, opts: Omit<LoadOptions, "dir" | "force"> = {}): Config {
+  return loadConfig({ ...opts, dir: projectionDir(text), force: true });
 }
 
 /** Everything the config logger is asked to warn about while `fn` runs. */

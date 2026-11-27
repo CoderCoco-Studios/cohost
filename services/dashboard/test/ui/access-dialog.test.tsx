@@ -5,7 +5,7 @@ import { act, fireEvent, renderApp, makeApp, screen, userEvent, within, type Tes
 import { FakeStorage } from "./helpers/fakes";
 import { AccessDialog } from "../../ui/src/app/AccessDialog";
 
-const CONTROL_CMD = "grep ^CONTROL_TOKEN= .env";
+const CONTROL_CMD = "mise run config:token";
 const REJECTED = "The dashboard rejected this token. Nothing was changed.";
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
@@ -55,6 +55,8 @@ test("the dialog shows a masked field (password, autocomplete off) with Show, Hi
   const text = dlg().textContent!;
   assert.match(text, /CONTROL_TOKEN/);
   assert.ok(text.includes(CONTROL_CMD), "the command is shown");
+  assert.match(text, /password manager/i, "the owner keeps it in a password manager");
+  assert.doesNotMatch(text, /in the \.env file|grep \^CONTROL_TOKEN/, "no token in .env");
   assert.match(text, /mute, say lines, save settings, send test inputs, control services, and read and edit viewer notes/i);
   assert.match(text, /Restart voice/);
 });
@@ -152,8 +154,8 @@ test("a rejected control token is not stored: the dialog stays open, says so and
   assert.equal(app.local.getItem("cohost.controlToken"), null);
   assert.equal(result(), undefined, "the waiting request keeps waiting");
   assert.ok(dlg().textContent!.includes(REJECTED));
-  assert.match(dlg().textContent!, /whole value after CONTROL_TOKEN=.*no spaces or quotes/i);
-  assert.match(dlg().textContent!, /restart the dashboard/i);
+  assert.match(dlg().textContent!, /whole value from your password manager, with no spaces or quotes/i);
+  assert.match(dlg().textContent!, /set with mise run config:token after the one you copied replaces it/i);
   assert.equal(app.rt.access.state.get().control.present, false);
 });
 
@@ -265,7 +267,7 @@ test("a stored token the server rejects is cleared, the button state follows, an
   assert.equal(app.session.getItem("cohost.controlToken"), null);
   assert.match(dlg().textContent!, /rejected/i);
   assert.match(dlg().textContent!, /Mute co-host/);
-  assert.match(dlg().textContent!, /restart the dashboard/i);
+  assert.match(dlg().textContent!, /set with mise run config:token after the one you copied replaces it/i);
 });
 
 // @spec DASH-ACC-008
@@ -358,17 +360,19 @@ test("Change token in the panel opens the field for that token, checks it, and r
 });
 
 // @spec DASH-ACC-010
-test("the dialog explains that the .env variables are read once at start and take effect after a restart", () => {
+test("the dialog explains that the .env variables are read once at start and take effect after a restart, and that the token is set with mise run config:token at once", () => {
   const { app } = mount();
   ask(app, "control");
   const where = within(dlg()).getByText(/Where these are set/i).closest("details")!;
-  for (const name of ["CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST"]) assert.ok(where.textContent!.includes(name), name);
+  for (const name of ["CONTROL_ADVANCED", "DASHBOARD_HOST"]) assert.ok(where.textContent!.includes(name), name);
+  assert.ok(!where.textContent!.includes("CONTROL_TOKEN"), "the token is not a .env variable");
   assert.ok(!dlg().textContent!.includes("CONTROL_ENABLED"), "CONTROL_ENABLED does not exist");
   assert.ok(!where.textContent!.includes("VIEWERS_TOKEN"), "one token");
   assert.match(where.textContent!, /\.env/);
-  assert.match(where.textContent!, /once when the dashboard starts/i);
-  assert.match(where.textContent!, /after it restarts|restart/i);
-  assert.match(where.textContent!, /never sets|does not set|cannot set/i);
+  assert.match(where.textContent!, /once when it starts/i);
+  assert.match(where.textContent!, /after it restarts/i);
+  assert.match(where.textContent!, /mise run config:token and takes effect at once/i);
+  assert.match(where.textContent!, /never sets anything/i);
 });
 
 // @spec DASH-ACC-011

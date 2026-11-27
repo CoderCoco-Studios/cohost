@@ -2,15 +2,24 @@
 /**
  * Container healthcheck: `node packages/control/dist/healthcheck.js <service>`.
  * Exits 0 iff the newest heartbeat for the service is younger than
- * 3 x its intervalMs (by the Redis server's clock) and is not `stopping`.
+ * 3 x its intervalMs (by the Redis server's clock), is not `stopping` and is not `starting` while waiting for its credentials.
  */
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { STALE_FACTOR } from "./health.js";
 
-// @spec CTRL-CHECK-001
+/**
+ * The heartbeat detail of a unit waiting for its credentials message: shared-runtime's `WAITING_FOR_CREDENTIALS`
+ * (SHARED-BOOT-009), which the control plane cannot import (`@cohost/shared` is not its dependency); a test pins the two equal.
+ */
+export const WAITING_DETAIL = "waiting for credentials";
+
+// @spec CTRL-CHECK-001, STORE-DLV-005
 export function isHealthy(service: string, recent: HeartbeatEvent[], now = Date.now()): boolean {
   const latest = recent.filter((h) => h.data.service === service).at(-1);
   if (!latest || latest.data.state === "stopping") return false;
+  // A unit waiting for its credentials is not serving: past the healthcheck's start period it counts as unhealthy, so a Launch
+  // cannot report success while a unit waits (settings-store STORE-DLV-005).
+  if (latest.data.state === "starting" && latest.data.detail === WAITING_DETAIL) return false;
   return now - latest.ts < STALE_FACTOR * latest.data.intervalMs;
 }
 

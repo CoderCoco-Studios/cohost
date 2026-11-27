@@ -174,7 +174,11 @@ export class ComposeRuntime implements Runtime {
     const [w, logs] = await Promise.all([waited, followed]);
     const out = logs.stdout ?? "";
     const tail = (logs.stderr?.trim() || lastLine(out)).slice(0, 500);
-    if (!w.ok) return { ok: false, detail: execDetail(w.err) };
+    if (!w.ok) {
+      // A job that does not end within the wait is removed, so it holds no credentials and no lock beyond the action.
+      try { await this.exec(docker.bin, ["rm", "-f", name], { env: base, cwd: this.o.cwd }); } catch { /* already gone */ }
+      return { ok: false, detail: `${job} did not finish (${execDetail(w.err)}); its container ${name} was removed` };
+    }
     const status = Number(w.r.stdout.trim());
     if (status === 0) {
       const last = lastLine(out);

@@ -14,6 +14,7 @@
     "@cohost/config": "workspace:*",
     "@cohost/control": "workspace:*",
     "@cohost/shared": "workspace:*",
+    "@cohost/store": "workspace:*",
     "ws": "^8.23.0"
   },
   "devDependencies": {

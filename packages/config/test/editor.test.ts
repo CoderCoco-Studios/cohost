@@ -2,40 +2,35 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { readSection, applySection, sectionJsonSchema, sectionSecrets, schemaAt, etagOf, SECRET_PATHS, ISOLATION_OVERRIDES, parseConfigText } from "../src/index.js";
+import { readSection, applySection, sectionJsonSchema, sectionSecrets, schemaAt, SECRET_PATHS, ISOLATION_OVERRIDES } from "../src/index.js";
 
-const FIXTURE = `# top comment kept
+/** Stored settings as the settings store nests its sections (`store.settingsTree()`): sparse, only the keys the owner set. */
+const TREE: Record<string, unknown> = parseYaml(`
 cohost:
-  name: "Coco"                 # the name
+  name: Coco
   streamer: Chris
 llm:
-  provider: "ollama"   # preset
-  model: "qwen2.5:7b"  # tag
-  embed_model: "e"
+  provider: ollama
+  model: "qwen2.5:7b"
+  embed_model: e
 vision:
   enabled: false
-  model: "m"
+  model: m
   obs:
-    host: "obs.lan"
+    host: obs.lan
 chat: { twitch: { channel: chan } }
 brain:
   salience:
-    cooldown_ms: 6000   # aligned comment
+    cooldown_ms: 6000
     reflexes:
-      - match: "hello"
-        say: ["hi"]   # trailing
+      - match: hello
+        say: [hi]
   working_memory_events: 30
 voice: {}
 avatar: { vtube_studio: { host: h }, vmc: { host: h } }
 ears: {}
 dashboard: {}
-`;
-const lines = (t: string) => t.split("\n");
-/** The lines of `after` that are not in `before`, and vice versa (order-insensitive): the edit's footprint. */
-const footprint = (before: string, after: string) => {
-  const b = lines(before), a = lines(after);
-  return { removed: b.filter((l) => !a.includes(l)), added: a.filter((l) => !b.includes(l)) };
-};
+`) as Record<string, unknown>;
 const ok = (r: ReturnType<typeof applySection>) => { assert.ok(r.ok, JSON.stringify(r)); return r; };
 
 // @spec MOD-CFG-001, MOD-CFG-002
@@ -87,231 +82,159 @@ test("exactly the marked keys are secret: SECRET_PATHS (the sixteen and the tool
   assert.deepEqual(marked.toSorted(), [...SECRET_PATHS].toSorted());
 });
 
+
 // @spec MOD-CFG-004
-test("readSection reports each key's source (literal or default), editability, effective value and raw text", () => {
-  const { keys } = readSection(FIXTURE, "llm");
-  assert.deepEqual(keys["provider"], { source: "literal", editable: true, value: "ollama", raw: '"ollama"', isolation: { name: "LLM_PROVIDER", overriddenBy: [] } });
-  assert.deepEqual(keys["model"], { source: "literal", editable: true, value: "qwen2.5:7b", raw: '"qwen2.5:7b"' });
+test("readSection reports each key's source (literal or default), editability, effective value and the stored value as YAML", () => {
+  const { keys } = readSection(TREE, "llm");
+  assert.deepEqual(keys["provider"], { source: "literal", editable: true, value: "ollama", raw: "ollama", isolation: { name: "LLM_PROVIDER", overriddenBy: [] } });
+  assert.deepEqual(keys["model"], { source: "literal", editable: true, value: "qwen2.5:7b", raw: "qwen2.5:7b" });
   assert.deepEqual(keys["max_tokens"], { source: "default", editable: true, value: 120 });
-  const cohost = readSection(FIXTURE, "cohost").keys;
-  assert.deepEqual(cohost["name"], { source: "literal", editable: true, value: "Coco", raw: '"Coco"' });
+  const cohost = readSection(TREE, "cohost").keys;
+  assert.deepEqual(cohost["name"], { source: "literal", editable: true, value: "Coco", raw: "Coco" });
   assert.deepEqual(cohost["timezone"], { source: "default", editable: true, value: "UTC" });
-  const arr = readSection(FIXTURE, "brain.salience").keys["reflexes"]!;
+  const arr = readSection(TREE, "brain.salience").keys["reflexes"]!;
   assert.equal(arr.source, "literal");
   assert.deepEqual(arr.value, [{ match: "hello", on: ["chat", "speech", "vision"], say: ["hi"], emotion: "surprised", cooldown_ms: 30000 }]);
-  const leaf = readSection(FIXTURE, "brain.working_memory_events").keys;
+  const leaf = readSection(TREE, "brain.working_memory_events").keys;
   assert.deepEqual(leaf, { working_memory_events: { source: "literal", editable: true, value: 30, raw: "30" } });
-  const everyKey = Object.values(readSection(FIXTURE, "vision").keys).concat(Object.values(readSection(FIXTURE, "dashboard").keys)).filter((k) => !k.secret);
+  const everyKey = Object.values(readSection(TREE, "vision").keys).concat(Object.values(readSection(TREE, "dashboard").keys)).filter((k) => !k.secret);
   assert.ok(everyKey.every((k) => (k.source === "literal" || k.source === "default") && k.editable), "every non-secret key is editable and has one of two sources");
-  assert.deepEqual(readSection(FIXTURE, "dashboard").keys["lan_port"], { source: "default", editable: true, value: 3001 });
+  assert.deepEqual(readSection(TREE, "dashboard").keys["lan_port"], { source: "default", editable: true, value: 3001 });
 });
 
 // @spec MOD-CFG-004, MOD-CFG-018
 test("a key that an isolation override selects carries its override name and the units running with it, an empty list when none", () => {
-  const llm = readSection(FIXTURE, "llm").keys;
+  const llm = readSection(TREE, "llm").keys;
   assert.deepEqual(llm["provider"]!.isolation, { name: "LLM_PROVIDER", overriddenBy: [] });
   assert.equal(llm["model"]!.isolation, undefined, "llm.model is no override target");
-  const running = readSection(FIXTURE, "llm", [], { LLM_PROVIDER: ["cortex"], AVATAR_DRIVER: ["avatar"] }).keys;
+  const running = readSection(TREE, "llm", [], { LLM_PROVIDER: ["cortex"], AVATAR_DRIVER: ["avatar"] }).keys;
   assert.deepEqual(running["provider"]!.isolation, { name: "LLM_PROVIDER", overriddenBy: ["cortex"] });
-  assert.deepEqual(readSection(FIXTURE, "avatar", [], { AVATAR_DRIVER: ["avatar"] }).keys["driver"]!.isolation, { name: "AVATAR_DRIVER", overriddenBy: ["avatar"] });
-  // every key of the thirteen carries the entry
+  assert.deepEqual(readSection(TREE, "avatar", [], { AVATAR_DRIVER: ["avatar"] }).keys["driver"]!.isolation, { name: "AVATAR_DRIVER", overriddenBy: ["avatar"] });
   for (const [name, path] of Object.entries(ISOLATION_OVERRIDES)) {
     const section = path.split(".").slice(0, path.startsWith("brain.") ? 2 : 1).join(".");
     const key = path.slice(section.length + 1);
-    assert.equal(readSection(FIXTURE, section).keys[key]!.isolation?.name, name, path);
+    assert.equal(readSection(TREE, section).keys[key]!.isolation?.name, name, path);
   }
 });
 
 // @spec MOD-CFG-005, MOD-CFG-017
-test("a secret key reports only secret: true and whether secrets.yaml holds it, never a source, value or raw text", () => {
-  const unset = readSection(FIXTURE, "llm");
+test("a secret key reports only secret: true and whether the store holds it, never a source, value or raw text; a wildcard is one key per stored entry", () => {
+  const unset = readSection(TREE, "llm");
   assert.deepEqual(unset.keys["openai.api_key"], { editable: false, secret: true, set: false });
-  const set = readSection(FIXTURE, "llm", ["llm.openai.api_key"]);
+  const set = readSection(TREE, "llm", ["llm.openai.api_key"]);
   assert.deepEqual(set.keys["openai.api_key"], { editable: false, secret: true, set: true });
   assert.deepEqual(set.keys["claude.api_key"], { editable: false, secret: true, set: false });
-  assert.deepEqual(Object.keys(readSection(FIXTURE, "chat", ["chat.twitch.client_id"]).keys).filter((k) => k.startsWith("twitch.")).toSorted(), ["twitch.access_token", "twitch.channel", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
-  // a value pasted into config.yaml at a secret path is never used and does not make the key set; it is not shown either
-  const pasted = readSection(FIXTURE.replace('embed_model: "e"', 'embed_model: "e"\n  openai:\n    api_key: sk-in-file'), "llm");
-  assert.doesNotMatch(JSON.stringify(pasted), /sk-in-file/);
-  assert.deepEqual(pasted.keys["openai.api_key"], { editable: false, secret: true, set: false });
-  const broken = readSection(FIXTURE.replace('name: "Coco"', 'name: ""').replace('embed_model: "e"', 'embed_model: "e"\n  openai:\n    api_key: sk-in-file'), "llm");
-  assert.doesNotMatch(JSON.stringify(broken), /sk-in-file/, "not even when the file is invalid");
+  assert.deepEqual(Object.keys(readSection(TREE, "chat", ["chat.twitch.client_id"]).keys).filter((k) => k.startsWith("twitch.")).toSorted(), ["twitch.access_token", "twitch.channel", "twitch.client_id", "twitch.client_secret", "twitch.refresh_token"]);
+  const tools = { ...TREE, tools: { servers: { home: { url: "https://h.example/mcp" }, away: { url: "https://a.example/mcp" } } } };
+  const read = readSection(tools, "tools", ["tools.servers.home.token"]);
+  assert.deepEqual(read.keys["servers.home.token"], { editable: false, secret: true, set: true });
+  assert.deepEqual(read.keys["servers.away.token"], { editable: false, secret: true, set: false });
+  assert.equal(read.keys["servers.*.token"], undefined, "never an aggregate key");
 });
 
 // @spec MOD-CFG-002, MOD-CFG-005, MOD-CFG-017
-test("a secret key in an edit is refused without echoing its value, and editing a neighbour leaves it alone", () => {
-  const text = FIXTURE.replace("ears: {}", "ears:\n  http:\n    port: 8765");
-  const refused = applySection(text, "ears", { "openai.api_key": "tok-very-secret" });
+test("a secret key in an edit is refused without echoing its value, and editing a neighbour leaves the credentials alone", () => {
+  const tree = { ...TREE, ears: { http: { port: 8765 } } };
+  const refused = applySection(tree, "ears", { "openai.api_key": "tok-very-secret" });
   assert.equal(refused.ok, false);
   assert.doesNotMatch(JSON.stringify(refused), /tok-very-secret/);
-  const edited = ok(applySection(text, "ears", { "http.port": 9000 }));
-  assert.doesNotMatch(edited.text, /api_key/);
+  const edited = ok(applySection(tree, "ears", { "http.port": 9000 }));
+  assert.deepEqual(edited.doc, { http: { port: 9000 } });
+  assert.equal(applySection(tree, "llm", {}, ["llm.openai.api_key"]).ok, false, "a credential is not removed through the settings edit");
 });
 
 // @spec MOD-CFG-016
-test("the settings editor never touches the filesystem or the environment: it reads and writes text", () => {
+test("the settings editor never touches the filesystem or the environment: it reads and edits the stored tree it is given", () => {
   const src = readFileSync(new URL("../src/editor.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(src, /node:fs|readFileSync|writeFileSync|writeFileAtomic|process\.env|secrets\.yaml.*(read|write)/);
+  assert.doesNotMatch(src, /node:fs|readFileSync|writeFileSync|writeFileAtomic|process\.env/);
 });
 
 // @spec MOD-CFG-006
-test("unknown lists the dotted paths under the section that the schema does not define, even when the file is invalid", () => {
-  const text = FIXTURE.replace("cooldown_ms: 6000", "cooldown_ms: 6000\n    bogus: 1").replace('match: "hello"', 'match: "hello"\n        cooldwn_ms: 5').replace("name: \"Coco\"", "name: \"\"");
-  assert.deepEqual(readSection(text, "brain.salience").unknown.toSorted(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
-  assert.deepEqual(readSection(text, "voice").unknown, []);
+test("unknown lists the dotted paths of stored keys under the section that the schema does not define, even when the settings are invalid", () => {
+  const tree = structuredClone(TREE) as any;
+  tree.brain.salience.bogus = 1;
+  tree.brain.salience.reflexes[0].cooldwn_ms = 5;
+  tree.cohost.name = "";
+  assert.deepEqual(readSection(tree, "brain.salience").unknown.toSorted(), ["brain.salience.bogus", "brain.salience.reflexes[0].cooldwn_ms"]);
+  assert.deepEqual(readSection(tree, "voice").unknown, []);
 });
 
 // @spec MOD-CFG-009
-test("a value for an unknown or secret key is refused naming each key, and nothing is edited", () => {
-  const r = applySection(FIXTURE, "llm", { nope: 1, "openai.api_key": "x", embed_model: "y" });
+test("a value for an unknown or secret key, or a missing value, is refused naming each key, and nothing is edited", () => {
+  const r = applySection(TREE, "llm", { nope: 1, "openai.api_key": "x", embed_model: "y", model: null });
   assert.equal(r.ok, false);
-  assert.deepEqual((r as any).issues.map((i: any) => i.path).toSorted(), ["nope", "openai.api_key"]);
+  assert.deepEqual((r as any).issues.map((i: any) => i.path).toSorted(), ["model", "nope", "openai.api_key"]);
+  assert.equal(applySection(TREE, "llm", {}, ["voice.speed"]).ok, false, "remove names only paths under the section");
+});
+
+// @spec MOD-CFG-009
+test("remove deletes the stored keys it names, unknown ones included, so the default applies or the key goes", () => {
+  const tree = structuredClone(TREE) as any;
+  tree.brain.salience.bogus = 1;
+  const r = ok(applySection(tree, "brain.salience", {}, ["brain.salience.bogus", "brain.salience.cooldown_ms"]));
+  assert.deepEqual(Object.keys(r.doc as object).toSorted(), ["reflexes"]);
+  const entry = ok(applySection(tree, "brain.salience", {}, ["brain.salience.reflexes[0]"]));
+  assert.deepEqual((entry.doc as any).reflexes, []);
+  assert.equal(ok(applySection(TREE, "cohost", {}, ["cohost"])).doc, null, "removing the whole section leaves nothing stored");
 });
 
 // @spec MOD-CFG-010
-test("a literal keeps its quote style, its comment and every other line", () => {
-  const r = ok(applySection(FIXTURE, "cohost", { name: "Zed" }));
-  assert.deepEqual(footprint(FIXTURE, r.text), { removed: ['  name: "Coco"                 # the name'], added: ['  name: "Zed"                 # the name'] });
-  const n = ok(applySection(FIXTURE, "brain.salience", { cooldown_ms: 4000 }));
-  assert.deepEqual(footprint(FIXTURE, n.text), { removed: ["    cooldown_ms: 6000   # aligned comment"], added: ["    cooldown_ms: 4000   # aligned comment"] });
+test("a key is set in the section's stored document whatever its source, every other stored key and section left as it was", () => {
+  const r = ok(applySection(TREE, "llm", { provider: "anthropic", max_tokens: 200 }));
+  assert.deepEqual(r.doc, { provider: "anthropic", model: "qwen2.5:7b", embed_model: "e", max_tokens: 200 });
+  assert.deepEqual((TREE as any).llm, { provider: "ollama", model: "qwen2.5:7b", embed_model: "e" }, "the tree given is not changed");
+  const deep = ok(applySection(TREE, "vision", { "obs.width": 640 }));
+  assert.deepEqual(deep.doc, { enabled: false, model: "m", obs: { host: "obs.lan", width: 640 } });
+  const added = ok(applySection(TREE, "mouth", { "outputs.discord.gain_db": 3 }));
+  assert.deepEqual(added.doc, { outputs: { discord: { gain_db: 3 } } }, "a section the store does not hold is added");
 });
 
 // @spec MOD-CFG-010
-test("a literal or default key is set to the given value whatever the key is, and the footprint is the edited lines", () => {
-  const r = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "claude-x" }));
-  assert.deepEqual(footprint(FIXTURE, r.text), {
-    removed: ['  provider: "ollama"   # preset', '  model: "qwen2.5:7b"  # tag'],
-    added: ['  provider: "anthropic"   # preset', '  model: "claude-x"  # tag'],
-  });
-  const plain = ok(applySection(FIXTURE, "vision", { enabled: true }));
-  assert.deepEqual(footprint(FIXTURE, plain.text), { removed: ["  enabled: false"], added: ["  enabled: true"] });
-  const obs = ok(applySection(FIXTURE, "vision", { "obs.host": "10.0.0.5" }));
-  assert.deepEqual(footprint(FIXTURE, obs.text), { removed: ['    host: "obs.lan"'], added: ['    host: "10.0.0.5"'] });
-});
-
-// @spec MOD-CFG-015
-test("an edit to a key that a running unit overrides warns naming the key and the units; the dashboard and logging sections warn about the dashboard's next start, and the dashboard section about the new page address", () => {
-  const overridden = ok(applySection(FIXTURE, "llm", { provider: "anthropic", model: "x" }, [], { LLM_PROVIDER: ["cortex", "memory"] }));
-  assert.equal(overridden.warnings.length, 1);
-  assert.match(overridden.warnings[0]!, /llm\.provider/);
-  assert.match(overridden.warnings[0]!, /cortex, memory/);
-  assert.match(overridden.warnings[0]!, /isolation/);
-  assert.deepEqual(ok(applySection(FIXTURE, "llm", { model: "x" }, [], { LLM_PROVIDER: ["cortex"] })).warnings, [], "an unedited overridden key does not warn");
-  assert.deepEqual(ok(applySection(FIXTURE, "llm", { provider: "anthropic" })).warnings, [], "no running override, no warning");
-  const dash = ok(applySection(FIXTURE, "dashboard", { "inject.ttl_ms": 1000 }));
-  assert.equal(dash.warnings.length, 1);
-  assert.match(dash.warnings[0]!, /next start/);
-  const ports = ok(applySection(FIXTURE, "dashboard", { port: 4000, lan_port: 4001 }));
-  assert.equal(ports.warnings.length, 2);
-  assert.match(ports.warnings[0]!, /next start/);
-  assert.match(ports.warnings[1]!, /address.*4000.*4001/s);
-  assert.deepEqual(ok(applySection(FIXTURE, "dashboard", {})).warnings, []);
-  const logging = ok(applySection(FIXTURE, "logging", { level: "debug" }));
-  assert.equal(logging.warnings.length, 1);
-  assert.match(logging.warnings[0]!, /^logging: .*dashboard.*next start/);
-  assert.deepEqual(ok(applySection(FIXTURE, "logging", {})).warnings, []);
-});
-
-// @spec MOD-CFG-010
-test("a key absent from the file is added under its section (block and flow), a missing section is appended", () => {
-  const block = ok(applySection(FIXTURE, "brain.salience", { tick_ms: 900 }));
-  assert.match(block.text, /        say: \["hi"\]   # trailing\n    tick_ms: 900\n  working_memory_events: 30\n/);
-  assert.equal((parseYaml(block.text) as any).brain.salience.tick_ms, 900);
-  const flow = ok(applySection(FIXTURE, "chat", { sources: ["fake"] }));
-  assert.deepEqual(footprint(FIXTURE, flow.text).removed, ["chat: { twitch: { channel: chan } }"]);
-  assert.deepEqual((parseYaml(flow.text) as any).chat.sources, ["fake"]);
-  assert.equal((parseYaml(flow.text) as any).chat.twitch.channel, "chan");
-  const section = ok(applySection(FIXTURE, "mouth", { "outputs.discord.gain_db": 3 }));
-  assert.ok(section.text.startsWith(FIXTURE));
-  assert.equal(section.text.slice(FIXTURE.length), "mouth:\n  outputs:\n    discord:\n      gain_db: 3\n");
-  const deep = ok(applySection(FIXTURE, "vision", { "obs.width": 640 }));
-  assert.equal((parseYaml(deep.text) as any).vision.obs.width, 640);
-  const nested = ok(applySection(FIXTURE, "ears", { "http.port": 9000 }));
-  assert.equal((parseYaml(nested.text) as any).ears.http.port, 9000);
-});
-
-// @spec MOD-CFG-010
-test("a leaf section (brain.working_memory_events) is edited at its own path", () => {
-  const r = ok(applySection(FIXTURE, "brain.working_memory_events", { working_memory_events: 12 }));
-  assert.deepEqual(footprint(FIXTURE, r.text), { removed: ["  working_memory_events: 30"], added: ["  working_memory_events: 12"] });
+test("a leaf section (brain.working_memory_events) is set as its own value", () => {
+  assert.equal(ok(applySection(TREE, "brain.working_memory_events", { working_memory_events: 12 })).doc, 12);
 });
 
 // @spec MOD-CFG-011
 test("an array value replaces the whole array, present or absent", () => {
   const reflexes = [{ match: "bye", say: ["later", "cya"], cooldown_ms: 1000 }];
-  const r = ok(applySection(FIXTURE, "brain.salience", { reflexes }));
-  const parsed = (parseYaml(r.text) as any).brain.salience;
-  assert.deepEqual(parsed.reflexes, reflexes);
-  assert.equal(parsed.cooldown_ms, 6000);
-  assert.match(r.text, /cooldown_ms: 6000   # aligned comment/);
-  assert.match(r.text, /\n {2}working_memory_events: 30\n/);
-  const lines = ok(applySection(FIXTURE, "voice", { "fallback.lines": ["a: b", "c"] }));
-  assert.deepEqual((parseYaml(lines.text) as any).voice.fallback.lines, ["a: b", "c"]);
-  const flowArr = ok(applySection(FIXTURE, "brain.salience", { reflexes: [] }));
-  assert.deepEqual((parseYaml(flowArr.text) as any).brain.salience.reflexes, []);
+  const r = ok(applySection(TREE, "brain.salience", { reflexes }));
+  assert.deepEqual(r.doc, { cooldown_ms: 6000, reflexes });
+  assert.deepEqual((ok(applySection(TREE, "voice", { "fallback.lines": ["a: b", "c"] })).doc as any).fallback.lines, ["a: b", "c"]);
+  assert.deepEqual((ok(applySection(TREE, "brain.salience", { reflexes: [] })).doc as any).reflexes, []);
+});
+
+// @spec MOD-CFG-015
+test("an edit to a key that a running unit overrides warns naming the key and the units; the dashboard and logging sections warn about the dashboard's next start, and the dashboard section about the new page address", () => {
+  const overridden = ok(applySection(TREE, "llm", { provider: "anthropic", model: "x" }, [], [], { LLM_PROVIDER: ["cortex", "memory"] }));
+  assert.equal(overridden.warnings.length, 1);
+  assert.match(overridden.warnings[0]!, /llm\.provider/);
+  assert.match(overridden.warnings[0]!, /cortex, memory/);
+  assert.match(overridden.warnings[0]!, /isolation/);
+  assert.deepEqual(ok(applySection(TREE, "llm", { model: "x" }, [], [], { LLM_PROVIDER: ["cortex"] })).warnings, [], "an unedited overridden key does not warn");
+  assert.deepEqual(ok(applySection(TREE, "llm", { provider: "anthropic" })).warnings, [], "no running override, no warning");
+  const dash = ok(applySection(TREE, "dashboard", { "inject.ttl_ms": 1000 }));
+  assert.equal(dash.warnings.length, 1);
+  assert.match(dash.warnings[0]!, /next start/);
+  const ports = ok(applySection(TREE, "dashboard", { port: 4000, lan_port: 4001 }));
+  assert.equal(ports.warnings.length, 2);
+  assert.match(ports.warnings[0]!, /next start/);
+  assert.match(ports.warnings[1]!, /address.*4000.*4001/s);
+  assert.deepEqual(ok(applySection(TREE, "dashboard", {})).warnings, []);
+  const logging = ok(applySection(TREE, "logging", { level: "debug" }));
+  assert.equal(logging.warnings.length, 1);
+  assert.match(logging.warnings[0]!, /^logging: .*dashboard.*next start/);
+  assert.deepEqual(ok(applySection(TREE, "logging", {})).warnings, []);
 });
 
 // @spec MOD-CFG-012
-test("the edited file must pass the loader's pipeline; a file already invalid accepts only an edit that makes it valid", () => {
-  const bad = applySection(FIXTURE, "voice", { speed: -1 });
-  assert.equal(bad.ok, false);
-  assert.deepEqual((bad as any).issues.map((i: any) => i.path), ["voice.speed"]);
-  const broken = FIXTURE.replace('name: "Coco"', 'name: ""');
-  assert.equal(parseConfigText(broken).ok, false);
-  const still = applySection(broken, "voice", { speed: 1.2 });
-  assert.equal(still.ok, false);
-  assert.ok((still as any).issues.some((i: any) => i.path === "cohost.name"));
-  const fixed = applySection(broken, "cohost", { name: "Fixed" });
-  assert.ok(fixed.ok);
-  // the engine-by-voice rule runs too: a Kokoro mix is not a Pocket voice (CFG-SCH-057)
-  const mix = applySection(FIXTURE, "voice", { engine: "pocket", voice: "af_bella(2)+af_sky" });
-  assert.equal(mix.ok, false);
-  assert.ok(applySection(FIXTURE, "voice", { engine: "pocket", voice: "marius" }).ok);
-  const v = applySection(FIXTURE, "vision", { enabled: true });
-  assert.ok(v.ok); // model is "m"
-  // CFG-SCH-025: a blank vision.model loads whether vision is enabled or not (eyes reports it down, not the loader)
-  const noModel = applySection(FIXTURE.replace('model: "m"', 'model: ""'), "vision", { enabled: true });
-  assert.equal(noModel.ok, true);
-});
-
-// @spec MOD-CFG-009, MOD-CFG-012
-test("a value the file cannot represent is refused: a placeholder in a literal, a line break in an enum, a type the schema rejects", () => {
-  const placeholder = applySection(FIXTURE, "cohost", { name: "${HOME}" });
-  assert.equal(placeholder.ok, false);
-  assert.match(JSON.stringify(placeholder), /placeholder/);
-  assert.equal(applySection(FIXTURE, "llm", { provider: "line1\nline2" }).ok, false);
-  assert.equal(applySection(FIXTURE, "cohost", { name: 5 }).ok, false);
-  const brace = ok(applySection(FIXTURE, "llm", { model: "a}b" }));
-  assert.equal((parseYaml(brace.text) as any).llm.model, "a}b");
-  const quoted = ok(applySection(FIXTURE, "llm", { model: 'he said "hi"' }));
-  assert.equal((parseYaml(quoted.text) as any).llm.model, 'he said "hi"');
-});
-
-// @spec MOD-CFG-014
-test("etagOf is the SHA-256 hex of the text", () => {
-  assert.equal(etagOf("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-});
-
-// @spec MOD-CFG-012
-test("a no-op edit of the shipped example is valid for every section and changes nothing", () => {
-  const text = readFileSync(new URL("../../../config/config.example.yaml", import.meta.url), "utf8");
-  assert.ok(parseConfigText(text).ok);
-  for (const sec of ["cohost", "llm", "vision", "chat", "brain", "voice", "avatar", "ears", "mouth", "connections", "dashboard", "brain.salience", "brain.memory", "brain.working_memory_events"]) {
-    const r = applySection(text, sec, {});
-    assert.ok(r.ok && r.text === text, sec);
-    for (const [k, v] of Object.entries(readSection(text, sec).keys)) assert.ok(v.secret || v.source, `${sec}.${k}`);
+test("a no-op edit of the shipped example is a no-op for every section", () => {
+  const tree = parseYaml(readFileSync(new URL("../../../config/config.example.yaml", import.meta.url), "utf8")) as Record<string, unknown>;
+  for (const sec of ["cohost", "llm", "vision", "chat", "voice", "avatar", "ears", "mouth", "connections", "dashboard", "brain.salience", "brain.memory", "brain.working_memory_events"]) {
+    const r = ok(applySection(tree, sec, {}));
+    const stored = sec.split(".").reduce<any>((o, k) => o?.[k], tree);
+    assert.deepEqual(r.doc, stored === undefined || (typeof stored === "object" && Object.keys(stored).length === 0) ? null : stored, sec);
+    for (const [k, v] of Object.entries(readSection(tree, sec).keys)) assert.ok(v.secret || v.source, `${sec}.${k}`);
   }
-});
-
-// @spec MOD-CFG-012
-test("the edited text runs through the loader's placeholder check: a file that holds a placeholder accepts only an edit that removes it", () => {
-  const withPlaceholder = FIXTURE.replace('model: "qwen2.5:7b"', 'model: "${LLM_MODEL}"');
-  const other = applySection(withPlaceholder, "voice", { speed: 1.2 });
-  assert.equal(other.ok, false);
-  assert.ok((other as any).issues.some((i: any) => i.path === "llm.model" && /LLM_MODEL/.test(i.message)));
-  const fixed = ok(applySection(withPlaceholder, "llm", { model: "qwen2.5:7b" }));
-  assert.equal((parseYaml(fixed.text) as any).llm.model, "qwen2.5:7b");
-  assert.equal(readSection(withPlaceholder, "llm").keys["model"]!.editable, true);
 });
 
 // @spec CFG-SCH-097, CFG-SCH-099, CFG-SCH-100

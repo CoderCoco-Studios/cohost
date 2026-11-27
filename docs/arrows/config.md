@@ -8,7 +8,7 @@
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
-**MAPPED.** 268 specs: 218 implemented, 0 deferred, 50 gaps. The one lock of #370 (CFG-ENV-008, CFG-ENV-012, CFG-SEC-003, CFG-SCH-030, CFG-SCH-039 and CFG-USR-012 rewritten, CFG-SEC-020 added: `ears.http.token` and `CONTROL_ENABLED` retired, ears receives only a derived verifier `ears.http.verifier`, `sensitive` a warning hint only) is built by #375: CFG-SCH-030 and CFG-SCH-039 are `[x]`; the rest (CFG-ENV-008, CFG-ENV-012, CFG-SEC-003, CFG-USR-012, CFG-SEC-020), rewritten again by the settings-store design, are open for #372, as are the other #372 rewrites and retirements listed above (#360 built the structured `ConfigError`, `checkConfig` and the recovery editor, CFG-RCV-001 to 006, in `packages/config/src/errors.ts`, `index.ts`, `editor.ts` and `secrets.ts`; #349 built the logging design: CFG-LOG-002 to CFG-LOG-025, CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021, and the rewritten CFG-URL-004 and CFG-ENV-012, in `packages/config/src/logging.ts`, `log-pretty.ts` and `log-file.ts`; #318 built: CFG-SEC-001, `secretsPath()` and `COHOST_SECRETS_FILE`; CFG-SEC-019, `projectSecrets` in `packages/config/src/project.ts`; CFG-ENV-012, the permitted variables). The package is the dependency root of the workspace; the settings editor in `packages/config/src/editor.ts` realizes module-contract MOD-CFG-*. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 268 specs: 266 implemented, 0 deferred, 2 gaps. Services read their unit's projection through `loadConfig` (CFG-LOAD-*) with the credentials delivered in memory (CFG-SEC-*); the YAML files, `secrets.yaml`, `COHOST_SECRETS_FILE` and their readers are gone (the CFG-DIR, CFG-SEC, CFG-RCV and CFG-USR lines that described them are retired). Every settings write of the store refuses a `${NAME}` placeholder (CFG-ENV-011, `placeholderIssues`); the settings editor (`editor.ts`) reads and edits the stored settings tree. Gaps: CFG-SCH-054 (a `chat.twitch` default test) and CFG-RCV-001's clause on a store write, which reports issues as a write result, not a `ConfigError`.
 
 Orientation:
 
@@ -25,7 +25,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 218 `[x]`, 50 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 266 `[x]`, 2 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:
@@ -47,13 +47,13 @@ Orientation:
 
 ### Code
 `@spec CFG-` annotations are in:
-- packages/config/src/index.ts (loader, `checkConfig`, helpers, urls, logger)
+- packages/config/src/index.ts (helpers, urls), packages/config/src/projection.ts (the projection loader), packages/config/src/logging.ts (logger)
 - packages/config/src/errors.ts (`ConfigError`, CFG-RCV-001)
 - packages/config/src/pipeline.ts (placeholder rejection, null dropping, isolation overrides, `parseConfigText`)
 - packages/config/src/schema.ts (zod schemas, `Emotion`)
 - services/dashboard/src/control.ts (CFG-ENV-009)
 - packages/config/src/editor.ts, packages/config/package.json, packages/config/tsconfig.json (no `CFG-` annotations)
-- config/config.example.yaml, config/expressions.example.yaml, config/personality.example.md, .env.example (realize CFG-ISO-004, CFG-ISO-005, CFG-USR-*; no annotations, since the files are copied into the owner's own files)
+- config/config.example.yaml, config/expressions.example.yaml, config/personality.example.md, .env.example (realize CFG-ISO-004, CFG-ISO-005, CFG-USR-*; no annotations: the settings store imports them as its seed, settings-store STORE-IO-005)
 
 ## Architecture
 
@@ -61,11 +61,11 @@ Orientation:
 
 **Key Components:**
 1. `configDir()` / `dataDir()` / `findWorkspaceRoot()` — `CONFIG_DIR` and `COHOST_DATA_DIR` overrides, else the nearest `pnpm-workspace.yaml` ancestor's `config/` and `data/`, else the current directory (`paths.ts`).
-2. `loadConfig()` — `.env` load, seed, placeholder rejection (CFG-ENV-011), null-dropping, secrets merge, isolation overrides by key path from `COHOST_ISOLATION` (CFG-ISO-007), zod validation, unknown-key warning, module cache (`index.ts`, `pipeline.ts`).
+2. `loadConfig()` — reads the unit's projection (`settings.json` in the config directory), takes its declared sections, merges the delivered credentials at the secret paths, applies the isolation overrides by key path from `COHOST_ISOLATION` (CFG-ISO-007), validates with zod, and caches; an undeclared section throws on access (`projection.ts`, `pipeline.ts`). `placeholderIssues` (CFG-ENV-011) is what every settings write of the store refuses.
 3. `ConfigSchema` / `ModuleSchema` / `ExpressionMapSchema` / `Emotion` — shape, defaults, backend-selection enums with blank-to-default preprocessing (`schema.ts`).
-4. `ensureFromExample`, `loadPersonality`, `savePersonality`, `loadExpressions` — user-owned files seeded from `*.example.*` (`index.ts`).
+4. `loadPersonality`, `loadExpressions` — the projection's documents (`projection.ts`); the store holds and writes them.
 5. `env`, `envOr`, `urls.*`, `createLogger`, `setConfigLogger` — runtime helpers used by every service (`index.ts`, `logging.ts`); `createLogger` builds the process's logging sink: the readable terminal form or JSON on stdout, and the rotated JSON file `data/logs/<program>.log`, from the `logging` section it reads itself (`logging.ts`, `log-pretty.ts`, `log-file.ts`; LLD § Logging). `findWorkspaceRoot`, `configDir`, `dataDir` and `loadDotEnv` live in `paths.ts`.
-6. `editor.ts` — the settings editor's JSON Schema export, secret marks, section reader and in-place writer.
+6. `editor.ts` — the settings editor's JSON Schema export, secret marks, the section reader and the section edit over the stored settings tree (the store validates and writes it).
 7. Example files — `config.example.yaml` wires the isolation preset env vars; tests load them as fixtures.
 
 ## Spec Coverage
@@ -73,9 +73,9 @@ Orientation:
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
 | Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 |
-| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 10 | 0 | 2 |
+| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-008 | 8 | 0 | 0 |
-| Secrets file | CFG-SEC-001 to CFG-SEC-020 | 18 | 0 | 2 |
+| Secrets file | CFG-SEC-001 to CFG-SEC-020 | 20 | 0 | 0 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-014 | 14 | 0 | 0 |
 | Renderer presentation | CFG-PRES-018 to CFG-PRES-020 | 3 | 0 | 0 |
 | Tools presentation | CFG-PRES-016 to CFG-PRES-017 | 2 | 0 | 0 |
@@ -83,7 +83,7 @@ Orientation:
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 2 | 0 | 0 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 13 | 0 | 0 |
 | Tools egress | CFG-EGR-014 to CFG-EGR-016 | 3 | 0 | 0 |
-| Schema | CFG-SCH-001 to CFG-SCH-071 | 71 | 0 | 0 |
+| Schema | CFG-SCH-001 to CFG-SCH-071 | 70 | 0 | 1 |
 | Renderer section | CFG-SCH-097 to CFG-SCH-101 | 5 | 0 | 0 |
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Tools section and reminder expiry | CFG-SCH-075 to CFG-SCH-096 | 22 | 0 | 0 |
@@ -91,9 +91,9 @@ Orientation:
 | Logger | CFG-LOG-001 to CFG-LOG-025 | 25 | 0 | 0 |
 | Logging settings | CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021 | 4 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
-| User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 19 | 0 | 1 |
+| User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
-| Structured errors and recovery editing | CFG-RCV-001 to CFG-RCV-006 | 6 | 0 | 0 |
+| Structured errors and recovery editing | CFG-RCV-001 to CFG-RCV-006 | 5 | 0 | 1 |
 
 **Summary:** 267 specs: 260 implemented, 7 gaps (#370), 0 deferred. The logging design of #349 (readable terminal lines, a rotated JSON log file per program, the `logging` section replacing `LOG_LEVEL`) is built and pinned by packages/config/test/logging.test.ts, with the owner's case (an invalid config.yaml under the dashboard) in services/dashboard/test/logging.test.ts (#318 built: CFG-SEC-001, CFG-SEC-019, CFG-ENV-012). CFG-SEC-018 (a wildcard clear always works) is held by the dashboard's secret route (DASH-SECRET-014); the early-reply settings (CFG-SCH-102 to 112) are built and pinned by packages/config/test/config-early.test.ts. The `live` flag is carried by `sectionPresentation` and the `GET /config/schema` answer only (CFG-PRES-019, MOD-CFG-022).
 

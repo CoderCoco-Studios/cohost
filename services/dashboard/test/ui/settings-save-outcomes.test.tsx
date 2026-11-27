@@ -37,7 +37,7 @@ test("a lost answer whose write did not land, while another client changed the f
   await user.click(bar("Save"));
   await settle();
   assert.equal(body(b.app.fetch.callsTo("PUT /config/demo")[1]!).etag, "e1", "the second save carries the etag the edit was made against");
-  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/, "the other client's write is reported, not overwritten");
+  assert.match(text(screen.getByRole("alert")), /the settings changed since/, "the other client's write is reported, not overwritten");
   assert.equal(b.file.written.demo?.name, undefined, "nothing was written");
   assert.equal(b.file.written.demo?.port, 9, "the other client's value stands");
 });
@@ -75,7 +75,7 @@ test("a lost answer whose write landed is confirmed by the re-read, and an etag 
   assert.equal(put.length, 1);
   assert.equal(body(put[0]!).etag, "e1", "Extra still holds the etag it was read at, so its save is refused");
   assert.equal(b.file.written.extra?.extra, 40, "the other client's change to Extra was not overwritten");
-  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since|Extra/);
+  assert.match(text(screen.getByRole("alert")), /the settings changed since|Extra/);
 });
 
 // @spec DASH-SET-011
@@ -86,7 +86,7 @@ test("Discard after a 409 clears the conflict and takes the file's current etag:
   b.file.otherClient("demo", { port: 9 });
   await user.click(bar("Save"));
   await settle();
-  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/);
+  assert.match(text(screen.getByRole("alert")), /the settings changed since/);
   await user.click(bar("Discard"));
   await settle();
   assert.ok(screen.queryByRole("alert") === null, "no alert");

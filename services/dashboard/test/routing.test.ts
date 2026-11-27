@@ -5,14 +5,14 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import { HealthTracker } from "@cohost/control";
 import { createDashboardHandler, type DashboardDeps } from "../src/routes.js";
 import { StackService } from "../src/stack.js";
-import { AUTH, testControl } from "./control-fixture.js";
+import { AUTH, UNUSED_STORE, gateFor, testControl } from "./control-fixture.js";
 
 function start(control: DashboardDeps["control"] = testControl()) {
   const bus = new FakeBus();
   const rec = recordingLog();
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "", savePersonality: () => {}, services: () => new HealthTracker().snapshot(),
+    store: UNUSED_STORE, services: () => new HealthTracker().snapshot(),
     stack: new StackService({ log: rec.log, bus: () => "connected" }), control,
   }));
   return new Promise<{ bus: FakeBus; base: string }>((resolve) => {
@@ -35,7 +35,7 @@ test("POST /mouth/routing publishes set_routing addressed to mouth with the outp
 
 // @spec DASH-ROUTE-001
 test("the route passes the one gate: the bearer token or a session cookie", async () => {
-  const { bus, base } = await start(testControl({ token: "s3cret-control-token-for-routing-0001" }));
+  const { bus, base } = await start(testControl({ gate: gateFor("s3cret-control-token-for-routing-0001") }));
   const body = { outputs: { discord: { enabled: false } } };
   assert.equal((await post(base, body, {})).status, 401);
   assert.equal((await post(base, body, { authorization: "Bearer wrong" })).status, 401);

@@ -8,7 +8,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 120 specs: 103 `[x]`, 15 `[ ]`, 2 `[D]`.
 
-**MAPPED**: 120 specs: 103 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 15 gaps. The one lock of #370 (CTRL-RUNTIME-017, the ears listener verifier derived at each projection, and CTRL-CONFIG-001 and -002: `CONTROL_TOKEN` always required, `CONTROL_ENABLED` retired, `CONTROL_ADVANCED` a safety switch) is built by #375: CTRL-CONFIG-002 is `[x]`; the rest (CTRL-CONFIG-001 and CTRL-RUNTIME-017), rewritten again by the settings-store design, are open for #372 with the other #372 rewrites listed above (CTRL-RUNTIME-016, `data/logs` created before Compose, is built in `packages/control/src/logs-dir.ts`, #349); CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344. The last audit pass (at cb06bf3) covered the other 111 (all but CTRL-RUNTIME-014 and -015, which are verified by their tests), and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
+**MAPPED**: 120 specs: 118 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps. The control plane reads no control token (CTRL-CONFIG-001); `bearerOk` checks a bearer against the settings store's verifier (CTRL-CONFIG-003); the ears listener key comes from the store (CTRL-RUNTIME-017). Around every start it writes the projections and delivers the credentials (CTRL-RUNTIME-014, -018), including to a container Docker restarted since its recorded delivery, and refuses to start anything when the containers cannot be listed; a one-shot whose wait fails is removed (CTRL-RUNTIME-010). The healthcheck reports a unit that waits for its credentials as unhealthy (CTRL-CHECK-001). CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344.
 
 ## Orientation
 
@@ -28,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 103 `[x]`, 15 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 118 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -76,11 +76,11 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
 | Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-006 | 6 | 6 | 0 | 0 |
-| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -017 | 13 | 12 | 0 | 1 |
+| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -017 | 13 | 13 | 0 | 0 |
 | Controller guards and orchestration | CTRL-GUARD-001, -003 to -008 | 7 | 7 | 0 | 0 |
 | Stack controller | CTRL-STACK-001 to CTRL-STACK-019 | 19 | 19 | 0 | 0 |
 | Lifecycle lock | CTRL-LOCK-001 to CTRL-LOCK-004 | 4 | 4 | 0 | 0 |
-| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 2 | 0 | 1 |
+| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 3 | 0 | 0 |
 | Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 11 | 0 | 0 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 4 | 0 | 0 |
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -018 | 16 | 16 | 0 | 0 |

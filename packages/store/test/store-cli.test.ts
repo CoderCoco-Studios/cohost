@@ -95,6 +95,14 @@ test("config:token prints a generated 43-character token once; --stdin takes the
   s = await sb.open();
   assert.equal(await s.checkBearer(TOKEN), "ok");
   s.close();
+  // On a terminal the token is asked for without echo, never read as piped text.
+  const other = `${TOKEN}-typed-at-the-terminal`;
+  io = fakeIo({ tty: true, hidden: [other], stdin: "not-read" });
+  assert.equal(await runCli(["token", "--stdin"], io, sb.opts), 0);
+  assert.ok(!io.stdout.includes(other) && !io.stderr.includes(other));
+  s = await sb.open();
+  assert.equal(await s.checkBearer(other), "ok");
+  s.close();
 });
 
 // @spec STORE-KEY-008, STORE-KEY-010

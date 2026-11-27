@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
-import { isHealthy, checkHealth } from "../src/healthcheck.js";
+import { isHealthy, checkHealth, WAITING_DETAIL } from "../src/healthcheck.js";
+import { WAITING_FOR_CREDENTIALS } from "../../shared/src/boot.js";
 import { FakeTransport } from "../../testing/src/fake-transport.js";
 
 const rec = (service: string, ageMs: number, state: HeartbeatEvent["data"]["state"] = "ready", now = 1_000_000): HeartbeatEvent => ({
@@ -27,6 +28,16 @@ test("silent service (no heartbeat, or older than 3x interval) is unhealthy", ()
 test("stopping is unhealthy even when fresh; only the newest heartbeat counts", () => {
   assert.equal(isHealthy("chat", [rec("chat", 1000, "stopping")], 1_000_000), false);
   assert.equal(isHealthy("chat", [rec("chat", 9000, "stopping"), rec("chat", 1000)], 1_000_000), true);
+});
+
+// @spec CTRL-CHECK-001, STORE-DLV-005
+test("a fresh heartbeat of a unit waiting for its credentials is unhealthy; one starting for another reason is not", () => {
+  const waiting = rec("chat", 1000, "starting");
+  assert.equal(WAITING_DETAIL, WAITING_FOR_CREDENTIALS, "the detail the bootstrap publishes");
+  waiting.data.detail = WAITING_DETAIL;
+  assert.equal(isHealthy("chat", [waiting], 1_000_000), false);
+  assert.equal(isHealthy("chat", [rec("chat", 1000, "starting")], 1_000_000), true);
+  assert.equal(isHealthy("chat", [waiting, rec("chat", 500)], 1_000_000), true, "the newest heartbeat decides");
 });
 
 // The CLI test never touches the live stack's streams: it runs in Redis database 15 of the same server (a database no

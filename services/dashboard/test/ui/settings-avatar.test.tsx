@@ -622,11 +622,11 @@ test("a read that fails does not leave a stale claim: the line stops saying page
 });
 
 // @spec DASH-AVS-009
-test("a note says config.yaml holds other values than the renderer shows when GET /config/renderer differs from applied, and none when they agree", async () => {
+test("a note says the saved settings hold other values than the renderer shows when GET /config/renderer differs from applied, and none when they agree", async () => {
   await open({ renderer: { model: "Kiki.vrm", zoom: 1.5 }, status: status({ applied: { model: null, configuredModel: "", zoom: 1, offsetY: 0, turn: 0 } }) });
-  assert.match(text(group()), /config\.yaml holds .* but the renderer shows .*; restart the dashboard to apply the file/i);
+  assert.match(text(group()), /The saved settings hold .* but the renderer shows .*; restarting the dashboard applies them/i);
   await open({ renderer: { model: "Kiki.vrm", zoom: 1.5, offset_y: 0.2, turn: 3 }, status: status({ applied: { model: "Kiki.vrm", configuredModel: "Kiki.vrm", zoom: 1.5, offsetY: 0.2, turn: 3 } }) });
-  assert.doesNotMatch(text(group()), /restart the dashboard to apply the file/i);
+  assert.doesNotMatch(text(group()), /restarting the dashboard applies them/i);
 });
 
 // @spec DASH-AVS-009
@@ -635,7 +635,7 @@ test("each of configuredModel, zoom, offsetY and turn alone raises the note", as
   const applied = { model: "Kiki.vrm", configuredModel: "Kiki.vrm", zoom: 1.5, offsetY: 0.2, turn: 3 };
   for (const [change, over] of [["model", { configuredModel: "Mimi.vrm" }], ["zoom", { zoom: 2 }], ["offsetY", { offsetY: 0 }], ["turn", { turn: 4 }]] as const) {
     await open({ renderer: same, status: status({ applied: { ...applied, ...over } }) });
-    assert.match(text(group()), /restart the dashboard to apply the file/i, change);
+    assert.match(text(group()), /restarting the dashboard applies them/i, change);
   }
 });
 
@@ -643,7 +643,7 @@ test("each of configuredModel, zoom, offsetY and turn alone raises the note", as
 test("the note is not raised by an unsaved edit, only by what the file holds against what is applied", async () => {
   await open({ renderer: { zoom: 1 }, status: status() });
   fireEvent.change(within(key("zoom")).getByRole("slider", { name: "Zoom" }), { target: { value: "2" } });
-  assert.doesNotMatch(text(group()), /restart the dashboard to apply the file/i);
+  assert.doesNotMatch(text(group()), /restarting the dashboard applies them/i);
 });
 
 // ---------------------------------------------------------------- notices (DASH-AVS-011)

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import net from "node:net";
 import { WebSocket } from "ws";
@@ -7,7 +7,7 @@ import { runService } from "@cohost/shared";
 import type { BusEvent, EventType } from "@cohost/bus";
 import type { StackService, StackOps } from "../src/stack.js";
 import { dashboardService } from "../src/service.js";
-import { ON } from "./control-fixture.js";
+import { testStore } from "./store-fixture.js";
 
 // Tool text stays off the LAN: the arguments of a tool.request and tool.confirm and the content of a tool.result are what a
 // recalled viewer memory or the owner's private lookup ends up in. A socket that arrived on the LAN listener, or on the
@@ -44,9 +44,9 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-const LOOPBACK: NodeJS.ProcessEnv = { ...ON };
+const LOOPBACK: NodeJS.ProcessEnv = {};
 /** The full surface bound to every interface. */
-const NON_LOOPBACK: NodeJS.ProcessEnv = { ...ON, DASHBOARD_HOST: "0.0.0.0" };
+const NON_LOOPBACK: NodeJS.ProcessEnv = { DASHBOARD_HOST: "0.0.0.0" };
 
 async function rig(env: NodeJS.ProcessEnv, replay: BusEvent[] = []) {
   const dashboard = { port: await freePort(), lan_port: await freePort() };
@@ -54,7 +54,12 @@ async function rig(env: NodeJS.ProcessEnv, replay: BusEvent[] = []) {
   bus.replay = replay;
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
-  const svc = dashboardService({ env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack });
+  const st = await testStore({ token: false });
+  after(() => st.close());
+  const svc = dashboardService({
+    store: st.store, root: st.root, redeliver: async () => ({ delivered: [], failures: [] }), print: () => {},
+    env, exit: () => {}, lanHost: "127.0.0.1", attachStack: idleStack,
+  });
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard }), createBus: () => bus as never, log: rec.log,

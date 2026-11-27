@@ -4,7 +4,7 @@ import { RoutingPatch, type Publisher } from "@cohost/bus";
 export interface RoutingDeps {
   bus: Publisher;
   /** Returns false (after sending 401) when the bearer gate rejects the request. */
-  authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
+  authorize: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean>;
   body: (req: http.IncomingMessage) => Promise<string>;
 }
 
@@ -16,7 +16,7 @@ export interface RoutingDeps {
 // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003
 export async function handleMouthRouting(d: RoutingDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (req.method !== "POST" || url.pathname !== "/mouth/routing") return false;
-  if (!d.authorize(req, res)) return true;
+  if (!(await d.authorize(req, res))) return true;
   const bad = (why: string) => { res.writeHead(400, { "content-type": "text/plain; charset=utf-8" }); res.end(why); return true; };
   let raw: unknown;
   try { raw = JSON.parse(await d.body(req)); } catch (err) {

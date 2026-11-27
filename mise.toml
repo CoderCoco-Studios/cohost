@@ -105,7 +105,7 @@ description = "Run the Rust tests and check the desktop audio helper's Windows b
 run = ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]
 
 # The test tasks run through scripts/test-env.sh: a temporary COHOST_DATA_DIR and CONFIG_DIR (copies of the examples), with
-# COHOST_ENV_FILE, COHOST_KEY_FILE and (until the dashboard's cut-over) COHOST_SECRETS_FILE inside it, removed when the run ends (DEPLOY-TOOL-022).
+# COHOST_ENV_FILE and COHOST_KEY_FILE inside it, removed when the run ends (DEPLOY-TOOL-022).
 [tasks.test]
 description = "Run every test: Rust, then the build, then the TypeScript suite"
 depends = ["build", "test:rust"]
@@ -165,7 +165,7 @@ run = [
 ]
 
 [tasks."dashboard:unlock"]
-description = "Print a fresh unlock link for the running dashboard (asks it with CONTROL_TOKEN from .env)"
+description = "Print a fresh unlock link for the running dashboard (the control token from CONTROL_TOKEN in this command's environment, else a hidden prompt)"
 depends = ["build:native"]
 run = ["tsc -b services/dashboard", "node services/dashboard/dist/unlock-link.js"]
 

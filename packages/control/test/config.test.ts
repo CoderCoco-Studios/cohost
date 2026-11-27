@@ -1,57 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHmac } from "node:crypto";
-import { bearerOk, EARS_LISTENER_LABEL, earsListenerKey, isLoopback, loadControlConfig } from "../src/index.js";
+import { bearerOk, isLoopback, loadControlConfig } from "../src/index.js";
 
-const T = "0123456789abcdef0123456789abcdef"; // 32 characters, the shortest token accepted
-
-// @spec CTRL-CONFIG-001
-test("CONTROL_TOKEN is always required: unset, empty, whitespace-only or under 32 characters after trimming throws naming it, never the value", () => {
-  for (const env of [{}, { CONTROL_TOKEN: "" }, { CONTROL_TOKEN: "   " }, { CONTROL_TOKEN: "short-secret-value" }, { CONTROL_TOKEN: ` ${T.slice(1)} ` }]) {
-    assert.throws(() => loadControlConfig(env), (err: Error) => {
-      assert.match(err.message, /CONTROL_TOKEN/);
-      assert.match(err.message, /at least 32 characters/);
-      assert.match(err.message, /openssl rand -hex 24/);
-      const v = (env as { CONTROL_TOKEN?: string }).CONTROL_TOKEN?.trim();
-      if (v) assert.ok(!err.message.includes(v), "the value is never in the message");
-      return true;
-    }, JSON.stringify(env));
-  }
-});
+const T = "0123456789abcdef0123456789abcdef";
 
 // @spec CTRL-CONFIG-001
-test("CONTROL_ENABLED is not read: a valid token loads whatever it says, and no value switches control off", () => {
+test("loadControlConfig reads no control token and no CONTROL_ENABLED: a token in the environment changes nothing", () => {
   for (const flag of [undefined, "0", "1", "false"]) {
-    assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T, ...(flag !== undefined ? { CONTROL_ENABLED: flag } : {}) }), { token: T, advanced: false });
+    assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T, ...(flag !== undefined ? { CONTROL_ENABLED: flag } : {}) }), { advanced: false });
   }
-  assert.throws(() => loadControlConfig({ CONTROL_ENABLED: "1" }), /CONTROL_TOKEN/);
-});
-
-// @spec CTRL-CONFIG-001
-test("the token is carried trimmed", () => {
-  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: `  ${T}\t` }), { token: T, advanced: false });
-});
-
-// @spec CTRL-CONFIG-002
-test("defaults: not advanced, no listen address, no runtime selection", () => {
-  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T }), { token: T, advanced: false });
+  assert.deepEqual(loadControlConfig({}), { advanced: false });
 });
 
 // @spec CTRL-CONFIG-002
 test("CONTROL_ADVANCED is set only by exactly 1; CONTROL_RUNTIME and CONTROL_PROCESS_MODE are ignored", () => {
-  const c = loadControlConfig({ CONTROL_TOKEN: T, CONTROL_ADVANCED: "1", CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "bogus" });
-  assert.deepEqual(c, { token: T, advanced: true });
-  assert.deepEqual(loadControlConfig({ CONTROL_TOKEN: T, CONTROL_ADVANCED: "true" }), { token: T, advanced: false });
-});
-
-// @spec CTRL-RUNTIME-017
-test("the ears listener key is HMAC-SHA256 keyed with the trimmed token of cohost/ears-listener/v1, as 64 lowercase hex digits", () => {
-  assert.equal(EARS_LISTENER_LABEL, "cohost/ears-listener/v1");
-  const want = createHmac("sha256", T).update("cohost/ears-listener/v1").digest("hex");
-  assert.equal(earsListenerKey(T), want);
-  assert.equal(earsListenerKey(` ${T}\n`), want, "derived from the trimmed token");
-  assert.match(want, /^[0-9a-f]{64}$/);
-  assert.notEqual(earsListenerKey(T), earsListenerKey(T.replace("0", "1")));
+  assert.deepEqual(loadControlConfig({ CONTROL_ADVANCED: "1", CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "bogus" }), { advanced: true });
+  assert.deepEqual(loadControlConfig({ CONTROL_ADVANCED: "true" }), { advanced: false });
 });
 
 // @spec CTRL-CONFIG-002
@@ -61,14 +25,15 @@ test("isLoopback accepts exactly localhost, ::1 and an IPv4 literal in 127.0.0.0
 });
 
 // @spec CTRL-CONFIG-003
-test("bearerOk accepts only the exact token", () => {
-  assert.equal(bearerOk("Bearer s3cret", "s3cret"), true);
-  assert.equal(bearerOk("Bearer s3cret!", "s3cret"), false);
-  assert.equal(bearerOk("Bearer ", "s3cret"), false);
-  assert.equal(bearerOk("s3cret", "s3cret"), false);
-  assert.equal(bearerOk("Basic s3cret", "s3cret"), false);
-  assert.equal(bearerOk(undefined, "s3cret"), false);
-  assert.equal(bearerOk("Bearer x", ""), false);
+test("bearerOk hands only a non-empty Bearer value to the verifier, and answers what it answers", async () => {
+  const seen: string[] = [];
+  const verify = async (v: string): Promise<"ok" | "bad" | "busy"> => { seen.push(v); return v === T ? "ok" : v === "slow" ? "busy" : "bad"; };
+  assert.equal(await bearerOk(`Bearer ${T}`, verify), "ok");
+  assert.equal(await bearerOk(`Bearer ${T}!`, verify), "bad");
+  assert.equal(await bearerOk("Bearer slow", verify), "busy");
+  for (const h of ["Bearer ", "Bearer   ", T, `Basic ${T}`, undefined]) assert.equal(await bearerOk(h, verify), "bad", String(h));
+  assert.deepEqual(seen, [T, `${T}!`, "slow"], "a malformed header never reaches the verifier");
+  assert.equal(await bearerOk(`Bearer ${T}`, async () => "bad"), "bad", "no verifier in the store: every bearer is refused");
 });
 
 // @spec DASH-AVR-031

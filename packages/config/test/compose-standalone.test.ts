@@ -141,7 +141,7 @@ test(".env.example carries no CONTROL_TOKEN line but says mise run config:token 
 test(".env.example lists a commented COHOST_KEY_FILE and no credential path variable", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   assert.match(env, /^# COHOST_KEY_FILE=$/m);
-  assert.doesNotMatch(env, /COHOST_SECRETS_FILE|COHOST_ISOLATION/);
+  assert.doesNotMatch(env, /COHOST_ISOLATION/);
 });
 
 // @spec DEPLOY-CI-002
@@ -156,8 +156,30 @@ test("compose-smoke.sh no longer expects a compose dashboard", () => {
 test(".dockerignore keeps data/ (the settings store, its backups and the projections) and .env out of the build context, names no retired settings file, and keeps the examples in", () => {
   const lines = readFileSync(root(".dockerignore"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
   for (const f of ["data", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
-  for (const f of ["secrets", "config/.vts-token", "config/config.yaml", "config/personality.md", "config/expressions.yaml", "config/secrets.yaml"]) assert.ok(!lines.includes(f), `${f} is no longer listed`);
-  assert.ok(!lines.some((l) => /example/.test(l) || l === "config" || l === "config/*"), "the config/*.example.* files stay in the context");
+  assert.ok(!lines.some((l) => l === "config" || l === "config/*" || (/example/.test(l) && !l.startsWith("!"))), "the config/*.example.* files stay in the context");
+});
+
+/** Whether a path is ignored by the patterns of an ignore file, the last matching pattern deciding (a `!` pattern re-includes). */
+function ignored(lines: readonly string[], path: string): boolean {
+  let out = false;
+  for (const raw of lines) {
+    const neg = raw.startsWith("!");
+    const pat = (neg ? raw.slice(1) : raw).replace(/\/$/, "");
+    const re = new RegExp(`^${pat.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")}(/.*)?$`);
+    if (re.test(path)) out = !neg;
+  }
+  return out;
+}
+
+// @spec DEPLOY-REPO-007
+test(".gitignore and .dockerignore keep the plaintext settings and credential files of before the settings store out, and the examples in", () => {
+  for (const file of [".gitignore", ".dockerignore"]) {
+    const lines = readFileSync(root(file), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+    for (const p of ["secrets/secrets.yaml", "secrets/units/ears/secrets.yaml", "config/config.yaml", "config/personality.md", "config/expressions.yaml", "config/secrets.yaml", "config/.vts-token"]) {
+      assert.ok(ignored(lines, p), `${file} ignores ${p}`);
+    }
+    for (const p of ["config/config.example.yaml", "config/personality.example.md", "config/expressions.example.yaml", "config/secrets.example.yaml"]) assert.ok(!ignored(lines, p), `${file} keeps ${p}`);
+  }
 });
 
 // @spec DEPLOY-CI-002

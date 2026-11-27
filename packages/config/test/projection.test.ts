@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   ConfigError, loadConfig, loadExpressions, loadPersonality, ollamaModels, OLLAMA_MODEL_SECTIONS, outboxPath, readPersonalityOutbox, sha256Hex,
-  writePersonalityOutbox, earsListenerVerifier, UNIT_SETTINGS, parseYaml,
+  writePersonalityOutbox, earsListenerVerifier, UNIT_SETTINGS, parseYaml, egressDestinations,
 } from "../src/index.js";
 import { captureWarnings, isolateEnv, repo } from "./helpers/config-sandbox.js";
 
@@ -197,4 +197,14 @@ test("the reflection outbox holds {base, text}, base the SHA-256 of the text rea
   writeFileSync(file, "{\"base\":\"x\"}");
   assert.throws(() => readPersonalityOutbox(data), /is not a personality outbox/);
   assert.ok(existsSync(file));
+});
+
+// @spec CFG-EGR-001, CFG-LOAD-001
+test("egressDestinations on any unit's projection reads only the sections it holds, and lists that unit's own destinations", () => {
+  for (const u of UNIT_SETTINGS.filter((x) => x.config.length > 0)) {
+    const cfg = loadConfig({ dir: projection(u.id, seedSections(u.id)), force: true });
+    assert.doesNotThrow(() => egressDestinations(cfg), u.id);
+  }
+  const voice = loadConfig({ dir: projection("voice", seedSections("voice")), force: true });
+  assert.deepEqual([...new Set(egressDestinations(voice).map((e) => e.service))], ["voice"]);
 });

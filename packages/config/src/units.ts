@@ -58,7 +58,7 @@ export const UNIT_SETTINGS: readonly UnitSettings[] = [
   }),
   // The MCP tokens and the stream-info credentials; tools reads the chat section but uses no chat user token (TOOL-SVC-010).
   unit("tools", {
-    config: ["tools", "cohost", "chat", "viewer_text", "network", "logging"],
+    config: ["tools", "cohost", "chat", "viewer_text", "brain.input_limits", "network", "logging"],
     secrets: ["tools.servers.*.token", "chat.twitch.client_id", "chat.twitch.client_secret", "chat.youtube.api_key"],
   }),
   unit("voice", { config: ["voice", "network", "logging"], secrets: ["voice.openai.api_key"] }),

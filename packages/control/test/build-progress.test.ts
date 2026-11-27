@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BuildProgress, StackController, containerService, defaultExec, NO_PROVISION, type ExecFile } from "../src/index.js";
+import { BuildProgress, LINE_MAX_CHARS, LineSplitter, StackController, containerService, defaultExec, streamExecWith, NO_PROVISION, type ExecFile } from "../src/index.js";
 
 /**
  * What `docker compose --progress plain up -d --build --remove-orphans` prints for a two-service project: one service's
@@ -115,6 +115,16 @@ test("parser: a running step shows building with its step, total and text; unkno
 });
 
 // @spec CTRL-STACK-022
+test("parser: a vertex header printed again when its output resumes does not move the step back", () => {
+  const p = new BuildProgress();
+  p.push("#4 [eyes 2/5] RUN make");
+  p.push("#5 [eyes 3/5] RUN make install");
+  p.push("#4 [eyes 2/5] RUN make"); // BuildKit repeats a header when that vertex prints again
+  assert.equal(p.rows()[0]!.step, 3);
+  assert.equal(p.rows()[0]!.current, "RUN make install");
+});
+
+// @spec CTRL-STACK-022
 test("parser: a Compose `Built` line marks the service built", () => {
   const p = new BuildProgress();
   p.push("#4 [eyes 2/5] RUN make");
@@ -163,7 +173,7 @@ function streaming(chunks: string[], fail?: { stderr: string }) {
   const exec: ExecFile = async (_file, args, opts) => {
     seen.push({ args, hasOnOutput: typeof opts.onOutput === "function" });
     if (args.includes("up")) {
-      for (const c of chunks) opts.onOutput?.(c);
+      for (const c of chunks) opts.onOutput?.(c, "stderr");
       if (fail) throw Object.assign(new Error("exit 1"), { stderr: fail.stderr, stdout: "" });
       return { stdout: "", stderr: "" };
     }
@@ -228,4 +238,74 @@ test("status: carries each container's ID as id when Compose reports one", async
   const exec: ExecFile = async () => ({ stdout: JSON.stringify([{ ID: "abc123", Service: "redis", State: "running", Health: "" }, { Service: "cortex", State: "exited", ExitCode: 1 }]), stderr: "" });
   const st = await new StackController({ provision: NO_PROVISION, exec, cwd: tmpdir(), env: {}, onPath: (n) => n === "docker" }).status();
   assert.deepEqual(st.services, [{ service: "redis", status: "running", id: "abc123" }, { service: "cortex", status: "exited", exitCode: 1 }]);
+});
+
+// @spec CTRL-STACK-020
+test("lines are cut to LINE_MAX_CHARS, and a partial line waiting for its end is held to the same size", () => {
+  const s = new LineSplitter();
+  const [long] = s.push("a".repeat(LINE_MAX_CHARS + 500) + "\n");
+  assert.equal(long!.length, LINE_MAX_CHARS);
+  for (let i = 0; i < 20; i++) assert.deepEqual(s.push("b".repeat(1000)), []); // 20 000 characters and no line end
+  const [held] = s.push("\n");
+  assert.equal(held, "b".repeat(LINE_MAX_CHARS));
+  assert.deepEqual(s.end(), []);
+});
+
+// @spec CTRL-STACK-020
+test("standard output and standard error are split apart: a partial line of one never joins the other", async () => {
+  const lines: string[] = [];
+  const exec: ExecFile = async (_file, args, opts) => {
+    if (args.includes("up")) {
+      opts.onOutput?.("#1 [chat 1/2] FR", "stderr");
+      opts.onOutput?.(" Container cohost-chat-1  Created\n", "stdout");
+      opts.onOutput?.("OM node\n", "stderr");
+    }
+    return { stdout: args.includes("ps") ? JSON.stringify([{ Service: "chat", State: "running" }]) : "", stderr: "" };
+  };
+  await new StackController({ provision: NO_PROVISION, exec, cwd: mkdtempSync(join(tmpdir(), "cohost-bp-")), env: {}, onPath: (n) => n === "docker",
+    now: () => 0, sleep: async () => {}, onOutput: (_k, l) => lines.push(l) }).launch();
+  assert.deepEqual(lines, [" Container cohost-chat-1  Created", "#1 [chat 1/2] FROM node"]);
+});
+
+// @spec CTRL-STACK-020
+test("stop-all, restart-all and consolidate run no command with onOutput and never call it", async () => {
+  const withOutput: string[][] = [];
+  const exec: ExecFile = async (_file, args, opts) => {
+    if (opts.onOutput) withOutput.push(args);
+    opts.onOutput?.("noise\n", "stdout");
+    if (args[0] === "wait") return { stdout: "0\n", stderr: "" };
+    return { stdout: args.includes("ps") && !args.includes("-q") ? JSON.stringify([{ Service: "cortex", State: "running" }]) : "", stderr: "" };
+  };
+  const heard: string[] = [];
+  const stack = new StackController({ provision: NO_PROVISION, exec, cwd: mkdtempSync(join(tmpdir(), "cohost-bp-")), env: {}, onPath: (n) => n === "docker",
+    now: () => 0, sleep: async () => {}, onOutput: (_k, l) => heard.push(l) });
+  assert.equal((await stack.stopAll()).ok, true);
+  await stack.restartAll({ restart: async () => ({ ok: true }) });
+  await stack.consolidate();
+  assert.deepEqual(withOutput, []);
+  assert.deepEqual(heard, []);
+});
+
+// @spec CTRL-STACK-021
+test("a streamed exec that outlives its timeout gets SIGTERM, then SIGKILL after the grace, and settles even while a grandchild holds its pipes", async () => {
+  const script = [
+    "const { spawn } = require('node:child_process');",
+    "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: 'inherit' });", // holds stdout and stderr for 5 s
+    "process.on('SIGTERM', () => {});", // ignores the polite stop
+    "process.stdout.write('started\\n');",
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+  const exec = streamExecWith(300);
+  const chunks: Array<[string, string]> = [];
+  const t0 = Date.now();
+  await assert.rejects(
+    exec(process.execPath, ["-e", script], { env: process.env, timeoutMs: 300, onOutput: (c, s) => chunks.push([c, s]) }),
+    (err: { killed?: boolean; signal?: string; stdout?: string }) => err.killed === true && err.signal === "SIGKILL" && (err.stdout ?? "").includes("started"),
+  );
+  assert.ok(Date.now() - t0 < 3000, `settled after ${Date.now() - t0} ms, before the grandchild let go of the pipes`);
+  assert.deepEqual(chunks[0], ["started\n", "stdout"]);
+  // A child that honours SIGTERM ends at the timeout, without waiting for the grace.
+  const t1 = Date.now();
+  await assert.rejects(streamExecWith(60_000)(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: process.env, timeoutMs: 200, onOutput: () => {} }), (err: { killed?: boolean }) => err.killed === true);
+  assert.ok(Date.now() - t1 < 3000);
 });

@@ -1,24 +1,29 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type SyntheticEvent } from "react";
 import { useFeed } from "../../state/hooks";
 import type { ProgressRow, StackProgress } from "../../state/types";
 import { KIND_LABEL, outcomeWords, rowStateWords } from "./model";
 
-/** The kept output, following its last line while the reader is at the bottom (DASH-UI-057). */
-function LogPane({ lines }: { lines: string[] }) {
+/**
+ * The kept output in a collapsed disclosure, following its last line while the reader is at the bottom: on new lines and when
+ * the pane is opened, since a closed pane cannot scroll (DASH-UI-057).
+ */
+function LogPane({ lines, label }: { lines: string[]; label: string }) {
   const ref = useRef<HTMLPreElement>(null);
   const atBottom = useRef(true);
-  useLayoutEffect(() => {
+  const follow = () => {
     const el = ref.current;
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
-  }, [lines]);
+  };
+  useLayoutEffect(follow, [lines]);
   const onScroll = () => {
     const el = ref.current;
     if (el) atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
   };
+  const onToggle = (e: SyntheticEvent<HTMLDetailsElement>) => { if (e.currentTarget.open) follow(); };
   return (
-    <details className="launch-log">
-      <summary>{`Build log (${lines.length} ${lines.length === 1 ? "line" : "lines"})`}</summary>
-      <pre ref={ref} className="launch-pre" tabIndex={0} aria-label="Build log, last lines" onScroll={onScroll}>{lines.join("\n")}</pre>
+    <details className="launch-log" onToggle={onToggle}>
+      <summary>{`${label} (${lines.length} ${lines.length === 1 ? "line" : "lines"})`}</summary>
+      <pre ref={ref} className="launch-pre" tabIndex={0} aria-label={`${label}, last lines`} onScroll={onScroll}>{lines.join("\n")}</pre>
     </details>
   );
 }
@@ -30,10 +35,12 @@ function RowView({ r }: { r: ProgressRow }) {
     <tr className={r.state === "failed" ? "launch-row svc-attn" : "launch-row"}>
       <th scope="row"><span className="mono">{r.service}</span></th>
       <td><span className={`launch-st launch-st-${r.state}`}>{rowStateWords(r.state)}</span></td>
-      <td className="launch-step">
-        {step ? <span>{step}</span> : null}
-        {r.current && r.state === "building" ? <span className="mono small muted launch-current" title={r.current}>{r.current}</span> : null}
-        {r.detail ? <span className="small">{r.detail}</span> : null}
+      <td>
+        <div className="launch-step">
+          {step ? <span>{step}</span> : null}
+          {r.current && r.state === "building" ? <span className="mono small muted launch-current" title={r.current}>{r.current}</span> : null}
+          {r.detail ? <span className="small">{r.detail}</span> : null}
+        </div>
       </td>
       <td className="small muted">{count}</td>
     </tr>
@@ -43,17 +50,22 @@ function RowView({ r }: { r: ProgressRow }) {
 /**
  * The Launch panel: the last launch, rebuild or restart-all from the `stack-progress` record, with a row per service,
  * the failure inline and the kept output in a collapsed log pane. Status only: it has no controls (DASH-UI-055 to 057).
+ * The failure is an alert only when this page saw the action running and then fail; a failure the page finds on connect,
+ * or keeps showing afterwards, is a plain status.
  */
 // @spec DASH-UI-055, DASH-UI-056, DASH-UI-057
 export function LaunchPanel() {
   const p: StackProgress | null = useFeed((f) => f.progress);
+  const sawRunning = useRef<number | null>(null);
   if (!p) return null;
+  if (p.running) sawRunning.current = p.startedAt;
+  const alert = p.failure !== undefined && !p.running && sawRunning.current === p.startedAt;
   const label = `Launch progress: ${KIND_LABEL[p.kind]} ${outcomeWords(p)}`;
   return (
     <div role="group" aria-label={label} className="launch-panel">
       <p><strong>{KIND_LABEL[p.kind]}</strong>{` ${outcomeWords(p)}`}</p>
       {p.failure ? (
-        <div role="alert" className="launch-failure">
+        <div role={alert ? "alert" : "status"} className="launch-failure">
           <p>{p.failure.service ? <><span className="mono">{p.failure.service}</span>{p.kind === "restart" ? " failed to restart." : " failed to build."}</> : `${KIND_LABEL[p.kind]} failed.`}</p>
           <pre className="launch-pre">{p.failure.lines.join("\n")}</pre>
         </div>
@@ -66,7 +78,7 @@ export function LaunchPanel() {
           </table>
         </div>
       ) : null}
-      {p.lines.length ? <LogPane lines={p.lines} /> : null}
+      {p.lines.length ? <LogPane lines={p.lines} label={p.kind === "restart" ? "Output" : "Build log"} /> : null}
     </div>
   );
 }

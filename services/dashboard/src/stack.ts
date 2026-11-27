@@ -136,8 +136,8 @@ export class StackService {
   private progressListeners = new Set<(p: StackProgress) => void>();
   private progressTimer?: NodeJS.Timeout;
   private progressDirty = false;
-  /** The last restart count each service's container had, with that container's id (DASH-STACK-016). */
-  private counts = new Map<string, { id: string; count: number }>();
+  /** The last restart count of each container, by container id, for the containers of the latest status (DASH-STACK-016). */
+  private counts = new Map<string, number>();
 
   constructor(private o: StackServiceOptions) {
     this.now = o.now ?? Date.now;
@@ -206,18 +206,17 @@ export class StackService {
   /** Takes a status as current, keeping each container's restart count across reads that lack one (DASH-STACK-016). */
   // @spec DASH-STACK-016
   private observe(s: StackStatus): void {
+    // Rebuilt from each status, so a container that is gone (recreated under a new id, or removed) leaves no count behind.
+    const next = new Map<string, number>();
     const services = s.services.map((c) => {
       if (c.id === undefined) return c;
-      const prior = this.counts.get(c.service);
-      const same = prior?.id === c.id ? prior : undefined;
-      const count = c.restartCount === undefined ? same?.count : Math.max(c.restartCount, same?.count ?? 0);
-      if (count === undefined) {
-        if (!same) this.counts.delete(c.service);
-        return c;
-      }
-      this.counts.set(c.service, { id: c.id, count });
+      const prior = this.counts.get(c.id);
+      const count = c.restartCount === undefined ? prior : Math.max(c.restartCount, prior ?? 0);
+      if (count === undefined) return c;
+      next.set(c.id, count);
       return { ...c, restartCount: count };
     });
+    this.counts = next;
     this.status = { ...s, services };
     this.refresh();
   }
@@ -254,10 +253,16 @@ export class StackService {
   // @spec DASH-FEED-013
   private progressChanged(flush = false): void {
     const ms = this.o.progressMs ?? PROGRESS_MS;
-    if (flush || ms <= 0) {
+    if (ms <= 0) {
+      this.emitProgress();
+      return;
+    }
+    if (flush) {
       if (this.progressTimer) clearTimeout(this.progressTimer);
       this.progressTimer = undefined;
       this.emitProgress();
+      // A record that has just started opens a window, so the output that follows at once waits for its end.
+      if (this.record?.running) this.openWindow(ms);
       return;
     }
     if (this.progressTimer) {
@@ -265,12 +270,16 @@ export class StackService {
       return;
     }
     this.emitProgress();
+    this.openWindow(ms);
+  }
+
+  /** Starts a throttle window; at its end the latest record goes out when it changed meanwhile, and the next window opens. */
+  private openWindow(ms: number): void {
     const window = () => {
       this.progressTimer = undefined;
       if (!this.progressDirty) return;
       this.emitProgress();
-      this.progressTimer = setTimeout(window, ms);
-      this.progressTimer.unref?.();
+      this.openWindow(ms);
     };
     this.progressTimer = setTimeout(window, ms);
     this.progressTimer.unref?.();

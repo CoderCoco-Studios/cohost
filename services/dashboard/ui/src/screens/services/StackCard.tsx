@@ -95,7 +95,7 @@ export function StackCard() {
               <LaunchPanel />
               {others.length ? (
                 <ul aria-label="Other containers" className="plain-list muted small">
-                  {others.map((c) => <li key={c.service}>{`${c.service}: ${c.stale ? "from the previous run, recreated by this launch" : c.health ? `${c.status}, ${c.health}` : c.status}`}</li>)}
+                  {others.map((c) => <li key={c.service}>{`${c.service}: ${c.stale ? `from the previous run, recreated by this ${stack.action?.kind === "rebuild" ? "rebuild" : "launch"}` : c.health ? `${c.status}, ${c.health}` : c.status}`}</li>)}
                 </ul>
               ) : null}
             </>

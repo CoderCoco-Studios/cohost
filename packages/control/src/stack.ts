@@ -3,7 +3,7 @@ import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import { ensureLogsDir, stderrWarn } from "./logs-dir.js";
-import { ComposeRuntime, defaultExec, defaultProvisioner, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
+import { ComposeRuntime, defaultExec, defaultProvisioner, execDetail, type ExecFile, type OutputStream, type RuntimeResult } from "./runtime.js";
 import type { Provisioner } from "./provision.js";
 
 /** One container of the Compose project, as `docker compose ps` reports it. */
@@ -118,13 +118,19 @@ function parsePs(stdout: string): ContainerStatus[] {
   });
 }
 
-/** Splits streamed output into lines on `\n` and `\r`, trailing whitespace trimmed and empty lines dropped; a partial line waits. */
+/** The longest output line kept; a longer one (and a partial line waiting for its end) is cut to this many characters. */
+export const LINE_MAX_CHARS = 4096;
+
+/**
+ * Splits streamed output into lines on `\n` and `\r`, trailing whitespace trimmed, empty lines dropped and each line cut to
+ * `LINE_MAX_CHARS`; a partial line waits, held to `LINE_MAX_CHARS` too, so a stream with no line ends cannot grow it.
+ */
 export class LineSplitter {
   private rest = "";
   push(chunk: string): string[] {
     const parts = (this.rest + chunk).split(/\r\n|\n|\r/);
-    this.rest = parts.pop() ?? "";
-    return parts.map((l) => l.trimEnd()).filter((l) => l !== "");
+    this.rest = (parts.pop() ?? "").slice(0, LINE_MAX_CHARS);
+    return parts.map((l) => l.slice(0, LINE_MAX_CHARS).trimEnd()).filter((l) => l !== "");
   }
   end(): string[] {
     const last = this.rest.trimEnd();
@@ -196,7 +202,7 @@ export class StackController {
 
   /** Runs one fixed `docker compose` command with `COHOST_ISOLATION` set to the empty string, so neither this process's environment nor `.env` supplies it (CTRL-STACK-017). */
   // @spec CTRL-STACK-017
-  private async compose(args: string[], timeoutMs: number, onOutput?: (chunk: string) => void): Promise<{ ok: true; stdout: string } | { ok: false; detail: string; err?: unknown }> {
+  private async compose(args: string[], timeoutMs: number, onOutput?: (chunk: string, stream: OutputStream) => void): Promise<{ ok: true; stdout: string } | { ok: false; detail: string; err?: unknown }> {
     const docker = resolveDockerBin(this.env, this.o.onPath);
     if (!docker.ok) return { ok: false, detail: docker.detail };
     try {
@@ -285,14 +291,15 @@ export class StackController {
     const before = await this.provisioner.before();
     if (!before.ok) return { ok: false, detail: before.detail };
     ensureLogsDir(this.cwd, this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
-    const lines = new LineSplitter();
+    // One splitter per stream: a partial line of standard output is never joined to one of standard error.
+    const lines: Record<OutputStream, LineSplitter> = { stdout: new LineSplitter(), stderr: new LineSplitter() };
     let lastLine = "";
     const emit = (line: string) => {
       lastLine = line;
       try { this.o.onOutput?.(kind, line); } catch { /* a progress callback must not fail the action */ }
     };
-    const up = await this.compose(["--progress", "plain", "up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS, (chunk) => { for (const l of lines.push(chunk)) emit(l); });
-    for (const l of lines.end()) emit(l);
+    const up = await this.compose(["--progress", "plain", "up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS, (chunk, stream) => { for (const l of lines[stream].push(chunk)) emit(l); });
+    for (const l of [...lines.stdout.end(), ...lines.stderr.end()]) emit(l);
     if (!up.ok) return { ok: false, detail: failedUpDetail(lastLine, up.err, up.detail) };
     const delivered = await before.after();
     if (!delivered.ok) return { ok: false, detail: delivered.detail ?? "a delivery failed" };

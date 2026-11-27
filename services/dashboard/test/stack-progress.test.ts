@@ -175,7 +175,7 @@ test("a probe that reads restart counts changes the snapshot once, never with th
 });
 
 // @spec DASH-STACK-016
-test("a status without restart counts keeps each container's last count while its id is unchanged; a count never drops for the same id", async () => {
+test("a status without restart counts keeps each container's last count while its id is unchanged; a count never drops for the same id; a container gone from a status leaves no count", async () => {
   const { svc, f } = service({ initial: { docker: { ok: true }, services: [{ service: "memory", status: "running", id: "a1", restartCount: 2 }] } });
   await svc.probe();
   const count = () => svc.snapshot().services.find((c) => c.service === "memory")!.restartCount;
@@ -189,6 +189,11 @@ test("a status without restart counts keeps each container's last count while it
   f.setStatus({ docker: { ok: true }, services: [{ service: "memory", status: "running", id: "b2" }] });
   await svc.probe();
   assert.equal(count(), undefined, "a recreated container starts afresh");
+  f.setStatus({ docker: { ok: true }, services: [] });
+  await svc.probe();
+  f.setStatus({ docker: { ok: true }, services: [{ service: "memory", status: "running", id: "a1" }] });
+  await svc.probe();
+  assert.equal(count(), undefined, "the count of a1 was dropped when a1 was missing from a status");
 });
 
 class Sock implements FeedSocket {
@@ -239,11 +244,16 @@ test("stack-progress pushes are throttled to one per 250 ms with the latest reco
   const got: StackProgress[] = [];
   svc.onProgress((p) => got.push(p));
   for (let i = 0; i < 20; i++) svc.hooks.onOutput("launch", `l${i}`);
-  assert.ok(got.length <= 1);
+  assert.equal(got.length, 0, "the start opened a window: the lines wait for its end");
+  t.mock.timers.tick(249);
+  assert.equal(got.length, 0);
+  t.mock.timers.tick(1);
+  assert.equal(got.length, 1, "one push for the whole window");
+  assert.equal(got[0]!.lines.length, 20);
   t.mock.timers.tick(250);
-  const n = got.length;
-  assert.ok(n >= 1 && n <= 2);
-  assert.equal(got.at(-1)!.lines.length, 20);
+  assert.equal(got.length, 1, "an unchanged record is not sent again");
+  svc.hooks.onOutput("launch", "next");
+  assert.equal(got.length, 2, "a change after a quiet window goes at once");
   svc.hooks.onOutput("launch", "last");
   f.finish({ ok: true });
   await tick();

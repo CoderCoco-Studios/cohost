@@ -37,16 +37,26 @@ test("the Launch panel names the action and its outcome and lists a row per serv
 });
 
 // @spec DASH-UI-056
-test("a failure shows inline in an alert with the failing image and its last error lines", async () => {
+test("a failure the page saw happen shows inline in an alert with the failing image and its last error lines", async () => {
   const { app } = await mountServices({ stack: stackMsg({ state: "down" }) });
+  push(app, record({ rows: [{ service: "voice", state: "building", done: 1, total: 4, cached: 1 }] }));
   push(app, record({ running: false, ok: false, finishedAt: 2, rows: [{ service: "voice", state: "failed", done: 1, total: 4, cached: 1 }],
     failure: { service: "voice", lines: ["ERROR: No matching distribution found for torch==9.9.9", "ERROR: process did not complete successfully"] } }));
   const alert = within(panel()).getByRole("alert");
   assert.match(alert.textContent ?? "", /voice/);
   assert.match(alert.textContent ?? "", /No matching distribution found/);
   assert.equal(alert.querySelector("pre")?.textContent, "ERROR: No matching distribution found for torch==9.9.9\nERROR: process did not complete successfully");
-  push(app, record({ running: false, ok: false, finishedAt: 2, failure: { lines: ["Error response from daemon: no space left"] } }));
+  push(app, record({ startedAt: 5, running: true }));
+  push(app, record({ startedAt: 5, running: false, ok: false, finishedAt: 6, failure: { lines: ["Error response from daemon: no space left"] } }));
   assert.match(within(panel()).getByRole("alert").textContent ?? "", /failed/i);
+});
+
+// @spec DASH-UI-056
+test("a failure found on connect is a status, not an alert", async () => {
+  const { app } = await mountServices({ stack: stackMsg({ state: "down" }) });
+  push(app, record({ running: false, ok: false, finishedAt: 2, failure: { service: "voice", lines: ["ERROR: boom"] } }));
+  assert.equal(within(panel()).queryByRole("alert"), null);
+  assert.match(within(panel()).getByRole("status").textContent ?? "", /voice failed to build/);
 });
 
 // @spec DASH-UI-057
@@ -65,6 +75,20 @@ test("the log is in a collapsed disclosure labelled with the line count, in a fo
   assert.ok(pre.getAttribute("aria-label"));
 });
 
+// @spec DASH-UI-057
+test("opening the log shows its last line, and a restart-all's log is labelled Output", async () => {
+  const { app } = await mountServices({ stack: stackMsg({ state: "starting" }) });
+  push(app, record({ lines: Array.from({ length: 200 }, (_, i) => `line ${i}`) }));
+  const details = panel().querySelector("details")!;
+  const pre = details.querySelector("pre")!;
+  Object.defineProperty(pre, "scrollHeight", { configurable: true, get: () => 5000 });
+  pre.scrollTop = 0; // a closed pane did not scroll
+  act(() => { details.open = true; details.dispatchEvent(new Event("toggle")); });
+  assert.equal(pre.scrollTop, 5000);
+  push(app, record({ kind: "restart", rows: [{ service: "voice", state: "restarting" }], lines: ["restarting voice"] }));
+  assert.match(panel().querySelector("summary")!.textContent ?? "", /^Output \(1 line\)$/);
+});
+
 // @spec DASH-UI-058
 test("a container marked stale reads as from the previous run instead of its status", async () => {
   await mountServices({ services: [svc("chat")], stack: stackMsg({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: 1 },
@@ -73,6 +97,13 @@ test("a container marked stale reads as from the previous run instead of its sta
   assert.match(others.textContent ?? "", /redis: from the previous run, recreated by this launch/);
   assert.ok(!/redis: exited/.test(others.textContent ?? ""));
   assert.match(others.textContent ?? "", /postgres: exited/);
+});
+
+// @spec DASH-UI-058
+test("while a rebuild runs, a stale container reads as recreated by this rebuild", async () => {
+  await mountServices({ services: [svc("chat")], stack: stackMsg({ state: "starting", action: { kind: "rebuild", phase: "compose-build", startedAt: 1 },
+    services: [{ service: "redis", status: "exited", stale: true }] }) });
+  assert.match(within(card()).getByRole("list", { name: "Other containers" }).textContent ?? "", /redis: from the previous run, recreated by this rebuild/);
 });
 
 // @spec DASH-UI-059

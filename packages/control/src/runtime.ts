@@ -27,14 +27,19 @@ const unknown = (id: string): RuntimeResult => ({ ok: false, detail: `unknown se
 
 // ---- compose ----
 
+/** The stream an output chunk came from. */
+export type OutputStream = "stdout" | "stderr";
+
 /**
  * Runs a program with an argv (no shell); `input` is written to its standard input, which is then closed. With `onOutput`,
- * each chunk of standard output and standard error is passed to it as it arrives (CTRL-STACK-021).
+ * each chunk of standard output and standard error is passed to it as it arrives, with the stream it came from (CTRL-STACK-021).
  */
-export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number; input?: string; onOutput?: (chunk: string) => void }) => Promise<{ stdout: string; stderr: string }>;
+export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.ProcessEnv; cwd?: string; timeoutMs?: number; input?: string; onOutput?: (chunk: string, stream: OutputStream) => void }) => Promise<{ stdout: string; stderr: string }>;
 
 /** How much of each stream a streamed exec keeps for its result. */
 export const STREAM_TAIL_CHARS = 65_536;
+/** How long a streamed exec waits after SIGTERM at its timeout before it sends SIGKILL. */
+export const KILL_GRACE_MS = 10_000;
 
 /** A consolidation pass makes model calls and can take minutes; the lifecycle verbs' 120 s would kill it. */
 export const CONSOLIDATE_TIMEOUT_MS = 30 * 60_000;
@@ -44,32 +49,63 @@ export const defaultExec: ExecFile = (file, args, opts) => (opts.onOutput ? stre
 
 /**
  * `spawn` (no shell) that forwards each output chunk and keeps the last `STREAM_TAIL_CHARS` of each stream, so a command that
- * prints without end (a long image build) never hits a buffer limit and never holds all of its output in memory.
+ * prints without end (a long image build) never hits a buffer limit and never holds all of its output in memory. At its
+ * timeout it sends SIGTERM, then SIGKILL after `killGraceMs`; once the SIGKILL is sent it settles when the process exits,
+ * even while a process it started still holds the output pipes open, so a caller (and the lifecycle lock it holds) never waits
+ * for ever.
  */
 // @spec CTRL-STACK-021
-const streamExec: ExecFile = (file, args, opts) =>
-  new Promise((resolve, reject) => {
-    const { timeoutMs, input, onOutput, ...rest } = opts;
-    const child = spawn(file, args, { ...rest, stdio: ["pipe", "pipe", "pipe"] });
-    const tails = { stdout: "", stderr: "" };
-    const take = (which: "stdout" | "stderr") => (chunk: string) => {
-      tails[which] = (tails[which] + chunk).slice(-STREAM_TAIL_CHARS);
-      try { onOutput?.(chunk); } catch { /* a progress callback must not fail the command */ }
-    };
-    child.stdout.setEncoding("utf8").on("data", take("stdout"));
-    child.stderr.setEncoding("utf8").on("data", take("stderr"));
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, timeoutMs ?? DEFAULT_TIMEOUT_MS);
-    child.on("error", (err) => { clearTimeout(timer); reject(Object.assign(err, tails)); });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (code === 0) resolve({ ...tails });
-      else reject(Object.assign(new Error(`Command failed: ${file} ${args.join(" ")}${timedOut ? " (timed out)" : signal ? ` (${signal})` : ` (exit ${code})`}`), { code, signal, killed: timedOut }, tails));
+export function streamExecWith(killGraceMs = KILL_GRACE_MS): ExecFile {
+  return (file, args, opts) =>
+    new Promise((resolve, reject) => {
+      const { timeoutMs, input, onOutput, ...rest } = opts;
+      const child = spawn(file, args, { ...rest, stdio: ["pipe", "pipe", "pipe"] });
+      const tails = { stdout: "", stderr: "" };
+      const take = (which: OutputStream) => (chunk: string) => {
+        tails[which] = (tails[which] + chunk).slice(-STREAM_TAIL_CHARS);
+        try { onOutput?.(chunk, which); } catch { /* a progress callback must not fail the command */ }
+      };
+      child.stdout.setEncoding("utf8").on("data", take("stdout"));
+      child.stderr.setEncoding("utf8").on("data", take("stderr"));
+      let timedOut = false;
+      let killed = false;
+      let settled = false;
+      let kill: NodeJS.Timeout | undefined;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill("SIGTERM");
+        kill = setTimeout(() => { killed = true; child.kill("SIGKILL"); }, killGraceMs);
+      }, timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      const settle = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (kill) clearTimeout(kill);
+        if (code === 0 && !timedOut) resolve({ ...tails });
+        else reject(Object.assign(new Error(`Command failed: ${file} ${args.join(" ")}${timedOut ? " (timed out)" : signal ? ` (${signal})` : ` (exit ${code})`}`), { code, signal, killed: timedOut }, tails));
+      };
+      child.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (kill) clearTimeout(kill);
+        reject(Object.assign(err, tails));
+      });
+      // After SIGKILL the exit is final: a grandchild holding the pipes must not keep `close` (and the caller) waiting.
+      child.on("exit", (code, signal) => {
+        if (!killed) return;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        settle(code, signal);
+      });
+      child.on("close", settle);
+      child.stdin.on("error", () => { /* the program exited before reading: its status reports the failure */ });
+      if (input !== undefined) child.stdin.end(input);
+      else child.stdin.end();
     });
-    child.stdin.on("error", () => { /* the program exited before reading: its status reports the failure */ });
-    if (input !== undefined) child.stdin.end(input);
-    else child.stdin.end();
-  });
+}
+
+const streamExec = streamExecWith();
 
 const bufferedExec: ExecFile = (file, args, opts) =>
   new Promise((resolve, reject) => {

@@ -64,7 +64,6 @@ export function containerService(name: string, services: readonly string[]): str
 export class BuildProgress {
   private rowsBy = new Map<string, Row>();
   private vertexService = new Map<number, string>();
-  private vertexStep = new Map<number, number>();
   private output = new Map<number, string[]>();
   private fail?: BuildFailure;
   private containers: string[] = [];
@@ -124,14 +123,14 @@ export class BuildProgress {
     const service = tokens[0]!;
     this.vertexService.set(n, service);
     const r = this.row(service);
-    if (step) {
+    // BuildKit prints a vertex's header again when its output resumes: only the first one moves the row's current step.
+    if (step && !r.numbered.has(n)) {
       const stage = tokens.slice(1, -1).join(" ");
       r.stages.set(stage, Number(step[2]));
       r.step = Number(step[1]);
       r.of = Number(step[2]);
       r.current = text.slice(0, TEXT_MAX);
       r.numbered.add(n);
-      this.vertexStep.set(n, r.step);
     }
     return true;
   }

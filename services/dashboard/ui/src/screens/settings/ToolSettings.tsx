@@ -124,7 +124,7 @@ export function McpServers({ section, km, st }: { section: SectionModel; km: Key
   const remove = async (name: string): Promise<void> => {
     setBusy(true); setRefusal(undefined); setSecretFailure(undefined);
     const tokenKey = `servers.${name}.token`;
-    // Always: a token the page does not show as set may still be in secrets.yaml, and a later server of this name would take it (DASH-TOOL-009).
+    // Always: a token the page does not show as set may still be in the settings store, and a later server of this name would take it (DASH-TOOL-009).
     const r = await settings.setSecrets(section.path, { [tokenKey]: null }, `Clear ${section.path}.${tokenKey}`);
     if (!r.ok) { setRefusal(`Could not clear the token of ${name}, so the server stays: ${r.detail}`); setBusy(false); return; }
     const { [name]: _gone, ...rest } = mapOf(current(), km.key);
@@ -168,7 +168,7 @@ export function McpServers({ section, km, st }: { section: SectionModel; km: Key
           <Labelled label="Name" help="Lower case: a letter, then letters, digits or hyphens.">{(id) => <input id={id} ref={nameRef} className="field" type="text" autoComplete="off" spellCheck={false} />}</Labelled>
           <Labelled label="URL" help="An http or https address, with no user name or password.">{(id) => <input id={id} ref={urlRef} className="field" type="text" autoComplete="off" spellCheck={false} />}</Labelled>
           <Labelled label="Header name" help="The header the token is sent in; leave it empty for Authorization.">{(id) => <input id={id} ref={headerRef} className="field" type="text" autoComplete="off" spellCheck={false} />}</Labelled>
-          <Labelled label="Token" help="Kept in secrets.yaml and never shown again. Leave it empty for a server that needs none.">{(id) => <input id={id} ref={tokenRef} className="field" type="password" autoComplete="off" spellCheck={false} />}</Labelled>
+          <Labelled label="Token" help="Kept encrypted in the settings store and never shown again. Leave it empty for a server that needs none.">{(id) => <input id={id} ref={tokenRef} className="field" type="password" autoComplete="off" spellCheck={false} />}</Labelled>
           <Switch label="External" checked={external} onChange={setExternal} />
           <p className="help">Mark a server External to treat it as off the LAN whatever its address. Its tools appear only after tools has restarted and connected.</p>
           <div><Button variant="primary" type="submit" busy={busy}>Add server</Button></div>

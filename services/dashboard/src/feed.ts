@@ -34,6 +34,8 @@ export interface FeedDeps {
   onViewersReply?: (ev: BusEvent<"memory.viewers.reply">) => void;
   /** Receives the driver of each `avatar.state` seen on the stream: the renderer relay's state comes from it (DASH-AVR-020). */
   onAvatarState?: (driver: string) => void;
+  /** Every heartbeat, seeded and live: the credentials re-delivery follows them (settings-store STORE-DLV-005). */
+  onHeartbeat?: (hb: { service: string; state: string; detail?: string }) => void;
 }
 
 /** The slice of the service logger the feed's failure handling uses. */
@@ -171,8 +173,9 @@ export function createFeed(d: FeedDeps) {
       });
       if (stopped || !history) return;
       d.tracker.seed(history.map((h) => ({ ts: h.ts, data: h.data })));
+      for (const h of history) d.onHeartbeat?.(h.data);
       const fromId = history.at(-1)?.id ?? "$";
-      void d.bus.tailHealth((hb) => d.tracker.ingest(hb.data), fromId, readOutcome);
+      void d.bus.tailHealth((hb) => { d.tracker.ingest(hb.data); d.onHeartbeat?.(hb.data); }, fromId, readOutcome);
       void d.bus.tail((ev: BusEvent) => {
         if (ev.type === "memory.viewers.reply") d.onViewersReply?.(ev as BusEvent<"memory.viewers.reply">); // @spec DASH-VIEWERS-008
         if (ev.type === "avatar.state") d.onAvatarState?.((ev as BusEvent<"avatar.state">).data.driver); // @spec DASH-AVR-020

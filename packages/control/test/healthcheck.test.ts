@@ -29,6 +29,15 @@ test("stopping is unhealthy even when fresh; only the newest heartbeat counts", 
   assert.equal(isHealthy("chat", [rec("chat", 9000, "stopping"), rec("chat", 1000)], 1_000_000), true);
 });
 
+// @spec CTRL-CHECK-001, STORE-DLV-005
+test("a fresh heartbeat of a unit waiting for its credentials is unhealthy; one starting for another reason is not", () => {
+  const waiting = rec("chat", 1000, "starting");
+  waiting.data.detail = "waiting for credentials";
+  assert.equal(isHealthy("chat", [waiting], 1_000_000), false);
+  assert.equal(isHealthy("chat", [rec("chat", 1000, "starting")], 1_000_000), true);
+  assert.equal(isHealthy("chat", [waiting, rec("chat", 500)], 1_000_000), true, "the newest heartbeat decides");
+});
+
 // The CLI test never touches the live stack's streams: it runs in Redis database 15 of the same server (a database no
 // service uses), where it publishes its heartbeat and deletes the health stream in `finally`.
 const liveUrl = process.env.REDIS_URL ?? "redis://127.0.0.1:6379";

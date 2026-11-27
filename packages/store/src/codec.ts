@@ -2,7 +2,7 @@ import { randomBytes, scryptSync } from "node:crypto";
 import { parseYaml, secretPathOf, stringifyYaml } from "@cohost/config";
 import { StoreError, type StoreIssue } from "./errors.js";
 import { open as openSealed, seal } from "./keys.js";
-import { splitSettings, type Store, type StoreChange, type WriteResult } from "./store.js";
+import { moveDamagedAside, openStore, splitSettings, type Store, type StoreChange, type StoreOptions, type WriteResult } from "./store.js";
 
 /** The scrypt parameters of an export's passphrase key (STORE-IO-002): N 2^17 needs `maxmem` above Node's 32 MiB default. */
 export const EXPORT_SCRYPT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 } as const;
@@ -251,4 +251,29 @@ export async function importPlan(store: Store, plan: ImportPlan, opts: { dryRun?
   if (!check.ok) return { result: check, summary };
   await store.backup();
   return { result: store.write(change), summary };
+}
+
+/**
+ * Imports a plan into the store at `opts` (STORE-IO-003, STORE-TASK-006), as `config:import` and the dashboard's recovery import
+ * do: a damaged store is never written, but moved aside (`moved` names where) for a new, unseeded store that takes the import;
+ * a dry run never moves anything.
+ */
+// @spec STORE-IO-003, STORE-TASK-006
+export async function importToStore(plan: ImportPlan, opts: StoreOptions = {}, o: { dryRun?: boolean } = {}): Promise<{ result: WriteResult; summary: ImportSummary; moved?: string; damaged?: string }> {
+  let store: Store;
+  let moved: string | undefined;
+  let damaged: string | undefined;
+  try {
+    store = await openStore(opts);
+  } catch (e) {
+    if (!(e instanceof StoreError) || e.kind !== "damaged" || o.dryRun) throw e;
+    damaged = e.message;
+    moved = moveDamagedAside(opts.dataDir);
+    store = await openStore({ ...opts, seed: false });
+  }
+  try {
+    return { ...(await importPlan(store, plan, { dryRun: o.dryRun ?? false })), ...(moved ? { moved, damaged } : {}) };
+  } finally {
+    store.close();
+  }
 }

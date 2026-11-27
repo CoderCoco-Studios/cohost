@@ -194,3 +194,4 @@ export class ConnectorFakeBus extends FakeBus {
 export { unitContractTests, entryProblem } from "./unit-contract.js";
 
 export * from "./fake-transport.js";
+export * from "./boot-projection.js";

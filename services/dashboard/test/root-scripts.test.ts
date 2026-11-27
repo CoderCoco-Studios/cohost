@@ -53,12 +53,11 @@ test("the built UI is git-ignored", () => {
 });
 
 // @spec DEPLOY-REPO-003
-test("the .gitignore excludes data/ (the settings store, its backups, the projections and the logs) and the build outputs, and names no settings or credentials file", () => {
+test("the .gitignore excludes data/ (the settings store, its backups, the projections and the logs) and the build outputs", () => {
   const lines = root(".gitignore").split("\n").map((l) => l.trim());
   for (const f of ["node_modules/", "dist/", "*.tsbuildinfo", ".env", "data/", "services/dashboard/dist-ui/", "*.log", ".DS_Store"]) {
     assert.ok(lines.includes(f), `${f} is ignored`);
   }
-  for (const f of ["secrets/", "config/config.yaml", "config/personality.md", "config/expressions.yaml", "config/secrets.yaml", "config/.vts-token"]) assert.ok(!lines.includes(f), `${f}: no such file exists any more`);
 });
 
 // @spec DASH-BUILD-008

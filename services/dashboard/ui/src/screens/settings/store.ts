@@ -80,6 +80,8 @@ export interface Settings {
   setSecrets(section: string, values: Record<string, string | null>, action: string, options?: { offerRestart?: boolean }): Promise<{ ok: true } | { ok: false; detail: string; paths?: string[] }>;
   restartUnits(): Promise<void>;
   dismissRestart(): void;
+  /** Removes the stored keys the schema does not define from each of `paths` (DASH-SET-033), one section after another. */
+  removeUnknown(paths: string[]): Promise<{ ok: true } | { ok: false; detail: string }>;
   loadPersonality(force?: boolean): Promise<void>;
   setPersonalityText(text: string): void;
   savePersonality(): Promise<void>;
@@ -255,8 +257,8 @@ export function createSettings(api: Api, win: Pick<Window, "addEventListener" | 
         if (r.status === 409) {
           const current = r.data && typeof r.data === "object" && typeof (r.data as { etag?: unknown }).etag === "string" ? (r.data as { etag: string }).etag : undefined;
           patchSection(path, (cur) => ({ ...cur, conflict: true, currentEtag: current }));
-          stop(path, `config.yaml changed since it was loaded; Reload re-reads it and discards your edits to ${titleOf(path)}`,
-            `${titleOf(path)}: config.yaml changed since this section was loaded. Your edits are kept; reload to read the new file (this discards them).`);
+          stop(path, `the settings changed since ${titleOf(path)} was loaded; Reload re-reads it and discards your edits to ${titleOf(path)}`,
+            `${titleOf(path)}: the settings changed since this section was loaded. Your edits are kept; reload to read the saved settings (this discards them).`);
           return;
         }
         if (r.status === 400 && r.data && typeof r.data === "object" && Array.isArray((r.data as { issues?: unknown }).issues)) {
@@ -348,6 +350,18 @@ export function createSettings(api: Api, win: Pick<Window, "addEventListener" | 
           ? { ...st, personality: { ...st.personality, saving: false, loaded: text, message: "saved · brain reloaded" } }
           : { ...st, personality: { ...st.personality, saving: false, failure: r.locked ? r.detail : detailOf(r) } };
       });
+    },
+    // @spec DASH-SET-033
+    async removeUnknown(paths) {
+      for (const path of paths) {
+        const s = state.get().sections[path];
+        if (!s || s.unknown.length === 0) continue;
+        const r = await api.put<{ etag?: string }>(`/config/${encodeURIComponent(path)}`, { etag: s.etag, values: {}, remove: s.unknown }, { auth: "control", action: "Remove unrecognised keys" });
+        if (!r.ok) return { ok: false, detail: r.locked ? r.detail : detailOf(r) };
+        propagateEtag(s.etag, r.data?.etag);
+        await self.loadSection(path, true);
+      }
+      return { ok: true };
     },
     dirty,
     editCount(paths) { const st = state.get(); return paths.reduce((n, p) => n + Object.keys(st.sections[p]?.edits ?? {}).length, 0); },

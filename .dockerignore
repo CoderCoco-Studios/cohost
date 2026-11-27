@@ -9,4 +9,10 @@ data
 **/*.log
 **/*.node
 target
+# The plaintext settings and credential files of before the settings store (DEPLOY-REPO-007); the examples stay in the context.
+secrets
+config/*.yaml
+config/*.md
+!config/*.example.*
+config/.vts-token
 # @spec DEPLOY-IMG-004, DEPLOY-IMG-005

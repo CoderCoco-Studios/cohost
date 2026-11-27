@@ -97,12 +97,15 @@ test("compose: a failing command is ok:false with stderr as detail", async () =>
  * A docker stand-in for a one-shot: `compose run -d` starts the container, `wait` prints `status`, `logs -f` prints `stdout` and
  * `stderr` (or fails with them), and `exec -i` (a delivery) is recorded with its input.
  */
-function oneShotDocker(o: { status?: string; stdout?: string; stderr?: string; runFail?: string; logsFail?: boolean } = {}) {
+function oneShotDocker(o: { status?: string; stdout?: string; stderr?: string; runFail?: string; logsFail?: boolean; waitFail?: boolean } = {}) {
   const calls: { args: string[]; timeoutMs?: number; cwd?: string; input?: string }[] = [];
   const exec: ExecFile = async (_file, args, opts) => {
     calls.push({ args, timeoutMs: opts.timeoutMs, cwd: opts.cwd, ...(opts.input !== undefined ? { input: opts.input } : {}) });
     if (args[0] === "compose" && args[1] === "run" && o.runFail) throw Object.assign(new Error("exit 1"), { stdout: "", stderr: o.runFail });
-    if (args[0] === "wait") return { stdout: `${o.status ?? "0"}\n`, stderr: "" };
+    if (args[0] === "wait") {
+      if (o.waitFail) throw Object.assign(new Error("timed out"), { stdout: "", stderr: "timed out after 1800000 ms" });
+      return { stdout: `${o.status ?? "0"}\n`, stderr: "" };
+    }
     if (args[0] === "logs") {
       if (o.logsFail) throw Object.assign(new Error("exit 1"), { stdout: o.stdout ?? "", stderr: o.stderr ?? "" });
       return { stdout: o.stdout ?? "", stderr: o.stderr ?? "" };
@@ -165,6 +168,16 @@ test("compose: a failing consolidate is ok:false with stderr, else the stdout ta
   assert.deepEqual(r, { ok: false, detail: "the credentials of memory could not be delivered (docker exec exited 1)" });
   const name = d.calls[0]!.args[5]!;
   assert.ok(d.calls.some((c) => c.args.join(" ") === `rm -f ${name}`), "a container waiting for a delivery that failed is removed");
+});
+
+// @spec CTRL-RUNTIME-010, CTRL-RUNTIME-018
+test("compose: a one-shot whose docker wait fails or times out is removed with docker rm -f and reported", async () => {
+  const d = oneShotDocker({ waitFail: true });
+  const r = await new ComposeRuntime({ provision: NO_PROVISION, cwd: WS, onPath: hasDocker, exec: d.exec, env: {} }).consolidate();
+  const name = d.calls[0]!.args[5]!;
+  assert.equal(r.ok, false);
+  assert.match(r.detail!, new RegExp(`consolidate did not finish .*its container ${name} was removed`));
+  assert.ok(d.calls.some((c) => c.args.join(" ") === `rm -f ${name}`), "the container is removed");
 });
 
 // @spec CTRL-RUNTIME-014

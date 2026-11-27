@@ -16,7 +16,7 @@ export interface InjectDeps {
   bus: Publisher & Pick<Bus, "putUpload">;
   uploads: UploadLimits;
   /** Returns false (after sending 401) when the bearer gate rejects the request. */
-  authorize: (req: http.IncomingMessage, res: http.ServerResponse) => boolean;
+  authorize: (req: http.IncomingMessage, res: http.ServerResponse) => Promise<boolean>;
   /** The derived health state of a unit (the tracker's snapshot with the Compose overlay); undefined for a unit not in it. */
   stateOf: (unit: string) => HealthState | undefined;
   /** The control plane's units: what `POST /inject/event` accepts for `unit`, and which `type`s for it. */
@@ -68,7 +68,7 @@ interface EventSchema {
  */
 // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006
 async function injectEvent(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  if (!d.authorize(req, res)) return;
+  if (!(await d.authorize(req, res))) return;
   const { data: raw, tooLarge } = await readBody(req, TEXT_LIMIT);
   if (tooLarge) return send(res, 413, "body too large");
   let j: unknown;
@@ -95,7 +95,7 @@ async function injectEvent(d: InjectDeps, req: http.IncomingMessage, res: http.S
 
 // @spec DASH-INJ-001, DASH-INJ-011, DASH-INJ-012, DASH-INJ-002, DASH-INJ-003, DASH-INJ-004, DASH-INJ-009
 async function injectText(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-  if (!d.authorize(req, res)) return;
+  if (!(await d.authorize(req, res))) return;
   const { data, tooLarge } = await readBody(req, TEXT_LIMIT);
   if (tooLarge) return send(res, 413, "body too large");
   let j: unknown;
@@ -167,7 +167,7 @@ const SOURCE_TAG = /^[a-z][a-z0-9-]{0,31}$/;
 
 // @spec DASH-INJ-005, DASH-INJ-006, DASH-INJ-009, DASH-INJ-010, DASH-UPL-002, DASH-UPL-003
 async function injectBinary(d: InjectDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL, kind: UploadKind): Promise<void> {
-  if (!d.authorize(req, res)) return;
+  if (!(await d.authorize(req, res))) return;
   const level = url.searchParams.get("level") ?? "service";
   if (level === "bus") return send(res, 400, "bus-level injection is text only: use POST /inject/text");
   if (level !== "service") return send(res, 400, "level must be 'service' or 'bus'");

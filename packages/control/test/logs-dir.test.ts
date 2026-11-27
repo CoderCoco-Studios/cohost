@@ -13,11 +13,9 @@ afterEach(() => {
 
 const onPath = (n: string): boolean => n === "docker";
 
-/** A workspace root with no `data/logs`, its secrets file absent so the projection writes empty mappings. */
+/** A workspace root with no `data/logs`. */
 function workspace(): string {
-  const root = mkdtempSync(join(tmpdir(), "cohost-ctl-logs-"));
-  process.env.COHOST_SECRETS_FILE = join(root, "secrets", "secrets.yaml");
-  return root;
+  return mkdtempSync(join(tmpdir(), "cohost-ctl-logs-"));
 }
 
 /** An exec that records, for each docker command, whether `data/logs` existed as a directory when it ran. */

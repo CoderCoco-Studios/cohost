@@ -5,10 +5,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ConfigSchema, LoggingSchema, PRESENTATION, SECTION_PATHS, configLogger, createLogger, escapeTerminal, formatPretty, loadConfig, loadConfigFile, loggingSettings, parseYaml, setLoggingSource,
+  ConfigSchema, LoggingSchema, PRESENTATION, SECTION_PATHS, configLogger, createLogger, escapeTerminal, formatPretty, loadConfig, loggingSettings, parseYaml, setLoggingSource,
   redact, resetLoggingForTest, type TerminalOut,
 } from "../src/index.js";
-import { isolateEnv, repo, sandbox, captureWarnings } from "./helpers/config-sandbox.js";
+import { isolateEnv, repo, sandbox, captureWarnings, loadSettings } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 afterEach(() => resetLoggingForTest());
@@ -80,10 +80,8 @@ test("the shipped config.example.yaml writes the logging section as commented li
   const block = all.slice(start + 1, end < 0 ? undefined : end).filter((l) => /^\s+[a-z_]+:\s*\S/.test(l));
   assert.deepEqual(block.map((l) => l.replace(/\s*#.*$/, "").trim()), ["level: info", "terminal: pretty", "enabled: true", "max_size_mb: 10", "max_files: 3"]);
   for (const l of block) assert.match(l, /#/, `comment on: ${l.trim()}`);
-  const dir = sandbox();
-  writeFileSync(join(dir, "config.yaml"), text);
-  let cfg!: ReturnType<typeof loadConfigFile>;
-  assert.deepEqual(captureWarnings(() => { cfg = loadConfigFile(true); }), []);
+  let cfg!: ReturnType<typeof loadSettings>;
+  assert.deepEqual(captureWarnings(() => { cfg = loadSettings(text); }), []);
   assert.deepEqual(cfg.logging, { level: "info", terminal: "pretty", file: { enabled: true, max_size_mb: 10, max_files: 3 } });
 });
 
@@ -424,7 +422,7 @@ test("a crashing program logs the error to its file and still exits with Node's 
     const data = process.env.COHOST_DATA_DIR!;
     const code = `import { createLogger } from ${JSON.stringify(index)}; createLogger("crashy").info("up"); ${crash};`;
     const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], {
-      encoding: "utf8", env: { PATH: process.env.PATH, CONFIG_DIR: dir, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(dir, "none.env"), COHOST_SECRETS_FILE: join(dir, "none.yaml") },
+      encoding: "utf8", env: { PATH: process.env.PATH, CONFIG_DIR: dir, COHOST_DATA_DIR: data, COHOST_ENV_FILE: join(dir, "none.env") },
     });
     assert.equal(r.status, 1, r.stderr);
     assert.match(r.stderr, /kaboom/, "Node's own report still prints");

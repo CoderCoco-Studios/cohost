@@ -12,7 +12,7 @@ async function open(over = {}) {
   await settle();
   return b;
 }
-const editor = () => screen.getByRole("textbox", { name: "personality.md" }) as HTMLTextAreaElement;
+const editor = () => screen.getByRole("textbox", { name: "Personality" }) as HTMLTextAreaElement;
 const saveBtn = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
 
 // @spec DASH-SET-001

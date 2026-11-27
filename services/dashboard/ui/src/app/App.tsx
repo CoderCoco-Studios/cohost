@@ -4,6 +4,7 @@ import { cohostName } from "../state/name";
 import { AccessDialog } from "./AccessDialog";
 import { ConfirmBars } from "./ConfirmBars";
 import { ConnectionBanner } from "./connection";
+import { RecoveryKeyBanner } from "./RecoveryKeyBanner";
 import { Header } from "./Header";
 import { navigate, useRoute } from "./routes";
 import { SCREENS } from "./screens";
@@ -55,6 +56,7 @@ function Shell({ name }: { name: string }) {
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); mainRef.current?.focus(); }}>Skip to main content</a>
       <Header name={name} route={route} onNavigate={navigate} mute={mute} />
       <ConnectionBanner />
+      <RecoveryKeyBanner />
       <ConfirmBars />
       <main id="main" className="page" ref={mainRef} tabIndex={-1}><Screen route={route} /></main>
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />

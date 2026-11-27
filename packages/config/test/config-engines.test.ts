@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, chmodSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigSchema, loadConfigFile } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo, secretsIn } from "./helpers/config-sandbox.js";
+import { ConfigSchema } from "../src/index.js";
+import { MINIMAL_YAML, isolateEnv, loadSettings, exampleYaml, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
@@ -219,34 +219,28 @@ test("network.lan is optional, defaults to the empty list and validates each ent
 });
 
 // @spec CFG-SCH-071
-test("a config.yaml without a network section loads through loadConfigFile, one with network.lan keeps it and a bad entry fails naming it", () => {
-  sandbox({ "config.yaml": MINIMAL_YAML });
-  loadConfigFile(true);
-  sandbox({ "config.yaml": `${MINIMAL_YAML}network:\n  lan: [".ts.net"]\n` });
-  assert.deepEqual(loadConfigFile(true).network?.lan, [".ts.net"]);
-  sandbox({ "config.yaml": `${MINIMAL_YAML}network:\n  lan: ["bad host!"]\n` });
-  assert.throws(() => loadConfigFile(true), (e: Error) => /network\.lan\.0/.test(e.message));
+test("settings without a network section load through loadConfig, ones with network.lan keep it and a bad entry fails naming it", () => {
+  loadSettings(MINIMAL_YAML);
+  assert.deepEqual(loadSettings(`${MINIMAL_YAML}network:\n  lan: [".ts.net"]\n`).network?.lan, [".ts.net"]);
+  assert.throws(() => loadSettings(`${MINIMAL_YAML}network:\n  lan: ["bad host!"]\n`), (e: Error) => /network\.lan(\.0|\[0\])/.test(e.message));
 });
 
 // @spec CFG-SCH-039, CFG-SEC-003
-test("the five engine secret keys default to the empty string and merge from secrets.yaml, while config.yaml values at those paths are ignored", () => {
+test("the five engine secret keys default to the empty string and take the delivered credentials", () => {
   const c = ok();
   assert.equal(c.ears.openai.api_key, "");
   assert.equal(c.ears.nemotron.api_key, "");
   assert.equal(c.ears.kyutai.api_key, "");
   assert.equal(c.voice.openai.api_key, "");
   assert.equal(c.voice.pocket.hf_token, "");
-  const dir = sandbox({
-    "config.yaml": MINIMAL_YAML.replace("ears: {}", "ears: { openai: { api_key: pasted } }"),
-    "secrets.yaml": "ears:\n  nemotron:\n    api_key: nem\n  kyutai:\n    api_key: kyu\nvoice:\n  openai:\n    api_key: vk\n  pocket:\n    hf_token: hf\n",
+  const cfg = loadSettings(MINIMAL_YAML, {
+    credentials: { "ears.nemotron.api_key": "nem", "ears.kyutai.api_key": "kyu", "voice.openai.api_key": "vk", "voice.pocket.hf_token": "hf" },
   });
-  chmodSync(secretsIn(dir), 0o600);
-  const cfg = loadConfigFile(true);
   assert.equal(cfg.ears.nemotron.api_key, "nem");
   assert.equal(cfg.ears.kyutai.api_key, "kyu");
   assert.equal(cfg.voice.openai.api_key, "vk");
   assert.equal(cfg.voice.pocket.hf_token, "hf");
-  assert.equal(cfg.ears.openai.api_key, "", "a value pasted into config.yaml is never used");
+  assert.equal(cfg.ears.openai.api_key, "", "a credential not delivered stays empty");
 });
 
 // @spec CFG-USR-019
@@ -272,6 +266,5 @@ test("the shipped example writes the engine keys as commented literals, network.
   }
   assert.doesNotMatch(lines.filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{|hf_token/);
   for (const secret of ["voice.openai.api_key", "voice.pocket.hf_token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"]) assert.equal(at(secret), undefined, secret);
-  shippedSandbox();
-  assert.doesNotThrow(() => loadConfigFile(true));
+  assert.doesNotThrow(() => loadSettings(exampleYaml()));
 });

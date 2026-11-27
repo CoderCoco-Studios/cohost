@@ -1,7 +1,8 @@
 import type http from "node:http";
-import { authorized, handleUnlock, hasSession, pathOf, unauthorized, UnlockLinks } from "./access.js";
+import { handleUnlock, hasSession, pass, pathOf, UnlockLinks, type Gate } from "./access.js";
 import type { Bus, BusEvent, Publisher } from "@cohost/bus";
-import { ConfigSchema, ensureFromExample, urls, type Logger } from "@cohost/config";
+import { ConfigSchema, findWorkspaceRoot, urls, type Logger } from "@cohost/config";
+import { personalityUnits, writeProjections, type Store } from "@cohost/store";
 import { SERVICE_MANIFEST, unitDescriptors, type ServiceController, type ServiceHealth, type StackActionKind, type StartMode } from "@cohost/control";
 import { BodyTooLarge, readText } from "./body.js";
 import { AppliedView } from "./applied.js";
@@ -15,7 +16,7 @@ import { handleModels, type ModelRoutes } from "./model-routes.js";
 import { ModelStore, modelsDir } from "./models.js";
 import { handleToolAnswer } from "./tools-routes.js";
 import { handleSecrets } from "./secrets.js";
-import { defaultWrite, handleConfig } from "./settings.js";
+import { handleConfig } from "./settings.js";
 import type { StackService } from "./stack.js";
 import { uploadLimits, type UploadLimits } from "./uploads.js";
 import { ViewersClient, handleViewers } from "./viewers.js";
@@ -33,25 +34,21 @@ export interface DashboardDeps {
   uploads?: UploadLimits;
   /** Request/reply client for the Viewers page; the feed hands it memory's replies. Defaults to a private client that never hears one. */
   viewers?: ViewersClient;
-  loadPersonality: () => string;
-  savePersonality: (text: string) => void;
+  /** The settings store, opened by the dashboard (settings-store STORE-PKG-001): settings, documents, credentials and the gate. */
+  store: Store;
+  /** The workspace root the personality projections are written under (STORE-PROJ-006); the one found from the working directory by default. */
+  root?: string;
   /** Derived per-service health (HealthTracker snapshot). */
   services: () => ServiceHealth[];
   /**
-   * The one lock (`CONTROL_TOKEN`, which also keys the session cookies, DASH-UNL-005) and the service controller. Every
-   * mutation passes the gate of DASH-CTRL-011, and the stack and lifecycle routes are served on every run (DASH-CTRL-001).
+   * The one lock (the store's token verifier and session key, DASH-CTRL-011) and the service controller. Every mutation passes
+   * the gate, and the stack and lifecycle routes are served on every run (DASH-CTRL-001).
    */
-  control: { token: string; runtime: string; advanced: boolean; controller: ServiceController };
+  control: { gate: Gate; runtime: string; advanced: boolean; controller: ServiceController };
   /** The unlock link's nonces (DASH-UNL-002); a private set by default. */
   unlock?: UnlockLinks;
-  /** The secrets file for `PUT /secrets`. Defaults to the loader's `secrets/secrets.yaml`; tests pin it. */
-  secretsFile?: () => string;
   /** The pick-list routes' backing servers. Defaults to `urls.tts()` and `urls.ollama()` and a 3 s timeout; tests pin them. */
   options?: Partial<OptionsDeps>;
-  /** Path of `config.yaml` for the settings routes. Defaults to the loader's file, seeded from the example when missing. */
-  configFile?: () => string;
-  /** Replaces `config.yaml` atomically. Defaults to `writeFileAtomic`. */
-  configWrite?: (file: string, text: string) => void;
   /** The stack state and action slot (`GET /stack`, `POST /stack/*`, and the slot the lifecycle routes share). */
   stack: StackService;
   /** The built docs site (`docs/.vitepress/dist`). Defaults to the one under the workspace root; tests pin it. */
@@ -70,38 +67,34 @@ const STACK_ACTION = /^\/stack\/(launch|rebuild|stop|restart|consolidate)$/;
 /** The dashboard's HTTP routes (the WebSocket feed is wired up in index.ts). */
 export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
   /** The one lock: every mutation needs it or a session cookie (DASH-CTRL-004, DASH-CTRL-011). */
-  const gateToken = d.control.token;
+  const gate = d.control.gate;
   const uploads = d.uploads ?? uploadLimits(ConfigSchema.shape.dashboard.parse({}).inject);
   const inject = {
     bus: d.bus,
     uploads,
     stateOf: (unit: string) => d.services().find((s) => s.service === unit)?.state,
-    authorize: (req: http.IncomingMessage, res: http.ServerResponse) => {
-      if (!authorized(gateToken, req)) { unauthorized(res); return false; }
-      return true;
-    },
+    authorize: (req: http.IncomingMessage, res: http.ServerResponse) => pass(gate, req, res),
   };
   const applied = d.models?.applied ?? new AppliedView(d.log);
   const store = d.models?.store ?? new ModelStore(modelsDir());
   const modelRoutes: ModelRoutes = {
-    store, applied, maxBytes: d.models?.maxBytes ?? ConfigSchema.shape.dashboard.parse({}).models.max_bytes, token: gateToken, slot: { busy: false },
+    store, applied, maxBytes: d.models?.maxBytes ?? ConfigSchema.shape.dashboard.parse({}).models.max_bytes, gate, slot: { busy: false },
   };
   const settings = {
-    file: d.configFile ?? (() => ensureFromExample("config.yaml", "config.example.yaml")),
-    write: d.configWrite ?? defaultWrite,
+    store: d.store,
     manifest: SERVICE_MANIFEST,
     stack: () => d.stack.snapshot(),
-    secretsFile: d.secretsFile,
-    controlToken: gateToken,
+    gate,
     body: readText,
     models: { store, applied },
   };
-  const secrets = { token: gateToken, file: d.secretsFile, config: settings.file, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
-  const options: OptionsDeps = { urls: d.options?.urls ?? urls, ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
-  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), token: gateToken };
+  const secrets = { gate, store: d.store, manifest: SERVICE_MANIFEST, stack: settings.stack, log: d.log };
+  const options: OptionsDeps = { urls: d.options?.urls ?? urls, config: () => d.store.config(), ...(d.options?.timeoutMs ? { timeoutMs: d.options.timeoutMs } : {}) };
+  const viewers = { client: d.viewers ?? new ViewersClient(d.bus), gate };
   const uiDir = d.uiDir ?? locateUiDir(); // once, at startup; its files are read per request (DASH-BUILD-005)
   const docsDir = d.docsDir ?? locateDocsDir(); // once, at startup (DASH-DOCS-001)
-  const unlock = { token: gateToken, links: d.unlock ?? new UnlockLinks() };
+  const unlock = { gate, links: d.unlock ?? new UnlockLinks() };
+  const root = d.root ?? findWorkspaceRoot() ?? process.cwd();
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     try {
       const url = new URL(req.url ?? "/", "http://x");
@@ -118,7 +111,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-DOCS-001, DASH-DOCS-011
       if (handleDocs(docsDir, req, res, url)) return;
       // @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006
-      if (handleUnlock(unlock, req, res, url)) return;
+      if (await handleUnlock(unlock, req, res, url)) return;
       // @spec DASH-SINK-001
       if (req.method === "GET" && url.pathname.startsWith("/audio/")) {
         const up = await fetch(`${d.voiceUrl}${url.pathname}`);
@@ -132,7 +125,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-MDL-004, DASH-MDL-008, DASH-MDL-009, DASH-MDL-010, DASH-MDL-015, DASH-MDL-033
       if (await handleModels(modelRoutes, req, res, url)) return;
       // @spec DASH-TOOL-001, DASH-TOOL-002
-      if (await handleToolAnswer({ bus: d.bus, token: gateToken }, req, res, url)) return;
+      if (await handleToolAnswer({ bus: d.bus, gate }, req, res, url)) return;
       // @spec MOD-TEST-002, MOD-TEST-003, MOD-TEST-004, MOD-TEST-005, MOD-TEST-006, DASH-INJ-008
       if (await handleInject(inject, req, res, url)) return;
       // @spec DASH-ROUTE-001, DASH-ROUTE-002, DASH-ROUTE-003
@@ -142,17 +135,28 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-OPT-001, DASH-OPT-002, DASH-OPT-003, DASH-OPT-004
       if (await handleOptions(options, req, res, url)) return;
       // @spec DASH-EGR-001, DASH-EGR-002, DASH-EGR-003, DASH-EGR-004
-      if (handleEgress(req, res, url)) return;
-      // @spec DASH-RCV-004, DASH-RCV-010
+      if (handleEgress(() => d.store.config(), req, res, url)) return;
+      // @spec DASH-RCV-004, DASH-RCV-029, STORE-KEY-010
       if (url.pathname === "/recovery" && req.method === "GET") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-        res.end(JSON.stringify({ active: false }));
+        res.end(JSON.stringify({ active: false, ...(d.store.recoveryKeyUnconfirmed() ? { recoveryKeyUnconfirmed: true } : {}) }));
         return;
       }
-      if ((req.method === "POST" && /^\/recovery\/(set|reset|reset-all|fallback|raw)$/.test(url.pathname)) || (req.method === "GET" && url.pathname === "/recovery/raw")) {
+      // @spec DASH-RCV-029, STORE-KEY-010
+      if (req.method === "POST" && url.pathname === "/recovery/key-confirmed") {
+        if (!(await pass(gate, req, res, "json"))) return;
+        req.resume();
+        d.store.confirmRecoveryKey();
+        d.log.info("the recovery key is marked as saved");
+        res.writeHead(204, { "cache-control": "no-store" });
+        res.end();
+        return;
+      }
+      // @spec DASH-RCV-010
+      if (req.method === "POST" && url.pathname.startsWith("/recovery/")) {
         req.resume();
         res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" });
-        res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the config is valid" }));
+        res.end(JSON.stringify({ ok: false, detail: "the dashboard is not in config recovery mode: the settings store can be used" }));
         return;
       }
       // @spec MOD-CFG-001, MOD-CFG-003, MOD-CFG-007, MOD-CFG-016
@@ -172,14 +176,14 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-CTRL-007
       if (req.method === "GET" && url.pathname === "/services/control") {
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
-        res.end(JSON.stringify({ runtime: d.control.runtime, advanced: d.control.advanced, unlocked: hasSession(unlock.token, req) }));
+        res.end(JSON.stringify({ runtime: d.control.runtime, advanced: d.control.advanced, unlocked: hasSession(gate, req) }));
         return;
       }
       // @spec DASH-SVC-001, DASH-SVC-002, DASH-SVC-003, DASH-CTRL-001
       const life = req.method === "POST" ? LIFECYCLE.exec(url.pathname) : null;
       if (life) {
         const ctl = d.control;
-        if (!authorized(ctl.token, req)) return unauthorized(res);
+        if (!(await pass(gate, req, res))) return;
         let id: string;
         try { id = decodeURIComponent(life[1]!); } catch { res.writeHead(404, { "content-type": "application/json" }); res.end(JSON.stringify({ ok: false, detail: "unknown service" })); return; } // @spec DASH-HTTP-013
         const opts = parseLifecycleBody(await readText(req));
@@ -208,7 +212,7 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       const stackAct = req.method === "POST" ? STACK_ACTION.exec(url.pathname) : null;
       if (stackAct) {
         const ctl = d.control;
-        if (!authorized(ctl.token, req)) return unauthorized(res);
+        if (!(await pass(gate, req, res))) return;
         req.resume(); // any body is ignored: nothing from the request reaches an argv
         const out = d.stack.request(stackAct[1] as StackActionKind, ctl.controller);
         res.writeHead(out.ok ? 202 : out.status, { "content-type": "application/json" });
@@ -218,20 +222,26 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
       // @spec DASH-HTTP-005
       if (req.method === "GET" && url.pathname === "/personality") {
         res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-        res.end(d.loadPersonality());
+        res.end(d.store.personality() ?? "");
         return;
       }
-      // @spec DASH-HTTP-006
+      // @spec DASH-HTTP-006, STORE-PROJ-006
       if (req.method === "PUT" && url.pathname === "/personality") {
-        if (!authorized(gateToken, req)) return unauthorized(res);
-        d.savePersonality(await readText(req));
+        if (!(await pass(gate, req, res))) return;
+        const written = await d.store.writeWithRetry({ personality: await readText(req) });
+        if (!written.ok) {
+          res.writeHead(written.conflict ? 409 : 400, { "content-type": "application/json", "cache-control": "no-store" });
+          res.end(JSON.stringify(written.conflict ? { ok: false, etag: String(written.revision) } : { ok: false, issues: written.issues }));
+          return;
+        }
+        writeProjections(d.store, root, personalityUnits());
         await d.bus.publish("control", { cmd: "reload_personality" });
         res.writeHead(204); res.end();
         return;
       }
       // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-017
       if (req.method === "POST" && url.pathname === "/control") {
-        if (!authorized(gateToken, req)) return unauthorized(res);
+        if (!(await pass(gate, req, res))) return;
         const { cmd, text, target, route } = JSON.parse(await readText(req)) as { cmd: BusEvent<"control">["data"]["cmd"]; text?: string; target?: string; route?: string[] };
         await d.bus.publish("control", { cmd, text, target, ...(route !== undefined ? { route } : {}) });
         res.writeHead(204); res.end();

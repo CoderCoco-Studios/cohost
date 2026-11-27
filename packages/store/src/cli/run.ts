@@ -3,10 +3,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { findWorkspaceRoot, parseYaml, secretPathOf, setLoggingSource, stringifyYaml, unitsReadingSection, writeFileAtomic } from "@cohost/config";
-import { exportStore, importPlan, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
+import { exportStore, importToStore, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
 import { StoreError, type StoreIssue } from "../errors.js";
 import { storeFile } from "../paths.js";
-import { checkStore, moveDamagedAside, openStore, restoreBackup, sectionOf, type Store, type StoreOptions, type WriteResult } from "../store.js";
+import { checkStore, openStore, restoreBackup, sectionOf, type Store, type StoreOptions, type WriteResult } from "../store.js";
 import { generateToken, MIN_TOKEN_LENGTH } from "../token.js";
 import { writeProjections } from "../project.js";
 import type { NoticeOut } from "../keys.js";
@@ -222,7 +222,8 @@ async function token(s: Store, args: readonly string[], io: CliIo): Promise<numb
     return 0;
   }
   if (flags.has("stdin")) {
-    const t = (await io.readStdin()).trim();
+    // On a terminal the token is asked for without echo; piped in (from a password manager's runner, from .env through sed) it is read to the end.
+    const t = (io.stdinIsTTY ? await io.askHidden("control token: ") : await io.readStdin()).trim();
     if (t.length < MIN_TOKEN_LENGTH) throw new StoreError("usage", `the token read from standard input is shorter than ${MIN_TOKEN_LENGTH} characters; nothing was changed`);
     s.setToken(t);
     io.out("the control token is set; every browser session has ended\n");
@@ -328,30 +329,19 @@ async function importCmd(args: readonly string[], io: CliIo, opts: StoreOptions,
   if (issues.length > 0) { io.err(`nothing was imported:\n${issueLines(issues)}`); return 1; }
 
   // A damaged store is never written: it is moved aside and a new, unseeded store takes the import (STORE-TASK-006).
-  let s: Store;
-  try {
-    s = await openStore(opts);
-  } catch (e) {
-    if (!(e instanceof StoreError) || e.kind !== "damaged" || dryRun) throw e;
-    io.err(`${e.message}\nmoved it aside as ${moveDamagedAside(opts.dataDir)}\n`);
-    s = await openStore({ ...opts, seed: false });
-  }
-  try {
-    const { result, summary } = await importPlan(s, plan, { dryRun });
-    const failed = writeFailure(result);
-    if (failed) { io.err(failed.replace("nothing was changed", "nothing was imported")); return 1; }
-    const list = (label: string, xs: readonly string[]): string => (xs.length > 0 ? `${label}: ${xs.join(", ")}\n` : "");
-    io.out(
-      (dryRun ? "dry run, nothing written. The import would change:\n" : "imported:\n") +
-      list("  added", summary.added) + list("  changed", summary.changed) + list("  removed", summary.removed) +
-      list("  credentials set", summary.secretsSet) + list("  credentials removed", summary.secretsRemoved) +
-      plan.notes.map((n) => `  note: ${n}\n`).join(""),
-    );
-    if (!dryRun && flags.has("secrets")) io.out(`delete ${resolve(flags.get("secrets") as string)} now: its credentials are in the store, encrypted\n`);
-    return 0;
-  } finally {
-    s.close();
-  }
+  const { result, summary, moved, damaged } = await importToStore(plan, opts, { dryRun });
+  if (moved) io.err(`${damaged}\nmoved it aside as ${moved}\n`);
+  const failed = writeFailure(result);
+  if (failed) { io.err(failed.replace("nothing was changed", "nothing was imported")); return 1; }
+  const list = (label: string, xs: readonly string[]): string => (xs.length > 0 ? `${label}: ${xs.join(", ")}\n` : "");
+  io.out(
+    (dryRun ? "dry run, nothing written. The import would change:\n" : "imported:\n") +
+    list("  added", summary.added) + list("  changed", summary.changed) + list("  removed", summary.removed) +
+    list("  credentials set", summary.secretsSet) + list("  credentials removed", summary.secretsRemoved) +
+    plan.notes.map((n) => `  note: ${n}\n`).join(""),
+  );
+  if (!dryRun && flags.has("secrets")) io.out(`delete ${resolve(flags.get("secrets") as string)} now: its credentials are in the store, encrypted\n`);
+  return 0;
 }
 
 // @spec STORE-TASK-005, STORE-TASK-006

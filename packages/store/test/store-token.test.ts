@@ -7,7 +7,7 @@ import { sandbox } from "./helpers.js";
 
 const TOKEN = "a-control-token-of-at-least-32-characters";
 
-// @spec STORE-TOK-002
+// @spec STORE-TOK-002, CTRL-RUNTIME-017
 test("setting the token stores an scrypt verifier, a new session key and the derived ears listener key, and never the token", async () => {
   const sb = sandbox();
   const s = await sb.open();
@@ -27,6 +27,7 @@ test("setting the token stores an scrypt verifier, a new session key and the der
   assert.equal(earsListenerKey(` ${TOKEN}\n`), s.earsListenerKey());
   const first = s.sessionKey();
   assert.equal(first?.length, 32);
+  assert.notEqual(first!.toString("hex"), s.earsListenerKey(), "the session key is not the ears listener key (CTRL-RUNTIME-017)");
   s.setToken(TOKEN);
   assert.ok(!s.sessionKey()!.equals(first!), "setting the token again replaces the session key");
   s.close();

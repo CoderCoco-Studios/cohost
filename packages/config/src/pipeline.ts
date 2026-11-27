@@ -118,12 +118,16 @@ export function applyIsolation(tree: Record<string, unknown>, overrides: Isolati
 
 const PLACEHOLDER = /\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g;
 
-/** One issue per `${NAME}` or `${NAME:-default}` placeholder in a string value, at the key's dotted path (an array entry as `path[index]`). */
-function placeholderIssues(raw: unknown, path = ""): ConfigIssue[] {
+/**
+ * One issue per `${NAME}` or `${NAME:-default}` placeholder in a string value, at the key's dotted path (an array entry as
+ * `path[index]`): no placeholder is ever substituted, so every settings write refuses one (CFG-ENV-011).
+ */
+// @spec CFG-ENV-011
+export function placeholderIssues(raw: unknown, path = ""): ConfigIssue[] {
   if (typeof raw === "string") {
     return [...raw.matchAll(PLACEHOLDER)].map((m) => ({
       path,
-      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "write the credential in secrets.yaml" : "write the value as a literal in config.yaml"} (\${...} is not supported in config.yaml and no environment variable is substituted; there is no escape, so to keep this text literal write the name in lower-case or reword it)`,
+      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "set the credential through its masked field on the Settings screen or with mise run config:secret" : "write the value as a literal"} (\${...} is not supported in the settings and no environment variable is substituted; there is no escape, so to keep this text literal write the name in lower-case or reword it)`,
     }));
   }
   if (Array.isArray(raw)) return raw.flatMap((v, i) => placeholderIssues(v, `${path}[${i}]`));

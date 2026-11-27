@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { ConfigSchema, SECRET_PATHS, loadConfigFile, loadExpressionsFile, savePersonality, loadPersonalityFile, writeFileAtomic, dotEnvPath, setConfigLogger } from "../src/index.js";
+import { ConfigSchema, SECRET_PATHS, loadExpressions, writeFileAtomic, dotEnvPath, setConfigLogger } from "../src/index.js";
+import { MINIMAL_YAML, loadSettings, projectionDir, sectionsOf } from "./helpers/config-sandbox.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const initialEnv = { ...process.env };
@@ -53,12 +54,11 @@ test("a blank plain string key with a default takes the default; a blank require
 
 // @spec CFG-SCH-024
 test("the shipped example loads with ears.stt_model as the literal default model, whatever STT_MODEL holds", () => {
-  const { dir } = sandbox();
-  writeFileSync(join(dir, "config.example.yaml"), readFileSync(join(repo, "config", "config.example.yaml"), "utf8"));
+  const text = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
   setConfigLogger({ warn: (() => {}) as never });
   for (const v of [undefined, "", "other-model"]) {
     if (v === undefined) delete process.env.STT_MODEL; else process.env.STT_MODEL = v;
-    assert.equal(loadConfigFile(true).ears.stt_model, "Systran/faster-whisper-small");
+    assert.equal(loadSettings(text).ears.stt_model, "Systran/faster-whisper-small");
   }
 });
 
@@ -112,37 +112,37 @@ test("with no workspace root the .env sits in the parent of the config directory
   } finally { process.chdir(prevCwd); }
 });
 
-// @spec CFG-LOG-001, CFG-LOAD-005, CFG-DIR-003
+// @spec CFG-LOG-001, CFG-LOAD-005
 test("loader diagnostics go to the injected logger, never console", () => {
   const seen: string[] = [];
   const origWarn = console.warn;
   console.warn = () => { seen.push("CONSOLE"); };
   setConfigLogger({ warn: ((...a: unknown[]) => { seen.push(a.map(String).join(" ")); }) as never });
   try {
-    const { dir } = sandbox();
-    writeFileSync(join(dir, "config.example.yaml"), readFileSync(join(repo, "config", "config.example.yaml"), "utf8").replace("dashboard:", "bogus_key: 1\ndashboard:"));
-    loadConfigFile(true); // seeds config.yaml from the example (notice) and warns about bogus_key
+    loadSettings(readFileSync(join(repo, "config", "config.example.yaml"), "utf8").replace("dashboard:", "dashboard:\n  bogus_key: 1")); // warns about bogus_key
   } finally { console.warn = origWarn; }
   assert.equal(seen.filter((s) => s === "CONSOLE").length, 0);
-  assert.ok(seen.some((s) => /created .*config\.yaml from config\.example\.yaml/.test(s)));
-  assert.ok(seen.some((s) => /ignoring unknown keys: bogus_key/.test(s)));
+  assert.ok(seen.some((s) => /ignoring unknown keys: dashboard\.bogus_key/.test(s)), JSON.stringify(seen));
 });
 
 // @spec CFG-USR-002
-test("loadExpressionsFile reports a bad file the way loadConfigFile does and re-reads on every call", () => {
-  const { dir } = sandbox({ "expressions.yaml": "vts:\n  happy: 3\n" });
-  assert.throws(() => loadExpressionsFile(), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "expressions.yaml")}:`) && /vts\.happy: /.test(e.message));
-  writeFileSync(join(dir, "expressions.yaml"), "vts:\n  happy: smile\n");
-  assert.equal(loadExpressionsFile().vts!.happy, "smile");
-  writeFileSync(join(dir, "expressions.yaml"), "vts:\n  happy: grin\n");
-  assert.equal(loadExpressionsFile().vts!.happy, "grin");
+test("loadExpressions reports a bad document the way loadConfig does and re-reads on every call", () => {
+  const dir = projectionDir(MINIMAL_YAML, { documents: { expressions: { vts: { happy: 3 } } } });
+  assert.throws(() => loadExpressions(dir), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "settings.json")}:`) && /vts\.happy: /.test(e.message));
+  const write = (happy: string): void => {
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({ format: 1, unit: "test", revision: 2, sections: sectionsOf(parse(MINIMAL_YAML)), documents: { expressions: { vts: { happy } } } }));
+  };
+  write("smile");
+  assert.equal(loadExpressions(dir).vts!.happy, "smile");
+  write("grin");
+  assert.equal(loadExpressions(dir).vts!.happy, "grin");
 });
 
-// @spec CFG-USR-013
+// @spec STORE-PROJ-002
 test("writeFileAtomic replaces through a temp file and a failed write leaves the old file whole", () => {
   const { dir } = sandbox({ "personality.md": "old\n" });
-  savePersonality("new\n");
-  assert.equal(loadPersonalityFile(), "new\n");
+  writeFileAtomic(join(dir, "personality.md"), "new\n");
+  assert.equal(readFileSync(join(dir, "personality.md"), "utf8"), "new\n");
   assert.deepEqual(readdirSync(dir).toSorted(), ["personality.md"]); // no temp file left behind
   // rename over a directory fails: the target must be untouched and the temp removed
   const blocked = join(dir, "blocked");
@@ -186,5 +186,5 @@ test("the shipped example writes the former per-machine values as literals, hold
   assert.equal(cfg.llm.bedrock.region, "");
   assert.deepEqual(cfg.dashboard, { port: 3000, lan_port: 3001, allowed_hosts: [], inject: { max_image_bytes: 8388608, max_audio_bytes: 26214400, ttl_ms: 300000 }, models: { max_bytes: 104857600 } });
   const has = (path: string): boolean => path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), cfg) !== undefined;
-  for (const p of SECRET_PATHS) assert.equal(has(p), false, `${p} belongs in secrets.yaml`);
+  for (const p of SECRET_PATHS) assert.equal(has(p), false, `${p} is a credential, never in the example`);
 });

@@ -10,7 +10,11 @@ import type { Runtime } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
-import { ON, TOKEN } from "./control-fixture.js";
+import { TEST_GATE, TOKEN } from "./control-fixture.js";
+import { testStore } from "./store-fixture.js";
+
+/** The environment of a run: the gate is the store's, so no variable carries the token (DASH-CTRL-011). */
+const ON: NodeJS.ProcessEnv = {};
 
 class CtlBus extends FakeBus {
   resets: string[] = [];
@@ -32,11 +36,13 @@ async function boot(env: NodeJS.ProcessEnv, docsDir?: string, extra: Partial<Par
   const bus = new CtlBus();
   const rec = recordingLog();
   const { rt, calls } = fakeRuntime();
-  const setup = setupControl(env, bus, rec.log, rt);
-  let personality = "p";
+  const setup = setupControl(env, bus, rec.log, TEST_GATE, rt);
+  const st = await testStore({ token: false });
+  after(() => st.close());
+  assert.equal(st.store.write({ personality: "p" }).ok, true);
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => personality, savePersonality: (t) => { personality = t; },
+    store: st.store, root: st.root,
     services: () => [], control: setup.control, ...(docsDir ? { docsDir } : {}), stack: new StackService({ log: rec.log, bus: () => "connected" }), ...extra,
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -48,7 +54,7 @@ async function boot(env: NodeJS.ProcessEnv, docsDir?: string, extra: Partial<Par
       body: init.body === undefined ? undefined : typeof init.body === "string" ? init.body : JSON.stringify(init.body),
       headers: init.token ? { authorization: `Bearer ${init.token}` } : {},
     });
-  return { bus, calls, setup, send, rec, get personality() { return personality; } };
+  return { bus, calls, setup, send, rec, get personality() { return st.store.personality(); } };
 }
 
 // @spec DASH-CTRL-001
@@ -64,46 +70,40 @@ test("the service and stack routes are served on every run behind the gate; CONT
   }
 });
 
-// @spec DASH-CTRL-002
-test("a missing or too-short CONTROL_TOKEN fails startup naming the variable and the cause, never the value", () => {
-  for (const [env, cause] of [[{}, /missing/], [{ CONTROL_TOKEN: "  " }, /missing/], [{ CONTROL_TOKEN: "short-token-value" }, /too short/], [{ CONTROL_ENABLED: "1" }, /missing/]] as const) {
-    assert.throws(() => setupControl(env, new CtlBus(), recordingLog().log), (e: Error) => {
-      assert.match(e.message, /CONTROL_TOKEN/);
-      assert.match(e.message, cause);
-      assert.match(e.message, /installer/);
-      assert.match(e.message, /openssl rand -hex 24/);
-      assert.ok(!e.message.includes("short-token-value"));
-      return true;
-    }, JSON.stringify(env));
+// @spec DASH-CTRL-011
+test("setupControl reads no control token: the control dependency carries the gate it is given, whatever CONTROL_TOKEN holds", () => {
+  for (const env of [{}, { CONTROL_TOKEN: "" }, { CONTROL_TOKEN: "s3cret-control-token-in-the-env-0123456789" }]) {
+    const setup = setupControl(env, new CtlBus(), recordingLog().log, TEST_GATE);
+    assert.equal(setup.control.gate, TEST_GATE, JSON.stringify(env));
   }
 });
 
 // @spec DASH-CTRL-003
 test("bind: loopback by default; an empty DASHBOARD_HOST is skipped; a non-loopback address warns", () => {
   const a = recordingLog();
-  assert.equal(setupControl(ON, new CtlBus(), a.log).bind, "127.0.0.1");
+  assert.equal(setupControl(ON, new CtlBus(), a.log, TEST_GATE).bind, "127.0.0.1");
   assert.deepEqual(a.msgs("warn"), []);
   const off = recordingLog();
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "" }, new CtlBus(), off.log).bind, "127.0.0.1");
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "  " }, new CtlBus(), off.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "" }, new CtlBus(), off.log, TEST_GATE).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "  " }, new CtlBus(), off.log, TEST_GATE).bind, "127.0.0.1");
   assert.deepEqual(off.msgs("warn"), []);
   const b = recordingLog();
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), b.log).bind, "0.0.0.0");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), b.log, TEST_GATE).bind, "0.0.0.0");
   assert.equal(b.msgs("warn").length, 1);
   const c = recordingLog();
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), c.log).bind, "127.0.0.1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "127.0.0.1" }, new CtlBus(), c.log, TEST_GATE).bind, "127.0.0.1");
   assert.deepEqual(c.msgs("warn"), []);
   const d = recordingLog();
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5" }, new CtlBus(), d.log).bind, "192.168.1.5");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5" }, new CtlBus(), d.log, TEST_GATE).bind, "192.168.1.5");
   assert.equal(d.msgs("warn").length, 1);
-  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1" }, new CtlBus(), recordingLog().log).bind, "::1");
+  assert.equal(setupControl({ ...ON, DASHBOARD_HOST: "::1" }, new CtlBus(), recordingLog().log, TEST_GATE).bind, "::1");
 });
 
 // @spec DASH-CTRL-008
 test("CONTROL_ADVANCED=1 warns at startup that redis and postgres can be stopped; any other value does not", () => {
   const warned = (env: NodeJS.ProcessEnv) => {
     const r = recordingLog();
-    setupControl(env, new CtlBus(), r.log, fakeRuntime().rt);
+    setupControl(env, new CtlBus(), r.log, TEST_GATE, fakeRuntime().rt);
     return r.msgs("warn").filter((m) => /redis/.test(String(m)) && /postgres/.test(String(m)) && /stopped/.test(String(m)));
   };
   assert.equal(warned({ ...ON, CONTROL_ADVANCED: "1" }).length, 1);
@@ -113,9 +113,9 @@ test("CONTROL_ADVANCED=1 warns at startup that redis and postgres can be stopped
 });
 
 // @spec DASH-CTRL-003
-test("a non-loopback full-surface address starts with a valid token, CONTROL_ENABLED or not", () => {
-  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), recordingLog().log));
-  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }, new CtlBus(), recordingLog().log));
+test("a non-loopback full-surface address starts, CONTROL_ENABLED or not", () => {
+  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "0.0.0.0" }, new CtlBus(), recordingLog().log, TEST_GATE));
+  assert.doesNotThrow(() => setupControl({ ...ON, DASHBOARD_HOST: "192.168.1.5", CONTROL_ENABLED: "0" }, new CtlBus(), recordingLog().log, TEST_GATE));
 });
 
 // @spec DASH-HOST-006
@@ -181,7 +181,7 @@ test("control mode leaves the UI files and the pick-list routes unauthenticated,
   await new Promise<void>((r) => backing.listen(0, "127.0.0.1", r));
   after(() => backing.close());
   const origin = `http://127.0.0.1:${(backing.address() as { port: number }).port}`;
-  const t = await boot(ON, undefined, { uiDir: ui, secretsFile: () => join(ui, "secrets.yaml"), options: { urls: { tts: () => origin, ollama: () => origin } } });
+  const t = await boot(ON, undefined, { uiDir: ui, options: { urls: { tts: () => origin, ollama: () => origin } } });
   for (const path of ["/", "/assets/app.js", "/favicon.svg"]) assert.equal((await t.send(path, { method: "GET" })).status, 200, path);
   assert.equal((await t.send("/assets/app.js", { method: "HEAD" })).status, 200);
   for (const path of ["/options/voices", "/options/models"]) assert.equal((await t.send(path, { method: "GET" })).status, 200, path);
@@ -192,7 +192,7 @@ test("control mode leaves the UI files and the pick-list routes unauthenticated,
 
 // @spec DASH-CTRL-007
 test("setupControl without an injected runtime always selects the compose runtime", () => {
-  const setup = setupControl({ ...ON, CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "start" }, new CtlBus(), recordingLog().log);
+  const setup = setupControl({ ...ON, CONTROL_RUNTIME: "process", CONTROL_PROCESS_MODE: "start" }, new CtlBus(), recordingLog().log, TEST_GATE);
   assert.equal(setup.control.runtime, "compose");
 });
 
@@ -294,7 +294,7 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   process.env.COHOST_DOCKER_BIN = bin;
   process.chdir(join(root, "services", "dashboard")); // as a task whose working directory is the package starts it
   try {
-    const setup = setupControl(ON, new CtlBus(), recordingLog().log);
+    const setup = setupControl(ON, new CtlBus(), recordingLog().log, TEST_GATE);
     const r = await setup.control.controller.restart("cortex");
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.equal(readFileSync(out, "utf8").trim(), root);

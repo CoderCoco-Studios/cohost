@@ -48,7 +48,6 @@ test("the shared environment is the in-network addresses plus the one pass-throu
   const env = base["x-ts-service"]!.environment!;
   assert.equal(env.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
   assert.equal(env.COHOST_DATA_DIR, "/app/data", "pinned so each program's log file lands in the ./data/logs mount (DEPLOY-COMPOSE-003)");
-  assert.equal(env.COHOST_SECRETS_FILE, undefined, "no credentials file path: credentials arrive in memory");
   assert.equal(env.CONTROL_TOKEN, undefined, "no control token entry");
   assert.deepEqual(Object.keys(env).toSorted(), ["COHOST_ISOLATION", ...IN_NETWORK].toSorted());
   for (const name of Object.keys(ISOLATION_OVERRIDES)) assert.equal(env[name], undefined, `${name} has no entry`);
@@ -78,15 +77,15 @@ test("no service passes EARS_HTTP_TOKEN or any other credential variable through
 });
 
 // @spec DEPLOY-COMPOSE-003, DEPLOY-COMPOSE-025
-test("no service's environment block, nor the x-ts-service one, names CONTROL_TOKEN or COHOST_SECRETS_FILE at all", () => {
+test("no service's environment block, nor the x-ts-service one, names CONTROL_TOKEN at all", () => {
   for (const file of [base, gpu]) {
     for (const [name, s] of [...Object.entries(file.services), ["x-ts-service", file["x-ts-service"] ?? {}] as const]) {
-      for (const k of ["CONTROL_TOKEN", "COHOST_SECRETS_FILE"]) assert.ok(!Object.hasOwn(s.environment ?? {}, k), `${name} names ${k}`);
+      assert.ok(!Object.hasOwn(s.environment ?? {}, "CONTROL_TOKEN"), `${name} names CONTROL_TOKEN`);
     }
   }
   for (const f of ["docker-compose.yml", "docker-compose.gpu.yml"]) {
     const code = readFileSync(root(f), "utf8").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
-    assert.doesNotMatch(code, /CONTROL_TOKEN|COHOST_SECRETS_FILE/, f);
+    assert.doesNotMatch(code, /CONTROL_TOKEN/, f);
   }
 });
 

@@ -8,7 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ConfigSchema, ExpressionMapSchema, secretPathOf, type Config, type ExpressionMap } from "./schema.js";
+import { ConfigSchema, ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, secretPathOf, type Config, type ExpressionMap } from "./schema.js";
 import { SECTION_PATHS } from "./presentation.js";
 import { applyIsolation, coerceEmptyNumbers, decodeIsolation, unknownKeys, ISOLATION_ENV, ISOLATION_OVERRIDES, type ConfigIssue, type IsolationName, type IsolationOverrides } from "./pipeline.js";
 import { configDir } from "./paths.js";
@@ -137,7 +137,7 @@ export function resetConfigCache(): void { cached = undefined; }
  * secret paths. Reading a section the projection does not hold throws. Cached: a later call returns the same object unless it
  * passes `force`, or names a directory, unit, isolation value or credentials other than the cached load's.
  */
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
+// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SCH-086, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
 export function loadConfig(opts: LoadOptions = {}): Config {
   if (cached && !opts.force && cacheFits(opts, cached.key)) return cached.cfg;
   const dir = opts.dir ?? configDir();
@@ -170,7 +170,8 @@ export function loadConfig(opts: LoadOptions = {}): Config {
   const topLevel = [...held].filter((s) => !s.startsWith(BRAIN));
   const shape = ConfigSchema.shape as unknown as Record<string, typeof brainShape[string]>;
   for (const name of topLevel) {
-    const r = shape[name]!.safeParse(tree[name]);
+    // A declared section the store holds no key of is projected as null: its keys take their schema defaults.
+    const r = shape[name]!.safeParse(tree[name] ?? {});
     if (r.success) out[name] = r.data;
     else issues.push(...r.error!.issues.map((i) => ({ path: [name, ...i.path.map(String)].join("."), message: i.message })));
   }
@@ -202,6 +203,13 @@ export function loadConfig(opts: LoadOptions = {}): Config {
 
   const unknown = [...stray, ...topLevel.flatMap((s) => unknownKeys(raw[s], out[s], s)), ...heldBrain.flatMap((s) => unknownKeys(getIn(raw, ["brain", s]), brain[s], `brain.${s}`))];
   if (unknown.length > 0) diag().warn(`[config] ${file}: ignoring unknown keys: ${unknown.join(", ")}`);
+  // A credential in a query string is sent to the server on every call; the warning names the parameter, never its value.
+  if (held.has("tools")) {
+    for (const [name, server] of Object.entries((out.tools as Config["tools"]).servers)) {
+      const names = [...new Set([...new URL(server.url).searchParams.keys()].filter((k) => CREDENTIAL_QUERY_NAMES.includes(k)))];
+      if (names.length > 0) diag().warn(`[config] ${file}: tools.servers.${name}.url has a query parameter that looks like a credential (${names.join(", ")}); its value is not shown: put the credential in tools.servers.${name}.token`);
+    }
+  }
 
   // The delivered credentials, set after validation so a credential creates no section or entry the settings do not hold.
   for (const [path, value] of Object.entries(opts.credentials ?? {})) {

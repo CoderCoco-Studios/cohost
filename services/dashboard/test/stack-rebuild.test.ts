@@ -7,7 +7,7 @@ import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { createFeed, type FeedSocket } from "../src/feed.js";
 import { StackService, type StackOps } from "../src/stack.js";
-import { AUTH, ON, testControl } from "./control-fixture.js";
+import { AUTH, TEST_GATE, UNUSED_STORE, testControl } from "./control-fixture.js";
 
 const url = (s: http.Server, p: string) => `http://127.0.0.1:${(s.address() as { port: number }).port}${p}`;
 const tick = () => new Promise<void>((r) => setImmediate(r));
@@ -61,10 +61,10 @@ test("POST /stack/rebuild passes the gate (401 without the token) and answers 20
   const f = ops(crashed);
   svc.attach(f.o);
   await svc.probe();
-  const setup = setupControl(ON, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({}, new CtlBus(), rec.log, TEST_GATE, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const on = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: svc,
+    store: UNUSED_STORE, services: () => [], control: setup.control, stack: svc,
   }));
   await new Promise<void>((r) => on.listen(0, "127.0.0.1", r));
   after(() => { on.close(); });
@@ -106,7 +106,7 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
   assert.equal("overrides" in of("redis"), false);
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: svc, control: testControl(),
+    store: UNUSED_STORE, services: () => [], stack: svc, control: testControl(),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -117,10 +117,10 @@ test("the snapshot carries each container's isolation overrides as `overrides`: 
 // @spec DASH-HTTP-014, MOD-MAN-007
 test("GET /services/manifest lists every unit of the manifest, ungated, and carries no argv material", async () => {
   const rec = recordingLog();
-  const setup = setupControl(ON, new CtlBus(), rec.log, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
+  const setup = setupControl({}, new CtlBus(), rec.log, TEST_GATE, { name: "compose", start: async () => ({ ok: true }), stop: async () => ({ ok: true }), restart: async () => ({ ok: true }) });
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
+    store: UNUSED_STORE, services: () => [], control: setup.control, stack: new StackService({ log: rec.log, bus: () => "connected" }),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
@@ -140,7 +140,7 @@ test("GET /services/manifest lists the twenty units in manifest order, the tools
   const rec = recordingLog();
   const server = http.createServer(createDashboardHandler({
     bus: new FakeBus(), log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }), control: testControl(),
+    store: UNUSED_STORE, services: () => [], stack: new StackService({ log: rec.log, bus: () => "connected" }), control: testControl(),
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

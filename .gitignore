@@ -7,6 +7,14 @@ data/
 *.log
 .DS_Store
 
+# The plaintext settings and credential files of before the settings store (DEPLOY-REPO-007): an owner's checkout may still
+# hold them until they are imported and deleted, and none may be committed. The committed examples stay tracked.
+secrets/
+config/*.yaml
+config/*.md
+!config/*.example.*
+config/.vts-token
+
 # VitePress
 docs/.vitepress/cache
 docs/.vitepress/dist

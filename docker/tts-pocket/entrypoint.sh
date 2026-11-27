@@ -1,5 +1,5 @@
 #!/bin/sh
-# Entrypoint of the tts-pocket container (DEPLOY-ENG-014). Waits, with no timeout, for the Pocket token the control plane
+# Entrypoint of the tts-pocket container (DEPLOY-ENG-014). Waits, with no timeout (a stop while it waits ends it with 143), for the Pocket token the control plane
 # delivers into the /run/cohost tmpfs (settings-store STORE-DLV-006; the file is always written, empty when no token is set),
 # exports a non-empty value as HF_TOKEN for the server process alone, deletes the file and replaces this shell with the
 # command the service names. A container Docker restarts by itself waits here until the dashboard or `mise run deliver`
@@ -8,6 +8,8 @@
 set -eu
 TOKEN_FILE=/run/cohost/hf_token
 if [ ! -f "$TOKEN_FILE" ]; then echo "tts-pocket: waiting for credentials" >&2; fi
+# As PID 1 the shell ignores a signal it has no handler for: `docker stop` would wait out its grace period and kill it.
+trap 'exit 143' TERM INT
 while [ ! -f "$TOKEN_FILE" ]; do sleep 1; done
 HF_TOKEN="$(cat "$TOKEN_FILE")"
 rm -f "$TOKEN_FILE"

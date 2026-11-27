@@ -1,9 +1,9 @@
 // Shared rig for the avatar model store tests (DASH-MDL-*, the applied view): glTF binary fixtures and a running dashboard
-// (the real `dashboardService` on `runService`, both listeners, a throwaway data dir and config dir). Everything is
+// (the real `dashboardService` on `runService`, both listeners, a throwaway data dir and settings store). Everything is
 // observed over HTTP and on disk, so the tests name no module of the implementation.
 import http from "node:http";
 import net from "node:net";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,10 +12,12 @@ import { runService } from "@cohost/shared";
 import type { StackService, StackOps } from "../src/stack.js";
 import type { ModelStore } from "../src/models.js";
 import { dashboardService } from "../src/service.js";
-import { configDir as makeConfigDir, configText } from "./config-fixture.js";
+import type { Store } from "@cohost/store";
+import { TOKEN } from "./control-fixture.js";
+import { testStore } from "./store-fixture.js";
 
 export const MiB = 1024 * 1024;
-export const TOKEN = "tok-models-control-token-00000001";
+export { TOKEN };
 /**
  * The longest a test waits for an answer or an event that should come at once. It only bounds a failing run: a passing one
  * returns as soon as the event happens, however loaded the machine is.
@@ -171,7 +173,7 @@ async function freePort(): Promise<number> {
 }
 
 export interface RigOpts {
-  /** `renderer.*` of the loaded config and of config.yaml. */
+  /** `renderer.*` of the loaded config and of the stored `renderer` section. */
   renderer?: { model?: string; zoom?: number; offset_y?: number; turn?: number };
   /** `dashboard.models.max_bytes`. */
   maxBytes?: number;
@@ -194,8 +196,14 @@ export interface RigOpts {
 export interface Rig {
   /** The full-surface and LAN listeners' ports. */
   port: number; lanPort: number;
-  /** `<dataDir>`, the model folder, the config directory and config.yaml. */
-  data: string; models: string; cfgDir: string; cfgFile: string;
+  /** `<dataDir>` and the model folder. */
+  data: string; models: string;
+  /** The dashboard's settings store. */
+  store: Store;
+  /** The stored sections and the revision as text: unchanged text means nothing was written. */
+  settings: () => string;
+  /** Sets `renderer.*` keys in the store directly, as a task on the host would, not through the dashboard. */
+  handEdit: (renderer: Record<string, unknown>) => void;
   rec: ReturnType<typeof recordingLog>;
   bus: DashBus;
   auth: Record<string, string>;
@@ -214,7 +222,7 @@ export interface Rig {
   stop: () => Promise<void>;
 }
 
-/** Starts the dashboard on a fresh data dir and config dir. Call `stop` (or pass a `t.after`) when done. */
+/** Starts the dashboard on a fresh data dir and settings store. Call `stop` (or pass a `t.after`) when done. */
 export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts = {}): Promise<Rig> {
   const data = mkdtempSync(join(tmpdir(), "cohost-mdl-data-"));
   const models = join(data, "dashboard", "avatar-models");
@@ -223,13 +231,15 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
     for (const [n, b] of Object.entries(o.seed ?? {})) writeFileSync(join(models, n), b);
   }
   const renderer = o.renderer ?? {};
-  const cfgDir = makeConfigDir(configText({ renderer }));
-  Object.assign(process.env, { COHOST_DATA_DIR: data, CONFIG_DIR: cfgDir, COHOST_ENV_FILE: join(cfgDir, "no.env") });
+  const st = await testStore({ edits: Object.keys(renderer).length ? { renderer } : {} });
+  t.after(() => st.close());
+  const store = st.store;
+  Object.assign(process.env, { COHOST_DATA_DIR: data });
   const port = await freePort(), lanPort = await freePort();
   const bus = o.bus ?? new DashBus();
   const rec = recordingLog();
   let shutdown: (() => void | Promise<void>) | undefined;
-  const env: NodeJS.ProcessEnv = { CONTROL_TOKEN: TOKEN };
+  const env: NodeJS.ProcessEnv = {};
   // The write seam: the first chunk of each upload's file handle marks that its temporary file exists (see Rig.tempOpened).
   const writeAll = o.writeChunk ?? (async (fh: FileHandle, c: Buffer): Promise<void> => {
     let off = 0;
@@ -245,7 +255,7 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
     const timer = setTimeout(() => fail(new Error(`no upload wrote its first chunk within ${ANSWER_CAP_MS} ms: its temporary file never opened`)), ANSWER_CAP_MS);
     openedWaiters.push(() => { clearTimeout(timer); ok(); });
   });
-  const svc = dashboardService({ env, exit: () => {}, lanHost: o.lanHost ?? "127.0.0.1", attachStack: idleStack, writeModelChunk: writeChunk, modelPause: o.pause, ...o.deps } as never);
+  const svc = dashboardService({ store, root: st.root, redeliver: async () => ({ delivered: [], failures: [] }), env, exit: () => {}, lanHost: o.lanHost ?? "127.0.0.1", attachStack: idleStack, writeModelChunk: writeChunk, modelPause: o.pause, ...o.deps } as never);
   await runService({
     service: "dashboard", health: svc.health, main: svc.main,
     loadConfig: () => testConfig({ dashboard: { port, lan_port: lanPort, ...(o.maxBytes ? { models: { max_bytes: o.maxBytes } } : {}) }, renderer }),
@@ -254,15 +264,15 @@ export async function rig(t: { after: (fn: () => unknown) => void }, o: RigOpts 
   await waitFor(() => rec.lines.some((l) => String(l.msg).startsWith("dashboard online:")), "dashboard online", 5000);
   const stop = async (): Promise<void> => { await shutdown?.(); };
   t.after(stop);
-  const cfgFile = join(cfgDir, "config.yaml");
   const auth: Record<string, string> = { authorization: `Bearer ${TOKEN}` };
   return {
-    port, lanPort, data, models, cfgDir, cfgFile, rec, bus, auth, stop,
+    port, lanPort, data, models, store, rec, bus, auth, stop,
+    settings: () => JSON.stringify({ revision: store.revision(), sections: store.sections() }),
+    handEdit: (values) => { for (const [k, v] of Object.entries(values)) { const w = store.setKey(`renderer.${k}`, v); if (!w.ok) throw new Error(JSON.stringify(w)); } },
     get: (path, headers) => send(port, "GET", path, { headers }),
     lan: (method, path, headers) => send(lanPort, method, path, { headers }),
     save: async (values, so = {}) => {
-      const { createHash } = await import("node:crypto");
-      const etag = so.etag ?? createHash("sha256").update(readFileSync(cfgFile, "utf8")).digest("hex");
+      const etag = so.etag ?? String(store.revision());
       return send(port, "PUT", `/config/renderer${so.dryRun ? "?dryRun=1" : ""}`, { headers: auth, body: JSON.stringify({ etag, values }) });
     },
     ls: () => (existsSync(models) ? readdirSync(models).toSorted() : []),

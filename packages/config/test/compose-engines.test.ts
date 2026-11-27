@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -217,6 +217,24 @@ test("the entrypoint waits with no timeout for /run/cohost/hf_token, reads it, d
   assert.ok(rmAt > readAt, "it deletes the file after reading it");
   assert.ok(exportAt >= 0, "HF_TOKEN is exported only when not empty, and unset otherwise");
   assert.equal(script.trimEnd().split("\n").at(-1), 'exec "$@"', "it ends by replacing the shell with the command, unchanged");
+  const trapAt = script.indexOf("trap 'exit 143' TERM INT");
+  assert.ok(trapAt >= 0 && trapAt < script.indexOf("while"), "a stop while it waits ends it with 143, before the wait starts");
+});
+
+// @spec DEPLOY-ENG-014
+test("a SIGTERM while the entrypoint waits for the token ends it with status 143", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-entry-"));
+  try {
+    const script = join(dir, "entrypoint.sh");
+    writeFileSync(script, read("docker/tts-pocket/entrypoint.sh").replaceAll(TOKEN, join(dir, "hf_token")));
+    const child = spawn("sh", [script, "true"], { env: { PATH: process.env.PATH ?? "" }, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 300));
+    child.kill("SIGTERM");
+    const status = await new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    assert.equal(status, 143);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 /** Runs the entrypoint with the token path redirected into `dir` (the file already written, so the wait ends at once). */

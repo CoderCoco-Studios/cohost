@@ -210,8 +210,11 @@ async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
   return 0;
 }
 
-/** The delivery over the settings store and the docker CLI, under the workspace root. */
-function defaultRedeliver(env: NodeJS.ProcessEnv, exec: ExecFile = defaultExec): NonNullable<CliWiring["redeliver"]> {
+/**
+ * The re-delivery over the settings store and the docker CLI, under the workspace root (STORE-DLV-005, CTRL-CLI-019): what
+ * `cohostctl deliver` runs once and the dashboard runs at its start and while it runs.
+ */
+export function storeRedeliver(env: NodeJS.ProcessEnv, exec: ExecFile = defaultExec): NonNullable<CliWiring["redeliver"]> {
   return async (sets) => {
     const docker = resolveDockerBin(env);
     if (!docker.ok) return { delivered: [], failures: [docker.detail] };
@@ -358,7 +361,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
         if (reason === undefined) throw e;
         warning = `cannot reach Redis at ${redisUrl(w.env)}: ${reason}; delivering to the units started since their last delivery only`;
       }
-      const redeliver = w.redeliver ?? defaultRedeliver(w.env ?? process.env, w.exec);
+      const redeliver = w.redeliver ?? storeRedeliver(w.env ?? process.env, w.exec);
       const r = await redeliver(heartbeatSets(beats));
       return { ...r, ...(warning ? { warning } : {}) };
     };

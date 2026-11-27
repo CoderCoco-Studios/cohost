@@ -195,3 +195,15 @@ test("the manifest takes every unit's settings declarations from UNIT_SETTINGS i
   assert.deepEqual(unitsReadingSection("brain.memory"), ["memory", "cortex"]);
   assert.deepEqual(unitsReadingSection("dashboard"), []);
 });
+
+// @spec SHARED-BOOT-009
+test("no unit's entry file replaces the configuration loader or the credentials receiver: each unit waits for its delivery", () => {
+  const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+  for (const u of units) {
+    const entry = join(repo, "services", u.id, "src", "index.ts");
+    const text = readFileSync(entry, "utf8").split("\n").filter((l) => !/^\s*(\/\/|\*)/.test(l)).join("\n");
+    assert.doesNotMatch(text, /\bloadConfig\b|\breceiveCredentials\b/, `${u.id}: its entry names no loader or receiver`);
+    // A unit that starts through its own run<Unit>() passes it nothing, so the bootstrap's defaults apply.
+    for (const m of text.matchAll(/\brun(?!Service\b)[A-Z]\w*\(([^)]*)\)/g)) assert.equal(m[1]!.trim(), "", `${u.id}: ${m[0]} takes no options`);
+  }
+});

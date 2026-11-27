@@ -3,246 +3,434 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkConfig, etagOf } from "@cohost/config";
-import { createRecoveryHandler, recoveryAddress, startDashboard, type RecoveryHandlerDeps, type RecoveryProblem } from "../src/recovery.js";
-import { createDashboardHandler } from "../src/routes.js";
-import { StackService } from "../src/stack.js";
-import { EXAMPLE } from "./config-fixture.js";
-import { TOKEN, testControl } from "./control-fixture.js";
+import { randomBytes } from "node:crypto";
+import { LifecycleLock, StackController, type ExecFile } from "@cohost/control";
+import { backupDir, exportStore, formatKey, listBackups, openStore, peekStore, type Store } from "@cohost/store";
+import { createRecoveryHandler, recoveryAddress, HOST_COMMANDS, type RecoveryHandlerDeps, type RecoveryProblem } from "../src/recovery.js";
+import { SESSION_COOKIE, newSession } from "../src/access.js";
+import { AUTH } from "./control-fixture.js";
+import { brokenStore, dbState, rawSection, storedSection, testStore, type BrokenCause, type TestStore } from "./store-fixture.js";
 
-/** The example with `name` and the VTube Studio port as placeholders and a credential written as one. */
-const STALE = EXAMPLE
-  .replace(/^ {2}name: "Coco"/m, '  name: "${COHOST_NAME:-Mika}"')
-  .replace(/^ {2}model: "qwen2\.5:7b-instruct-q4_K_M"/m, '  model: "${LLM_MODEL}"')
-  .replace(/^ {2}claude: .*\n/m, (line) => `${line}    api_key: "\${LLM_API_KEY}"   # pasted from the old .env\n`);
+// Config recovery mode's handler over a settings store that cannot be used (DASH-RCV-*), driven over HTTP.
 
-interface Rig { url: string; dir: string; configFile: string; secretsFile: string; logs: string[]; valid: () => number; close: () => Promise<void> }
+interface Rig { url: string; port: number; st: TestStore; logs: string[]; notices: string[]; valid: () => number; close: () => Promise<void> }
 
-async function rig(text: string, o: Partial<RecoveryHandlerDeps> & { secrets?: string } = {}): Promise<Rig> {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
-  const configFile = join(dir, "config.yaml");
-  const secretsFile = join(dir, "secrets.yaml");
-  writeFileSync(configFile, text);
-  if (o.secrets !== undefined) writeFileSync(secretsFile, o.secrets, { mode: 0o600 });
-  const logs: string[] = [];
-  let valid = 0;
-  const log = { info: (...a: unknown[]) => { logs.push(`info ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); }, error: (...a: unknown[]) => { logs.push(`error ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); } } as never;
-  const handler = createRecoveryHandler({ log, files: { configFile, secretsFile }, controlToken: "tok", uiDir: join(dir, "no-ui"), onValid: () => { valid++; }, ...o });
-  const server = http.createServer(handler);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { url, dir, configFile, secretsFile, logs, valid: () => valid, close: () => new Promise((r) => { server.close(() => r()); server.closeAllConnections(); }) };
+interface RigOpts extends Partial<RecoveryHandlerDeps> {
+  /** Runs on the store while it is still usable (a backup, the recovery key, a stored port). */
+  before?: (s: Store) => unknown;
+  /** Wraps the handler (a test that fakes the peer's address). */
+  wrap?: (h: http.RequestListener) => http.RequestListener;
 }
 
-type State = { active: boolean; etag: string; problems: RecoveryProblem[]; file: string };
+async function rig(cause: BrokenCause, o: RigOpts = {}): Promise<Rig> {
+  const st = await brokenStore(cause, { ...(o.before ? { before: o.before } : {}) });
+  const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
+  const logs: string[] = [];
+  const notices: string[] = [];
+  let valid = 0;
+  const line = (level: string) => (...a: unknown[]) => { logs.push(`${level} ${a.map((x) => typeof x === "string" ? x : JSON.stringify(x)).join(" ")}`); };
+  const log = { info: line("info"), error: line("error") } as never;
+  const handler = createRecoveryHandler({
+    log, store: st.opts, uiDir: join(dir, "no-ui"), onValid: () => { valid++; },
+    notice: { isTTY: false, write: (t) => { notices.push(t); }, warn: (t) => { notices.push(t); } }, ...o,
+  });
+  const server = http.createServer(o.wrap ? o.wrap(handler) : handler);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as AddressInfo).port;
+  return {
+    url: `http://127.0.0.1:${port}`, port, st, logs, notices, valid: () => valid,
+    close: () => new Promise((r) => { server.close(() => r()); server.closeAllConnections(); }),
+  };
+}
+
+type State = { active: boolean; cause?: string; etag?: string; problems: RecoveryProblem[]; backups: { name: string; time: string }[]; gated: boolean };
 const state = async (r: Rig): Promise<State> => (await (await fetch(`${r.url}/recovery`)).json()) as State;
-const AUTH = { authorization: "Bearer tok" };
 const post = (r: Rig, op: string, body: unknown, headers: Record<string, string> = AUTH) =>
   fetch(`${r.url}/recovery/${op}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+const db = (r: Rig): string => dbState(r.st.opts.dataDir!);
 
-// @spec DASH-RCV-004, DASH-RCV-008
-test("GET /recovery lists every failing key with its kind and the actions it allows, and writes nothing", async () => {
-  const r = await rig(STALE);
+// @spec DASH-RCV-004, DASH-RCV-012
+test("GET /recovery with invalid settings lists every failing key with its section, the actions it allows and the backups, and writes nothing", async () => {
+  const r = await rig("invalid-settings", { before: (s) => s.backup() });
   try {
-    const before = statSync(r.configFile).mtimeMs;
-    const s = await state(r);
+    const before = db(r);
+    const res = await fetch(`${r.url}/recovery`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const s = (await res.json()) as State;
     assert.equal(s.active, true);
-    assert.equal(s.etag, etagOf(STALE));
-    const by = (path: string) => s.problems.find((p) => p.path === path)!;
-    assert.deepEqual(s.problems.map((p) => p.path).toSorted(), ["cohost.name", "llm.claude.api_key", "llm.model"]);
-    assert.ok(s.problems.every((p) => p.kind === "placeholder" && p.file === "config"));
-    assert.deepEqual(by("cohost.name").actions, { set: true, reset: true, fallback: true });
-    assert.equal(by("cohost.name").fallback, "Mika");
-    assert.deepEqual(by("llm.model").actions, { set: true, reset: true, fallback: false });
-    const secret = by("llm.claude.api_key");
-    assert.equal(secret.secret, true);
-    assert.deepEqual(secret.actions, { set: false, reset: true, fallback: false });
-    assert.ok(secret.section && secret.section.path.startsWith("llm") && secret.section.title.length > 0, JSON.stringify(secret.section));
-    assert.equal(by("llm.model").sensitive, false);
-    assert.equal(statSync(r.configFile).mtimeMs, before);
-    assert.equal(readFileSync(r.configFile, "utf8"), STALE);
+    assert.equal(s.cause, "invalid-settings");
+    assert.equal(s.etag, String(peekStore(r.st.opts)!.revision));
+    assert.equal(s.gated, true);
+    assert.deepEqual(s.backups, listBackups(r.st.opts.dataDir!));
+    assert.equal(s.backups.length, 1);
+    const by = Object.fromEntries(s.problems.map((p) => [p.path, p]));
+    assert.deepEqual(Object.keys(by).toSorted(), ["llm.retired_key", "llm.temperature"]);
+    assert.deepEqual(by["llm.temperature"]!.actions, { set: true, reset: true });
+    assert.deepEqual(by["llm.temperature"]!.section, { path: "llm", title: by["llm.temperature"]!.section!.title });
+    assert.equal(typeof by["llm.temperature"]!.section!.title, "string");
+    assert.deepEqual(by["llm.retired_key"]!.actions, { set: false, reset: true }, "a key the schema does not define is only reset");
+    for (const p of s.problems) assert.equal(p.sensitive, false);
+    assert.equal(db(r), before, "a read writes nothing");
+    assert.equal(r.valid(), 0);
   } finally { await r.close(); }
 });
 
-// @spec DASH-RCV-004
-test("a syntax error has no action, a secrets.yaml value is quoted or cleared, a list entry is set alone or resets the list", async () => {
-  const r = await rig("cohost: [x\n");
+// @spec DASH-RCV-004, DASH-RCV-028
+test("each other cause is one problem with no path and no action: a damaged store with no etag and gated false, a newer store naming the update, a missing key", async () => {
+  const damaged = await rig("damaged-store");
   try {
-    const s = await state(r);
-    assert.deepEqual(s.problems.map((p) => [p.kind, p.path, p.actions]), [["syntax", "", { set: false, reset: false, fallback: false }]]);
-  } finally { await r.close(); }
-  const sec = await rig(EXAMPLE, { secrets: "llm:\n  openai:\n    api_key: 12345\n" });
+    const s = await state(damaged);
+    assert.equal(s.cause, "damaged-store");
+    assert.equal(s.etag, undefined, "no etag while the store cannot be read");
+    assert.equal(s.gated, false, "the verifier cannot be read");
+    assert.equal(s.problems.length, 1);
+    assert.deepEqual({ ...s.problems[0], message: "" }, { path: "", message: "", sensitive: false, actions: { set: false, reset: false } });
+  } finally { await damaged.close(); }
+  const newer = await rig("newer-store");
   try {
-    const s = await state(sec);
-    assert.deepEqual(s.problems.map((p) => [p.file, p.kind, p.path, p.actions.reset, p.repair]), [["secrets", "secrets", "llm.openai.api_key", true, "quote"]]);
-  } finally { await sec.close(); }
-  const list = await rig(EXAMPLE.replace(/^ {2}ignore_users: .*$/m, '  ignore_users: [nightbot, "${BOT}", "${OTHER:-moobot}"]'));
+    const s = await state(newer);
+    assert.equal(s.cause, "newer-store");
+    assert.equal(s.gated, true);
+    assert.equal(s.problems.length, 1);
+    assert.match(s.problems[0]!.message, /git pull/);
+    assert.deepEqual(s.problems[0]!.actions, { set: false, reset: false });
+  } finally { await newer.close(); }
+  const key = await rig("missing-key");
   try {
-    const s = await state(list);
-    const p = s.problems.find((x) => x.path === "chat.ignore_users[1]")!;
-    assert.ok(p, JSON.stringify(s.problems));
-    assert.equal(p.resetPath, "chat.ignore_users");
-    assert.deepEqual(p.actions, { set: true, reset: true, fallback: false });
-    const q = s.problems.find((x) => x.path === "chat.ignore_users[2]")!;
-    assert.deepEqual([q.actions, q.fallback], [{ set: true, reset: true, fallback: true }, "moobot"]);
-  } finally { await list.close(); }
-  const one = await rig(EXAMPLE.replace(/^ {2}ignore_users: .*$/m, '  ignore_users: [nightbot, "${OTHER:-moobot}"]   # bots'));
-  try {
-    const all = await post(one, "reset-all", { etag: (await state(one)).etag });
-    assert.equal(((await all.json()) as { valid: boolean }).valid, true);
-    assert.match(readFileSync(one.configFile, "utf8"), /^ {2}ignore_users: \[nightbot, "moobot"\] {3}# bots$/m, "the fallback goes into its entry; the list stays");
-  } finally { await one.close(); }
+    const s = await state(key);
+    assert.equal(s.cause, "missing-key");
+    assert.equal(s.gated, true);
+    assert.equal(typeof s.etag, "string");
+    assert.equal(s.problems.length, 1);
+    assert.equal(s.problems[0]!.path, "");
+  } finally { await key.close(); }
 });
 
 // @spec DASH-RCV-005, DASH-RCV-009, DASH-RCV-012, DASH-RCV-015
-test("set writes one key keeping the rest of the file, reads typed text as YAML when the key accepts it, and re-validates", async () => {
-  const r = await rig(STALE);
+test("set writes the one key, reads typed text as YAML when the key accepts it, and answers the fresh problem list", async () => {
+  const r = await rig("invalid-settings");
   try {
     let s = await state(r);
-    const res = await post(r, "set", { etag: s.etag, path: "llm.model", value: "qwen2.5:7b" });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { ok: boolean; etag: string; problems: RecoveryProblem[]; valid: boolean };
-    const text = readFileSync(r.configFile, "utf8");
-    assert.equal(text, STALE.replace('"${LLM_MODEL}"', '"qwen2.5:7b"'));
-    assert.equal(body.etag, etagOf(text));
-    assert.equal(body.valid, false);
-    assert.deepEqual(body.problems.map((p) => p.path).toSorted(), ["cohost.name", "llm.claude.api_key"]);
-    assert.ok(r.logs.includes("info config recovery: set llm.model"), r.logs.join("\n"));
-    assert.ok(r.logs.includes("info config recovery: 2 problems remain"), r.logs.join("\n"));
-    assert.ok(!r.logs.some((l) => l.includes("qwen2.5:7b")), "no value is logged");
-
-    s = await state(r);
-    const port = await post(r, "set", { etag: s.etag, path: "dashboard.port", value: "3100" });
-    assert.equal(port.status, 200);
-    assert.match(readFileSync(r.configFile, "utf8"), /^ {2}port: 3100 /m);
-
-    s = await state(r);
-    const before = readFileSync(r.configFile, "utf8");
-    const bad = await post(r, "set", { etag: s.etag, path: "dashboard.port", value: "not a port" });
-    assert.equal(bad.status, 400);
-    assert.equal(((await bad.json()) as { issues: unknown[] }).issues.length > 0, true);
-    const stale = await post(r, "set", { etag: "old", path: "llm.model", value: "x" });
+    const before = db(r);
+    const stale = await post(r, "set", { etag: String(Number(s.etag) + 7), path: "llm.temperature", value: "1" });
     assert.equal(stale.status, 409);
-    assert.equal(((await stale.json()) as { etag: string }).etag, s.etag);
-    const secret = await post(r, "set", { etag: s.etag, path: "llm.claude.api_key", value: "sk-1" });
-    assert.equal(secret.status, 400);
-    assert.match(JSON.stringify(await secret.json()), /secrets\.yaml/);
-    assert.equal(readFileSync(r.configFile, "utf8"), before, "a refused write changes nothing");
+    assert.deepEqual(await stale.json(), { ok: false, etag: s.etag });
+    const refused = await post(r, "set", { etag: s.etag, path: "llm.temperature", value: "50" });
+    assert.equal(refused.status, 400, "the key's schema refuses it");
+    assert.ok(((await refused.json()) as { issues: { path: string }[] }).issues.some((i) => i.path === "llm.temperature"));
+    assert.equal(db(r), before, "a refusal writes nothing");
+    const ok = await post(r, "set", { etag: s.etag, path: "llm.temperature", value: "0.5" });
+    assert.equal(ok.status, 200);
+    const j = (await ok.json()) as { ok: boolean; etag: string; problems: RecoveryProblem[]; valid: boolean; moved?: unknown };
+    assert.equal(j.ok, true);
+    assert.equal(j.etag, String(Number(s.etag) + 1));
+    assert.deepEqual(j.problems.map((p) => p.path), ["llm.retired_key"]);
+    assert.equal(j.valid, false);
+    assert.equal("moved" in j, false);
+    const s2 = await openStore({ ...r.st.opts, keyOptional: true });
+    try { assert.equal(storedSection(s2, "llm")["temperature"], 0.5, "the YAML text became a number"); } finally { s2.close(); }
+    assert.ok(r.logs.includes("info config recovery: set llm.temperature"), r.logs.join("\n"));
+    assert.ok(r.logs.includes("info config recovery: 1 problem remains"), r.logs.join("\n"));
+    assert.ok(!r.logs.some((l) => l.includes("0.5")), "no value in the log");
+    s = await state(r);
+    assert.equal(s.problems.length, 1);
+    assert.equal(r.valid(), 0);
   } finally { await r.close(); }
 });
 
-// @spec DASH-RCV-006, DASH-RCV-008, DASH-RCV-009, DASH-RCV-011, DASH-RCV-015
-test("reset removes the key (a credential leaves config.yaml), clears a secrets path, and the last fix answers valid and leaves", async () => {
-  const r = await rig(STALE.replace('"${LLM_MODEL}"', '"m"').replace('"${COHOST_NAME:-Mika}"', '"Coco"'));
+// @spec DASH-RCV-006, DASH-RCV-009, DASH-RCV-011, DASH-RCV-015
+test("reset removes the key so its default applies, a path that is no current problem is 400, and the last fix answers valid and leaves", async () => {
+  const r = await rig("invalid-settings");
   try {
-    const s = await state(r);
-    assert.deepEqual(s.problems.map((p) => p.path), ["llm.claude.api_key"]);
-    const res = await post(r, "reset", { etag: s.etag, path: "llm.claude.api_key" });
-    assert.equal(res.status, 200);
-    const body = await res.json() as { valid: boolean; problems: unknown[]; port?: number };
-    assert.equal(body.valid, true);
-    assert.deepEqual(body.problems, []);
-    assert.equal((body as { moved?: boolean }).moved, undefined, "no bound port given: nothing moves");
-    const text = readFileSync(r.configFile, "utf8");
-    assert.doesNotMatch(text, /LLM_API_KEY|pasted from the old/);
-    assert.match(text, /^ {2}claude: .*\n {4}effort: low/m, "the rest of the mapping stays");
-    assert.deepEqual(checkConfig({ configFile: r.configFile, secretsFile: r.secretsFile }), []);
+    let s = await state(r);
+    const before = db(r);
+    assert.equal((await post(r, "reset", { etag: s.etag, path: "llm.model" })).status, 400, "no problem at this path");
+    assert.equal(db(r), before);
+    const first = await post(r, "reset", { etag: s.etag, path: "llm.retired_key" });
+    assert.equal(first.status, 200);
+    assert.equal(((await first.json()) as { valid: boolean }).valid, false);
+    s = await state(r);
+    const last = await post(r, "reset", { etag: s.etag, path: "llm.temperature" });
+    assert.equal(last.status, 200);
+    const j = (await last.json()) as { valid: boolean; problems: unknown[] };
+    assert.equal(j.valid, true);
+    assert.deepEqual(j.problems, []);
     await new Promise((d) => setTimeout(d, 20));
     assert.equal(r.valid(), 1, "recovery mode is left once the answer is sent");
-    assert.ok(r.logs.includes("info config recovery: reset llm.claude.api_key"));
-    assert.ok(r.logs.some((l) => /leaving config recovery mode/.test(l)));
+    const s2 = await openStore({ ...r.st.opts, keyOptional: true });
+    try {
+      assert.equal("retired_key" in storedSection(s2, "llm"), false);
+      assert.equal("temperature" in storedSection(s2, "llm"), false);
+    } finally { s2.close(); }
+    assert.ok(r.logs.includes("info config recovery: reset llm.retired_key"), r.logs.join("\n"));
+    assert.ok(r.logs.includes("info config recovery: the settings store can be used; leaving config recovery mode"), r.logs.join("\n"));
   } finally { await r.close(); }
-
-  const sec = await rig(EXAMPLE, { controlToken: "tok", secrets: "# mine\nllm:\n  openai:\n    api_key: [a]\nvoice:\n  openai:\n    api_key: \"keep\"\n" });
-  try {
-    const s = await state(sec);
-    assert.equal(s.problems[0]!.repair, "clear");
-    const locked = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" }, {});
-    assert.equal(locked.status, 401, "a secrets.yaml change passes the gate");
-    assert.match(readFileSync(sec.secretsFile, "utf8"), /\[a\]/);
-    const res = await post(sec, "reset", { etag: s.etag, path: "llm.openai.api_key" }, { authorization: "Bearer tok" });
-    assert.equal(res.status, 200);
-    const secrets = readFileSync(sec.secretsFile, "utf8");
-    assert.match(secrets, /# mine/);
-    assert.match(secrets, /api_key: "keep"/);
-    assert.doesNotMatch(secrets, /\[a\]/);
-    const nothing = await post(sec, "reset", { etag: etagOf(EXAMPLE), path: "cohost.name" }, { authorization: "Bearer tok" });
-    assert.ok(nothing.status === 400 || nothing.status === 200);
-  } finally { await sec.close(); }
 });
 
 // @spec DASH-RCV-007, DASH-RCV-009, DASH-RCV-015
-test("reset-all uses fallbacks, resets the rest in rounds, writes once, and reports what still needs a value", async () => {
-  const r = await rig(STALE);
+test("reset-all removes every failing key in one store write and answers valid", async () => {
+  const r = await rig("invalid-settings");
   try {
     const s = await state(r);
     const res = await post(r, "reset-all", { etag: s.etag });
     assert.equal(res.status, 200);
-    const body = await res.json() as { valid: boolean; problems: RecoveryProblem[] };
-    const text = readFileSync(r.configFile, "utf8");
-    assert.match(text, /^ {2}name: "Mika"/m, "the fallback is written");
-    assert.doesNotMatch(text, /LLM_API_KEY/);
-    assert.equal(body.valid, false, "llm.model has no fallback and no default");
-    assert.deepEqual(body.problems.map((p) => p.path), ["llm.model"]);
-    assert.deepEqual(body.problems[0]!.actions, { set: true, reset: false, fallback: false });
-    assert.ok(r.logs.some((l) => /^info config recovery: reset all \(\d+ keys\)$/.test(l)), r.logs.join("\n"));
-    const fixed = await post(r, "set", { etag: etagOf(text), path: "llm.model", value: "qwen2.5:7b" });
-    assert.equal(((await fixed.json()) as { valid: boolean }).valid, true);
+    const j = (await res.json()) as { valid: boolean; etag: string };
+    assert.equal(j.valid, true);
+    assert.equal(j.etag, String(Number(s.etag) + 1), "one write");
+    assert.ok(r.logs.includes("info config recovery: reset all (2 keys)"), r.logs.join("\n"));
   } finally { await r.close(); }
 });
 
 // @spec DASH-RCV-003
-test("every recovery write passes the gate: 401 {ok: false, detail} without the token, a sensitive key needing nothing more than any other", async () => {
-  const on = await rig(STALE);
-  try {
-    const s = await state(on);
-    const refused = await post(on, "reset-all", { etag: s.etag }, {});
-    assert.equal(refused.status, 401);
-    assert.equal(refused.headers.get("www-authenticate"), "Bearer");
-    assert.equal(((await refused.json()) as { ok: boolean }).ok, false);
-    assert.equal(readFileSync(on.configFile, "utf8"), STALE);
-    assert.equal((await post(on, "reset-all", { etag: s.etag })).status, 200);
-  } finally { await on.close(); }
-
-  const text = STALE.replace(/^ {2}provider: "ollama"/m, '  provider: "${LLM_PROVIDER:-ollama}"');
-  const r = await rig(text);
+test("every recovery write passes the gate: 401 {ok: false, detail} without the token, writing nothing; with it the write is made", async () => {
+  const r = await rig("invalid-settings");
   try {
     const s = await state(r);
-    assert.equal((await post(r, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" }, {})).status, 401);
-    assert.equal((await post(r, "reset", { etag: s.etag, path: "llm.provider" }, {})).status, 401, "a reset is gated too");
-    assert.equal((await post(r, "set", { etag: s.etag, path: "llm.provider", value: "anthropic" })).status, 200, "a sensitive key with the token, nothing more");
+    const before = db(r);
+    for (const [op, body] of [["set", { etag: s.etag, path: "llm.temperature", value: "1" }], ["reset", { etag: s.etag, path: "llm.temperature" }], ["reset-all", { etag: s.etag }]] as const) {
+      const refused = await post(r, op, body, {});
+      assert.equal(refused.status, 401, op);
+      assert.equal(refused.headers.get("www-authenticate"), "Bearer");
+      assert.equal(((await refused.json()) as { ok: boolean }).ok, false);
+      assert.equal((await post(r, op, body, { authorization: "Bearer wrong" })).status, 401, op);
+    }
+    assert.equal(db(r), before);
+    assert.equal((await post(r, "reset-all", { etag: s.etag })).status, 200);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-003, DASH-RCV-004
+test("an entry of a sensitive list is marked sensitive like the list, and setting it is gated like any set", async () => {
+  const r = await rig("invalid-settings", {
+    before: (s) => { rawSection(s.dataDir, "dashboard", { ...storedSection(s, "dashboard"), allowed_hosts: [5] }); },
+  });
+  try {
+    const s = await state(r);
+    const entry = s.problems.find((p) => p.path === "dashboard.allowed_hosts[0]");
+    assert.ok(entry, JSON.stringify(s.problems));
+    assert.equal(entry.sensitive, true);
+    assert.deepEqual(entry.actions, { set: true, reset: true });
+    assert.equal((await post(r, "set", { etag: s.etag, path: "dashboard.allowed_hosts[0]", value: "streampc" }, {})).status, 401);
+    const ok = await post(r, "set", { etag: s.etag, path: "dashboard.allowed_hosts[0]", value: "streampc" });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    const s2 = await openStore({ ...r.st.opts, keyOptional: true });
+    try { assert.deepEqual(storedSection(s2, "dashboard")["allowed_hosts"], ["streampc"]); } finally { s2.close(); }
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-004, DASH-RCV-005
+test("paths that name an object's own properties are refused, never a 500", async () => {
+  const r = await rig("invalid-settings");
+  try {
+    const s = await state(r);
+    const before = db(r);
+    for (const path of ["__proto__", "constructor", "llm.toString", "llm.__proto__"]) {
+      const set = await post(r, "set", { etag: s.etag, path, value: "x" });
+      assert.ok(set.status === 400 || set.status === 409, `${path}: ${set.status}`);
+      const reset = await post(r, "reset", { etag: s.etag, path });
+      assert.equal(reset.status, 400, path);
+    }
+    assert.equal(db(r), before);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-004, DASH-RCV-012
+test("a write that does not apply to the cause is 409 naming the cause, and a body that is not a JSON object is 400, writing nothing", async () => {
+  const r = await rig("missing-key");
+  try {
+    const before = db(r);
+    const s = await state(r);
+    const res = await post(r, "set", { etag: s.etag, path: "llm.temperature", value: "1" });
+    assert.equal(res.status, 409);
+    assert.match(((await res.json()) as { detail: string }).detail, /missing key/);
+    const bad = await fetch(`${r.url}/recovery/key`, { method: "POST", headers: AUTH, body: "[1]" });
+    assert.equal(bad.status, 400);
+    assert.equal(db(r), before);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-024, DASH-RCV-009
+test("restore replaces the store with a listed backup and answers valid; a name not listed is 404 and a backup that fails the checks 400", async () => {
+  const r = await rig("invalid-settings", { before: (s) => s.backup() });
+  try {
+    const before = db(r);
+    assert.equal((await post(r, "restore", { backup: "cohost-20000101T000000Z.db" })).status, 404);
+    assert.equal((await post(r, "restore", { backup: "../cohost.db" })).status, 404);
+    // A file named like a backup that is none.
+    mkdirSync(backupDir(r.st.opts.dataDir!), { recursive: true });
+    writeFileSync(join(backupDir(r.st.opts.dataDir!), "cohost-19990101T000000Z.db"), "not a database ".repeat(100));
+    const bogus = await post(r, "restore", { backup: "cohost-19990101T000000Z.db" });
+    assert.equal(bogus.status, 400);
+    assert.equal(db(r), before, "a refused restore writes nothing");
+    const s = await state(r);
+    const good = s.backups.find((b) => b.name !== "cohost-19990101T000000Z.db")!;
+    const res = await post(r, "restore", { backup: good.name });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(((await res.json()) as { valid: boolean }).valid, true);
+    assert.ok(r.logs.includes(`info config recovery: restored ${good.name}`), r.logs.join("\n"));
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-025, DASH-RCV-009
+test("import replaces the stored settings with an export's and answers valid; text that does not parse is 400 with issues, writing nothing", async () => {
+  const src = await testStore({ token: false, edits: { cohost: { timezone: "Asia/Tokyo" } } });
+  const text = exportStore(src.store);
+  src.close();
+  const r = await rig("invalid-settings");
+  try {
+    const before = db(r);
+    const bad = await post(r, "import", { text: "not: an: export" });
+    assert.equal(bad.status, 400);
+    assert.ok(Array.isArray(((await bad.json()) as { issues: unknown[] }).issues));
+    assert.equal((await post(r, "import", { text: 5 })).status, 400);
+    assert.equal(db(r), before);
+    const res = await post(r, "import", { text });
+    assert.equal(res.status, 200, await res.clone().text());
+    assert.equal(((await res.json()) as { valid: boolean }).valid, true);
+    const s2 = await openStore({ ...r.st.opts, keyOptional: true });
+    try { assert.equal(storedSection(s2, "cohost")["timezone"], "Asia/Tokyo"); } finally { s2.close(); }
+    assert.ok(r.logs.includes("info config recovery: imported"), r.logs.join("\n"));
+    assert.ok(!r.logs.some((l) => l.includes("Asia/Tokyo")), "no text of the import in the log");
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-026, DASH-RCV-009
+test("key restores the key file from the recovery key from a loopback peer; a key of another store is 400 naming the mismatch; nothing logs the key", async () => {
+  let recoveryKey = "";
+  const r = await rig("missing-key", { before: (s) => { recoveryKey = s.recoveryKey(); } });
+  try {
+    const before = db(r);
+    const other = formatKey(randomBytes(32));
+    const wrong = await post(r, "key", { recoveryKey: other });
+    assert.equal(wrong.status, 400);
+    assert.match(((await wrong.json()) as { detail: string }).detail, /key/);
+    assert.equal(existsSync(r.st.opts.keyFile!), false, "no key file written");
+    assert.equal(db(r), before);
+    const ok = await post(r, "key", { recoveryKey });
+    assert.equal(ok.status, 200, await ok.clone().text());
+    const text = await ok.text();
+    assert.equal(((JSON.parse(text)) as { valid: boolean }).valid, true);
+    assert.ok(!text.includes(recoveryKey.split(":")[1]!), "the answer carries no key");
+    assert.equal(existsSync(r.st.opts.keyFile!), true);
+    assert.ok(r.logs.includes("info config recovery: key restored"));
+    assert.ok(!r.logs.some((l) => l.includes(recoveryKey.split(":")[1]!) || l.includes(other.split(":")[1]!)), "no key in the log");
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-026
+test("key from a peer that is not loopback is 403 whatever the Host header says, writing nothing", async () => {
+  let recoveryKey = "";
+  const r = await rig("missing-key", {
+    before: (s) => { recoveryKey = s.recoveryKey(); },
+    // The peer's address as the socket reports it: a machine on the LAN.
+    wrap: (h) => (req, res) => { Object.defineProperty(req.socket, "remoteAddress", { value: "192.168.1.5", configurable: true }); h(req, res); },
+  });
+  try {
+    const res = await post(r, "key", { recoveryKey }, { ...AUTH, host: "127.0.0.1" });
+    assert.equal(res.status, 403);
+    assert.match(((await res.json()) as { detail: string }).detail, /mise run config:key -- --restore/);
+    assert.equal(existsSync(r.st.opts.keyFile!), false);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-027, DASH-RCV-009
+test("discard-credentials needs the typed confirmation, then discards the credentials, makes a new key shown only on the terminal and answers valid", async () => {
+  const r = await rig("missing-key", { before: (s) => s.write({ secrets: { "llm.openai.api_key": "sk-gone" } }) });
+  try {
+    const before = db(r);
+    for (const body of [{}, { confirm: "delete" }, { confirm: "DELETE CREDENTIALS" }]) {
+      assert.equal((await post(r, "discard-credentials", body)).status, 400, JSON.stringify(body));
+    }
+    assert.equal(db(r), before);
+    const res = await post(r, "discard-credentials", { confirm: "delete credentials" });
+    assert.equal(res.status, 200, await res.clone().text());
+    const text = await res.text();
+    assert.equal((JSON.parse(text) as { valid: boolean }).valid, true);
+    assert.doesNotMatch(text, /cohost-key-1:/, "the new key is never sent to the page");
+    assert.ok(r.logs.includes("info config recovery: credentials discarded"));
+    const s2 = await openStore({ ...r.st.opts });
+    try {
+      assert.deepEqual(s2.secretPaths(), []);
+      assert.equal(s2.recoveryKeyUnconfirmed(), true, "no terminal: the banner flag is set");
+    } finally { s2.close(); }
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-028, DASH-UNL-001
+test("with a damaged store, a newer store or a missing key no session counts and none is made; a bearer the verifier accepts still passes", async () => {
+  for (const cause of ["newer-store", "missing-key"] as const) {
+    const r = await rig(cause);
+    try {
+      const cookie = `${SESSION_COOKIE}=${newSession(randomBytes(32))}`;
+      const control = (await (await fetch(`${r.url}/services/control`, { headers: { cookie } })).json()) as { unlocked: boolean };
+      assert.equal(control.unlocked, false, cause);
+      // No link can unlock: there is no session key to make one under.
+      const link = await fetch(`${r.url}/unlock/link`, { method: "POST", headers: AUTH });
+      assert.equal(link.status, 200, `${cause}: the bearer passes`);
+      const url = new URL(((await link.json()) as { url: string }).url);
+      const opened = await fetch(`${r.url}${url.pathname}${url.search}`, { redirect: "manual" });
+      assert.equal(opened.status, 400, `${cause}: no session is made`);
+      assert.equal(opened.headers.get("set-cookie"), null);
+      assert.equal((await fetch(`${r.url}/recovery/set`, { method: "POST", headers: { cookie, origin: r.url }, body: "{}" })).status, 401, `${cause}: a cookie is no pass`);
+    } finally { await r.close(); }
+  }
+});
+
+// @spec DASH-RCV-028
+test("while the verifier cannot be read every recovery write is 409 naming the host commands, whatever the bearer, writing nothing", async () => {
+  const r = await rig("damaged-store");
+  try {
+    for (const op of ["set", "reset", "reset-all", "restore", "import", "key", "discard-credentials"]) {
+      for (const headers of [AUTH, {}]) {
+        const res = await post(r, op, {}, headers);
+        assert.equal(res.status, 409, op);
+        const detail = ((await res.json()) as { detail: string }).detail;
+        assert.ok(detail.includes(HOST_COMMANDS), detail);
+        assert.match(detail, /mise run config:restore/);
+      }
+    }
+    assert.equal(r.valid(), 0);
   } finally { await r.close(); }
 });
 
 // @spec DASH-RCV-010
 test("stack posts other than stop and every lifecycle post are refused with the config gate's text, other routes 503, health and the UI served", async () => {
-  const on = await rig(STALE);
+  const r = await rig("invalid-settings");
   try {
     for (const path of ["/stack/launch", "/stack/rebuild", "/stack/restart", "/services/voice/start", "/services/voice/stop", "/services/voice/restart"]) {
-      const res = await fetch(`${on.url}${path}`, { method: "POST", headers: { authorization: "Bearer tok" } });
+      const res = await fetch(`${r.url}${path}`, { method: "POST", headers: AUTH });
       assert.equal(res.status, 409, path);
-      assert.match(((await res.json()) as { detail: string }).detail, /^the settings store cannot be used \(3 problems; first: .*recovery screen/);
+      assert.match(((await res.json()) as { detail: string }).detail, /^the settings store cannot be used \(2 problems; first: .*recovery screen/);
     }
-    assert.equal((await fetch(`${on.url}/health`)).status, 200);
-    assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { runtime: "compose", advanced: false, unlocked: false });
+    assert.equal((await fetch(`${r.url}/health`)).status, 200);
+    assert.deepEqual(await (await fetch(`${r.url}/services/control`)).json(), { runtime: "compose", advanced: false, unlocked: false });
     for (const path of ["/stack/launch", "/services/voice/start"]) {
-      assert.equal((await fetch(`${on.url}${path}`, { method: "POST" })).status, 409, `${path}: 409 whatever the bearer`);
+      assert.equal((await fetch(`${r.url}${path}`, { method: "POST" })).status, 409, `${path}: 409 whatever the bearer`);
     }
-    const other = await fetch(`${on.url}/stack`);
+    const other = await fetch(`${r.url}/stack`);
     assert.equal(other.status, 503);
     assert.match(((await other.json()) as { detail: string }).detail, /config recovery mode/);
-    assert.equal((await fetch(`${on.url}/`)).status, 503, "the UI route answers (its not-built page here)");
-  } finally { await on.close(); }
+    assert.equal((await fetch(`${r.url}/`)).status, 503, "the UI route answers (its not-built page here)");
+    for (const path of ["/recovery/raw", "/recovery/fallback"]) {
+      assert.equal((await fetch(`${r.url}${path}`, { method: "POST", headers: AUTH, body: "{}" })).status, 503, `${path} is no route`);
+    }
+  } finally { await r.close(); }
 });
 
 // @spec DASH-RCV-011
-test("GET /recovery on a file fixed by hand answers inactive and leaves recovery mode", async () => {
-  const r = await rig(STALE);
+test("GET /recovery on a store fixed outside the page answers inactive and leaves recovery mode", async () => {
+  const r = await rig("invalid-settings");
   try {
-    writeFileSync(r.configFile, EXAMPLE);
+    const s = await openStore({ ...r.st.opts, keyOptional: true });
+    const llm = storedSection(s, "llm");
+    s.close();
+    delete llm["temperature"];
+    delete llm["retired_key"];
+    rawSection(r.st.opts.dataDir!, "llm", llm);
     assert.deepEqual(await (await fetch(`${r.url}/recovery`)).json(), { active: false });
     await new Promise((d) => setTimeout(d, 20));
     assert.equal(r.valid(), 1);
@@ -250,164 +438,148 @@ test("GET /recovery on a file fixed by hand answers inactive and leaves recovery
 });
 
 // @spec DASH-RCV-002
-test("the recovery port comes from the dashboard section when it validates alone, else the default", () => {
-  assert.equal(recoveryAddress(EXAMPLE.replace(/^ {2}port: 3000/m, "  port: 3400")).port, 3400);
-  assert.equal(recoveryAddress(STALE.replace(/^ {2}port: 3000/m, "  port: 3400")).port, 3400, "other sections failing do not matter");
-  assert.equal(recoveryAddress(EXAMPLE.replace(/^ {2}port: 3000/m, "  port: ${DASHBOARD_PORT:-3400}")).port, 3000);
-  assert.equal(recoveryAddress(EXAMPLE.replace(/^ {2}port: 3000/m, "  port: 3001")).port, 3000, "port equal to lan_port fails the section");
-  assert.equal(recoveryAddress("dashboard: [x\n").port, 3000);
-  assert.deepEqual(recoveryAddress(EXAMPLE.replace("allowed_hosts: []", "allowed_hosts: [cohost.lan]")).allowedHosts, ["cohost.lan"]);
-});
-
-// @spec DASH-RCV-004, DASH-RCV-010
-test("in normal mode GET /recovery is inactive and a recovery write is a 409", async () => {
-  const log = { info() {}, warn() {}, error() {}, debug() {}, fatal() {} } as never;
-  const handler = createDashboardHandler({
-    bus: { publish: async () => "1", putUpload: async () => "u" } as never, log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "", savePersonality: () => {}, services: () => [], stack: new StackService({ log, bus: () => "connected" }), uiDir: "/nonexistent", docsDir: "/nonexistent",
-    control: testControl(),
-  });
-  const server = http.createServer(handler);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  try {
-    assert.deepEqual(await (await fetch(`${url}/recovery`)).json(), { active: false });
-    assert.equal((await fetch(`${url}/recovery/reset-all`, { method: "POST", body: "{}" })).status, 409);
-    assert.equal((await fetch(`${url}/recovery/raw`, { method: "POST", body: "{}" })).status, 409);
-    const raw = await fetch(`${url}/recovery/raw?file=secrets`);
-    assert.equal(raw.status, 409);
-    assert.match(((await raw.json()) as { detail: string }).detail, /not in config recovery mode/);
-  } finally { await new Promise((r) => { server.close(r); server.closeAllConnections(); }); }
-});
-
-// @spec DASH-HTTP-016
-test("startDashboard hands a valid configuration to run, and leaves a load failure that is not about the files to the bootstrap", async () => {
-  const log = { info() {}, error() {}, fatal() {} } as never;
-  const seen: unknown[] = [];
-  const env = { ...process.env, CONTROL_TOKEN: TOKEN };
-  await startDashboard({ env, log, run: async (cfg) => { seen.push(cfg); } });
-  assert.equal(typeof seen[0], "object");
-  const prev = process.env.COHOST_ISOLATION;
-  process.env.COHOST_ISOLATION = "not json";
-  try { await startDashboard({ env, log, run: async (cfg) => { seen.push(cfg); } }); } finally {
-    if (prev === undefined) delete process.env.COHOST_ISOLATION; else process.env.COHOST_ISOLATION = prev;
-  }
-  assert.equal(seen.length, 2);
-  assert.equal(seen[1], undefined);
-});
-
-// @spec DASH-CTRL-002, DASH-RCV-002
-test("startDashboard without a usable CONTROL_TOKEN logs fatal naming it and the cause, exits 1, and binds nothing, before any config load", async () => {
-  for (const [token, cause] of [[undefined, /missing/], ["", /missing/], ["   ", /missing/], ["only-twenty-chars-xx", /too short/]] as const) {
-    const fatal: string[] = [];
-    const exits: number[] = [];
-    let ran = false;
-    const log = { info() {}, error() {}, fatal: (...a: unknown[]) => { fatal.push(a.map(String).join(" ")); } } as never;
-    const env: NodeJS.ProcessEnv = { ...process.env, CONTROL_TOKEN: token };
-    if (token === undefined) delete env.CONTROL_TOKEN;
-    await startDashboard({ env, log, exit: (c) => { exits.push(c); }, run: async () => { ran = true; } });
-    assert.deepEqual(exits, [1], String(token));
-    assert.equal(ran, false, "normal mode never starts");
-    assert.equal(fatal.length, 1);
-    assert.match(fatal[0]!, /CONTROL_TOKEN/);
-    assert.match(fatal[0]!, cause);
-    assert.match(fatal[0]!, /installer/);
-    assert.match(fatal[0]!, /openssl rand -hex 24/);
-    if (token?.trim()) assert.ok(!fatal[0]!.includes(token.trim()), "never the value");
-  }
-});
-
-// @spec DASH-RCV-003, DASH-RCV-006, DASH-RCV-007
-test("a secrets.yaml repair passes the gate like every write; through it reset-all repairs config.yaml and secrets.yaml together", async () => {
-  const none = await rig(STALE, { secrets: "llm:\n  openai:\n    api_key: 0123\n" });
-  try {
-    const s = await state(none);
-    const reset = await post(none, "reset", { etag: s.etag, path: "llm.openai.api_key" }, {});
-    assert.equal(reset.status, 401);
-    const all = await post(none, "reset-all", { etag: s.etag }, {});
-    assert.equal(all.status, 401);
-    assert.match(readFileSync(none.secretsFile, "utf8"), /api_key: 0123/, "secrets.yaml untouched");
-    assert.equal(readFileSync(none.configFile, "utf8"), STALE, "config.yaml untouched");
-  } finally { await none.close(); }
-
-  const tok = await rig(EXAMPLE, { secrets: "llm:\n  openai:\n    api_key: 0123\n" });
-  try {
-    const s = await state(tok);
-    const all = await post(tok, "reset-all", { etag: s.etag });
-    assert.equal(((await all.json()) as { valid: boolean }).valid, true);
-    assert.match(readFileSync(tok.secretsFile, "utf8"), /api_key: "0123"/, "an all-digit token is quoted, never cleared");
-  } finally { await tok.close(); }
-});
-
-// @spec DASH-RCV-004, DASH-RCV-005
-test("paths that name an object's own properties are refused as unknown keys, never a 500", async () => {
-  const r = await rig(STALE);
-  try {
-    const s = await state(r);
-    for (const path of ["__proto__", "constructor", "llm.toString", "llm.__proto__"]) {
-      const set = await post(r, "set", { etag: s.etag, path, value: "x" });
-      assert.equal(set.status, 400, path);
-      const reset = await post(r, "reset", { etag: s.etag, path });
-      assert.equal(reset.status, 400, path);
-    }
-    assert.equal(readFileSync(r.configFile, "utf8"), STALE);
-  } finally { await r.close(); }
+test("the recovery port and allowed hosts come from the stored dashboard section when it validates, else the defaults", () => {
+  const base = { port: 3400, lan_port: 3001, allowed_hosts: ["cohost.lan"] };
+  assert.deepEqual(recoveryAddress({ verifier: undefined, revision: 1, dashboard: base }), { port: 3400, allowedHosts: ["cohost.lan"], fromStore: true });
+  assert.equal(recoveryAddress({ verifier: undefined, revision: 1, dashboard: { ...base, port: 3001 } }).port, 3000, "port equal to lan_port fails the section");
+  assert.equal(recoveryAddress({ verifier: undefined, revision: 1, dashboard: { port: "x" } }).fromStore, false);
+  assert.deepEqual(recoveryAddress({ verifier: undefined, revision: 1, dashboard: undefined }), { port: 3000, allowedHosts: [], fromStore: false });
+  assert.equal(recoveryAddress(undefined).port, 3000, "a store that cannot be read");
 });
 
 // @spec DASH-RCV-011
-test("recovery mode is left once when the client of the answer that found the files valid goes away before the answer finishes", () => {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
-  writeFileSync(join(dir, "config.yaml"), EXAMPLE);
+test("recovery mode is left once when the client of the answer that found the store usable goes away before the answer finishes", async () => {
+  const st = await testStore({ token: false });
+  st.close();
   let valid = 0;
-  const handler = createRecoveryHandler({ log: { info() {}, error() {} } as never, files: { configFile: join(dir, "config.yaml"), secretsFile: join(dir, "s.yaml") }, controlToken: "tok", uiDir: join(dir, "ui"), onValid: () => { valid++; } });
+  const handler = createRecoveryHandler({ log: { info() {}, error() {} } as never, store: st.opts, uiDir: join(st.root, "ui"), onValid: () => { valid++; } });
   const req = Object.assign(new EventEmitter(), { method: "GET", url: "/recovery", headers: {} });
-  const res = Object.assign(new EventEmitter(), { headersSent: false, writeHead() { return this; }, end() { return this; } });
+  const state = { ended: false };
+  const res = Object.assign(new EventEmitter(), { headersSent: false, writeHead() { return this; }, end() { state.ended = true; return this; } });
   handler(req as never, res as never);
-  return new Promise<void>((done) => setImmediate(() => {
-    assert.equal(valid, 0);
-    res.emit("close");
-    res.emit("finish");
-    assert.equal(valid, 1);
-    done();
-  }));
-});
-
-// @spec DASH-RCV-003
-test("an entry of a sensitive list is marked sensitive like the list, and setting it is gated like any set", async () => {
-  const text = EXAMPLE
-    .replace("allowed_hosts: []", 'allowed_hosts: ["${HOST}"]')
-    .replace(/^ {2}lan: \[\]/m, '  lan: ["${LAN}"]');
-  for (const path of ["dashboard.allowed_hosts[0]", "network.lan[0]"]) {
-    const tok = await rig(text);
-    try {
-      const s = await state(tok);
-      assert.ok(s.problems.some((p) => p.path === path && p.sensitive), JSON.stringify(s.problems));
-      const res = await post(tok, "set", { etag: s.etag, path, value: "streampc" }, {});
-      assert.equal(res.status, 401, path);
-      assert.equal(readFileSync(tok.configFile, "utf8"), text);
-      assert.equal((await post(tok, "set", { etag: s.etag, path, value: "streampc" })).status, 200, path);
-    } finally { await tok.close(); }
-  }
+  for (let i = 0; i < 200 && !state.ended; i++) await new Promise((d) => setTimeout(d, 10));
+  assert.equal(state.ended, true);
+  assert.equal(valid, 0);
+  res.emit("close");
+  res.emit("finish");
+  await new Promise((d) => setTimeout(d, 10));
+  assert.equal(valid, 1);
 });
 
 // @spec DASH-RCV-009, DASH-RCV-011
 test("the valid answer says moved, with the port, only when dashboard.port is not the bound recovery port", async () => {
-  const same = await rig(STALE.replace('"${LLM_MODEL}"', '"m"').replace('"${COHOST_NAME:-Mika}"', '"Coco"'), { boundPort: 3000 });
+  const same = await rig("invalid-settings", { boundPort: 3000 });
   try {
     const s = await state(same);
-    const body = await (await post(same, "reset", { etag: s.etag, path: "llm.claude.api_key" })).json() as Record<string, unknown>;
+    const body = await (await post(same, "reset-all", { etag: s.etag })).json() as Record<string, unknown>;
     assert.equal(body.valid, true);
     assert.equal(body.moved, undefined);
     assert.equal(body.port, undefined);
   } finally { await same.close(); }
-  const moved = await rig(STALE.replace('"${LLM_MODEL}"', '"m"').replace('"${COHOST_NAME:-Mika}"', '"Coco"'), { boundPort: 3000 });
+  const moved = await rig("invalid-settings", { boundPort: 3000, before: (s) => s.setKey("dashboard.port", 3100) });
   try {
-    let s = await state(moved);
-    await post(moved, "set", { etag: s.etag, path: "dashboard.port", value: "3100" });
-    s = await state(moved);
-    const body = await (await post(moved, "reset", { etag: s.etag, path: "llm.claude.api_key" })).json() as Record<string, unknown>;
+    const s = await state(moved);
+    const body = await (await post(moved, "reset-all", { etag: s.etag })).json() as Record<string, unknown>;
     assert.equal(body.valid, true);
     assert.equal(body.moved, true);
     assert.equal(body.port, 3100);
   } finally { await moved.close(); }
+});
+
+// @spec DASH-RCV-019, DASH-RCV-011
+test("a Stop running when the store becomes usable is answered before recovery mode is left", async () => {
+  let release: () => void = () => {};
+  const stack = { stopAll: () => new Promise<{ ok: true }>((r) => { release = () => r({ ok: true }); }) };
+  const r = await rig("invalid-settings", { stack, lock: new LifecycleLock({ by: "dashboard", dir: mkdtempSync(join(tmpdir(), "cohost-rcv-lock-")) }) });
+  try {
+    const stopping = fetch(`${r.url}/stack/stop`, { method: "POST", headers: AUTH });
+    await new Promise((done) => setTimeout(done, 50));
+    const s = await state(r);
+    assert.equal((await post(r, "reset-all", { etag: s.etag })).status, 200);
+    await new Promise((done) => setTimeout(done, 50));
+    assert.equal(r.valid(), 0, "recovery mode is not left while docker compose stop runs");
+    release();
+    const res = await stopping;
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, action: "stop" });
+    await new Promise((done) => setTimeout(done, 20));
+    assert.equal(r.valid(), 1, "then it is left");
+    const order = r.logs.filter((l) => l.includes("config recovery: stop") || l.includes("leaving config recovery mode"));
+    assert.deepEqual(order, ["info config recovery: stop", "info config recovery: the settings store can be used; leaving config recovery mode"]);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-019, DASH-RCV-010
+test("Stop runs docker compose stop with no usable store, behind the gate and the lifecycle lock", async () => {
+  // A damaged store's verifier cannot be read, so no bearer passes: the Stop is then made from the host.
+  const ran: string[][] = [];
+  const damaged = await rig("damaged-store", {
+    stack: new StackController({ exec: async (_f, args) => { ran.push(args); return { stdout: "", stderr: "" }; }, cwd: "/ws", env: {} }),
+    lock: new LifecycleLock({ by: "dashboard", dir: mkdtempSync(join(tmpdir(), "cohost-rcv-lock-")) }),
+  });
+  try {
+    assert.equal((await fetch(`${damaged.url}/stack/stop`, { method: "POST", headers: AUTH })).status, 401);
+    assert.deepEqual(ran, []);
+  } finally { await damaged.close(); }
+
+  const calls: { file: string; args: string[]; cwd?: string }[] = [];
+  const exec: ExecFile = async (file, args, opts) => { calls.push({ file, args, cwd: opts.cwd }); return { stdout: "", stderr: "" }; };
+  const lockDir = mkdtempSync(join(tmpdir(), "cohost-rcv-lock-"));
+  const on = await rig("invalid-settings", { stack: new StackController({ exec, cwd: "/ws", env: { COHOST_DOCKER_BIN: "/opt/docker" } }), lock: new LifecycleLock({ by: "dashboard", dir: lockDir }) });
+  try {
+    const no = await fetch(`${on.url}/stack/stop`, { method: "POST" });
+    assert.equal(no.status, 401);
+    assert.equal(no.headers.get("www-authenticate"), "Bearer");
+    assert.deepEqual(calls, []);
+    const res = await fetch(`${on.url}/stack/stop`, { method: "POST", headers: AUTH });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, action: "stop" });
+    assert.deepEqual(calls, [{ file: "/opt/docker", args: ["compose", "stop"], cwd: "/ws" }]);
+    assert.equal(existsSync(join(lockDir, "control.lock")), false, "the lock is released");
+    assert.ok(on.logs.includes("info config recovery: stop"), on.logs.join("\n"));
+    const held = new LifecycleLock({ by: "cohostctl", dir: lockDir, pid: process.ppid }).tryAcquire("launch");
+    assert.ok(held.ok);
+    const busy = await fetch(`${on.url}/stack/stop`, { method: "POST", headers: AUTH });
+    assert.equal(busy.status, 409);
+    assert.match(((await busy.json()) as { detail: string }).detail, /^busy: launch held by cohostctl/);
+    assert.equal(calls.length, 1, "nothing runs while the lock is held");
+    held.release();
+  } finally { await on.close(); }
+
+  const failExec: ExecFile = async () => { throw Object.assign(new Error("exit 1"), { stderr: "Cannot connect to the Docker daemon\n" }); };
+  const failLock = mkdtempSync(join(tmpdir(), "cohost-rcv-lock-"));
+  const failing = await rig("invalid-settings", { stack: new StackController({ exec: failExec, cwd: "/ws", env: { COHOST_DOCKER_BIN: "/opt/docker" } }), lock: new LifecycleLock({ by: "dashboard", dir: failLock }) });
+  try {
+    const res = await fetch(`${failing.url}/stack/stop`, { method: "POST", headers: AUTH });
+    assert.equal(res.status, 502);
+    assert.deepEqual(await res.json(), { ok: false, detail: "Cannot connect to the Docker daemon" });
+    assert.equal(existsSync(join(failLock, "control.lock")), false, "the lock is released after a failure");
+    assert.ok(failing.logs.some((l) => l.startsWith("error") && l.includes("Cannot connect to the Docker daemon")), failing.logs.join("\n"));
+  } finally { await failing.close(); }
+});
+
+// @spec DASH-RCV-012
+test("entering recovery mode and reading its routes write nothing to the store or the key file", async () => {
+  const r = await rig("invalid-settings");
+  try {
+    const before = db(r);
+    await state(r);
+    await fetch(`${r.url}/services/control`);
+    await fetch(`${r.url}/secrets/llm.openai.api_key`, { method: "PUT", headers: AUTH, body: JSON.stringify({ value: "sk-x" }) });
+    assert.equal(db(r), before);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-HTTP-015, DASH-RCV-025, DASH-RCV-012
+test("a recovery body is capped: an import over 1 MiB and any other write over 64 KiB are 413, writing nothing", async () => {
+  const r = await rig("invalid-settings");
+  try {
+    const before = db(r);
+    const s = await state(r);
+    assert.equal((await post(r, "import", { text: "x".repeat(1024 * 1024 + 10) })).status, 413);
+    assert.equal((await post(r, "set", { etag: s.etag, path: "llm.temperature", value: "x".repeat(65 * 1024) })).status, 413);
+    const fits = await post(r, "import", { text: `${"#".repeat(200 * 1024)}\n` });
+    assert.equal(fits.status, 400, "an import under 1 MiB is read and judged");
+    assert.equal(db(r), before);
+  } finally { await r.close(); }
 });

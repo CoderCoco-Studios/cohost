@@ -9,7 +9,7 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { dotEnvPath, UNIT_SETTINGS, type UnitSettings } from "@cohost/config";
+import { dotEnvPath, setLoggingSource, UNIT_SETTINGS, type UnitSettings } from "@cohost/config";
 import { credentialsMessage, messageText, openStore, pocketToken, writeProjections, type Store, type StoreOptions } from "@cohost/store";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
 import type { RuntimeResult } from "./runtime.js";
@@ -31,10 +31,12 @@ export interface CredentialSource {
  * The settings store as a credential source: opened at the first use with the control plane's busy timeout (STORE-DB-003) and
  * kept open for the process; projections go under the workspace root `root`.
  */
+// @spec STORE-PKG-003
 export function storeSource(root: string, opts: StoreOptions = {}): CredentialSource & { close(): void } {
   let store: Promise<Store> | undefined;
   const open = (): Promise<Store> => {
-    store ??= openStore({ ...opts, profile: "other" }).catch((e: unknown) => { store = undefined; throw e; });
+    // The program that opens the store takes its logging section from it (STORE-PKG-003): cohostctl and the dashboard's controller.
+    store ??= openStore({ ...opts, profile: "other" }).then((s) => { setLoggingSource(() => s.sections().logging); return s; }, (e: unknown) => { store = undefined; throw e; });
     return store;
   };
   return {
@@ -147,21 +149,24 @@ export class ComposeProvisioner implements Provisioner {
     this.units = o.units ?? UNIT_SETTINGS;
   }
 
-  /** The containers of the project with their `StartedAt`, by id; an empty map when Docker cannot say. */
-  async containers(): Promise<Map<string, ContainerStart>> {
+  /**
+   * The containers of the project with their `StartedAt`, by id; `{error}` when Docker cannot say (`docker compose ps` or
+   * `docker inspect` failed), so no caller mistakes an unreadable project for an empty one.
+   */
+  async containers(): Promise<Map<string, ContainerStart> | { error: string }> {
     const out = new Map<string, ContainerStart>();
     let ids: string[];
     try {
       ids = (await this.o.docker(["compose", "ps", "--all", "-q"], { timeoutMs: STATUS_TIMEOUT_MS })).stdout.split("\n").map((l) => l.trim()).filter((l) => CONTAINER_ID.test(l));
-    } catch {
-      return out;
+    } catch (err) {
+      return { error: `cannot list the project's containers (docker compose ps failed: ${firstLine(err)})` };
     }
     if (ids.length === 0) return out;
     let stdout: string;
     try {
       ({ stdout } = await this.o.docker(["inspect", "--format", START_FORMAT, ...ids], { timeoutMs: STATUS_TIMEOUT_MS }));
-    } catch {
-      return out;
+    } catch (err) {
+      return { error: `cannot read the containers' start times (docker inspect failed: ${firstLine(err)})` };
     }
     for (const line of stdout.split("\n")) {
       const m = /^(\S+) \/?(\S+) (\S*) (\S+) (true|false)$/.exec(line.trim());
@@ -212,7 +217,9 @@ export class ComposeProvisioner implements Provisioner {
     } catch (err) {
       return { ok: false, detail: `the projections could not be written: ${firstLine(err)}` };
     }
+    // Without the containers' start times nothing can tell which containers a command starts: stop before it runs.
     const seen = await this.containers();
+    if (!(seen instanceof Map)) return { ok: false, detail: `${seen.error}; nothing was started, so no credentials would be delivered to the wrong container` };
     return {
       ok: true,
       after: async (oneShot) => {
@@ -226,9 +233,14 @@ export class ComposeProvisioner implements Provisioner {
           }
         }
         const now = await this.containers();
-        for (const c of now.values()) {
+        if (!(now instanceof Map)) failures.push(`${now.error}; the started units were not delivered to: run mise run deliver`);
+        for (const c of now instanceof Map ? now.values() : []) {
           if (!c.running || (oneShot && c.name === oneShot.name)) continue;
-          if (seen.get(c.id)?.startedAt === c.startedAt) continue; // not started by this command
+          // Started by this command, or started since its recorded delivery (Docker restarted it, and it waits for its credentials).
+          const started = seen.get(c.id)?.startedAt !== c.startedAt;
+          const record = records[c.service];
+          const stale = record !== undefined && (record.startedAt !== c.startedAt || record.container !== c.id);
+          if (!started && !stale) continue;
           const r = await this.deliverTo(c, records);
           if (r?.error) failures.push(r.error);
         }
@@ -249,7 +261,9 @@ export class ComposeProvisioner implements Provisioner {
     const records = readDeliveries(this.o.root);
     const delivered: string[] = [];
     const failures: string[] = [];
-    for (const c of (await this.containers()).values()) {
+    const all = await this.containers();
+    if (!(all instanceof Map)) return { delivered, failures: [all.error] };
+    for (const c of all.values()) {
       if (!c.running || c.service === "consolidate" || c.service === "reembed") continue;
       const unit = c.service === "tts-pocket" ? "tts-pocket" : this.unitOf(c.service);
       if (unit === undefined) continue;

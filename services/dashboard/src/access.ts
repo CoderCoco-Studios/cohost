@@ -1,6 +1,7 @@
 import type http from "node:http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { bearerOk } from "@cohost/control";
+import type { BearerResult } from "@cohost/store";
 import { originAllowed } from "./host.js";
 
 /** The session cookie the unlock link sets (DASH-UNL-003). */
@@ -9,26 +10,33 @@ export const SESSION_COOKIE = "cohost_session";
 export const SESSION_MAX_AGE = 7_776_000;
 
 const b64 = (b: Buffer): string => b.toString("base64url");
-/** The label the session MAC key is an HMAC of; it differs from the ears listener key's label (control-plane CTRL-RUNTIME-017). */
-export const SESSION_LABEL = "cohost dashboard session";
-/** The MAC key of every session: HMAC-SHA256 of a fixed label under the control token, so changing the token ends every session. */
-const sessionKey = (token: string): Buffer => createHmac("sha256", token).update(SESSION_LABEL).digest();
-const mac = (token: string, id: string): string => b64(createHmac("sha256", sessionKey(token)).update(id).digest());
+const mac = (key: Buffer, id: string): string => b64(createHmac("sha256", key).update(id).digest());
 
-/** A new session cookie value, `<id>.<mac>` (DASH-UNL-005). Nothing is stored: the MAC alone makes it valid. */
-// @spec DASH-UNL-005
-export function newSession(token: string): string {
-  const id = b64(randomBytes(16));
-  return `${id}.${mac(token, id)}`;
+/**
+ * What the one gate checks against (DASH-CTRL-011): the settings store's token verifier and its session key. In config recovery
+ * mode with a damaged or newer store or a missing key there is no session key, so only a bearer passes (DASH-RCV-028).
+ */
+export interface Gate {
+  /** Checks a presented bearer value against the store's verifier (settings-store STORE-TOK-003). */
+  verify(token: string): Promise<BearerResult>;
+  /** The store's session key (STORE-TOK-004), undefined when none can be read. */
+  sessionKey(): Buffer | undefined;
 }
 
-/** True when `value` is a session made under `token`, compared in constant time (DASH-UNL-005). */
+/** A new session cookie value, `<id>.<mac>` under the session key (DASH-UNL-005). Nothing is stored: the MAC alone makes it valid. */
 // @spec DASH-UNL-005
-export function sessionValid(token: string, value: string | undefined): boolean {
-  if (!value) return false;
+export function newSession(key: Buffer): string {
+  const id = b64(randomBytes(16));
+  return `${id}.${mac(key, id)}`;
+}
+
+/** True when `value` is a session made under `key`, compared in constant time (DASH-UNL-005); false with no key. */
+// @spec DASH-UNL-005
+export function sessionValid(key: Buffer | undefined, value: string | undefined): boolean {
+  if (!key || !value) return false;
   const dot = value.indexOf(".");
   if (dot <= 0) return false;
-  const want = Buffer.from(mac(token, value.slice(0, dot)));
+  const want = Buffer.from(mac(key, value.slice(0, dot)));
   const got = Buffer.from(value.slice(dot + 1));
   return got.length === want.length && timingSafeEqual(got, want);
 }
@@ -45,39 +53,58 @@ export function sessionCookie(header: string | undefined): string | undefined {
 const READ = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** True when the request carries a valid session cookie and an `Origin` that lets it count (DASH-CTRL-011). */
-function sessionCounts(token: string, req: http.IncomingMessage): boolean {
-  if (!sessionValid(token, sessionCookie(req.headers.cookie))) return false;
+function sessionCounts(gate: Gate, req: http.IncomingMessage): boolean {
+  if (!hasSession(gate, req)) return false;
   const origin = req.headers.origin;
   if (origin === undefined) return READ.has(req.method ?? "GET");
   return originAllowed(origin, req.headers.host);
 }
 
 /** True when the request carries a valid session cookie, whatever its method and `Origin` (what `GET /services/control` reports). */
-export function hasSession(token: string, req: http.IncomingMessage): boolean {
-  return sessionValid(token, sessionCookie(req.headers.cookie));
+export function hasSession(gate: Gate, req: http.IncomingMessage): boolean {
+  let key: Buffer | undefined;
+  try { key = gate.sessionKey(); } catch { key = undefined; }
+  return sessionValid(key, sessionCookie(req.headers.cookie));
 }
 
 /**
  * The one decision every route the control token gates makes, in normal mode and in config recovery mode, on any full-surface
- * address (DASH-CTRL-011): a request that carries `Authorization` is judged by that header alone (`Bearer <CONTROL_TOKEN>`,
- * compared in constant time); one without it passes on a valid session cookie whose request names its own origin (or, for a
- * read, names none). Nothing else lifts it: not a loopback bind, not a loopback peer.
+ * address (DASH-CTRL-011): a request that carries `Authorization` is judged by that header alone (`Bearer <token>` that the
+ * store's verifier accepts, `busy` when too many checks wait, STORE-TOK-003); one without it passes on a valid session cookie
+ * whose request names its own origin (or, for a read, names none). Nothing else lifts it: not a loopback bind, not a loopback peer.
  */
-// @spec DASH-CTRL-011
-export function authorized(token: string, req: http.IncomingMessage): boolean {
-  if (req.headers.authorization !== undefined) return bearerOk(req.headers.authorization, token);
-  return sessionCounts(token, req);
+// @spec DASH-CTRL-011, CTRL-CONFIG-003
+export async function authorized(gate: Gate, req: http.IncomingMessage): Promise<BearerResult> {
+  if (req.headers.authorization !== undefined) return bearerOk(req.headers.authorization, (t) => gate.verify(t));
+  return sessionCounts(gate, req) ? "ok" : "bad";
 }
 
-/** The gate's refusal: 401 with `www-authenticate: Bearer`, as JSON `{ok: false, detail}` or, for the plain routes, as text. */
-export function unauthorized(res: http.ServerResponse, as: "json" | "text" = "text"): void {
+/**
+ * The gate's refusal: 401 with `www-authenticate: Bearer`, or, when the check was not run because too many wait, 429 with
+ * `retry-after: 1` (settings-store STORE-TOK-003); as JSON `{ok: false, detail}` or, for the plain routes, as text.
+ */
+export function unauthorized(res: http.ServerResponse, as: "json" | "text" = "text", busy = false): void {
+  const status = busy ? 429 : 401;
+  const headers: Record<string, string> = busy ? { "retry-after": "1" } : { "www-authenticate": "Bearer" };
+  const detail = busy ? "too many token checks are waiting; try again in a second" : "unauthorized";
   if (as === "json") {
-    res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", "www-authenticate": "Bearer" });
-    res.end(JSON.stringify({ ok: false, detail: "unauthorized" }));
+    res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...headers });
+    res.end(JSON.stringify({ ok: false, detail }));
     return;
   }
-  res.writeHead(401, { "www-authenticate": "Bearer" });
-  res.end("unauthorized");
+  res.writeHead(status, headers);
+  res.end(detail);
+}
+
+/**
+ * Runs the gate on `req` and answers its refusal (draining the request body), so a route goes on only when this returns true.
+ */
+export async function pass(gate: Gate, req: http.IncomingMessage, res: http.ServerResponse, as: "json" | "text" = "text"): Promise<boolean> {
+  const r = await authorized(gate, req);
+  if (r === "ok") return true;
+  req.resume();
+  unauthorized(res, as, r === "busy");
+  return false;
 }
 
 /** The nonces of the unlock link: 32 random bytes each, accepted once within 10 minutes, at most 16 unused (DASH-UNL-002). */
@@ -138,37 +165,39 @@ export const BAD_LINK_PAGE = `<!doctype html>
  * shared by normal mode and config recovery mode. Returns false for any other request.
  */
 // @spec DASH-UNL-003, DASH-UNL-004, DASH-UNL-006, DASH-UNL-008
-export function handleUnlock(d: { token: string; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): boolean {
+export async function handleUnlock(d: { gate: Gate; links: UnlockLinks }, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (req.method === "GET" && url.pathname === "/unlock") {
     const ok = d.links.consume(url.searchParams.get("n"));
     // The browser the link already unlocked may open it again (a second click on the terminal line, a restored tab): it goes
     // on to its unlocked dashboard, keeping the session it holds.
-    if (!ok && hasSession(d.token, req)) {
+    if (!ok && hasSession(d.gate, req)) {
       res.writeHead(303, { location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer" });
       res.end();
       return true;
     }
-    if (!ok) {
+    let key: Buffer | undefined;
+    try { key = d.gate.sessionKey(); } catch { key = undefined; }
+    if (!ok || !key) {
       res.writeHead(400, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" });
       res.end(BAD_LINK_PAGE);
       return true;
     }
     res.writeHead(303, {
       location: "/", "cache-control": "no-store", "referrer-policy": "no-referrer",
-      "set-cookie": `${SESSION_COOKIE}=${newSession(d.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`,
+      "set-cookie": `${SESSION_COOKIE}=${newSession(key)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`,
     });
     res.end();
     return true;
   }
   if (req.method === "POST" && url.pathname === "/unlock/link") {
-    req.resume();
     const json = (status: number, value: unknown, headers: Record<string, string> = {}): void => {
       res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store", ...headers });
       res.end(JSON.stringify(value));
     };
     // The one gate: the token, or the session cookie of an unlocked browser minting a link for another (DASH-CTRL-011).
-    if (!authorized(d.token, req)) { json(401, { ok: false, detail: "unauthorized" }, { "www-authenticate": "Bearer" }); return true; }
+    if (!(await pass(d.gate, req, res, "json"))) return true;
     const base = d.links.base ?? `http://${req.headers.host ?? "127.0.0.1"}`;
+    req.resume();
     json(200, { ok: true, url: `${base}/unlock?n=${d.links.issue()}` });
     return true;
   }

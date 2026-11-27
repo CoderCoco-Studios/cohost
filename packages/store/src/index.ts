@@ -19,3 +19,7 @@ export {
   type ExportSecrets, type ImportPlan, type ImportParts, type ImportSummary,
 } from "./codec.js";
 export { applyPersonalityOutbox, type OutboxResult, type OutboxStore } from "./outbox.js";
+export {
+  writeProjections, projectionOf, projectedUnits, personalityUnits, projectionsDir, projectionDir, MODELS_PROJECTION, type ProjectionUnit,
+} from "./project.js";
+export { credentialsMessage, messageText, pocketToken, getsMessage, MAX_MESSAGE_BYTES, POCKET_TOKEN_PATH, type CredentialsMessage } from "./deliver.js";

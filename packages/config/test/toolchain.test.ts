@@ -203,14 +203,27 @@ test("the installer installs system-wide only Docker, the NVIDIA container toolk
 
 // ---------------------------------------------------------------------------------------------- the task surface (DEPLOY-TOOL-005 to -016)
 
+const CONFIG_TASKS = ["get", "set", "reset", "secret", "personality", "token", "key", "reset-credentials", "export", "import", "backup", "restore", "check", "project"].map((c) => `config:${c}`);
+
 // @spec DEPLOY-TOOL-005
 test("mise.toml defines every task of the command surface, one dev:<service> per service but the dashboard", () => {
   const names = new Set(miseTasks().keys());
-  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:file", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", "secrets:project", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "cla", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:libatomic", "doctor:glibc"]) {
+  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:file", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", ...CONFIG_TASKS, "deliver", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "cla", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:libatomic", "doctor:glibc"]) {
     assert.ok(names.has(n), `task ${n}`);
   }
   for (const s of devServices) assert.ok(names.has(`dev:${s}`), `dev:${s}`);
   assert.ok(!names.has("dev:dashboard"), "the dashboard is a task of its own");
+});
+
+// @spec STORE-TASK-001
+test("the config:* tasks and deliver run their entry points after building their package, and no secrets:project task exists", () => {
+  const names = new Set(miseTasks().keys());
+  assert.ok(!names.has("secrets:project"), "no task named secrets:project");
+  for (const n of CONFIG_TASKS) {
+    assert.deepEqual(task(n).run, ["tsc -b packages/store", `node packages/store/dist/cli/index.js ${n.slice("config:".length)}`], n);
+  }
+  assert.deepEqual(task("config:project").run, ["tsc -b packages/store", "node packages/store/dist/cli/index.js project"]);
+  assert.deepEqual(task("deliver").run, ["tsc -b packages/control", "node packages/control/dist/cli.js deliver"], "deliver runs cohostctl deliver");
 });
 
 /** A run line's problem when it is not a direct tool call: a package.json script, pnpm run/exec/--filter/-r. */
@@ -266,7 +279,7 @@ test("docs:build declares the docs, the docs check, the examples and the README 
 // @spec DEPLOY-TOOL-009
 test("the task dependencies are exactly the specified graph", () => {
   const want: Record<string, string[]> = {
-    "build:ts": ["install"], "build:ui": ["build:ts"], typecheck: ["install"], "dashboard:ui": ["build:ts"], "secrets:project": ["install"],
+    "build:ts": ["install"], "build:ui": ["build:ts"], typecheck: ["install"], "dashboard:ui": ["build:ts"], deliver: ["build:native", "install"],
     "stub:llm": ["install"], "stub:tts": ["install"], "docs:build": ["install"], "docs:dev": ["install"], "docs:preview": ["install"],
     build: ["build:native", "build:ts", "build:ui"], "lint:ts": ["typecheck"], lint: ["lint:rust", "lint:ts"], test: ["build", "test:rust"],
     "test:launch": ["build", "doctor:docker"], reflect: ["build:native", "build:ts"], consolidate: ["build:native", "build:ts"], reembed: ["build:native", "build:ts"],
@@ -275,7 +288,8 @@ test("the task dependencies are exactly the specified graph", () => {
     "infra:up": ["doctor:docker"], "infra:down": ["doctor:docker"], smoke: ["doctor:docker"],
     "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], cla: [], doctor: [], "doctor:docker": [],
   };
-  for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts", "secrets:project"];
+  for (const n of CONFIG_TASKS) want[n] = ["install"];
+  for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts"];
   for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].toSorted(), [...deps].toSorted(), name);
   // The UI bundles @cohost/shared from its dist/, so a change to the shared sources must rebuild it.
   assert.deepEqual(task("build:ui").sources.map(rel), ["services/dashboard/ui/**", "packages/shared/src/**"]);
@@ -396,16 +410,23 @@ test("every task the shell scripts, the workflows, the Dockerfile and the dashbo
 });
 
 // @spec DEPLOY-TOOL-014
-test("each dev:<service> runs the built service from its directory over its and the packages' sources, never up to date; dev watches them all", () => {
+test("each dev:<service> runs the unit runner with its unit over its and the packages' sources, never up to date; dev watches them all", () => {
   for (const s of devServices) {
     const t = task(`dev:${s}`);
-    assert.deepEqual(t.run, ["node dist/index.js"], s);
-    // the projection runs first, and the service reads its own unit's projection with CONTROL_TOKEN pinned empty
-    assert.ok(t.depends.includes("secrets:project"), `dev:${s} depends on secrets:project`);
-    assert.ok(t.depends.includes("build:ts") && t.depends.includes("build:native"), `dev:${s} rebuilds through build:ts and build:native`);
-    assert.deepEqual(t.env, ["CONTROL_TOKEN=", `COHOST_SECRETS_FILE={{config_root}}/secrets/units/${s}/secrets.yaml`], `dev:${s} env`);    assert.equal(rel(t.dir ?? ""), `services/${s}`);
+    assert.deepEqual(t.run, [`node packages/control/dist/run-unit.js ${s}`], s);
+    assert.deepEqual([...t.depends].toSorted(), ["build:native", "build:ts"], `dev:${s} rebuilds through build:ts and build:native`);
+    // the runner writes the projection and hands over the credentials, so the task sets no directory and no environment of its own
+    const table = tableText(miseToml, `tasks."dev:${s}"`);
+    assert.ok(table.length > 0, `[tasks."dev:${s}"] is in mise.toml`);
+    assert.doesNotMatch(table, /^\s*(dir|env)\s*=/m, `dev:${s} has no dir and no env`);
+    assert.doesNotMatch(rel(t.dir ?? ""), /services\//, `dev:${s} runs from the repository root`);
+    assert.doesNotMatch(JSON.stringify(t.env ?? null), /CONTROL_TOKEN|COHOST_SECRETS_FILE/, `dev:${s} env`);
     assert.deepEqual(t.sources.map(rel), [`services/${s}/src/**`, "packages/*/src/**"]);
     assert.deepEqual(t.outputs, [], `dev:${s} declares outputs = []`);
+  }
+  for (const n of ["reflect", "consolidate", "reembed"]) {
+    assert.deepEqual(task(n).run, [`node packages/control/dist/run-unit.js memory services/memory/dist/${n}.js`], `${n} runs the unit runner as the memory unit`);
+    assert.doesNotMatch(tableText(miseToml, `tasks.${n}`), /^\s*(dir|env)\s*=/m, `${n} has no dir and no env`);
   }
   assert.match(miseToml, /^\[tasks\."dev:affect"\][\s\S]*?^outputs = \[\]$/m, "outputs = [] is written, not left to mise's default");
   const dev = task("dev").run.join("\n");

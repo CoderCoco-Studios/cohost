@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, lstatSync, writeFileSync, chmodSync, copyFileSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadConfig, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema, earsListenerVerifier } from "../src/index.js";
+import { loadConfigFile, loadDotEnv, secretsPath, updateSecrets, setSecretPaths, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema, earsListenerVerifier } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
@@ -31,8 +31,8 @@ test("secretsPath is COHOST_SECRETS_FILE when set and non-empty; with no file ev
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   assert.equal(process.env.COHOST_SECRETS_FILE, secretsIn(dir), "the sandbox points the loader at its own secrets directory");
   assert.equal(secretsPath(), secretsIn(dir));
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.deepEqual(warnings, []);
   for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
   assert.equal(existsSync(secretsIn(dir)), false);
@@ -61,13 +61,13 @@ test("with no workspace root, secretsPath is secrets/secrets.yaml in the parent 
 });
 
 // @spec CFG-SEC-002, CFG-LOAD-001
-test("loadConfig merges each non-empty string at a secret path, in the same cached read", () => {
+test("loadConfigFile merges each non-empty string at a secret path, in the same cached read", () => {
   const dir = sandbox({
     "config.yaml": MINIMAL_YAML,
     "secrets.yaml": "llm:\n  openai:\n    api_key: sk-openai\n  bedrock:\n    access_key_id: AKIA1\nvision:\n  obs:\n    password: obs-pw\nchat:\n  twitch:\n    client_id: cid\n    client_secret: ''\nconnections:\n  discord:\n    token: disc-tok\n",
   });
   chmodSync(secretsIn(dir), 0o600);
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.equal(cfg.llm.openai.api_key, "sk-openai");
   assert.equal(cfg.llm.bedrock.access_key_id, "AKIA1");
   assert.equal(cfg.vision.obs.password, "obs-pw");
@@ -76,8 +76,8 @@ test("loadConfig merges each non-empty string at a secret path, in the same cach
   assert.equal(cfg.connections.discord.token, "disc-tok");
   assert.equal(cfg.llm.claude.api_key, "");
   writeFileSync(secretsIn(dir), "llm:\n  openai:\n    api_key: changed\n");
-  assert.equal(loadConfig(), cfg, "cached until forced");
-  assert.equal(loadConfig(true).llm.openai.api_key, "changed");
+  assert.equal(loadConfigFile(), cfg, "cached until forced");
+  assert.equal(loadConfigFile(true).llm.openai.api_key, "changed");
 });
 
 // @spec CFG-SEC-004, CFG-SEC-011
@@ -87,8 +87,8 @@ test("a value in secrets.yaml wins; a value config.yaml holds at a secret path i
     "secrets.yaml": "llm:\n  openai:\n    api_key: from-secrets\n",
   });
   chmodSync(secretsIn(dir), 0o600);
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.equal(cfg.llm.openai.api_key, "from-secrets");
   assert.equal(cfg.llm.claude.api_key, "", "the config.yaml value is not used even with no secrets.yaml value");
   assert.equal(warnings.length, 1);
@@ -104,8 +104,8 @@ test("a secrets.yaml key outside SECRET_PATHS is ignored with one warning listin
     "secrets.yaml": "llm:\n  model: hijacked\n  openai:\n    api_key: sk-ok\n    typo_key: v\nextra: 1\n",
   });
   chmodSync(secretsIn(dir), 0o600);
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.equal(cfg.llm.model, "m");
   assert.equal(cfg.llm.openai.api_key, "sk-ok");
   assert.equal(warnings.length, 1);
@@ -118,7 +118,7 @@ test("a secrets.yaml that is not YAML, not a mapping or holds a non-string fails
   const fails = (text: string) => {
     const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": text });
     chmodSync(secretsIn(dir), 0o600);
-    try { loadConfig(true); } catch (e) { return (e as Error).message; }
+    try { loadConfigFile(true); } catch (e) { return (e as Error).message; }
     return assert.fail("expected the load to fail");
   };
   const syntax = fails("llm:\n  openai:\n    api_key: [sk-leak-1\n  claude: {\n");
@@ -140,14 +140,14 @@ test("a secrets.yaml that is not YAML, not a mapping or holds a non-string fails
 test("a secrets.yaml that cannot be read fails the load naming the file and the OS error code, not an empty set of secrets", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   mkdirSync(secretsIn(dir)); // reading a directory fails with EISDIR
-  assert.throws(() => loadConfig(true), (e: Error) => e.message.includes(secretsIn(dir)) && /EISDIR/.test(e.message));
+  assert.throws(() => loadConfigFile(true), (e: Error) => e.message.includes(secretsIn(dir)) && /EISDIR/.test(e.message));
 });
 
 // @spec CFG-SEC-008
 test("a secrets.yaml open to group or other loads with one chmod 600 warning, except on Windows or at mode 0777", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": "llm:\n  openai:\n    api_key: sk-x\n" });
   const file = secretsIn(dir);
-  const load = () => { const w = captureWarnings(() => { loadConfig(true); }); return w; };
+  const load = () => { const w = captureWarnings(() => { loadConfigFile(true); }); return w; };
   chmodSync(file, 0o600);
   assert.deepEqual(load(), []);
   chmodSync(file, 0o640);
@@ -174,7 +174,7 @@ test("updateSecrets sets and clears secret paths, keeps other keys and comments,
   try {
     assert.equal(updateSecrets(file, { "llm.openai.api_key": "sk-1" }), undefined, "returns nothing");
     assert.equal(mode(file), 0o600, "created with 0600 even under umask 0");
-    assert.equal(loadConfig(true).llm.openai.api_key, "sk-1");
+    assert.equal(loadConfigFile(true).llm.openai.api_key, "sk-1");
     writeFileSync(file, "# my credentials\nllm:\n  openai:\n    api_key: sk-1   # the key\n  claude:\n    api_key: ''\nnotes: keep me # a stray key\n");
     chmodSync(file, 0o644);
     updateSecrets(file, { "llm.claude.api_key": "sk-claude", "connections.discord.token": "disc" });
@@ -183,12 +183,12 @@ test("updateSecrets sets and clears secret paths, keeps other keys and comments,
     assert.match(text, /# my credentials/);
     assert.match(text, /api_key: sk-1\s+# the key/);
     assert.match(text, /notes: keep me # a stray key/);
-    const cfg = loadConfig(true);
+    const cfg = loadConfigFile(true);
     assert.equal(cfg.llm.openai.api_key, "sk-1");
     assert.equal(cfg.llm.claude.api_key, "sk-claude");
     assert.equal(cfg.connections.discord.token, "disc");
     updateSecrets(file, { "llm.openai.api_key": null });
-    assert.equal(loadConfig(true).llm.openai.api_key, "", "clearing is an explicit null");
+    assert.equal(loadConfigFile(true).llm.openai.api_key, "", "clearing is an explicit null");
     assert.deepEqual(setSecretPaths(file).toSorted(), ["connections.discord.token", "llm.claude.api_key"]);
     assert.deepEqual(readdirSync(dir).filter((n) => n.endsWith(".tmp")), [], "no temp file left behind");
   } finally { process.umask(prevUmask); }
@@ -210,11 +210,11 @@ test("updateSecrets trims a value, refuses one that is empty after trimming nami
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   const file = secretsIn(dir);
   updateSecrets(file, { "ears.openai.api_key": "  tok-1 \n" });
-  assert.equal(loadConfig(true).ears.openai.api_key, "tok-1");
+  assert.equal(loadConfigFile(true).ears.openai.api_key, "tok-1");
   for (const v of ["", "   ", "\n\t"]) {
     assert.throws(() => updateSecrets(file, { "ears.openai.api_key": v }), (e: Error) => e.message.includes("ears.openai.api_key") && /empty/.test(e.message));
   }
-  assert.equal(loadConfig(true).ears.openai.api_key, "tok-1", "a refused set left the value alone");
+  assert.equal(loadConfigFile(true).ears.openai.api_key, "tok-1", "a refused set left the value alone");
   assert.throws(() => updateSecrets(file, { "vision.obs.password": "pw\nline2" }), /vision\.obs\.password/);
   try { updateSecrets(file, { "llm.model": "super-secret-value" }); } catch (e) { assert.doesNotMatch((e as Error).message, /super-secret-value/); }
 });
@@ -241,7 +241,7 @@ test("no warning or error of the loader contains a secret value or text of secre
   chmodSync(secretsIn(dir), 0o644);
   const warnings: string[] = [];
   let err = "";
-  warnings.push(...captureWarnings(() => { try { loadConfig(true); } catch (e) { err = (e as Error).message; } }));
+  warnings.push(...captureWarnings(() => { try { loadConfigFile(true); } catch (e) { err = (e as Error).message; } }));
   assert.match(err, /cohost\.name/);
   assert.doesNotMatch(`${err}\n${warnings.join("\n")}`, /LEAKME/);
 });
@@ -250,7 +250,7 @@ test("no warning or error of the loader contains a secret value or text of secre
 test("loadDotEnv still works beside secrets: a credential-looking variable in .env reaches no config key", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML, ".env": "LLM_API_KEY=from-env\nANTHROPIC_API_KEY=from-env\nDISCORD_TOKEN=from-env\nOBS_PASSWORD=from-env\nTWITCH_CLIENT_ID=from-env\n" });
   loadDotEnv(join(dir, "..", ".env"));
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
 });
 
@@ -260,8 +260,8 @@ test("the shipped secrets.example.yaml lists the secret paths as empty strings w
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   copyFileSync(join(repo, "config", "secrets.example.yaml"), secretsIn(dir));
   chmodSync(secretsIn(dir), 0o600);
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.deepEqual(warnings, []);
   for (const p of TWELVE) assert.equal(getPath(cfg, p), "", p);
   // each leaf the example writes is the empty string with a comment beside it or on the line above (chat.youtube.api_key is not written there, CFG-USR-016)
@@ -273,13 +273,13 @@ test("the shipped secrets.example.yaml lists the secret paths as empty strings w
 });
 
 // @spec CFG-SEC-014
-test("loadConfig trims every secret value: a block scalar's trailing newline and padding are dropped, a blank value counts as not set", () => {
+test("loadConfigFile trims every secret value: a block scalar's trailing newline and padding are dropped, a blank value counts as not set", () => {
   const dir = sandbox({
     "config.yaml": MINIMAL_YAML,
     "secrets.yaml": 'llm:\n  openai:\n    api_key: |\n      sk-block\n  claude:\n    api_key: "  sk-padded \\t"\nvision:\n  obs:\n    password: "   "\nconnections:\n  discord:\n    token: >\n      disc-folded\n',
   });
   chmodSync(secretsIn(dir), 0o600);
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.equal(cfg.llm.openai.api_key, "sk-block");
   assert.equal(cfg.llm.claude.api_key, "sk-padded");
   assert.equal(cfg.vision.obs.password, "");
@@ -290,7 +290,7 @@ test("loadConfig trims every secret value: a block scalar's trailing newline and
 test("a secret value that still holds a line break after trimming fails the load naming the path, never the value", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": 'llm:\n  openai:\n    api_key: "first-LINE-MARKER\\nsecond"\n' });
   chmodSync(secretsIn(dir), 0o600);
-  assert.throws(() => loadConfig(true), (e: Error) =>
+  assert.throws(() => loadConfigFile(true), (e: Error) =>
     e.message.startsWith(`Invalid ${secretsIn(dir)}:`) && e.message.includes("llm.openai.api_key") && !/LINE-MARKER|second/.test(e.message));
 });
 
@@ -307,7 +307,7 @@ test("updateSecrets on a symlinked secrets.yaml writes the file the link resolve
   assert.match(readFileSync(target, "utf8"), /# mine[\s\S]*api_key: sk-new/);
   assert.equal(mode(target), 0o600);
   assert.deepEqual(readdirSync(join(dir, "store")), ["real-secrets.yaml"], "no temp file is left in the target's directory");
-  assert.equal(loadConfig(true).llm.openai.api_key, "sk-new");
+  assert.equal(loadConfigFile(true).llm.openai.api_key, "sk-new");
 });
 
 // @spec CFG-SEC-015
@@ -329,7 +329,7 @@ test("chat.youtube.api_key is a secret path (owned by CFG-SEC-003): listed, defa
   });
   assert.equal(getPath(cfg, "chat.youtube.api_key"), "");
   sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": "chat:\n  youtube:\n    api_key: yt-key\n" });
-  assert.equal(loadConfig(true).chat.youtube.api_key, "yt-key");
+  assert.equal(loadConfigFile(true).chat.youtube.api_key, "yt-key");
   assert.equal((sectionJsonSchema("chat") as any).properties.youtube.properties.api_key["x-secret"], true);
 });
 
@@ -345,13 +345,13 @@ const secretsFile = (dir: string, text: string): string => {
 test("tools.servers.*.token matches one key of the map config.yaml holds: each configured server gets its own token, others stay empty", () => {
   const dir = sandbox({ "config.yaml": TOOLS_YAML });
   secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: tok-weather\n");
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.deepEqual(warnings, []);
   assert.equal(cfg.tools.servers.weather!.token, "tok-weather");
   assert.equal(cfg.tools.servers.search!.token, "");
   secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: ''\n    search:\n      token: '  tok-search '\n");
-  cfg = loadConfig(true);
+  cfg = loadConfigFile(true);
   assert.equal(cfg.tools.servers.weather!.token, "");
   assert.equal(cfg.tools.servers.search!.token, "tok-search", "trimmed like every secret");
 });
@@ -360,8 +360,8 @@ test("tools.servers.*.token matches one key of the map config.yaml holds: each c
 test("the wildcard matches exactly one segment: another key under a server entry is not a secret path", () => {
   const dir = sandbox({ "config.yaml": TOOLS_YAML });
   secretsFile(dir, "tools:\n  servers:\n    weather:\n      url: http://evil/mcp\n      token: ok-tok\n");
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.equal(cfg.tools.servers.weather!.token, "ok-tok");
   assert.equal(cfg.tools.servers.weather!.url, "http://h:1/mcp", "secrets.yaml cannot override a setting");
   const ignored = warnings.filter((w) => /not secret keys/.test(w));
@@ -374,15 +374,15 @@ test("the wildcard matches exactly one segment: another key under a server entry
 test("a non-string token at a wildcard path fails the load naming the concrete path, never the value", () => {
   const dir = sandbox({ "config.yaml": TOOLS_YAML });
   secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: 12345\n");
-  assert.throws(() => loadConfig(true), (e: Error) => e.message.includes("tools.servers.weather.token") && !e.message.includes("12345"));
+  assert.throws(() => loadConfigFile(true), (e: Error) => e.message.includes("tools.servers.weather.token") && !e.message.includes("12345"));
 });
 
 // @spec CFG-SEC-017
 test("a token for a server config.yaml does not hold is not merged and is warned by path, once, in the CFG-SEC-005 warning", () => {
   const dir = sandbox({ "config.yaml": TOOLS_YAML });
   secretsFile(dir, "llm:\n  openai:\n    api_key: sk-ok\ntools:\n  servers:\n    gone:\n      token: tok-gone-secret\n    weather:\n      token: tok-w\n");
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.equal(cfg.tools.servers.gone, undefined, "the merge never creates the entry a credential belongs to");
   assert.equal(cfg.tools.servers.weather!.token, "tok-w");
   assert.equal(warnings.filter((w) => w.includes("tools.servers.gone.token")).length, 1);
@@ -394,8 +394,8 @@ test("a token for a server config.yaml does not hold is not merged and is warned
 test("with no tools section in config.yaml a token under tools.servers is ignored by path and creates no entry", () => {
   const dir = sandbox({ "config.yaml": MINIMAL_YAML });
   secretsFile(dir, "tools:\n  servers:\n    weather:\n      token: tok-w\n");
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  const warnings = captureWarnings(() => { cfg = loadConfigFile(true); });
   assert.deepEqual(cfg.tools.servers, {});
   assert.equal(warnings.filter((w) => w.includes("tools.servers.weather.token")).length, 1);
 });
@@ -405,13 +405,13 @@ test("updateSecrets sets, trims and clears a token at a wildcard path; clearing 
   const dir = sandbox({ "config.yaml": TOOLS_YAML });
   const file = secretsIn(dir);
   updateSecrets(file, { "tools.servers.weather.token": "  tok-1 " });
-  assert.equal(loadConfig(true).tools.servers.weather!.token, "tok-1");
+  assert.equal(loadConfigFile(true).tools.servers.weather!.token, "tok-1");
   assert.equal(mode(file), 0o600);
   // a removed server's token is cleared by path although config.yaml no longer holds the server
   writeFileSync(join(dir, "config.yaml"), MINIMAL_YAML);
   updateSecrets(file, { "tools.servers.weather.token": null });
   assert.match(readFileSync(file, "utf8"), /weather:\s*\n\s+token: ""/);
-  const warnings = captureWarnings(() => { loadConfig(true); });
+  const warnings = captureWarnings(() => { loadConfigFile(true); });
   assert.deepEqual(warnings.filter((w) => w.includes("tools.servers.weather.token")), [], "an empty value is not warned about");
 });
 
@@ -442,7 +442,7 @@ test("a tools.servers name that holds a dot fails the load naming the entry, and
   });
   chmodSync(process.env.COHOST_SECRETS_FILE!, 0o600);
   let thrown = "";
-  const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
+  const warnings = captureWarnings(() => { try { loadConfigFile(true); } catch (e) { thrown = (e as Error).message; } });
   assert.match(thrown, /tools\.servers\.a\.b/, "the load fails and names the entry");
   assert.ok(warnings.some((w) => w.includes("tools.servers.a.b") && !w.includes("tk-SECRET")), `the stray token is warned about by path: ${warnings.join(" | ")}`);
 });
@@ -453,7 +453,7 @@ test("the loader merges a well-formed ears.http.verifier from the secrets file i
   const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": `ears:\n  http:\n    verifier: ${key}\n  openai:\n    api_key: sk-e\n` });
   chmodSync(secretsIn(dir), 0o600);
   const warnings = captureWarnings(() => {
-    const cfg = loadConfig(true);
+    const cfg = loadConfigFile(true);
     assert.equal(earsListenerVerifier(cfg), key);
     assert.equal(cfg.ears.openai.api_key, "sk-e");
   });
@@ -468,11 +468,11 @@ test("an ears.http.verifier that is not 64 lowercase hex digits is dropped with 
   for (const bad of ["ABCDEF".repeat(10) + "abcd", "a".repeat(63), "a".repeat(65), "not-a-key-value-at-all"]) {
     const dir = sandbox({ "config.yaml": MINIMAL_YAML, "secrets.yaml": `ears:\n  http:\n    verifier: ${bad}\n` });
     chmodSync(secretsIn(dir), 0o600);
-    const warnings = captureWarnings(() => assert.equal(earsListenerVerifier(loadConfig(true)), undefined, bad));
+    const warnings = captureWarnings(() => assert.equal(earsListenerVerifier(loadConfigFile(true)), undefined, bad));
     const about = warnings.filter((w) => w.includes("ears.http.verifier"));
     assert.equal(about.length, 1, warnings.join(" | "));
     assert.ok(!about[0]!.includes(bad), "the value is never in the warning");
   }
   sandbox({ "config.yaml": MINIMAL_YAML });
-  assert.equal(earsListenerVerifier(loadConfig(true)), undefined, "no secrets file: no key");
+  assert.equal(earsListenerVerifier(loadConfigFile(true)), undefined, "no secrets file: no key");
 });

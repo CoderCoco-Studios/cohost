@@ -1,7 +1,7 @@
 import { WebSocketServer } from "ws";
 import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, withContainerRestarts, type ServiceHealth } from "@cohost/control";
-import { loadPersonality, savePersonality, urls } from "@cohost/config";
+import { loadPersonalityFile as loadPersonality, savePersonality, urls } from "@cohost/config";
 import { createDashboardHandler } from "./routes.js";
 import { AppliedView } from "./applied.js";
 import { ModelStore, modelsDir } from "./models.js";

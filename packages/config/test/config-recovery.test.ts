@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigError, canSetKey, checkConfig, loadConfig, parseConfigText, placeholderFallback, resetConfigKey, schemaAt, secretRepair, setConfigKey, type ConfigProblem } from "../src/index.js";
+import { ConfigError, canSetKey, checkConfig, loadConfigFile, parseConfigText, placeholderFallback, resetConfigKey, schemaAt, secretRepair, setConfigKey, type ConfigProblem } from "../src/index.js";
 import { MINIMAL_YAML, captureWarnings, isolateEnv, repo, sandbox, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
-/** The error `loadConfig(true)` throws for the sandbox as it stands. */
+/** The error `loadConfigFile(true)` throws for the sandbox as it stands. */
 const loadError = (): unknown => {
-  try { loadConfig(true); } catch (e) { return e; }
+  try { loadConfigFile(true); } catch (e) { return e; }
   return assert.fail("expected the load to fail");
 };
 
@@ -70,7 +70,7 @@ test("a malformed secrets.yaml is a ConfigError of kind secrets naming the path,
 // @spec CFG-RCV-002
 test("checkConfig lists the problems of both files, secrets first, without caching or logging, and is empty for a valid pair", () => {
   sandbox({ "config.yaml": MINIMAL_YAML });
-  const ok = loadConfig(true);
+  const ok = loadConfigFile(true);
   assert.deepEqual(checkConfig(), []);
   const dir = sandbox({ "config.yaml": MINIMAL_YAML.replace("name: Coco", "name: \"${NAME}\""), "secrets.yaml": "voice:\n  openai:\n    api_key: [a]\n" });
   const warnings = captureWarnings(() => {
@@ -79,7 +79,7 @@ test("checkConfig lists the problems of both files, secrets first, without cachi
     assert.equal(problems[1]!.file, join(dir, "config.yaml"));
   });
   assert.deepEqual(warnings, []);
-  assert.equal(loadConfig(), ok, "checkConfig leaves the loader's cache alone");
+  assert.equal(loadConfigFile(), ok, "checkConfig leaves the loader's cache alone");
 });
 
 // @spec CFG-RCV-002

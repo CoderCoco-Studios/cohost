@@ -4,7 +4,7 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 58 specs: 53 `[x]`, 4 `[ ]`, 1 `[D]`; CONN-DISC-001 takes the bot token from the delivery ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 58 specs: 54 `[x]`, 3 `[ ]`, 1 `[D]`; CONN-DISC-001 takes the bot token from the delivery ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 58 specs: 54 `[x]`, 3 `[ ]` (CONN-DESK-001, 004 and 005, the desktop helper), 1 `[D]`.
 

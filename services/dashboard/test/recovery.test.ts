@@ -224,7 +224,7 @@ test("stack posts other than stop and every lifecycle post are refused with the 
     for (const path of ["/stack/launch", "/stack/rebuild", "/stack/restart", "/services/voice/start", "/services/voice/stop", "/services/voice/restart"]) {
       const res = await fetch(`${on.url}${path}`, { method: "POST", headers: { authorization: "Bearer tok" } });
       assert.equal(res.status, 409, path);
-      assert.match(((await res.json()) as { detail: string }).detail, /^the config is invalid \(3 problems; first: .*recovery screen/);
+      assert.match(((await res.json()) as { detail: string }).detail, /^the settings store cannot be used \(3 problems; first: .*recovery screen/);
     }
     assert.equal((await fetch(`${on.url}/health`)).status, 200);
     assert.deepEqual(await (await fetch(`${on.url}/services/control`)).json(), { runtime: "compose", advanced: false, unlocked: false });

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync, existsSync, readdir
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ConfigError, loadProjection, loadProjectionExpressions, loadProjectionPersonality, outboxPath, readPersonalityOutbox, sha256Hex,
+  ConfigError, loadConfig, loadExpressions, loadPersonality, ollamaModels, OLLAMA_MODEL_SECTIONS, outboxPath, readPersonalityOutbox, sha256Hex,
   writePersonalityOutbox, earsListenerVerifier, UNIT_SETTINGS, parseYaml,
 } from "../src/index.js";
 import { captureWarnings, isolateEnv, repo } from "./helpers/config-sandbox.js";
@@ -26,20 +26,20 @@ const seedSections = (unit: string): Record<string, unknown> =>
   Object.fromEntries(UNIT_SETTINGS.find((u) => u.id === unit)!.config.map((s) => [s, exampleSection(s) ?? {}]));
 
 // @spec CFG-LOAD-001
-test("loadProjection returns each held section validated with its defaults filled in, cached until force", () => {
+test("loadConfig returns each held section validated with its defaults filled in, cached until force", () => {
   const dir = projection("voice", { voice: { speed: 1.1 }, network: { lan: [] }, logging: {} });
-  const cfg = loadProjection({ dir, force: true });
+  const cfg = loadConfig({ dir, force: true });
   assert.equal(cfg.voice.speed, 1.1);
   assert.equal(typeof cfg.voice.engine, "string", "a key the section does not hold takes its schema default");
   assert.deepEqual(cfg.network?.lan, []);
-  assert.equal(loadProjection({ dir }), cfg, "cached");
-  assert.notEqual(loadProjection({ dir, force: true }), cfg);
+  assert.equal(loadConfig({ dir }), cfg, "cached");
+  assert.notEqual(loadConfig({ dir, force: true }), cfg);
 });
 
 // @spec CFG-LOAD-001
 test("reading a section the projection does not hold throws, naming the section and the unit; brain parts likewise", () => {
   const dir = projection("affect", { "brain.affect": {}, "brain.input_limits": {}, viewer_text: {}, cohost: { name: "Coco", streamer: "Chris" }, llm: { model: "m", embed_model: "e" }, logging: {} });
-  const cfg = loadProjection({ dir, force: true });
+  const cfg = loadConfig({ dir, force: true });
   assert.equal(cfg.cohost.name, "Coco");
   assert.ok(cfg.brain.affect, "a held brain part reads");
   assert.throws(() => cfg.chat, /affect read the settings section chat, which its projection does not hold/);
@@ -51,7 +51,7 @@ test("reading a section the projection does not hold throws, naming the section 
 // @spec CFG-LOAD-001, CFG-LOAD-003
 test("every unit's projection of the shipped example's declared sections loads, and every other section throws", () => {
   for (const u of UNIT_SETTINGS.filter((x) => x.config.length > 0)) {
-    const cfg = loadProjection({ dir: projection(u.id, seedSections(u.id)), force: true }) as unknown as Record<string, Record<string, unknown>>;
+    const cfg = loadConfig({ dir: projection(u.id, seedSections(u.id)), force: true }) as unknown as Record<string, Record<string, unknown>>;
     for (const s of u.config) {
       const [top, sub] = s.split(".");
       assert.doesNotThrow(() => (sub ? cfg[top!]![sub] : cfg[top!]), `${u.id} reads ${s}`);
@@ -65,7 +65,7 @@ test("every unit's projection of the shipped example's declared sections loads, 
 // @spec CFG-LOAD-003
 test("a held section that fails validation throws Invalid <file>: listing every failing key; a refinement across brain parts counts only when both are held", () => {
   const dir = projection("voice", { voice: { speed: "fast" }, network: { lan: ["not a host!"] }, logging: {} });
-  assert.throws(() => loadProjection({ dir, force: true }), (e: unknown) => {
+  assert.throws(() => loadConfig({ dir, force: true }), (e: unknown) => {
     assert.ok(e instanceof ConfigError);
     assert.match(e.message, new RegExp(`^Invalid ${join(dir, "settings.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:`));
     assert.match(e.message, /voice\.speed: /);
@@ -73,20 +73,20 @@ test("a held section that fails validation throws Invalid <file>: listing every 
     return true;
   });
   // own_lines 30 against the default 24 events: not checked while the unit does not hold brain.working_memory_events.
-  assert.doesNotThrow(() => loadProjection({ dir: projection("x", { "brain.working_memory_own_lines": 30 }), force: true }));
+  assert.doesNotThrow(() => loadConfig({ dir: projection("x", { "brain.working_memory_own_lines": 30 }), force: true }));
   assert.throws(
-    () => loadProjection({ dir: projection("x", { "brain.working_memory_own_lines": 30, "brain.working_memory_events": 24 }), force: true }),
+    () => loadConfig({ dir: projection("x", { "brain.working_memory_own_lines": 30, "brain.working_memory_events": 24 }), force: true }),
     /brain\.working_memory_own_lines: must be less than/,
   );
   // A refinement inside one brain part is checked with that part.
-  assert.throws(() => loadProjection({ dir: projection("x", { "brain.cortex": { clause_min_chars: 50, clause_max_chars: 40 } }), force: true }), /brain\.cortex\.clause_max_chars/);
+  assert.throws(() => loadConfig({ dir: projection("x", { "brain.cortex": { clause_min_chars: 50, clause_max_chars: 40 } }), force: true }), /brain\.cortex\.clause_max_chars/);
 });
 
 // @spec CFG-LOAD-002, CFG-LOAD-005
 test("nulls are dropped so defaults apply; unknown keys and unknown sections load with exactly one warning naming them", () => {
   const dir = projection("voice", { voice: { speed: null, tpyo: 1 }, network: {}, logging: {}, nonsense: {} });
-  let cfg!: ReturnType<typeof loadProjection>;
-  const warnings = captureWarnings(() => { cfg = loadProjection({ dir, force: true }); });
+  let cfg!: ReturnType<typeof loadConfig>;
+  const warnings = captureWarnings(() => { cfg = loadConfig({ dir, force: true }); });
   assert.equal(typeof cfg.voice.speed, "number");
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /voice\.tpyo/);
@@ -96,62 +96,89 @@ test("nulls are dropped so defaults apply; unknown keys and unknown sections loa
 // @spec CFG-LOAD-007
 test("a missing settings.json, one that is not JSON or not a format-1 projection fails naming the file and who writes it", () => {
   const empty = mkdtempSync(join(tmpdir(), "cohost-proj-"));
-  assert.throws(() => loadProjection({ dir: empty, force: true }), /settings\.json does not exist: .*written by the dashboard, cohostctl or the unit runner/);
+  assert.throws(() => loadConfig({ dir: empty, force: true }), /settings\.json does not exist: .*written by the dashboard, cohostctl or the unit runner/);
   writeFileSync(join(empty, "settings.json"), "{not json");
-  assert.throws(() => loadProjection({ dir: empty, force: true }), /settings\.json is not JSON/);
+  assert.throws(() => loadConfig({ dir: empty, force: true }), /settings\.json is not JSON/);
   writeFileSync(join(empty, "settings.json"), JSON.stringify({ format: 2, unit: "voice", revision: 1, sections: {} }));
-  assert.throws(() => loadProjection({ dir: empty, force: true }), /not a projection of format 1/);
+  assert.throws(() => loadConfig({ dir: empty, force: true }), /not a projection of format 1/);
 });
 
 // @spec CFG-ISO-007
 test("an isolation override applies to a held section and is validated like a stored value; one for a section not held is skipped", () => {
   const dir = projection("voice", { voice: {}, network: {}, logging: {} });
-  const cfg = loadProjection({ dir, force: true, isolation: JSON.stringify({ VOICE_ENGINE: "stub", CHAT_SOURCES: "[fake]" }) });
+  const cfg = loadConfig({ dir, force: true, isolation: JSON.stringify({ VOICE_ENGINE: "stub", CHAT_SOURCES: "[fake]" }) });
   assert.equal(cfg.voice.engine, "stub");
   assert.throws(() => cfg.chat, /voice read the settings section chat/, "the chat override created no chat section");
-  assert.throws(() => loadProjection({ dir, force: true, isolation: JSON.stringify({ VOICE_ENGINE: "nope" }) }), /voice\.engine: [\s\S]*COHOST_ISOLATION overrides applied: VOICE_ENGINE/);
+  assert.throws(() => loadConfig({ dir, force: true, isolation: JSON.stringify({ VOICE_ENGINE: "nope" }) }), /voice\.engine: [\s\S]*COHOST_ISOLATION overrides applied: VOICE_ENGINE/);
 });
 
 // @spec CFG-SEC-002, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020
 test("delivered credentials are set at their secret paths after validation; a token for an absent server, a bad verifier or a path outside the held sections is dropped with a warning naming the path, never the value", () => {
   const dir = projection("ears", { ears: {}, network: {}, logging: {} });
   const hex = "a".repeat(64);
-  let cfg!: ReturnType<typeof loadProjection>;
+  let cfg!: ReturnType<typeof loadConfig>;
   let warnings = captureWarnings(() => {
-    cfg = loadProjection({ dir, force: true, credentials: { "ears.openai.api_key": "sk-ears", "ears.http.verifier": hex, "llm.openai.api_key": "sk-secret-value" } });
+    cfg = loadConfig({ dir, force: true, credentials: { "ears.openai.api_key": "sk-ears", "ears.http.verifier": hex, "llm.openai.api_key": "sk-secret-value" } });
   });
   assert.equal(cfg.ears.openai.api_key, "sk-ears");
   assert.equal(earsListenerVerifier(cfg), hex);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /llm\.openai\.api_key/);
   assert.doesNotMatch(warnings.join("\n"), /sk-secret-value|sk-ears/);
-  warnings = captureWarnings(() => { cfg = loadProjection({ dir, force: true, credentials: { "ears.http.verifier": "XYZ-not-hex" } }); });
+  warnings = captureWarnings(() => { cfg = loadConfig({ dir, force: true, credentials: { "ears.http.verifier": "XYZ-not-hex" } }); });
   assert.equal(earsListenerVerifier(cfg), undefined);
   assert.match(warnings.join("\n"), /ears\.http\.verifier/);
   assert.doesNotMatch(warnings.join("\n"), /XYZ-not-hex/);
 
   const tools = projection("tools", { tools: { servers: { docs: { url: "https://example.com/mcp" } } }, cohost: { name: "a", streamer: "b" }, chat: {}, viewer_text: {}, network: {}, logging: {} });
   warnings = captureWarnings(() => {
-    cfg = loadProjection({ dir: tools, force: true, credentials: { "tools.servers.docs.token": "t-docs", "tools.servers.gone.token": "t-gone" } });
+    cfg = loadConfig({ dir: tools, force: true, credentials: { "tools.servers.docs.token": "t-docs", "tools.servers.gone.token": "t-gone" } });
   });
   assert.equal(cfg.tools.servers.docs!.token, "t-docs");
   assert.equal(cfg.tools.servers.gone, undefined, "a credential creates no entry the settings lack");
   assert.match(warnings.join("\n"), /tools\.servers\.gone\.token/);
   assert.doesNotMatch(warnings.join("\n"), /t-gone/);
+
+  // The listener key in the delivery of a unit whose projection holds no ears section: the reason names that, not the form.
+  const voice = projection("voice", { voice: {}, network: {}, logging: {} });
+  warnings = captureWarnings(() => { loadConfig({ dir: voice, force: true, credentials: { "ears.http.verifier": hex } }); });
+  assert.match(warnings.join("\n"), /ears\.http\.verifier: it is delivered to ears alone, and the projection of voice holds no ears section/);
+  assert.doesNotMatch(warnings.join("\n"), /64 lowercase hex/);
+});
+
+// @spec CFG-LOAD-001, CFG-LOAD-007
+test("a projection written for another unit is refused naming both; a call naming another directory, unit or credentials reloads", () => {
+  const dir = projection("voice", { voice: {}, network: {}, logging: {} });
+  assert.throws(() => loadConfig({ dir, unit: "ears", force: true }), /settings\.json is the projection of voice, not of ears/);
+  const a = loadConfig({ dir, unit: "voice", force: true, credentials: { "voice.openai.api_key": "k1" } });
+  assert.equal(loadConfig(), a, "a call naming nothing returns the cached configuration");
+  assert.equal(loadConfig({ dir, credentials: { "voice.openai.api_key": "k1" } }), a, "the same credentials and directory: cached");
+  const b = loadConfig({ dir, credentials: { "voice.openai.api_key": "k2" } });
+  assert.notEqual(b, a, "other credentials reload");
+  assert.equal(b.voice.openai.api_key, "k2");
+  const other = projection("voice", { voice: { speed: 1.3 }, network: {}, logging: {} });
+  assert.equal(loadConfig({ dir: other }).voice.speed, 1.3, "another directory reloads");
+});
+
+// @spec STORE-PROJ-005, CFG-MODEL-001
+test("ollamaModels reads only the sections the models projection holds", () => {
+  const cfg = loadConfig({ dir: projection("models", Object.fromEntries(OLLAMA_MODEL_SECTIONS.map((s) => [s, exampleSection(s) ?? {}]))), force: true });
+  assert.doesNotThrow(() => ollamaModels(cfg), "a read outside OLLAMA_MODEL_SECTIONS would throw on the guarded configuration");
+  assert.ok(ollamaModels(cfg).required.length > 0);
 });
 
 // @spec CFG-USR-001, CFG-USR-002
 test("the documents are read from the projection on every call; an absent personality throws naming the unit, absent expressions are empty, invalid ones throw Invalid <file>:", () => {
   const dir = projection("cortex", {}, { personality: "# Coco\n", expressions: { vtube_studio: { happy: "Smile" } } });
-  assert.equal(loadProjectionPersonality(dir), "# Coco\n");
-  assert.equal(loadProjectionExpressions(dir).vtube_studio!.happy, "Smile");
+  assert.equal(loadPersonality(dir), "# Coco\n");
+  assert.equal(loadExpressions(dir).vtube_studio!.happy, "Smile");
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ format: 1, unit: "cortex", revision: 8, sections: {}, documents: { personality: "# Changed\n" } }));
-  assert.equal(loadProjectionPersonality(dir), "# Changed\n", "not cached");
-  assert.deepEqual(loadProjectionExpressions(dir), {});
+  assert.equal(loadPersonality(dir), "# Changed\n", "not cached");
+  assert.deepEqual(loadExpressions(dir), {});
   const none = projection("chat", {});
-  assert.throws(() => loadProjectionPersonality(none), /projection of chat holds no personality document/);
+  assert.throws(() => loadPersonality(none), /projection of chat holds no personality document/);
   const bad = projection("avatar", {}, { expressions: { browser: { happy: "x".repeat(65) } } });
-  assert.throws(() => loadProjectionExpressions(bad), /^Error: Invalid .*settings\.json:\n {2}expressions\.browser\.happy: /);
+  assert.throws(() => loadExpressions(bad), /^Error: Invalid .*settings\.json:\n {2}expressions\.browser\.happy: /);
 });
 
 // @spec STORE-OUT-001

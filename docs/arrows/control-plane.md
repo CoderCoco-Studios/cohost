@@ -4,7 +4,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 120 specs: 103 `[x]`, 15 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 120 specs: 114 `[x]`, 4 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 120 specs: 103 `[x]`, 15 `[ ]`, 2 `[D]`.
 

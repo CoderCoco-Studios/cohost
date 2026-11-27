@@ -236,13 +236,14 @@ test("shutdown stops the engine, disconnects the driver and stops the bus", asyn
   assert.equal(t.driver.params.length, frames); // the engine loop is stopped
 });
 
-// @spec AVATAR-BUS-007
-test("a configuration that does not load logs the loader's message and exits 1, with no bus and no heartbeat", async (ctx) => {
+// @spec AVATAR-BUS-007, SHARED-BOOT-002
+test("a configuration that does not load logs the loader's message and exits 1, having stopped the waiting heartbeat and the bus", async (ctx) => {
   const t = boot(ctx, { env: { loadConfig: () => { throw new Error("bad config"); } } });
   await runAvatar(t.b);
   assert.deepEqual(t.exits, [1]);
   assert.deepEqual(t.rec.msgs("error"), ["bad config"]);
-  assert.equal(t.bus.health.length, 0);
+  assert.equal(t.bus.stopped, true, "avatar gets a credentials message, so its bus exists before the load and is stopped");
+  assert.equal(t.bus.subscribed.length, 0);
 });
 
 // @spec AVATAR-BUS-007

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ interface Svc {
   build?: { context?: string; dockerfile?: string; args: { SERVICE: string } };
   restart?: string;
   volumes?: unknown[];
+  tmpfs?: string[];
   depends_on?: Record<string, { condition?: string }>;
   healthcheck?: { test?: string[]; interval?: string };
 }
@@ -59,10 +60,11 @@ const IN_NETWORK = {
   STT_URL: "http://stt:8000",
   VOICE_URL: "http://voice:8700",
   CONFIG_DIR: "/app/config",
-  COHOST_SECRETS_FILE: "", // pinned empty so a value in .env cannot point the loader away from the unit's projection (DEPLOY-COMPOSE-003)
   COHOST_DATA_DIR: "/app/data", // pinned so each program's log file lands in the ./data/logs mount (DEPLOY-COMPOSE-003, DEPLOY-COMPOSE-029)
 };
 const TOOLS_ENVIRONMENT = ["COHOST_ISOLATION", "CONFIG_DIR", "REDIS_URL"];
+/** The long-syntax mount of a unit's projection, read-only at /app/config and never created by Compose (DEPLOY-COMPOSE-025). */
+const projectionMount = (unit: string) => ({ type: "bind", source: `./data/projections/${unit}`, target: "/app/config", read_only: true, bind: { create_host_path: false } });
 
 // @spec DEPLOY-COMPOSE-002
 test("every application service builds the root Dockerfile with SERVICE set to its directory name and inherits the shared x-ts-service settings", () => {
@@ -78,7 +80,8 @@ test("every application service builds the root Dockerfile with SERVICE set to i
       assert.equal(svc.env_file, ".env", `${name}: env_file`);
       for (const [k, v] of Object.entries(IN_NETWORK)) assert.equal(svc.environment?.[k], v, `${name}: ${k}`);
     }
-    assert.ok(svc.volumes?.includes(name === "tools" ? "./config:/app/config:ro" : "./config:/app/config"), `${name}: the config bind mount`);
+    assert.deepEqual(svc.volumes?.filter((m) => typeof m !== "string"), [projectionMount(name)], `${name}: its own projection, read-only at /app/config`);
+    assert.ok(!svc.volumes?.some((m) => typeof m === "string" && m.includes("/app/config")), `${name}: no other mount at /app/config`);
     assert.equal(svc.volumes?.includes("./data/logs:/app/data/logs"), name !== "tools", `${name}: the logs bind mount`);
     assert.ok(svc.extra_hosts?.includes("host.docker.internal:host-gateway"), `${name}: host-gateway`);
     assert.equal(svc.depends_on?.redis?.condition, "service_healthy", `${name}: redis healthy`);
@@ -115,32 +118,30 @@ test("every published port is loopback-only, and voice publishes 8700", () => {
 });
 
 // @spec DEPLOY-HOST-002
-test(".env.example carries the empty token as the one lock, no CONTROL_ENABLED, the host and the docker bin hint, and no port", () => {
+test(".env.example carries no CONTROL_TOKEN line but says mise run config:token sets it, no CONTROL_ENABLED, the host and the docker bin hint, and no port", () => {
   const env = readFileSync(root(".env.example"), "utf8");
   const line = (k: string) => env.split("\n").find((l) => l.startsWith(`${k}=`));
   assert.doesNotMatch(env, /CONTROL_ENABLED/, "no CONTROL_ENABLED line or mention");
-  assert.match(line("CONTROL_TOKEN") ?? "", /^CONTROL_TOKEN=\s*(#.*)?$/);
-  // the comment above the token line: the one lock, the dashboard refuses to start without it, a bearer for programs, the
-  // unlock link in a browser, and the installer fills it
-  const lines = env.split("\n");
-  const at = lines.findIndex((l) => l.startsWith("CONTROL_TOKEN="));
-  let first = at;
-  while (first > 0 && lines[first - 1]!.startsWith("#")) first--;
-  const comment = lines.slice(first, at).join("\n");
-  assert.match(comment, /one lock/);
-  assert.match(comment, /does not start without it/);
-  assert.match(comment, /bearer/);
-  assert.match(comment, /unlock link/);
-  assert.match(comment, /install\.sh fills it/);
-  assert.match(comment, /openssl rand -hex 24/);
+  assert.ok(!env.split("\n").some((l) => /^#?\s*CONTROL_TOKEN=/.test(l)), "no CONTROL_TOKEN line, set or commented");
+  // The comment naming the control token: set with mise run config:token, printed once for the password manager, and the
+  // settings store keeps only its verifier. Comment lines are joined so a sentence may wrap.
+  const comments = env.split("\n").filter((l) => l.startsWith("#")).map((l) => l.replace(/^#\s?/, "")).join(" ");
+  assert.match(comments, /control token[^.]*mise run config:token/i);
+  assert.match(comments, /prints it\s+once for your password manager/);
+  assert.match(comments, /settings store keeps only its verifier/);
   assert.match(env, /0\.0\.0\.0 opens the full dashboard to other machines,\n# and the control token and the unlock cookie then cross the network in cleartext/);
-  assert.equal(line("DASHBOARD_PORT"), undefined, "the ports are dashboard.port and dashboard.lan_port in config.yaml");
+  assert.equal(line("DASHBOARD_PORT"), undefined, "the ports are the settings dashboard.port and dashboard.lan_port");
   assert.equal(line("DASHBOARD_LAN_PORT"), undefined);
   assert.equal(line("DASHBOARD_HOST"), "DASHBOARD_HOST=127.0.0.1");
   assert.match(env, /^# COHOST_DOCKER_BIN=/m);
-  assert.match(env, /openssl rand -hex 24/);
   assert.match(env, /docker\.exe/);
-  assert.match(env, /0\.0\.0\.0/);
+});
+
+// @spec CFG-USR-012
+test(".env.example lists a commented COHOST_KEY_FILE and no credential path variable", () => {
+  const env = readFileSync(root(".env.example"), "utf8");
+  assert.match(env, /^# COHOST_KEY_FILE=$/m);
+  assert.doesNotMatch(env, /COHOST_SECRETS_FILE|COHOST_ISOLATION/);
 });
 
 // @spec DEPLOY-CI-002
@@ -152,15 +153,15 @@ test("compose-smoke.sh no longer expects a compose dashboard", () => {
 });
 
 // @spec DEPLOY-IMG-004, DEPLOY-IMG-005
-test(".dockerignore keeps the VTube Studio token, the secrets directory and the user-owned config files out of the build context; the examples stay in", () => {
+test(".dockerignore keeps data/ (the settings store, its backups and the projections) and .env out of the build context, names no retired settings file, and keeps the examples in", () => {
   const lines = readFileSync(root(".dockerignore"), "utf8").split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
-  for (const f of ["config/.vts-token", "secrets", "config/config.yaml", "config/personality.md", "config/expressions.yaml", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
-  assert.ok(!lines.includes("config/secrets.yaml"), "the credentials file no longer lives in ./config");
+  for (const f of ["data", ".env"]) assert.ok(lines.includes(f), `${f} is excluded`);
+  for (const f of ["secrets", "config/.vts-token", "config/config.yaml", "config/personality.md", "config/expressions.yaml", "config/secrets.yaml"]) assert.ok(!lines.includes(f), `${f} is no longer listed`);
   assert.ok(!lines.some((l) => /example/.test(l) || l === "config" || l === "config/*"), "the config/*.example.* files stay in the context");
 });
 
 // @spec DEPLOY-CI-002
-test("compose-smoke.sh starts the services from .env.example alone: it sets no operator setting and needs no credential (its secrets directories hold empty mappings only)", () => {
+test("compose-smoke.sh starts the services from .env.example alone: it sets no operator setting and needs no credential", () => {
   const sh = readFileSync(root("scripts/compose-smoke.sh"), "utf8");
   const code = sh.split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
   assert.match(code, /\[ -f \.env \] \|\| cp \.env\.example \.env/);
@@ -170,7 +171,7 @@ test("compose-smoke.sh starts the services from .env.example alone: it sets no o
 });
 
 // @spec DEPLOY-COMPOSE-026
-test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile, publishes no port, mounts only ./config read-only and its own secrets projection, and depends on redis healthy alone", () => {
+test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile, publishes no port, mounts only its projection read-only beside its /run/cohost tmpfs, and depends on redis healthy alone", () => {
   const tools = compose.services.tools!;
   assert.ok(tools, "tools is a compose service");
   assert.equal(tools.build?.context, ".");
@@ -181,9 +182,8 @@ test("tools builds the root Dockerfile with SERVICE tools, belongs to no profile
   assert.ok(tools.extra_hosts?.includes("host.docker.internal:host-gateway"), "host-side MCP servers are reached through the host gateway");
   assert.equal(tools.profiles, undefined, "no profile: a tool the owner enabled must never silently not run");
   assert.equal(tools.ports, undefined);
-  assert.deepEqual(tools.volumes?.filter((m) => typeof m === "string"), ["./config:/app/config:ro"], "the config mount is read-only");
-  assert.deepEqual(tools.volumes?.filter((m) => typeof m !== "string"), [{ type: "bind", source: "./secrets/units/tools", target: "/app/secrets", read_only: true, bind: { create_host_path: false } }], "its projection, long syntax, the source never created (DEPLOY-SECRET-002)");
-  assert.equal(tools.volumes?.length, 2, "no volume beyond those two");
+  assert.deepEqual(tools.volumes, [projectionMount("tools")], "its projection alone, long syntax, read-only, the source never created (DEPLOY-COMPOSE-025)");
+  assert.deepEqual(tools.tmpfs, ["/run/cohost:mode=0700,size=1m"], "its credentials arrive in RAM (DEPLOY-COMPOSE-033)");
   assert.equal(tools.environment?.REDIS_URL, "redis://redis:6379");
   assert.equal(tools.environment?.CONFIG_DIR, "/app/config");
   assert.equal(tools.environment?.COHOST_ISOLATION, "${COHOST_ISOLATION:-}");
@@ -196,7 +196,7 @@ test("tools gets no more host access than the other application services: no pri
   const tools = compose.services.tools as Svc & Record<string, unknown>;
   assert.ok(tools, "tools is a compose service");
   for (const k of ["privileged", "cap_add", "network_mode", "pid", "ipc", "devices", "security_opt"]) assert.equal(tools[k], undefined, `tools sets no ${k}`);
-  assert.ok(!(tools.volumes ?? []).some((v) => /docker\.sock|\.\/data|^\//.test(String(typeof v === "string" ? v : (v as { source?: string }).source))), "no docker socket, no ./data and no absolute host path");
+  assert.ok(!(tools.volumes ?? []).some((v) => ((s) => /docker\.sock|^\//.test(s) || (/\.\/data/.test(s) && s !== "./data/projections/tools"))(String(typeof v === "string" ? v : (v as { source?: string }).source))), "no docker socket, no ./data beyond its projection and no absolute host path");
 });
 
 // @spec DEPLOY-COMPOSE-027
@@ -221,11 +221,9 @@ test("the root tsconfig.json is a solution file referencing the 9 packages, the 
 
 /**
  * Runs compose-smoke.sh against a copy of the repository's scripts, Compose file and .env.example with a stand-in `docker`.
- * The stand-in logs every command to `cmds.txt`, records what ./secrets/units held when the first `compose up` ran, answers
- * every health probe healthy (the container of service `tools` as `TOOLS_STATE`), and answers `compose exec ... <name>`:
- * a name containing `salience` exits SALIENCE_EXIT (default 1: it does not resolve), one containing `redis` exits REDIS_EXIT
- * (default 0: it resolves). The workspace is not built when the script runs, so it must learn the mounted secrets directories
- * from docker-compose.yml itself: `compose config` fails here.
+ * The stand-in logs every command to `cmds.txt`, answers every health probe healthy (the container of service `tools` as
+ * `TOOLS_STATE`), and answers `compose exec ... <name>`: a name containing `salience` exits SALIENCE_EXIT (default 1: it does
+ * not resolve), one containing `redis` exits REDIS_EXIT (default 0: it resolves). `compose config` fails here.
  */
 function smoke(env: Record<string, string> = {}) {
   const work = mkdtempSync(join(tmpdir(), "cohost-smoke-"));
@@ -235,13 +233,12 @@ function smoke(env: Record<string, string> = {}) {
   copyFileSync(root(".env.example"), join(work, ".env.example"));
   const bin = join(work, "bin");
   mkdirSync(bin);
-  const seen = join(work, "seen.txt");
   const cmds = join(work, "cmds.txt");
   writeFileSync(join(bin, "docker"), [
     "#!/bin/bash",
     `echo "$*" >> "${cmds}"`,
     'case "$1 $2" in',
-    `  "compose up") if [ ! -f "${seen}" ]; then (cd "${work}" && for d in secrets/units/*; do printf '%s %s %s\\n' "$d" "$(stat -c %a "$d")" "$(cat "$d/secrets.yaml" 2>&1 | tr '\\n' '~')"; done) > "${seen}" 2>&1; fi; exit 0;;`,
+    '  "compose up") exit 0;;',
     '  "compose ps") echo "cid-$4"; exit 0;;',
     '  "compose config") exit 1;;',
     '  "compose exec") case "$*" in *salience*) exit "${SALIENCE_EXIT:-1}";; *redis*) exit "${REDIS_EXIT:-0}";; esac; exit 0;;',
@@ -250,32 +247,24 @@ function smoke(env: Record<string, string> = {}) {
     "exit 0",
   ].join("\n"));
   chmodSync(join(bin, "docker"), 0o755);
-  // an existing projection must survive: memory's file holds a marker
-  const keep = join(work, "secrets", "units", "memory");
-  mkdirSync(keep, { recursive: true, mode: 0o700 });
-  writeFileSync(join(keep, "secrets.yaml"), "llm: {openai: {api_key: keep-me}}\n", { mode: 0o600 });
+  // The store task the script runs before its first `up` (DEPLOY-SECRET-011): recorded, with the store and key it is given.
+  writeFileSync(join(bin, "mise"), ["#!/bin/bash", `echo "mise $* data=\${COHOST_DATA_DIR:-} key=\${COHOST_KEY_FILE:-}" >> "${cmds}"`, "exit 0"].join("\n"));
+  chmodSync(join(bin, "mise"), 0o755);
   const r = spawnSync("bash", [join(work, "scripts", "compose-smoke.sh")], { cwd: work, encoding: "utf8", env: { PATH: `${bin}:${process.env.PATH}`, HOME: process.env.HOME ?? "/", SMOKE_WAIT: "3", ...env } });
   const log = existsSync(cmds) ? readFileSync(cmds, "utf8").trim().split("\n") : [];
-  return { work, r, seen, log };
+  return { work, r, log };
 }
 
 // @spec DEPLOY-SECRET-011
-test("compose-smoke.sh creates, before its first docker compose up, an empty-mapping secrets.yaml (mode 0700 directory) for every ./secrets/units/<name> the Compose file mounts, and leaves an existing file untouched", () => {
-  const { work, r, seen } = smoke();
+test("compose-smoke.sh writes the projections from a temporary store before its first up, and delivers an empty message to each waiting service", () => {
+  const { r, log } = smoke();
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.ok(existsSync(seen), "docker compose up ran");
-
-  const mounted = new Set([...readFileSync(root("docker-compose.yml"), "utf8").matchAll(/\.\/secrets\/units\/([A-Za-z0-9_-]+)/g)].map((m) => m[1]!));
-  assert.ok(mounted.size >= 10, `the Compose file mounts a directory per unit that declares a secret: ${[...mounted].join(",")}`);
-  const atUp = new Map(readFileSync(seen, "utf8").trim().split("\n").map((l) => { const [dir, perm, ...rest] = l.split(" "); return [dir!.replace("secrets/units/", ""), { perm, text: rest.join(" ") }] as const; }));
-  for (const name of mounted) {
-    const at = atUp.get(name);
-    assert.ok(at, `${name}: the directory exists before the first up`);
-    assert.equal(at.perm, "700", `${name}: directory mode`);
-    if (name === "memory") assert.match(at.text, /keep-me/, "an existing file is left untouched");
-    else assert.match(at.text, /^(\{\}~?|\{\s*\}~?)$/, `${name}: secrets.yaml holds an empty YAML mapping`);
-  }
-  assert.equal(statSync(join(work, "secrets", "units", "chat")).mode & 0o777, 0o700);
+  const project = log.findIndex((l) => /^mise run config:project data=\/\S+ key=\/\S+master\.key$/.test(l));
+  const up = log.findIndex((l) => l.startsWith("compose up"));
+  assert.ok(project >= 0 && project < up, `config:project runs against a temporary store before the first up: ${log.join(" | ")}`);
+  assert.ok(!/data=.*\/cohost-smoke-/.test(log[project]!), "the store is not the checkout's");
+  const delivered = log.filter((l) => /^exec -i cid-\S+ sh -c umask 077 && cat > \/run\/cohost\/\.credentials\.json\.tmp && mv /.test(l)).map((l) => l.split(" ")[2]);
+  assert.deepEqual(delivered, ["cid-salience", "cid-affect", "cid-avatar", "cid-tools"]);
 });
 
 // @spec DEPLOY-NET-004

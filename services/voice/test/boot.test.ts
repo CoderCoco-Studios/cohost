@@ -119,7 +119,8 @@ test("a startup failure (config load, group positioning) exits 1; past config it
   await runVoice(bad.b);
   assert.deepEqual(bad.exits, [1]);
   assert.ok(bad.rec.msgs("error").includes("config invalid")); // the shared bootstrap logs the loader's message
-  assert.deepEqual(bad.bus.health, []); // no heartbeat before a configuration exists
+  // voice gets a credentials message: its waiting heartbeat starts before the load and is stopped with the bus (SHARED-BOOT-002).
+  assert.deepEqual(states(bad.bus), ["starting", "stopping"]);
 
   const bus = new BootBus();
   bus.resetError = new Error("redis down");

@@ -142,7 +142,7 @@ export function createEarsService(opts: EarsServiceOptions = {}): {
           adapters.set("http", { name: "http", start: ensureHttp, stop: () => httpCapture.stop(), status: () => httpCapture.status() });
           // @spec EARS-SRC-013: no key delivered: every clip is refused 401, one warning, deps.http down; the other sources run.
           if (verifier === undefined) {
-            const missing = "the http listener key (ears.http.verifier) is missing, so every POST /audio is refused 401: start ears through the control plane (Launch, Restart all or a unit start in the dashboard, or cohostctl), which delivers it";
+            const missing = "the http listener key (ears.http.verifier) is missing, so every POST /audio is refused 401: set the control token (mise run config:token) and start ears through the control plane (Launch, Restart all or a unit start in the dashboard, or cohostctl), which delivers it";
             log.warn(missing);
             failed.set("http", missing);
           }

@@ -2,11 +2,12 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import dgram from "node:dgram";
 import dns from "node:dns";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { testConfig } from "@cohost/testing";
+import { readStateFile, writeStateFile } from "@cohost/shared";
 import { createDriver } from "../src/drivers/index.js";
 import { BrowserDriver } from "../src/drivers/browser.js";
 import { NullDriver } from "../src/drivers/null.js";
@@ -16,8 +17,9 @@ import { NEUTRAL, type DriverContext } from "../src/types.js";
 
 const warnings: unknown[] = [];
 const log = { warn: (o: unknown) => warnings.push(o), info() {}, error() {}, debug() {} } as never;
+const STATE_KEY = Buffer.alloc(32, 5);
 const ctx = (over: Partial<DriverContext> = {}): DriverContext => ({
-  log, stateDir: mkdtempSync(join(tmpdir(), "cohost-avatar-")),
+  log, stateDir: mkdtempSync(join(tmpdir(), "cohost-avatar-")), stateKey: STATE_KEY,
   expressions: { happy: "Smile", sad: "Sad", smug: "smug.exp3.json" },
   gestures: { wave: "WAVE" },
   frames: { publishAvatarFrame: async () => {} },
@@ -160,7 +162,7 @@ async function vtsServer(opts: { authenticated?: boolean; apiErrorOn?: string } 
 }
 const vts = (port: number) => new VTubeStudioDriver({ host: "127.0.0.1", port, pluginName: "cohost", pluginDeveloper: "dev" });
 
-test("vts: first connect asks for a plugin token and saves it; the next connect reuses it", async () => { // @spec AVATAR-VTS-001, AVATAR-VTS-003
+test("vts: first connect asks for a plugin token and saves it encrypted under the state key; the next connect reuses it", async () => { // @spec AVATAR-VTS-001, AVATAR-VTS-003, STORE-STATE-002
   const s = await vtsServer();
   const c = ctx();
   const d = vts(s.port);
@@ -169,7 +171,9 @@ test("vts: first connect asks for a plugin token and saves it; the next connect 
   assert.deepEqual(s.types(), ["AuthenticationTokenRequest", "AuthenticationRequest", "HotkeysInCurrentModelRequest"]);
   assert.deepEqual(s.reqs[0]!.data, { pluginName: "cohost", pluginDeveloper: "dev" });
   assert.equal(s.reqs[1]!.data.authenticationToken, "fresh-token");
-  assert.equal(readFileSync(join(c.stateDir, ".vts-token"), "utf8"), "fresh-token");
+  const file = join(c.stateDir, "vts-token.enc");
+  assert.doesNotMatch(readFileSync(file, "utf8"), /fresh-token/, "never in plaintext");
+  assert.equal(readStateFile(file, "avatar", STATE_KEY), "fresh-token");
   await d.disconnect();
   assert.equal(d.connected(), false);
 
@@ -178,6 +182,13 @@ test("vts: first connect asks for a plugin token and saves it; the next connect 
   await again.connect(c);
   assert.deepEqual(s.types(), ["AuthenticationRequest", "HotkeysInCurrentModelRequest"]);
   await again.disconnect();
+
+  // A file that does not decrypt under the key counts as absent: a new token is requested.
+  s.reqs.length = 0;
+  const third = vts(s.port);
+  await third.connect({ ...c, stateKey: Buffer.alloc(32, 9) });
+  assert.equal(s.types()[0], "AuthenticationTokenRequest");
+  await third.disconnect();
 });
 
 // @spec AVATAR-VTS-017
@@ -200,11 +211,11 @@ test("vts: the driver built from config identifies itself with plugin_name and p
 test("vts: a rejected token is wiped so the next run asks again", async () => { // @spec AVATAR-VTS-004
   const s = await vtsServer({ authenticated: false });
   const c = ctx();
-  writeFileSync(join(c.stateDir, ".vts-token"), "stale");
+  writeStateFile(join(c.stateDir, "vts-token.enc"), "avatar", STATE_KEY, "stale");
   const d = vts(s.port);
   await d.connect(c);
   assert.equal(d.connected(), false);
-  assert.equal(readFileSync(join(c.stateDir, ".vts-token"), "utf8"), "");
+  assert.equal(existsSync(join(c.stateDir, "vts-token.enc")), false);
   await d.disconnect(); // also cancels the scheduled reconnect
 });
 

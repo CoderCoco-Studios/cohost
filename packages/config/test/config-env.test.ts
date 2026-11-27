@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { loadConfig, parseConfigText } from "../src/index.js";
+import { loadConfigFile, parseConfigText } from "../src/index.js";
 import * as api from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
 
@@ -10,7 +10,7 @@ isolateEnv();
 
 const message = (yaml: string): string => {
   sandbox({ "config.yaml": yaml });
-  try { loadConfig(true); } catch (e) { return (e as Error).message; }
+  try { loadConfigFile(true); } catch (e) { return (e as Error).message; }
   return assert.fail("expected the load to fail");
 };
 
@@ -31,7 +31,7 @@ test("a ${VAR} or ${VAR:-default} placeholder fails the load, naming the key (an
 test("a placeholder is never substituted, a placeholder in a comment is not checked, and lower-case or malformed ones are literal text", () => {
   process.env.TWITCH_CHANNEL = "from-env";
   sandbox({ "config.yaml": `# channel: \${TWITCH_CHANNEL}\n${MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"literal-${lower_case}-${A-B}\" } } # \\${COMMENTED}")}` });
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.equal(cfg.chat.twitch.channel, "literal-${lower_case}-${A-B}");
   const e = parseConfigText(MINIMAL_YAML.replace("brain: {}", "brain: { salience: { barge_in_sources: [\"${X}\"] } }"));
   assert.equal(e.ok, false);
@@ -43,7 +43,7 @@ test("no environment substitution remains: substituteEnv is gone and an environm
   assert.equal("substituteEnv" in api, false);
   process.env.TWITCH_CHANNEL = "from-env";
   sandbox({ "config.yaml": MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: plain } }") });
-  assert.equal(loadConfig(true).chat.twitch.channel, "plain");
+  assert.equal(loadConfigFile(true).chat.twitch.channel, "plain");
 });
 
 // @spec CFG-LOAD-004
@@ -55,13 +55,13 @@ test("an invalid config.yaml adds no hint about a missing .env, and the helper t
 });
 
 // @spec CFG-LOAD-001
-test("loadConfig seeds config.yaml from the example, validates, caches until forced and reads secrets in the same pass", () => {
+test("loadConfigFile seeds config.yaml from the example, validates, caches until forced and reads secrets in the same pass", () => {
   const dir = sandbox({ "config.example.yaml": MINIMAL_YAML });
-  const warnings = captureWarnings(() => { const a = loadConfig(true); assert.equal(loadConfig(), a); });
+  const warnings = captureWarnings(() => { const a = loadConfigFile(true); assert.equal(loadConfigFile(), a); });
   assert.ok(warnings.some((w) => /created .*config\.yaml from config\.example\.yaml/.test(w)));
   writeFileSync(join(dir, "config.yaml"), MINIMAL_YAML.replace("name: Coco", "name: Moco"));
-  assert.equal(loadConfig().cohost.name, "Coco");
-  assert.equal(loadConfig(true).cohost.name, "Moco");
+  assert.equal(loadConfigFile().cohost.name, "Coco");
+  assert.equal(loadConfigFile(true).cohost.name, "Moco");
 });
 
 // ---- CFG-ENV-012: cohost source reads only the permitted environment variables
@@ -70,7 +70,7 @@ const ALLOWED = new Set([
   "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_SECRETS_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "HEARTBEAT_INTERVAL_MS",
   "REDIS_URL", "DATABASE_URL", "OLLAMA_URL", "TTS_URL", "STT_URL", "VOICE_URL", "VOICE_PORT",
   "CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST", "PATH", "HOSTNAME", "WSLENV", "NO_COLOR",
-  "COHOST_KEY_FILE", "XDG_CONFIG_HOME", "EDITOR",
+  "COHOST_KEY_FILE", "XDG_CONFIG_HOME", "EDITOR", "COHOST_CREDENTIALS_FD",
 ]);
 
 /**
@@ -114,7 +114,7 @@ test("cohost source reads only the permitted environment variables; the pending 
   }
   const unexpected = found.filter((r) => !ALLOWED.has(r.split("::")[1]!) && !PENDING.has(r));
   assert.deepEqual(unexpected, [], "an environment variable that is not in the permitted set; operator settings are config.yaml or secrets.yaml keys");
-  assert.ok(found.includes("packages/config/src/index.ts::COHOST_SECRETS_FILE"), "the loader reads COHOST_SECRETS_FILE (CFG-SEC-001)");
+  assert.ok(found.includes("packages/config/src/files.ts::COHOST_SECRETS_FILE"), "the dashboard's YAML files module reads COHOST_SECRETS_FILE until step 3b");
   const stale = [...PENDING].filter((r) => !found.includes(r));
   assert.deepEqual(stale, [], "a pending read that no longer exists: delete it from PENDING");
 });
@@ -156,7 +156,7 @@ test("a config.yaml syntax error is reported by line, column and reason code onl
   assert.doesNotMatch(issues, /LEFTOVER|MARKER/);
   sandbox({ "config.yaml": broken });
   let thrown = "";
-  const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
+  const warnings = captureWarnings(() => { try { loadConfigFile(true); } catch (e) { thrown = (e as Error).message; } });
   assert.match(thrown, /^Invalid .*config\.yaml:/);
   assert.match(thrown, /line \d+, column \d+/);
   assert.doesNotMatch(thrown + warnings.join("\n"), /LEFTOVER|MARKER/);

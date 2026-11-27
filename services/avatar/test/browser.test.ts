@@ -1,9 +1,9 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadExpressions, type Emotion } from "@cohost/config";
+import { loadExpressions, parseYaml, type Emotion } from "@cohost/config";
 import { AvatarFrameSchema, type AvatarFrame } from "@cohost/bus";
 import { BrowserDriver } from "../src/drivers/browser.js";
 import { NEUTRAL, type DriverContext } from "../src/types.js";
@@ -218,8 +218,10 @@ test("after disconnect no frame is written, and disconnect flushes nothing", asy
 
 // @spec AVATAR-BRW-013
 test("the shipped expressions.example.yaml holds a browser block with the nine emotions at the defaults and empty gestures", () => {
+  // The seed imports the example as the `expressions` document; the avatar unit's projection carries it.
   const dir = mkdtempSync(join(tmpdir(), "cohost-expr-"));
-  copyFileSync(new URL("../../../config/expressions.example.yaml", import.meta.url), join(dir, "expressions.example.yaml"));
+  const expressions = parseYaml(readFileSync(new URL("../../../config/expressions.example.yaml", import.meta.url), "utf8"));
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ format: 1, unit: "avatar", revision: 1, sections: {}, documents: { expressions } }));
   const prev = process.env.CONFIG_DIR;
   process.env.CONFIG_DIR = dir;
   try {

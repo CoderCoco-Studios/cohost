@@ -53,12 +53,12 @@ test("the built UI is git-ignored", () => {
 });
 
 // @spec DEPLOY-REPO-003
-test("the .gitignore excludes the secrets directory and the user-owned config files, and no longer names config/secrets.yaml", () => {
+test("the .gitignore excludes data/ (the settings store, its backups, the projections and the logs) and the build outputs, and names no settings or credentials file", () => {
   const lines = root(".gitignore").split("\n").map((l) => l.trim());
-  for (const f of ["node_modules/", "dist/", "*.tsbuildinfo", ".env", "data/", "secrets/", "services/dashboard/dist-ui/", "*.log", ".DS_Store", "config/config.yaml", "config/personality.md", "config/expressions.yaml"]) {
+  for (const f of ["node_modules/", "dist/", "*.tsbuildinfo", ".env", "data/", "services/dashboard/dist-ui/", "*.log", ".DS_Store"]) {
     assert.ok(lines.includes(f), `${f} is ignored`);
   }
-  assert.ok(!lines.includes("config/secrets.yaml"), "the credentials file lives in secrets/, not config/");
+  for (const f of ["secrets/", "config/config.yaml", "config/personality.md", "config/expressions.yaml", "config/secrets.yaml", "config/.vts-token"]) assert.ok(!lines.includes(f), `${f}: no such file exists any more`);
 });
 
 // @spec DASH-BUILD-008

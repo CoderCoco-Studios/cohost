@@ -1,20 +1,20 @@
 /**
  * VTube Studio driver (Live2D). Talks the VTS public WebSocket API
  * (default ws://127.0.0.1:8001). First connect pops an "Allow plugin?" dialog
- * in VTS; the token is saved to <config>/.vts-token so it only happens once.
+ * in VTS; the token is saved encrypted under the unit's state key to <dataDir()>/avatar/vts-token.enc so it only happens once.
  *
  * VTS must have the API enabled: Settings > General > "Start API (allow plugins)".
  * From another machine / WSL / Docker, VTS listens on all interfaces by default.
  *
- * expressions.yaml values can be either a hotkey *name* (toggled on/off) or an
+ * The `expressions` document's values can be either a hotkey *name* (toggled on/off) or an
  * expression file like "smug.exp3.json" (activated/deactivated explicitly).
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import type { Emotion } from "@cohost/config";
-import { retryWithBackoff, singleFlight } from "@cohost/shared";
+import { readStateFile, retryWithBackoff, singleFlight, writeStateFile } from "@cohost/shared";
 import type { AvatarDriver, AvatarParams, DriverContext } from "../types.js";
 
 interface Hotkey { name: string; type: string; hotkeyID: string }
@@ -128,7 +128,25 @@ export class VTubeStudioDriver implements AvatarDriver {
 
   private get reconnectMs(): number { return this.opts.reconnectMs ?? DEFAULT_TIMING_MS; }
 
-  private tokenFile() { return join(this.ctx.stateDir, ".vts-token"); }
+  private tokenFile() { return join(this.ctx.stateDir, "vts-token.enc"); }
+
+  /** The saved plugin token, decrypted under the unit's state key; none without a key or a file that does not decrypt. */
+  private savedToken(): string {
+    const key = this.ctx.stateKey;
+    return key ? (readStateFile(this.tokenFile(), "avatar", key, this.ctx.log) ?? "").trim() : "";
+  }
+
+  /** Saves the plugin token encrypted under the unit's state key (STORE-STATE-002); without a key nothing is written. */
+  private saveToken(token: string): void {
+    const key = this.ctx.stateKey;
+    if (!key) { this.ctx.log.warn("no state key was delivered: the VTube Studio plugin token is not saved and is requested again at the next start"); return; }
+    try {
+      mkdirSync(this.ctx.stateDir, { recursive: true, mode: 0o700 });
+      writeStateFile(this.tokenFile(), "avatar", key, token);
+    } catch (err) {
+      this.ctx.log.warn({ err: (err as Error).message, file: this.tokenFile() }, "cannot save the VTube Studio plugin token");
+    }
+  }
 
   /** One attempt; rejects unless the socket opened and authenticated. */
   private async dial(): Promise<void> {
@@ -191,16 +209,16 @@ export class VTubeStudioDriver implements AvatarDriver {
 
   private async authenticate() { // @spec AVATAR-VTS-003
     const { pluginName, pluginDeveloper } = this.opts;
-    let token = existsSync(this.tokenFile()) ? readFileSync(this.tokenFile(), "utf8").trim() : "";
+    let token = this.savedToken();
     if (!token) {
       this.ctx.log.info("requesting VTS plugin token — click Allow in VTube Studio");
       const r = (await this.send("AuthenticationTokenRequest", { pluginName, pluginDeveloper }, true, 60_000)) as { authenticationToken: string };
       token = r.authenticationToken;
-      writeFileSync(this.tokenFile(), token);
+      this.saveToken(token);
     }
     const auth = (await this.send("AuthenticationRequest", { pluginName, pluginDeveloper, authenticationToken: token })) as { authenticated: boolean; reason?: string };
     if (!auth.authenticated) { // @spec AVATAR-VTS-004
-      writeFileSync(this.tokenFile(), "");
+      rmSync(this.tokenFile(), { force: true });
       throw new Error(`VTS rejected token: ${auth.reason}`);
     }
   }

@@ -197,7 +197,7 @@ export function startHeartbeat(bus: HealthPublisher, opts: HeartbeatOptions): He
   return {
     ready() { base = "ready"; detail = undefined; if (!stopped) void emit(); },
     degraded(d) { base = "degraded"; detail = d; if (!stopped) void emit(); },
-    setDetail(d) { standing = d; },
+    setDetail(d) { standing = d; check(); },
     setMode(m) { modeOverride = m; },
     stop,
   };

@@ -1,5 +1,5 @@
 import type http from "node:http";
-import { loadConfig } from "@cohost/config";
+import { loadConfigFile } from "@cohost/config";
 
 /** How long a pick-list route waits for its backing server, connection and body together. */
 export const OPTIONS_TIMEOUT_MS = 3000;
@@ -91,7 +91,7 @@ export async function handleOptions(d: OptionsDeps, req: http.IncomingMessage, r
       // @spec DASH-OPT-001, DASH-OPT-005
       let engine: string;
       try {
-        engine = loadConfig(true).voice.engine;
+        engine = loadConfigFile(true).voice.engine;
       } catch (e) {
         res.writeHead(500, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ ok: false, detail: e instanceof Error ? e.message : String(e) }));

@@ -147,4 +147,14 @@ test("with COHOST_CREDENTIALS_FD set it reads that descriptor to its end; a refu
   await assert.rejects(receiveCredentials("chat", { env: { [CREDENTIALS_FD_ENV]: String(fd2) } }), /descriptor \d+ was refused: the message is for voice/);
   await assert.rejects(receiveCredentials("chat", { env: { [CREDENTIALS_FD_ENV]: "three" } }), /not a file descriptor number/);
   try { closeSync(fd2); } catch { /* closed by the stream */ }
+
+  // A message on the descriptor past 64 KiB is refused unread past the limit, naming the size, never a value.
+  writeFileSync(file, msg({ credentials: { "chat.youtube.api_key": "y".repeat(MAX_CREDENTIALS_BYTES) } }));
+  const fd3 = openSync(file, "r");
+  await assert.rejects(receiveCredentials("chat", { env: { [CREDENTIALS_FD_ENV]: String(fd3) } }), (e: Error) => {
+    assert.match(e.message, new RegExp(`descriptor \\d+ was refused: the message is larger than ${MAX_CREDENTIALS_BYTES} bytes`));
+    assert.doesNotMatch(e.message, /yyyy/);
+    return true;
+  });
+  try { closeSync(fd3); } catch { /* closed by the stream */ }
 });

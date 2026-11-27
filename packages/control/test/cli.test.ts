@@ -62,7 +62,7 @@ function harness() {
     setRestart: (r: StackResult) => { restartResult = r; },
     setStop: (r: StackResult) => { stopResult = r; },
     setConsolidate: (r: { ok: boolean; detail?: string }) => { consolidateResult = r; },
-    run: (argv: string[]) => runCli(argv, { controller, health, recent: async () => [], consolidate, reembed, stack, out: (l) => out.push(l), err: (l) => err.push(l) }),
+    run: (argv: string[]) => runCli(argv, { controller, health, recent: async () => [], consolidate, reembed, stack, deliver: async () => ({ delivered: [], failures: [] }), out: (l) => out.push(l), err: (l) => err.push(l) }),
   };
 }
 

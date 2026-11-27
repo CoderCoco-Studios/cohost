@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -288,9 +288,9 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   chmodSync(bin, 0o755);
   const before = { cwd: process.cwd(), bin: process.env.COHOST_DOCKER_BIN };
   // The known exception to DEPLOY-TOOL-022: this test is about the workspace root itself, and setupControl builds its
-  // ComposeRuntime there with no seam for another directory, so the restart creates data/logs in the checkout
+  // ComposeRuntime there with no seam for another directory, so the restart creates data/logs, the projections and the delivery record in the checkout
   // (CTRL-RUNTIME-016). It writes no file there, and removes the directories it created.
-  const created = ["data", join("data", "logs")].map((d) => join(root, d)).filter((d) => !existsSync(d)).toReversed();
+  const created = ["data", join("data", "logs"), join("data", "projections"), join("data", "control")].map((d) => join(root, d)).filter((d) => !existsSync(d)).toReversed();
   process.env.COHOST_DOCKER_BIN = bin;
   process.chdir(join(root, "services", "dashboard")); // as a task whose working directory is the package starts it
   try {
@@ -301,6 +301,6 @@ test("the dashboard's own ComposeRuntime runs docker compose in the workspace ro
   } finally {
     process.chdir(before.cwd);
     if (before.bin === undefined) delete process.env.COHOST_DOCKER_BIN; else process.env.COHOST_DOCKER_BIN = before.bin;
-    for (const d of created) if (existsSync(d)) rmdirSync(d);
+    for (const d of created) if (existsSync(d)) rmSync(d, { recursive: true, force: true });
   }
 });

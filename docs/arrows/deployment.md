@@ -4,7 +4,7 @@ Compose topology, the single parameterised Dockerfile, the project's toolchains 
 
 ## Status
 
-**#376 in-repo CLA check (built):** DEPLOY-CI-005 and DEPLOY-CI-013 to -017 cover `scripts/cla/cla.mjs`, run by the `cla` workflow from the base commit through `mise run cla`, which replaces the archived CLA Assistant Lite action and keeps its `cla-signatures` record format; tested on fixtures against a mocked GitHub API (`packages/config/test/cla.test.ts`), the workflow itself unexercised until a pull request after merge. 176 specs: 125 `[x]`, 51 `[ ]`, 0 `[D]`.
+**#376 in-repo CLA check (built):** DEPLOY-CI-005 and DEPLOY-CI-013 to -017 cover `scripts/cla/cla.mjs`, run by the `cla` workflow from the base commit through `mise run cla`, which replaces the archived CLA Assistant Lite action and keeps its `cla-signatures` record format; tested on fixtures against a mocked GitHub API (`packages/config/test/cla.test.ts`), the workflow itself unexercised until a pull request after merge. 176 specs: 165 `[x]`, 11 `[ ]`, 0 `[D]`.
 
 **#372 settings-store design (docs only, not built):** projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 

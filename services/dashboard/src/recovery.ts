@@ -3,7 +3,7 @@ import { authorized, handleUnlock, hasSession, pathOf, unauthorized, unlockBase,
 import type { AddressInfo } from "node:net";
 import { chmodSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import {
-  ConfigError, ConfigSchema, PRESENTATION, SECTION_PATHS, canSetKey, checkConfig, ensureFromExample, etagOf, inputValue, loadConfig, loadDotEnv,
+  ConfigError, ConfigSchema, PRESENTATION, SECTION_PATHS, canSetKey, checkConfig, ensureFromExample, etagOf, inputValue, loadConfigFile, loadDotEnv,
   parseConfigText, placeholderFallback, rawSection, resetConfigKey, resetPathOf, secretPathOf, secretRepair, secretsPath, setConfigKey, updateSecrets,
   writeFileAtomic, type Config, type ConfigIssue, type ConfigProblem, type Logger,
 } from "@cohost/config";
@@ -333,7 +333,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     }
     if (method === "POST" && (STACK_POST.test(url.pathname) || LIFECYCLE.test(url.pathname))) {
       req.resume();
-      json(res, 409, { ok: false, detail: configRefusal(() => check()) ?? RECOVERY_DETAIL });
+      json(res, 409, { ok: false, detail: (await configRefusal(() => check())) ?? RECOVERY_DETAIL });
       return;
     }
     const op = method === "POST" ? RECOVERY_POST.exec(url.pathname)?.[1] : undefined;
@@ -523,7 +523,7 @@ export async function startDashboard(o: StartOptions): Promise<void> {
   let cfg: Config | undefined;
   for (;;) {
     try {
-      cfg = loadConfig(true);
+      cfg = loadConfigFile(true);
       break;
     } catch (e) {
       if (!(e instanceof ConfigError)) { cfg = undefined; break; }

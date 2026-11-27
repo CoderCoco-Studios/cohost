@@ -4,14 +4,8 @@ services/dashboard/dist-ui/
 *.tsbuildinfo
 .env
 data/
-secrets/
 *.log
 .DS_Store
-config/config.yaml
-config/personality.md
-config/expressions.yaml
-# VTube Studio plugin token written by the avatar driver
-config/.vts-token
 
 # VitePress
 docs/.vitepress/cache

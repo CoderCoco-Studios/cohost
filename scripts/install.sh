@@ -145,27 +145,16 @@ activate_shell() {
 # end shell-activate
 activate_shell
 
-# ---------------------------------------------------------------- .env and config files  @spec DEPLOY-INST-005, DEPLOY-INST-006
+# ---------------------------------------------------------------- .env  @spec DEPLOY-INST-005, DEPLOY-INST-006
 # begin seed-files
-# Copies each missing file from its example and never overwrites one that exists. The credentials file is
-# secrets/secrets.yaml, outside ./config (which every container mounts): its directory is created with mode 0700 when absent
-# and the file is private (mode 0600) from the moment it exists; an existing file or directory keeps the mode the operator gave it.
+# Copies .env from its template when it is missing and never overwrites one that exists. No settings, personality,
+# expressions or credentials file is written: the settings store is created and seeded from the committed examples at its first
+# open (mise run config:project below).
 # @spec DEPLOY-INST-005
 seed_files() {
-  local f
   if [[ ! -f .env ]]; then
     cp .env.example .env
     log "Wrote .env from its template: the dashboard's access controls and Compose settings."
-  fi
-  for f in config.yaml personality.md expressions.yaml; do
-    [[ -f "config/$f" ]] && continue
-    cp "config/${f%.*}.example.${f##*.}" "config/$f"
-    log "Wrote config/$f from its .example: this one is yours (git-ignored)."
-  done
-  if [[ ! -f secrets/secrets.yaml ]]; then
-    [[ -d secrets ]] || mkdir -m 700 secrets
-    (umask 077 && cp config/secrets.example.yaml secrets/secrets.yaml) && chmod 600 secrets/secrets.yaml
-    log "Wrote secrets/secrets.yaml from config/secrets.example.yaml (mode 0600): your credentials go here (git-ignored, mounted by no container)."
   fi
   # Every program's log file lives in data/logs; made here as the user running the installer, so Compose never creates it as root.
   mkdir -p data/logs  # @spec DEPLOY-INST-017
@@ -181,30 +170,29 @@ fi
 mkdir -p data
 
 # begin control-token
-# Leave .env holding a CONTROL_TOKEN, cohost's one lock (the dashboard does not start without it). An empty value is filled
-# and a missing line is appended, each with 24 random bytes as hex; a hand-set value is never changed, only warned about
-# when it is shorter than 32 characters. The line is matched as text (nothing sourced). The token is never printed.
+# The control token is cohost's one lock and the owner keeps it: the settings store holds only its verifier, and .env never
+# holds it (the dashboard and the control plane refuse a CONTROL_TOKEN there). A .env line holding a value is reported by its
+# line number, never its value, and left for the owner to remove once the token is kept elsewhere
+# (`mise run config:token -- --stdin` keeps the same token). The line is matched as text (nothing sourced).
 # @spec DEPLOY-INST-013
-fill_control_token() {
-  local tok val
-  tok=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
-  if grep -Eq '^CONTROL_TOKEN=[[:space:]]*(#.*)?$' .env; then
-    sed -i -E "s#^CONTROL_TOKEN=[[:space:]]*(\#.*)?\$#CONTROL_TOKEN=${tok}#" .env
-    log "Generated CONTROL_TOKEN in .env (open the unlock link the dashboard prints)."
-  elif ! grep -q '^CONTROL_TOKEN=' .env 2>/dev/null; then
-    if [ -s .env ] && [ -n "$(tail -c1 .env)" ]; then printf '\n' >> .env; fi
-    printf 'CONTROL_TOKEN=%s\n' "$tok" >> .env
-    log "Added CONTROL_TOKEN to .env (open the unlock link the dashboard prints)."
-  else
-    # The value as the loader reads it: an unquoted value ends at whitespace then `#`; quotes are removed; then trimmed.
-    val=$(grep -m1 '^CONTROL_TOKEN=' .env | sed -E 's/^CONTROL_TOKEN=//; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/; s/^[[:space:]]+//; s/[[:space:]]+$//')
-    if [ "${#val}" -lt 32 ]; then
-      warn "CONTROL_TOKEN in .env is shorter than 32 characters: the dashboard refuses a token shorter than 32 characters and will not start. Make one with: openssl rand -hex 24 (it is left as it is)."
-    fi
+warn_env_token() {
+  local n val
+  n=$(grep -nE '^[[:space:]]*(export[[:space:]]+)?CONTROL_TOKEN[[:space:]]*=' .env 2>/dev/null | head -1 | cut -d: -f1) || true
+  [[ -n "$n" ]] || return 0
+  val=$(sed -n "${n}p" .env | sed -E 's/^[^=]*=//; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/; s/^[[:space:]]+//; s/[[:space:]]+$//')
+  if [[ -n "$val" ]]; then
+    warn ".env defines CONTROL_TOKEN on line ${n}: remove that line once the token is in your password manager (mise run config:token -- --stdin sets the same token in the settings store). The dashboard and the control plane refuse to start anything while it is there."
   fi
 }
+
+# Sets a control token when the settings store holds none: the token is printed once, straight to the owner's terminal, and
+# written to no file and no log. A store that already holds a verifier is left alone.
+set_control_token() {
+  log "Setting the control token when none is set (mise run config:token -- --if-unset)"
+  "$MISE" run config:token -- --if-unset || die "mise run config:token failed (see the message above)."
+}
 # end control-token
-fill_control_token
+warn_env_token
 
 # ---------------------------------------------------------------- build  @spec DEPLOY-INST-007, DEPLOY-INST-012, DEPLOY-INST-014
 # One task builds everything: its install dependency runs pnpm install --frozen-lockfile (a lockfile mismatch
@@ -212,10 +200,13 @@ fill_control_token
 # (Rust linked through Zig, both from mise.toml), tsc -b and the dashboard UI.
 log "Building the workspace (mise run build)"
 "$MISE" run build || die "mise run build failed (see the error above); a pnpm-lock.yaml mismatch is fixed in the repository, never by a non-frozen install."
-# One file per service under secrets/units/, so every directory Compose mounts exists before any `docker compose` command.
-# @spec DEPLOY-SECRET-006
-log "Projecting secrets/secrets.yaml into one file per service"
-"$MISE" run secrets:project || die "the secrets projection failed (see the message above); fix secrets/secrets.yaml and re-run."
+# The first task that opens the settings store creates it (seeded from the committed examples) and the master key when they
+# are missing, printing the recovery key once; it writes one projection per service under data/projections/, so every
+# directory Compose mounts exists before any Compose command.
+# @spec DEPLOY-INST-007, DEPLOY-INST-013
+log "Writing the settings projections (mise run config:project)"
+"$MISE" run config:project || die "mise run config:project failed (see the message above); mise run config:check lists what stops the settings store."
+set_control_token
 # The docs the dashboard serves. A failure is a warning: the dashboard still starts and shows a not-built page.
 # @spec DEPLOY-INST-015
 log "Building the docs site (mise run docs:build)"
@@ -260,45 +251,39 @@ if [[ $PULL -eq 1 ]]; then probe ollama 60 probe_ollama; fi
 # begin next-steps
 # @spec DEPLOY-INST-008
 print_next_steps() {
-  # The dashboard's port is dashboard.port as the built config loader returns it: the one parser every service uses, run
-  # by node from the repository root. config.yaml is never parsed as text here and never executed. When the load fails
-  # the loader's first error line goes to stderr and the URL carries no port.
-  local url="http://localhost" port_note="" port shell_name
+  # The dashboard's port is dashboard.port as the settings store's own task prints it; the installer never reads the store's
+  # file itself. When the task fails its first error line goes to stderr and the URL carries no port.
+  local url="http://localhost" port_note="" port shell_name out errf
+  errf=$(mktemp)
   shell_name=$(basename "${SHELL:-}")
   case "$shell_name" in zsh|bash) ;; *) shell_name="<shell>" ;; esac
-  if port=$(cd "$ROOT" && node --input-type=module -e '
-    try {
-      const config = await import("./packages/config/dist/index.js");
-      config.setConfigLogger({ warn() {} });
-      process.stdout.write(String(config.loadConfig(true).dashboard.port));
-    } catch (e) {
-      console.error(String((e && e.message) || e).split("\n")[0]);
-      process.exit(1);
-    }'); then
+  if out=$(cd "$ROOT" && "$MISE" run -q config:get -- dashboard.port 2>"$errf") && port=$(printf '%s\n' "$out" | grep -E '^[0-9]+$' | tail -1) && [[ -n "$port" ]]; then
     url="http://localhost:${port}"
   else
-    port_note="     (config/config.yaml did not load, see above; the dashboard's own start output shows the address it listens on)"
+    head -1 "$errf" >&2 2>/dev/null || true
+    port_note="     (mise run config:get -- dashboard.port failed, see above; the dashboard's own start output shows the address it listens on)"
   fi
+  rm -f "$errf"
   cat <<EOF
 
 Done. Next:
   0. Open a new shell, so the mise activate line applies and the project's tools and tasks are on its path,
      or activate mise in this one:  eval "\$(~/.local/bin/mise activate ${shell_name})"
-  1. Set your values: config/config.yaml (models, voice, Twitch channel, OBS host, ...) and secrets/secrets.yaml (API keys,
-     tokens, passwords). Both are plain files; the dashboard's Settings screen edits config.yaml once it is running.
+  1. Keep the recovery key and the control token printed above in your password manager.
   2. mise run dashboard                # start the dashboard on this machine (it brings up the stack)
-  3. open the unlock link the dashboard prints (or ${url} and paste CONTROL_TOKEN from .env), press Launch
+  3. open the unlock link the dashboard prints (or ${url} and enter the control token when asked), set your
+     values on the Settings screen (models, voice, Twitch channel, OBS host, API keys, ...), then press Launch
 ${port_note:+${port_note}
 }     (the dashboard's startup log shows the URL it actually listens on; it differs when DASHBOARD_HOST is set)
   4. docker compose --profile eyes --profile ears --profile mouth --profile discord up -d
      # when ready for vision (eyes), listening (ears), speaking (mouth) and Discord (the Discord connector)
-     # the one Discord bot is connections.discord.token in secrets/secrets.yaml, used by the Discord connector;
-     # ears and mouth need no token
-     # a hand-run docker compose up skips the secrets projection: after editing secrets/secrets.yaml, run
-     # mise run secrets:project first, or start and restart through the dashboard or cohostctl
+     # the one Discord bot is the credential connections.discord.token (the dashboard's Settings screen or
+     # mise run config:secret -- connections.discord.token), used by the Discord connector; ears and mouth need no token
+     # a hand-run docker compose up starts services that wait for their credentials until the dashboard delivers them
+     # (or mise run deliver); run mise run config:project first so they read the current settings
   5. optional speech engines: to use the pocket TTS (voice.engine: pocket) or a streaming STT server (ears.stt_engine:
      nemotron or kyutai), add pocket, nemotron or kyutai to COMPOSE_PROFILES in .env (for example COMPOSE_PROFILES=pocket,nemotron),
-     select it in config/config.yaml, then press Launch again. The first build of an enabled profile takes minutes; later launches reuse it.
+     select it on the Settings screen, then press Launch again. The first build of an enabled profile takes minutes; later launches reuse it.
 
 Dev loop without Docker for the TS services:
   mise run infra:up                       # the infrastructure containers: redis postgres ollama tts stt

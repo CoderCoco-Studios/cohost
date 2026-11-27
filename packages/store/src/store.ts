@@ -81,6 +81,8 @@ export interface StoreOptions {
    * backup was encrypted under instead, and must not print a recovery key for a key that is then replaced.
    */
   createKey?: boolean;
+  /** The workspace root `config:project` writes `data/projections/` under; the root found from the working directory by default. */
+  workspaceRoot?: string;
 }
 
 /** A change for `write`: sections, documents and credentials to set (a value) or remove (`null`). */
@@ -803,6 +805,33 @@ export class Store {
 
   /** The ears listener key (`keys.ears-listener`) as 64 lowercase hex, or undefined when none is stored. */
   earsListenerKey(): string | undefined { return this.keyRow("ears-listener")?.toString("utf8"); }
+
+  /**
+   * The state key of `unit` (`keys.state:<unit>`, STORE-STATE-001): 32 bytes, created at random and stored encrypted when the
+   * store holds none, so a unit keeps the key across deliveries and its encrypted state files stay readable.
+   */
+  // @spec STORE-STATE-001
+  stateKey(unit: string): Buffer {
+    const name = `state:${unit}`;
+    const existing = this.keyRow(name);
+    if (existing) return existing;
+    return this.immediate(() => {
+      const raced = this.keyRow(name);
+      if (raced) return raced;
+      const key = randomBytes(32);
+      this.putSealed("keys", name, key);
+      this.bump();
+      return key;
+    });
+  }
+
+  /** Runs `fn` inside one read transaction, so every read it makes sees one revision (STORE-PROJ-003). */
+  snapshot<T>(fn: () => T): T {
+    if (this.inSnapshot) return fn();
+    this.inSnapshot = true;
+    try { return this.db.read(fn); } finally { this.inSnapshot = false; }
+  }
+  private inSnapshot = false;
 
   // ---------------------------------------------------------------- the master key
 

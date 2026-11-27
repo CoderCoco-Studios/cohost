@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { ConfigSchema, SECRET_PATHS, loadConfig, loadExpressions, savePersonality, loadPersonality, writeFileAtomic, dotEnvPath, setConfigLogger } from "../src/index.js";
+import { ConfigSchema, SECRET_PATHS, loadConfigFile, loadExpressionsFile, savePersonality, loadPersonalityFile, writeFileAtomic, dotEnvPath, setConfigLogger } from "../src/index.js";
 
 const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
 const initialEnv = { ...process.env };
@@ -58,7 +58,7 @@ test("the shipped example loads with ears.stt_model as the literal default model
   setConfigLogger({ warn: (() => {}) as never });
   for (const v of [undefined, "", "other-model"]) {
     if (v === undefined) delete process.env.STT_MODEL; else process.env.STT_MODEL = v;
-    assert.equal(loadConfig(true).ears.stt_model, "Systran/faster-whisper-small");
+    assert.equal(loadConfigFile(true).ears.stt_model, "Systran/faster-whisper-small");
   }
 });
 
@@ -121,7 +121,7 @@ test("loader diagnostics go to the injected logger, never console", () => {
   try {
     const { dir } = sandbox();
     writeFileSync(join(dir, "config.example.yaml"), readFileSync(join(repo, "config", "config.example.yaml"), "utf8").replace("dashboard:", "bogus_key: 1\ndashboard:"));
-    loadConfig(true); // seeds config.yaml from the example (notice) and warns about bogus_key
+    loadConfigFile(true); // seeds config.yaml from the example (notice) and warns about bogus_key
   } finally { console.warn = origWarn; }
   assert.equal(seen.filter((s) => s === "CONSOLE").length, 0);
   assert.ok(seen.some((s) => /created .*config\.yaml from config\.example\.yaml/.test(s)));
@@ -129,20 +129,20 @@ test("loader diagnostics go to the injected logger, never console", () => {
 });
 
 // @spec CFG-USR-002
-test("loadExpressions reports a bad file the way loadConfig does and re-reads on every call", () => {
+test("loadExpressionsFile reports a bad file the way loadConfigFile does and re-reads on every call", () => {
   const { dir } = sandbox({ "expressions.yaml": "vts:\n  happy: 3\n" });
-  assert.throws(() => loadExpressions(), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "expressions.yaml")}:`) && /vts\.happy: /.test(e.message));
+  assert.throws(() => loadExpressionsFile(), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "expressions.yaml")}:`) && /vts\.happy: /.test(e.message));
   writeFileSync(join(dir, "expressions.yaml"), "vts:\n  happy: smile\n");
-  assert.equal(loadExpressions().vts!.happy, "smile");
+  assert.equal(loadExpressionsFile().vts!.happy, "smile");
   writeFileSync(join(dir, "expressions.yaml"), "vts:\n  happy: grin\n");
-  assert.equal(loadExpressions().vts!.happy, "grin");
+  assert.equal(loadExpressionsFile().vts!.happy, "grin");
 });
 
 // @spec CFG-USR-013
 test("writeFileAtomic replaces through a temp file and a failed write leaves the old file whole", () => {
   const { dir } = sandbox({ "personality.md": "old\n" });
   savePersonality("new\n");
-  assert.equal(loadPersonality(), "new\n");
+  assert.equal(loadPersonalityFile(), "new\n");
   assert.deepEqual(readdirSync(dir).toSorted(), ["personality.md"]); // no temp file left behind
   // rename over a directory fails: the target must be untouched and the temp removed
   const blocked = join(dir, "blocked");
@@ -157,9 +157,11 @@ test("writeFileAtomic replaces through a temp file and a failed write leaves the
 test(".env.example lists exactly the bootstrap, access-control and compose variables, none a config key, credential or isolation name", () => {
   const text = readFileSync(join(repo, ".env.example"), "utf8");
   const names = [...text.matchAll(/^#?\s*([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1]!);
-  const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_TOKEN", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"];
+  const want = ["COMPOSE_FILE", "COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "DASHBOARD_HOST", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR", "COHOST_KEY_FILE"];
   assert.deepEqual([...new Set(names)].toSorted(), [...want].toSorted());
   assert.doesNotMatch(text, /COHOST_ISOLATION/);
+  assert.doesNotMatch(text, /^\s*#?\s*CONTROL_TOKEN=/m, "no CONTROL_TOKEN line: the owner keeps the token and the settings store its verifier");
+  assert.match(text, /mise run config:token/);
   // each variable carries a comment, and a variable with a default is commented out
   const lines = text.split("\n");
   for (const n of want) {
@@ -167,8 +169,8 @@ test(".env.example lists exactly the bootstrap, access-control and compose varia
     assert.ok(i > 0, n);
     assert.ok(/#/.test(lines[i]!) || lines[i - 1]!.startsWith("#"), `${n} has a comment`);
   }
-  for (const n of ["COMPOSE_FILE", "CONTROL_TOKEN", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
-  for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
+  for (const n of ["COMPOSE_FILE", "DASHBOARD_HOST"]) assert.match(text, new RegExp(`^${n}=`, "m"), `${n} is set`);
+  for (const n of ["COMPOSE_PROFILES", "KOKORO_IMAGE", "SPEACHES_IMAGE", "CONTROL_ADVANCED", "COHOST_DOCKER_BIN", "HEARTBEAT_INTERVAL_MS", "COHOST_DATA_DIR", "COHOST_KEY_FILE"]) assert.match(text, new RegExp(`^# ${n}=`, "m"), `${n} is commented out`);
 });
 
 // @spec CFG-USR-015, CFG-USR-021

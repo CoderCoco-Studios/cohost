@@ -5,10 +5,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  ConfigSchema, LoggingSchema, PRESENTATION, SECTION_PATHS, configLogger, createLogger, escapeTerminal, formatPretty, loadConfig, loggingSettings,
+  ConfigSchema, LoggingSchema, PRESENTATION, SECTION_PATHS, configLogger, createLogger, escapeTerminal, formatPretty, loadConfig, loadConfigFile, loggingSettings, parseYaml, setLoggingSource,
   redact, resetLoggingForTest, type TerminalOut,
 } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, repo, sandbox, captureWarnings } from "./helpers/config-sandbox.js";
+import { isolateEnv, repo, sandbox, captureWarnings } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 afterEach(() => resetLoggingForTest());
@@ -19,12 +19,20 @@ function terminal(isTTY = false): TerminalOut & { text: () => string } {
   return { write: (t: string) => { chunks.push(t); }, isTTY, text: () => chunks.join("") };
 }
 
+/** Writes the projection `settings.json` of a unit holding `sections` (each a parsed section) into `dir`. */
+function writeProjection(dir: string, sections: Record<string, unknown>): void {
+  writeFileSync(join(dir, "settings.json"), JSON.stringify({ format: 1, unit: "svc", revision: 1, sections, documents: {} }));
+}
+/** The `logging` section of a YAML text written as the section's body. */
+const loggingOf = (yaml: string): unknown => (parseYaml(`logging:\n${yaml}`) as { logging: unknown }).logging;
+
 /**
- * A fresh config directory (with `logging` set from `logging` when given), a fresh data directory, and a captured terminal.
- * The bootstrap read is forgotten so the next logger reads this directory.
+ * A fresh config directory (whose projection holds the `logging` section given as YAML, when given), a fresh data directory,
+ * and a captured terminal. The bootstrap read is forgotten so the next logger reads this directory.
  */
 function setup(logging?: string, isTTY = false) {
-  const dir = sandbox(logging === undefined ? {} : { "config.yaml": `${MINIMAL_YAML}logging:\n${logging}` });
+  const dir = sandbox();
+  if (logging !== undefined) writeProjection(dir, { logging: loggingOf(logging) });
   const data = mkdtempSync(join(tmpdir(), "cohost-data-"));
   process.env.COHOST_DATA_DIR = data;
   delete process.env.NO_COLOR;
@@ -74,8 +82,8 @@ test("the shipped config.example.yaml writes the logging section as commented li
   for (const l of block) assert.match(l, /#/, `comment on: ${l.trim()}`);
   const dir = sandbox();
   writeFileSync(join(dir, "config.yaml"), text);
-  let cfg!: ReturnType<typeof loadConfig>;
-  assert.deepEqual(captureWarnings(() => { cfg = loadConfig(true); }), []);
+  let cfg!: ReturnType<typeof loadConfigFile>;
+  assert.deepEqual(captureWarnings(() => { cfg = loadConfigFile(true); }), []);
   assert.deepEqual(cfg.logging, { level: "info", terminal: "pretty", file: { enabled: true, max_size_mb: 10, max_files: 3 } });
 });
 
@@ -103,14 +111,15 @@ test("createLogger is named for the service at logging.level, read once per proc
   const log = createLogger("svc-a");
   assert.equal(log.bindings().name, "svc-a");
   assert.equal(log.level, "debug");
-  writeFileSync(join(dir, "config.yaml"), `${MINIMAL_YAML}logging:\n  level: warn\n`);
+  writeProjection(dir, { logging: { level: "warn" } });
   assert.equal(createLogger("svc-b").level, "debug", "the read is not repeated");
   assert.equal(configLogger().level, "debug");
 });
 
 // @spec CFG-URL-004, CFG-LOG-002, CFG-LOG-004
 test("the bootstrap read loads .env first, so CONFIG_DIR there is honoured, and LOG_LEVEL in .env changes nothing", () => {
-  const other = sandbox({ "config.yaml": `${MINIMAL_YAML}logging:\n  level: trace\n` });
+  const other = sandbox();
+  writeProjection(other, { logging: { level: "trace" } });
   const { dir } = setup();
   delete process.env.CONFIG_DIR;
   writeFileSync(join(dir, "..", ".env"), `CONFIG_DIR=${other}\nLOG_LEVEL=error\n`);
@@ -127,21 +136,32 @@ test("the bootstrap read takes a key written with no value as its default, as lo
 // @spec CFG-LOG-002
 test("the bootstrap read validates the logging section alone, so an invalid other section does not reset it", () => {
   const { dir } = setup();
-  writeFileSync(join(dir, "config.yaml"), `${MINIMAL_YAML.replace("name: Coco", 'name: ""')}logging:\n  level: debug\n`);
+  writeProjection(dir, { cohost: { name: "", streamer: "Chris" }, logging: { level: "debug" } });
   assert.equal(createLogger("svc").level, "debug");
-  assert.throws(() => loadConfig(true), /cohost\.name/, "the whole file is still invalid for loadConfig");
+  assert.throws(() => loadConfig({ dir, force: true }), /cohost\.name/, "the projection is still invalid for loadConfig");
+});
+
+// @spec CFG-LOG-002, STORE-PKG-003
+test("a registered logging source wins over the projection; with none registered the projection is read", () => {
+  setup("  level: warn\n");
+  setLoggingSource(() => ({ level: "trace", terminal: "json" }));
+  assert.equal(createLogger("dashboard").level, "trace");
+  assert.equal(loggingSettings().terminal, "json");
+  resetLoggingForTest();
+  assert.equal(loggingSettings().level, "warn", "resetting forgets the source: the projection in the config directory is read");
 });
 
 // @spec CFG-LOG-003
-test("a missing config.yaml, YAML that does not parse or an invalid logging section gives the defaults and reports nothing", () => {
-  for (const text of [undefined, "cohost: [unclosed\n  : :", `${MINIMAL_YAML}logging:\n  level: loud\n  file: { max_files: 99 }\n`]) {
+test("a missing settings.json, one that is not JSON or an invalid logging section gives the defaults and reports nothing", () => {
+  const invalid = JSON.stringify({ format: 1, unit: "svc", revision: 1, sections: { logging: { level: "loud", file: { max_files: 99 } } }, documents: {} });
+  for (const text of [undefined, "{not json", invalid]) {
     const { dir, out } = setup();
-    if (text !== undefined) writeFileSync(join(dir, "config.yaml"), text);
+    if (text !== undefined) writeFileSync(join(dir, "settings.json"), text);
     const warnings = captureWarnings(() => { assert.equal(createLogger("svc").level, "info"); });
     assert.deepEqual(loggingSettings(), { level: "info", terminal: "pretty", file: { enabled: true, max_size_mb: 10, max_files: 3 } });
     assert.deepEqual(warnings, []);
     assert.equal(out.text(), "");
-    assert.equal(existsSync(join(dir, "config.yaml")), text !== undefined, "nothing is seeded");
+    assert.equal(existsSync(join(dir, "settings.json")), text !== undefined, "nothing is written");
   }
 });
 
@@ -321,9 +341,9 @@ test("a config-logger warning before any program logger reaches the terminal onl
 // @spec CFG-LOG-018
 test("the loader's own diagnostics go through the config logger to the program's sink", () => {
   const { dir, file } = setup();
-  writeFileSync(join(dir, "config.yaml"), `${MINIMAL_YAML}bogus_key: 1\n`);
+  writeProjection(dir, { logging: {}, bogus_key: 1 });
   createLogger("chat");
-  loadConfig(true);
+  loadConfig({ dir, force: true });
   assert.ok(lines(file("chat")).some((e) => e.name === "config" && /ignoring unknown keys: bogus_key/.test(String(e.msg))));
 });
 

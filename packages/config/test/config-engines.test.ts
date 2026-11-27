@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigSchema, loadConfig } from "../src/index.js";
+import { ConfigSchema, loadConfigFile } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo, secretsIn } from "./helpers/config-sandbox.js";
 
 isolateEnv();
@@ -219,13 +219,13 @@ test("network.lan is optional, defaults to the empty list and validates each ent
 });
 
 // @spec CFG-SCH-071
-test("a config.yaml without a network section loads through loadConfig, one with network.lan keeps it and a bad entry fails naming it", () => {
+test("a config.yaml without a network section loads through loadConfigFile, one with network.lan keeps it and a bad entry fails naming it", () => {
   sandbox({ "config.yaml": MINIMAL_YAML });
-  loadConfig(true);
+  loadConfigFile(true);
   sandbox({ "config.yaml": `${MINIMAL_YAML}network:\n  lan: [".ts.net"]\n` });
-  assert.deepEqual(loadConfig(true).network?.lan, [".ts.net"]);
+  assert.deepEqual(loadConfigFile(true).network?.lan, [".ts.net"]);
   sandbox({ "config.yaml": `${MINIMAL_YAML}network:\n  lan: ["bad host!"]\n` });
-  assert.throws(() => loadConfig(true), (e: Error) => /network\.lan\.0/.test(e.message));
+  assert.throws(() => loadConfigFile(true), (e: Error) => /network\.lan\.0/.test(e.message));
 });
 
 // @spec CFG-SCH-039, CFG-SEC-003
@@ -241,7 +241,7 @@ test("the five engine secret keys default to the empty string and merge from sec
     "secrets.yaml": "ears:\n  nemotron:\n    api_key: nem\n  kyutai:\n    api_key: kyu\nvoice:\n  openai:\n    api_key: vk\n  pocket:\n    hf_token: hf\n",
   });
   chmodSync(secretsIn(dir), 0o600);
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.equal(cfg.ears.nemotron.api_key, "nem");
   assert.equal(cfg.ears.kyutai.api_key, "kyu");
   assert.equal(cfg.voice.openai.api_key, "vk");
@@ -273,5 +273,5 @@ test("the shipped example writes the engine keys as commented literals, network.
   assert.doesNotMatch(lines.filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{|hf_token/);
   for (const secret of ["voice.openai.api_key", "voice.pocket.hf_token", "ears.openai.api_key", "ears.nemotron.api_key", "ears.kyutai.api_key"]) assert.equal(at(secret), undefined, secret);
   shippedSandbox();
-  assert.doesNotThrow(() => loadConfig(true));
+  assert.doesNotThrow(() => loadConfigFile(true));
 });

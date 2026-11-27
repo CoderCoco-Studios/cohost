@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigSchema, ExpressionMapSchema, ISOLATION_OVERRIDES, loadConfig, loadExpressions } from "../src/index.js";
+import { ConfigSchema, ExpressionMapSchema, ISOLATION_OVERRIDES, loadConfigFile, loadExpressionsFile } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
@@ -31,9 +31,9 @@ test("avatar.driver accepts browser, treats blank as null, and an unknown value 
 // @spec CFG-ISO-005
 test("a config.yaml with avatar.driver browser loads, and an unknown driver fails the load naming avatar.driver", () => {
   sandbox({ "config.yaml": MINIMAL_YAML.replace("avatar: { vtube_studio: {}, vmc: {} }", "avatar: { driver: browser, vtube_studio: {}, vmc: {} }") });
-  assert.equal(loadConfig(true).avatar.driver, "browser");
+  assert.equal(loadConfigFile(true).avatar.driver, "browser");
   sandbox({ "config.yaml": MINIMAL_YAML.replace("avatar: { vtube_studio: {}, vmc: {} }", "avatar: { driver: unity, vtube_studio: {}, vmc: {} }") });
-  assert.throws(() => loadConfig(true), /avatar\.driver/);
+  assert.throws(() => loadConfigFile(true), /avatar\.driver/);
 });
 
 // @spec CFG-SCH-097
@@ -80,12 +80,12 @@ test("dashboard.models.max_bytes defaults to 100 MiB, takes 1 MiB to 1 GiB integ
 });
 
 // @spec CFG-SCH-101
-test("ExpressionMapSchema refuses a browser block value over 64 characters, and loadExpressions names the key", () => {
+test("ExpressionMapSchema refuses a browser block value over 64 characters, and loadExpressionsFile names the key", () => {
   assert.equal(ExpressionMapSchema.safeParse({ browser: { happy: "h".repeat(64) } }).success, true);
   assert.equal(ExpressionMapSchema.safeParse({ browser: { happy: "h".repeat(65) } }).success, false);
   assert.equal(ExpressionMapSchema.safeParse({ vmc: { happy: "h".repeat(65) } }).success, true, "only the browser block is capped");
   const dir = sandbox({ "expressions.yaml": `browser:\n  happy: ${"h".repeat(65)}\n` });
-  assert.throws(() => loadExpressions(), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "expressions.yaml")}:`) && /browser\.happy/.test(e.message));
+  assert.throws(() => loadExpressionsFile(), (e: Error) => e.message.startsWith(`Invalid ${join(dir, "expressions.yaml")}:`) && /browser\.happy/.test(e.message));
 });
 
 // @spec CFG-ISO-011
@@ -95,7 +95,7 @@ test("ISOLATION_OVERRIDES holds no renderer key and not dashboard.models.max_byt
   assert.equal(keys.includes("dashboard.models.max_bytes"), false);
   shippedSandbox();
   process.env.COHOST_ISOLATION = JSON.stringify({ AVATAR_DRIVER: "null" });
-  assert.equal(loadConfig(true).avatar.driver, "null");
+  assert.equal(loadConfigFile(true).avatar.driver, "null");
 });
 
 // @spec CFG-USR-021
@@ -107,16 +107,16 @@ test("config.example.yaml writes the four renderer keys and dashboard.models.max
   assert.equal(raw.avatar?.driver, "null");
   assert.doesNotMatch(text.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n"), /\$\{/);
   shippedSandbox();
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.deepEqual(cfg.renderer, { model: "", zoom: 1, offset_y: 0, turn: 0 });
 });
 
 // @spec CFG-LOAD-008
 test("a running process keeps its cached renderer values: a later edit of config.yaml is not reloaded", () => {
   const dir = sandbox({ "config.yaml": `${MINIMAL_YAML}renderer: { zoom: 2 }\n` });
-  const cfg = loadConfig(true);
+  const cfg = loadConfigFile(true);
   assert.equal(cfg.renderer.zoom, 2);
   writeFileSync(join(dir, "config.yaml"), `${MINIMAL_YAML}renderer: { zoom: 3 }\n`);
-  assert.equal(loadConfig(), cfg);
-  assert.equal(loadConfig().renderer.zoom, 2);
+  assert.equal(loadConfigFile(), cfg);
+  assert.equal(loadConfigFile().renderer.zoom, 2);
 });

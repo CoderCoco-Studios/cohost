@@ -56,7 +56,7 @@ export interface TokenRegistry {
 /**
  * Register the user token and wait for it, so the chat client never asks for credentials first.
  * A missing refresh token is rejected up front: twurple's `addUserForToken` cannot register without one.
- * With `stored` the stored token is registered as it is; otherwise the `secrets.yaml` pair is, marked as already
+ * With `stored` the stored token is registered as it is; otherwise the configured credential pair is, marked as already
  * expired so the first use refreshes it.
  */
 export async function registerUserToken(
@@ -93,6 +93,8 @@ export interface TwitchSourceOptions {
   twitch: Config["chat"]["twitch"];
   /** Where refreshed tokens are kept. */
   tokenPath: string;
+  /** The unit's state key, which the stored token is encrypted under (settings-store STORE-STATE-002). */
+  stateKey?: Buffer;
   createClient?: CreateClient;
   createAuth?: CreateAuth;
 }
@@ -187,13 +189,13 @@ export class TwitchSource implements ChatSource {
       env.log.info({ expiresIn: token.expiresIn }, "twitch token refreshed");
       if (!token.refreshToken) return;
       try {
-        saveStoredToken(file, { ...token, refreshToken: token.refreshToken } as StoredToken, startingRefresh);
+        saveStoredToken(file, { ...token, refreshToken: token.refreshToken } as StoredToken, startingRefresh, this.opts.stateKey);
       } catch (err) {
         env.log.warn({ err: String(err), file }, "could not persist the refreshed twitch token");
       }
     });
     // @spec CHAT-TW-006
-    const stored = startingRefresh ? loadStoredToken(file, startingRefresh) : undefined;
+    const stored = startingRefresh ? loadStoredToken(file, startingRefresh, this.opts.stateKey, env.log) : undefined;
     if (stored) env.log.info({ file }, "using the stored twitch token");
     await registerUserToken(provider, { accessToken, refreshToken, stored });
     return provider;

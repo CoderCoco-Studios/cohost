@@ -1,9 +1,9 @@
 import type http from "node:http";
-import { egressDestinations, loadConfig } from "@cohost/config";
+import { egressDestinations, loadConfigFile } from "@cohost/config";
 
 /**
  * `GET /egress`: every destination private data is sent to under the saved config, read through the loader the services use
- * (`loadConfig(true)`, so the answer follows the file on every request). Ungated, full-surface listener only (the LAN allow-list
+ * (`loadConfigFile(true)`, so the answer follows the file on every request). Ungated, full-surface listener only (the LAN allow-list
  * has no path to it). The body names hosts and engines and never a secret value. A config that fails to load answers 500 with the
  * loader's error and is never cached.
  */
@@ -12,7 +12,7 @@ export function handleEgress(req: http.IncomingMessage, res: http.ServerResponse
   if (req.method !== "GET" || url.pathname !== "/egress") return false;
   let destinations: ReturnType<typeof egressDestinations>;
   try {
-    destinations = egressDestinations(loadConfig(true));
+    destinations = egressDestinations(loadConfigFile(true));
   } catch (e) {
     res.writeHead(500, { "content-type": "application/json", "cache-control": "no-store" });
     res.end(JSON.stringify({ ok: false, detail: e instanceof Error ? e.message : String(e) }));

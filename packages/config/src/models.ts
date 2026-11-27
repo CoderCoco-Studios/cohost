@@ -1,10 +1,17 @@
 import type { Config } from "./schema.js";
 
+/**
+ * The settings sections `ollamaModels` reads: the `models` container's projection holds exactly these (settings-store
+ * STORE-PROJ-005), and a test fails when `ollamaModels` reads another.
+ */
+// @spec STORE-PROJ-005
+export const OLLAMA_MODEL_SECTIONS: readonly string[] = ["llm", "vision", "brain.memory", "brain.salience", "brain.affect", "brain.cortex"];
+
 /** Local Ollama model names a config needs: `required` must be pulled, `optional` degrade a hook to its rules fallback when missing. */
 export interface OllamaModels { required: string[]; optional: string[] }
 
 /**
- * Which Ollama models this config needs, so the model names live only in `config.yaml`. `required` holds `llm.model`,
+ * Which Ollama models this config needs, so the model names live only in the settings. `required` holds `llm.model`,
  * `llm.embed_model` and `vision.model` while their provider is `ollama` (an empty vision model is none);
  * `optional` holds the model of each hook of `kind: llm` whose provider, its own or the inherited `llm.provider`, is `ollama`,
  * an unset hook model meaning `llm.model`. Neither list repeats a name, and `optional` leaves out names `required` holds.

@@ -11,10 +11,11 @@
  *   cohostctl rebuild         the same as launch (never opens the bus)
  *   cohostctl stop-all        stop every container of the stack, never removing any (never opens the bus)
  *   cohostctl restart-all     restart every running application service
+ *   cohostctl deliver         deliver credentials to every running unit that waits for them or was started since its last delivery
  *
  * Always drives services through the compose runtime. Honours CONTROL_ADVANCED and REDIS_URL.
  * It runs as the invoking user (the OS user and the Docker socket are its boundary), so CONTROL_TOKEN, the dashboard's lock,
- * does not apply.
+ * does not apply; it never reads it, and refuses to start anything while `.env` or its environment defines it.
  * Publishes `service.lifecycle` with by:"cohostctl". Every command but `status` and `latency` holds the lifecycle lock shared
  * with the dashboard (a held lock is a refusal, exit 1).
  */
@@ -29,6 +30,9 @@ import { HealthTracker, withContainerRestarts, type ServiceHealth } from "./heal
 import { appServiceIds } from "./manifest.js";
 import { latencyReport } from "./latency.js";
 import { configRefusal } from "./config-gate.js";
+import { ComposeProvisioner, storeSource } from "./provision.js";
+import { resolveDockerBin, dockerEnv } from "./docker.js";
+import { defaultExec, type ExecFile } from "./runtime.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
@@ -39,7 +43,8 @@ export type CliCommand =
   | { cmd: "launch" }
   | { cmd: "rebuild" }
   | { cmd: "stop-all" }
-  | { cmd: "restart-all" };
+  | { cmd: "restart-all" }
+  | { cmd: "deliver" };
 
 export const USAGE = `usage:
   cohostctl status [service]
@@ -50,7 +55,8 @@ export const USAGE = `usage:
   cohostctl launch             build the images, bring the whole stack up and wait until it is ready
   cohostctl rebuild            the same as launch
   cohostctl stop-all           stop every container of the stack (nothing is removed)
-  cohostctl restart-all        restart every running application service`;
+  cohostctl restart-all        restart every running application service
+  cohostctl deliver            deliver credentials to every running unit that waits for them or was started since its last delivery`;
 
 export class UsageError extends Error {}
 
@@ -86,7 +92,7 @@ export function parseCli(argv: readonly string[]): CliCommand {
     if (mode !== undefined || isolated) throw new UsageError(`${cmd} takes no options`);
     return { cmd };
   }
-  if (cmd === "launch" || cmd === "rebuild" || cmd === "stop-all" || cmd === "restart-all") {
+  if (cmd === "launch" || cmd === "rebuild" || cmd === "stop-all" || cmd === "restart-all" || cmd === "deliver") {
     if (id) throw new UsageError(`${cmd} takes no arguments`);
     if (mode !== undefined || isolated) throw new UsageError(`${cmd} takes no options`);
     return { cmd };
@@ -113,6 +119,8 @@ export interface CliDeps {
     stopAll(): Promise<StackResult>;
     restartAll(): Promise<StackResult>;
   };
+  /** Delivers to every running unit that waits or was started since its last delivery (CTRL-CLI-019). */
+  deliver: () => Promise<DeliverResult>;
   /** The lifecycle lock shared with the dashboard (CTRL-LOCK-004); absent means no locking. */
   lock?: { tryAcquire(action: string): LockResult };
   out: (line: string) => void;
@@ -178,6 +186,14 @@ async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
     d.out("run `cohostctl consolidate` to tidy viewer notes");
     return 0;
   }
+  if (c.cmd === "deliver") {
+    const r = await d.deliver();
+    if (r.warning) d.err(`warning: ${r.warning}`);
+    for (const u of r.delivered) d.out(`delivered credentials to ${u}`);
+    for (const f of r.failures) d.err(f);
+    if (r.delivered.length === 0 && r.failures.length === 0) d.out("deliver: no unit waits for credentials");
+    return r.failures.length === 0 ? 0 : 1;
+  }
   if (c.cmd === "restart-all") {
     const r = await d.stack.restartAll();
     for (const x of r.restarts ?? []) {
@@ -194,6 +210,25 @@ async function runCommand(c: CliCommand, d: CliDeps): Promise<number> {
   return 0;
 }
 
+/** The delivery over the settings store and the docker CLI, under the workspace root. */
+function defaultRedeliver(env: NodeJS.ProcessEnv, exec: ExecFile = defaultExec): NonNullable<CliWiring["redeliver"]> {
+  return async (sets) => {
+    const docker = resolveDockerBin(env);
+    if (!docker.ok) return { delivered: [], failures: [docker.detail] };
+    const root = findWorkspaceRoot() ?? process.cwd();
+    const source = storeSource(root);
+    try {
+      const p = new ComposeProvisioner({
+        root, env, source,
+        docker: (args, opts = {}) => exec(docker.bin, args, { env: args[0] === "compose" ? dockerEnv(docker.bin, env, {}) : env, cwd: root, ...opts }),
+      });
+      return await p.redeliver(sets);
+    } finally {
+      source.close();
+    }
+  };
+}
+
 /** Compose is the only runtime. */
 export function buildRuntime(): ComposeRuntime {
   // Compose finds docker-compose.yml, .env and the project name from its working directory, wherever cohostctl was started.
@@ -206,6 +241,9 @@ export type CliBus = Pick<Bus, "publish" | "resetGroup" | "recentHealth" | "rece
 /** The stack controller as the CLI drives it. */
 export type CliStack = Pick<StackController, "launch" | "rebuild" | "stopAll" | "restartAll" | "statusWithRestarts">;
 
+/** What `cohostctl deliver` did: the units delivered to, the failures (each naming its unit), and a warning (Redis unreachable). */
+export interface DeliverResult { delivered: string[]; failures: string[]; warning?: string }
+
 /** What `executeCli` builds things with; every field defaults to the real thing. Tests inject fakes. */
 export interface CliWiring {
   openBus?: () => CliBus;
@@ -216,12 +254,38 @@ export interface CliWiring {
   env?: NodeJS.ProcessEnv;
   out?: (line: string) => void;
   err?: (line: string) => void;
-  /** The config gate (CTRL-GATE-001): a refusal text while the configuration is invalid; the loader's files by default. */
-  configRefusal?: () => string | undefined;
+  /** The config gate (CTRL-GATE-001): a refusal text while the settings store cannot be used; the store's check by default. */
+  configRefusal?: () => string | undefined | Promise<string | undefined>;
+  /** The delivery of `cohostctl deliver`, given the units waiting and the units ready by their heartbeats. */
+  redeliver?: (o: { waiting: ReadonlySet<string>; ready: ReadonlySet<string> }) => Promise<{ delivered: string[]; failures: string[] }>;
+  /** Runs docker for the default delivery (tests). */
+  exec?: ExecFile;
 }
 
-/** The commands that start a service from the configuration, refused while it is invalid (CTRL-CLI-018). */
-const GATED = new Set(["launch", "rebuild", "start", "restart", "restart-all"]);
+/** The commands that start a service or deliver credentials, refused while the settings store cannot be used (CTRL-CLI-018). */
+const GATED = new Set(["launch", "rebuild", "start", "restart", "restart-all", "deliver", "consolidate", "reembed"]);
+
+/** The heartbeat detail of a unit waiting for its credentials message (shared-runtime SHARED-BOOT-009). */
+const WAITING = "waiting for credentials";
+
+/**
+ * The units waiting for credentials and the units ready, by each unit's newest heartbeat. A unit whose newest heartbeat is
+ * `starting` with the detail `waiting for credentials` waits; one in `ready` or `degraded` holds its credentials.
+ */
+export function heartbeatSets(beats: readonly HeartbeatEvent[]): { waiting: Set<string>; ready: Set<string> } {
+  const newest = new Map<string, HeartbeatEvent>();
+  for (const h of beats) {
+    const prior = newest.get(h.data.service);
+    if (!prior || h.ts >= prior.ts) newest.set(h.data.service, h);
+  }
+  const waiting = new Set<string>();
+  const ready = new Set<string>();
+  for (const [service, h] of newest) {
+    if (h.data.state === "starting" && h.data.detail === WAITING) waiting.add(service);
+    else if (h.data.state === "ready" || h.data.state === "degraded") ready.add(service);
+  }
+  return { waiting, ready };
+}
 
 /** The reason, when `e` is a failure to reach Redis (error `code` `BUS_CONNECTION`, its message names the cause); otherwise undefined. */
 // @spec CTRL-CLI-017
@@ -252,7 +316,7 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
   // @spec CTRL-CLI-018
   if (GATED.has(cmd.cmd)) {
     let refusal: string | undefined;
-    try { refusal = (w.configRefusal ?? (() => configRefusal()))(); } catch (e) { err(e instanceof Error ? e.message : String(e)); return 1; }
+    try { refusal = await (w.configRefusal ?? (() => configRefusal()))(); } catch (e) { err(e instanceof Error ? e.message : String(e)); return 1; }
     if (refusal !== undefined) { err(refusal); return 1; }
   }
   // Opened on first use, so `consolidate`, `launch`, `rebuild` and `stop-all` (run when redis may be stopped) never connect.
@@ -283,7 +347,22 @@ export async function executeCli(argv: readonly string[], w: CliWiring = {}): Pr
       stopAll: () => stackFor().stopAll(),
       restartAll: () => stackFor().restartAll(controller),
     };
-    return await runCli(argv, { controller, health, recent: (n) => getBus().recent(n), consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
+    // @spec CTRL-CLI-019
+    const deliver = async (): Promise<DeliverResult> => {
+      let beats: HeartbeatEvent[] = [];
+      let warning: string | undefined;
+      try {
+        beats = await getBus().recentHealth(200);
+      } catch (e) {
+        const reason = connectFailure(e);
+        if (reason === undefined) throw e;
+        warning = `cannot reach Redis at ${redisUrl(w.env)}: ${reason}; delivering to the units started since their last delivery only`;
+      }
+      const redeliver = w.redeliver ?? defaultRedeliver(w.env ?? process.env, w.exec);
+      const r = await redeliver(heartbeatSets(beats));
+      return { ...r, ...(warning ? { warning } : {}) };
+    };
+    return await runCli(argv, { controller, health, recent: (n) => getBus().recent(n), consolidate: () => runtime.consolidate(), reembed: () => runtime.reembed(), stack, deliver, lock: w.lock ?? new LifecycleLock({ by: "cohostctl" }), out, err });
   } catch (e) {
     const refused = connectFailure(e);
     err(refused !== undefined ? `cannot reach Redis at ${redisUrl(w.env)}: ${refused} (is the stack up? run cohostctl launch)` : e instanceof Error ? e.message : String(e));

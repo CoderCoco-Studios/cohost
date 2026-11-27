@@ -105,7 +105,7 @@ description = "Run the Rust tests and check the desktop audio helper's Windows b
 run = ["cargo test --workspace", "cargo check --target x86_64-pc-windows-msvc -p cohost-desktop-audio"]
 
 # The test tasks run through scripts/test-env.sh: a temporary COHOST_DATA_DIR and CONFIG_DIR (copies of the examples), with
-# COHOST_ENV_FILE and COHOST_SECRETS_FILE inside it, removed when the run ends (DEPLOY-TOOL-022).
+# COHOST_ENV_FILE, COHOST_KEY_FILE and (until the dashboard's cut-over) COHOST_SECRETS_FILE inside it, removed when the run ends (DEPLOY-TOOL-022).
 [tasks.test]
 description = "Run every test: Rust, then the build, then the TypeScript suite"
 depends = ["build", "test:rust"]
@@ -251,28 +251,32 @@ description = "List every problem that stops the settings store's use"
 depends = ["install"]
 run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js check"]
 
-[tasks."secrets:project"]
-description = "Project secrets/secrets.yaml into each unit's secrets directory"
+[tasks."config:project"]
+description = "Write every unit's projection (no credentials) under data/projections/"
 depends = ["install"]
-run = ["tsc -b packages/control", "node packages/control/dist/project-secrets.js"]
+run = ["tsc -b packages/store", "node packages/store/dist/cli/index.js project"]
 
+[tasks.deliver]
+description = "Deliver credentials to every running unit that waits for them (runs cohostctl deliver)"
+depends = ["build:native", "install"]
+run = ["tsc -b packages/control", "node packages/control/dist/cli.js deliver"]
+
+# The memory one-shots run on the host through the unit runner as the memory unit: its projection and its credentials on a
+# pipe (settings-store STORE-DLV-007); after reflect, the runner applies the personality outbox (STORE-OUT-002).
 [tasks.reflect]
 description = "Run the memory reflection pass once"
 depends = ["build:native", "build:ts"]
-dir = "{{config_root}}/services/memory"
-run = "node dist/reflect.js"
+run = "node packages/control/dist/run-unit.js memory services/memory/dist/reflect.js"
 
 [tasks.consolidate]
 description = "Run one memory consolidation pass"
 depends = ["build:native", "build:ts"]
-dir = "{{config_root}}/services/memory"
-run = "node dist/consolidate.js"
+run = "node packages/control/dist/run-unit.js memory services/memory/dist/consolidate.js"
 
 [tasks.reembed]
 description = "Re-embed the memory store with the configured embedder"
 depends = ["build:native", "build:ts"]
-dir = "{{config_root}}/services/memory"
-run = "node dist/reembed.js"
+run = "node packages/control/dist/run-unit.js memory services/memory/dist/reembed.js"
 
 [tasks."infra:up"]
 description = "Start the infrastructure containers for the Docker-free dev loop"
@@ -287,115 +291,91 @@ run = "docker compose stop redis postgres ollama tts stt"
 # ------------------------------------------------------------------------------------------ dev loop
 # One task per directory under services/ except dashboard. `outputs = []`: a clean exit never marks a
 # service up to date. `mise watch --restart dev:<service>` rebuilds what changed and restarts it.
-# Each runs the secrets projection first and reads its own unit's projection, as a container would, with CONTROL_TOKEN
-# pinned empty (loading .env does not override a set variable), so no host-run service sees the token.
+# Each runs the unit runner (settings-store STORE-DLV-007): it writes the unit's projection, points CONFIG_DIR at it and hands
+# the service its credentials on a pipe, so a host-run service reads what a container would and never the settings store.
 # @spec DEPLOY-TOOL-014
 
 [tasks."dev:affect"]
 description = "Run the affect service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/affect"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/affect/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js affect"
 sources = ["{{config_root}}/services/affect/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:avatar"]
 description = "Run the avatar service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/avatar"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/avatar/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js avatar"
 sources = ["{{config_root}}/services/avatar/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:chat"]
 description = "Run the chat service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/chat"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/chat/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js chat"
 sources = ["{{config_root}}/services/chat/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:connector-discord"]
 description = "Run the Discord connector (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/connector-discord"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/connector-discord/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js connector-discord"
 sources = ["{{config_root}}/services/connector-discord/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:cortex"]
 description = "Run the cortex service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/cortex"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/cortex/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js cortex"
 sources = ["{{config_root}}/services/cortex/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:ears"]
 description = "Run the ears service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/ears"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/ears/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js ears"
 sources = ["{{config_root}}/services/ears/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:eyes"]
 description = "Run the eyes service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/eyes"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/eyes/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js eyes"
 sources = ["{{config_root}}/services/eyes/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:memory"]
 description = "Run the memory service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/memory"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/memory/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js memory"
 sources = ["{{config_root}}/services/memory/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:mouth"]
 description = "Run the mouth service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/mouth"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/mouth/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js mouth"
 sources = ["{{config_root}}/services/mouth/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:salience"]
 description = "Run the salience service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/salience"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/salience/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js salience"
 sources = ["{{config_root}}/services/salience/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:tools"]
 description = "Run the tools service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/tools"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/tools/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js tools"
 sources = ["{{config_root}}/services/tools/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 
 [tasks."dev:voice"]
 description = "Run the voice service (use with mise watch --restart)"
-depends = ["build:native", "build:ts", "secrets:project"]
-dir = "{{config_root}}/services/voice"
-env = { CONTROL_TOKEN = "", COHOST_SECRETS_FILE = "{{config_root}}/secrets/units/voice/secrets.yaml" }
-run = "node dist/index.js"
+depends = ["build:native", "build:ts"]
+run = "node packages/control/dist/run-unit.js voice"
 sources = ["{{config_root}}/services/voice/src/**", "{{config_root}}/packages/*/src/**"]
 outputs = []
 

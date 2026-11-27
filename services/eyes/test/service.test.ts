@@ -57,7 +57,8 @@ function rig(over: Record<string, unknown>, deps: Record<string, unknown> = {}, 
   });
   return { bus, rec, obs, exits, start, stop: async () => { await shutdown?.(); await heartbeat?.stop(); } };
 }
-const heartbeats = (b: SvcBus) => b.health;
+/** The service's own heartbeats: the one published while it waited for its credentials message (SHARED-BOOT-009) carries no deps yet. */
+const heartbeats = (b: SvcBus) => b.health.filter((h) => h.detail !== "waiting for credentials");
 
 // @spec EYES-ENAB-001, EYES-ENAB-002, EYES-ENAB-004, EYES-HEALTH-001, EYES-HEALTH-005
 test("vision disabled: one idle warning, never repeated, ready with mode off, no OBS, and the inject subscription is up", async () => {

@@ -31,7 +31,7 @@ export interface ChatClock {
 }
 
 export interface ChatServiceDeps {
-  /** Where refreshed tokens are kept (default `<dataDir()>/chat/twitch-token.json`). */
+  /** Where refreshed tokens are kept (default `<dataDir()>/chat/twitch-token.enc`). */
   tokenPath?: string;
   createClient?: CreateClient;
   createAuth?: CreateAuth;
@@ -64,7 +64,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health: (cfg: Config)
     },
 
     // @spec CHAT-PLAN-001, CHAT-PLAN-003, CHAT-PLAN-006, CHAT-PLAN-008, CHAT-PLAN-010, CHAT-PLAN-011, CHAT-PLAN-015, CHAT-SRC-002, CHAT-SRC-003, CHAT-SRC-004, CHAT-SRC-005, CHAT-SRC-006, CHAT-SRC-007, CHAT-SRC-008, CHAT-INJ-001
-    async main({ cfg, bus, log, heartbeat, onStop }) {
+    async main({ cfg, bus, log, heartbeat, onStop, stateKey }) {
       const plan = sourcePlan(cfg.chat);
 
       // Test injection is handled whatever the sources; it needs no channel or connection, and is subscribed before any
@@ -186,7 +186,7 @@ export function chatService(deps: ChatServiceDeps = {}): { health: (cfg: Config)
             return new FakeSource({ cohostName: cfg.cohost.name, intervalMs: cfg.chat.fake.interval_ms, stdin: deps.stdin ?? process.stdin });
           case "twitch":
             return new TwitchSource({
-              channel: channelName(cfg.chat), twitch: cfg.chat.twitch, tokenPath: deps.tokenPath ?? tokenFile(),
+              channel: channelName(cfg.chat), twitch: cfg.chat.twitch, tokenPath: deps.tokenPath ?? tokenFile(), ...(stateKey ? { stateKey } : {}),
               createClient: deps.createClient, createAuth: deps.createAuth,
             });
           case "youtube":

@@ -14,6 +14,7 @@ interface Svc {
   restart?: string;
   profiles?: string[];
   volumes?: unknown[];
+  tmpfs?: string[];
   env_file?: string;
   environment?: Record<string, string>;
   healthcheck?: { disable?: boolean; test?: string[] };
@@ -37,13 +38,16 @@ test("consolidate builds the memory image and runs the consolidate entry point i
   assert.equal(svc.restart, "no");
 });
 
-// @spec DEPLOY-COMPOSE-018
-test("consolidate inherits the shared env, config volume and environment, and restates nothing that hides them", () => {
+// @spec DEPLOY-COMPOSE-018, DEPLOY-COMPOSE-025, DEPLOY-COMPOSE-033
+test("consolidate inherits the shared env and environment, mounts ./data/logs and the memory unit's projection, has the /run/cohost tmpfs, and restates nothing that hides them", () => {
   const memory = compose.services.memory!;
   assert.equal(svc.env_file, ".env");
-  assert.deepEqual((svc.volumes as unknown[]).filter((m) => typeof m === "string"), ["./config:/app/config", "./data/logs:/app/data/logs"]);
-  assert.deepEqual((svc.volumes as unknown[]).filter((m) => typeof m !== "string"), [{ type: "bind", source: "./secrets/units/memory", target: "/app/secrets", read_only: true, bind: { create_host_path: false } }], "the memory unit's projection (DEPLOY-SECRET-002)");
+  assert.deepEqual(svc.volumes, [
+    "./data/logs:/app/data/logs",
+    { type: "bind", source: "./data/projections/memory", target: "/app/config", read_only: true, bind: { create_host_path: false } },
+  ], "the memory unit's projection, read-only and never created by Compose");
   assert.deepEqual(svc.volumes, memory.volumes);
+  assert.deepEqual(svc.tmpfs, ["/run/cohost:mode=0700,size=1m"]);
   for (const k of ["DATABASE_URL", "OLLAMA_URL", "CONFIG_DIR", "COHOST_ISOLATION"]) {
     assert.ok(svc.environment?.[k] !== undefined, `${k} is set`);
     assert.equal(svc.environment?.[k], memory.environment?.[k], k);

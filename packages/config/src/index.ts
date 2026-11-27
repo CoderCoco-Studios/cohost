@@ -11,7 +11,7 @@ import { ConfigError, bracketIndexes, type ConfigProblem } from "./errors.js";
 
 export * from "./schema.js";
 export {
-  unknownKeys, parseConfigText, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
+  unknownKeys, parseConfigText, coerceEmptyNumbers, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, decodeIsolation, isolationOverriddenKeys,
   type ConfigIssue, type ParsedConfigText, type SecretValues, type IsolationName, type IsolationOverrides,
 } from "./pipeline.js";
 export { updateSecrets, secretRepair } from "./secrets.js";
@@ -25,6 +25,11 @@ export * from "./egress.js";
 export { findWorkspaceRoot, configDir, dataDir, dotEnvPath, loadDotEnv } from "./paths.js";
 export { createLogger, configLogger, loggingSettings, redact, resetLoggingForTest, type Logger, type CreateLoggerOptions, type TerminalOut } from "./logging.js";
 export { formatPretty, escapeTerminal } from "./log-pretty.js";
+/**
+ * The YAML reader and writer of this package, for `@cohost/store`'s export and import, which depends on no package outside the
+ * workspace (settings-store STORE-PKG-002).
+ */
+export { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 let cached: Config | undefined;
 

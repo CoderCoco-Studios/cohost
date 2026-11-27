@@ -75,7 +75,7 @@ Each client shows the same call. In every one, the reply is printed, and the exi
    mise run example:audio-send:ts -- clip.wav --speaker Chris
    ```
 
-3. From any language with `curl`. A program in a language with no example here can make the same request. `send.sh` is that request as a script, and it is tested like the two clients; it derives the key with `openssl`, so it needs `openssl` as well as `curl`:
+3. From any language with `curl`. A program in a language with no example here can make the same request. `send.sh` is that request as a script, and it is tested like the two clients; it derives the key with `openssl`, so it needs `openssl` as well as `curl`. `openssl dgst -hmac` takes the token as a command-line argument, so another user of the same machine can read it in the process list while `openssl` runs; on a shared machine, use the Python or TypeScript client, which keep it in memory:
 
    <<< @/../examples/audio-in/send.sh#send
 

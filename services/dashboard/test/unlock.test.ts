@@ -465,7 +465,7 @@ test("a request that fails logs its path, never its query string: a throwing /un
   assert.ok(!logged.includes(nonce), logged);
 });
 
-// @spec DASH-CTRL-004, DASH-CTRL-011, DASH-CTRL-001
+// @spec DASH-CTRL-004, DASH-CTRL-011, DASH-CTRL-001, DASH-TOOL-002
 test("every mutation needs the token or a session cookie, the stack routes included; no route answers 403 'not set up'", async () => {
   const t = await normal();
   const routes = [

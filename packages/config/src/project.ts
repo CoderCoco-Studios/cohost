@@ -45,8 +45,8 @@ function unitText(values: Readonly<Record<string, string>>, declared: readonly s
 export type DerivedSecrets = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 /**
- * Writes `secrets/units/<composeName>/secrets.yaml` under `root` for every unit that declares a secret path: the operator's
- * file (`secretsPath()`, read with the loader's rules) cut down to exactly those paths. Each file is replaced by rename with
+ * Writes `secrets/units/<composeName>/secrets.yaml` under `root` for every unit that declares a secret path or is handed a
+ * derived entry: the operator's file (`secretsPath()`, read with the loader's rules) cut down to exactly those paths. Each file is replaced by rename with
  * mode 0600 in a 0700 directory, a directory under `secrets/units/` that names no such unit is removed, and nothing is written
  * when the operator's file, a link or a directory is unusable. Rejects with an error that names a file, directory or path,
  * never a value. `derived` adds credentials the caller derived to the named units' files (the ears listener key, CFG-SEC-020);
@@ -62,7 +62,8 @@ export async function projectSecrets(root: string, units: readonly SecretUnit[],
   for (const dir of [secretsDir, unitsDir]) {
     if (isLink(dir)) throw new Error(`Cannot project secrets: ${dir} is a symbolic link`);
   }
-  const declaring = units.filter((u) => u.secrets.length > 0);
+  // A unit whose only entry is derived (ears, which declares no operator credential it must have) is still projected.
+  const declaring = units.filter((u) => u.secrets.length > 0 || derived[u.composeName] !== undefined);
   for (const u of declaring) {
     const dir = join(unitsDir, u.composeName);
     if (isLink(dir)) throw new Error(`Cannot project secrets: ${dir} is a symbolic link`);

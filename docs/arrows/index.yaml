@@ -280,7 +280,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "465 specs: 395 [x], 70 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): the token check against the store's verifier, the store's session key, the unlock task, personality and secret writes to the store, recovery rewritten for three causes (DASH-RCV-024..027 new; the raw editor, placeholder fallback and secret-path rows retired). Earlier: 35 one-lock specs rewritten for #370 (CONTROL_TOKEN always required, one gate, no CONTROL_ENABLED; implementation PR pending) and the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The unlock link (DASH-UNL-001 to 008, DASH-CTRL-011, #366) is built."
+    next: "465 specs: 395 [x], 70 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): the token check against the store's verifier, the store's session key, the unlock task, personality and secret writes to the store, recovery rewritten for three causes (DASH-RCV-024..027 new; the raw editor, placeholder fallback and secret-path rows retired). Earlier: 35 one-lock specs rewritten for #370 (CONTROL_TOKEN always required, one gate, no CONTROL_ENABLED): 24 built by #375; the rest open for #372 (DASH-CTRL-002, -011, DASH-RCV-002, -003, -007, -009, -010, -013, -022, DASH-ACC-010; DASH-RCV-018 retired). Open besides: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The unlock link (DASH-UNL-001 to 008, DASH-CTRL-011, #366) is built."
     drift: null
 
   control-plane:
@@ -328,7 +328,7 @@ arrows:
     blocks: [control-plane, dashboard, deployment, module-contract, shared-runtime, memory, chat, avatar]
     blockedBy: [config]
     detail: settings-store.md
-    next: "68 specs: 0 [x], 68 [ ], 0 [D]. Design only (#372): the SQLite settings store, master key file, control-token verifier, projections, in-memory credential delivery, unit state keys, reflection outbox, YAML export and import and the config:* tasks. Build in the PR order of the design PR."
+    next: "68 specs: 35 [x], 33 [ ], 0 [D]. #372 step 1 built: the @cohost/store package (node:sqlite wrapper, schema, integrity, master key file, AES-256-GCM values, token verifier, session and listener keys, the write operation, backups, restore, export and import, checkStore) and the config:* tasks; inert, no consumer uses it. Next: step 2 (the projection loader, the credentials receiver, manifest documents and stateKey, state-key helpers, the reflect outbox), then the step 3 cut-over (projections, delivery, config:project, deliver)."
     drift: null
 
 

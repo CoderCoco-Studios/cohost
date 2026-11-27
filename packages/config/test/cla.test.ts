@@ -35,6 +35,10 @@ interface State {
   /** The record's text on the branch, or null when the file is missing. */
   record: string | null;
   runs: Run[];
+  /** Statuses the contents PUT answers before it accepts a write; each one also moves the file on, as another run's write would. */
+  putFailures: number[];
+  /** The branch appears between the ref lookup and the ref creation, as when another run created it. */
+  refRace: boolean;
 }
 
 const ghBot: User = { login: "github-actions[bot]", id: BOT_ID };
@@ -46,7 +50,7 @@ interface Call { method: string; path: string; body: unknown }
 
 /** An in-memory GitHub REST API: the routes the CLA script uses, recording every call. No network. */
 function fakeGitHub(init: Partial<State>) {
-  const state: State = { commits: [], comments: [], branch: true, record: EXISTING_RECORD, runs: [], ...init };
+  const state: State = { commits: [], comments: [], branch: true, record: EXISTING_RECORD, runs: [], putFailures: [], refRace: false, ...init };
   const calls: Call[] = [];
   let recordSha = 1;
   let nextComment = 9000;
@@ -68,9 +72,10 @@ function fakeGitHub(init: Partial<State>) {
     const base = `/repos/${REPO}`;
     const route = `${method} ${path}`;
     if (route === `GET ${base}/pulls/7/commits`) {
-      return json(200, page(state.commits, url).map((c, i) => ({ sha: `c${i}`, author: c.author, committer: c.committer, commit: { author: { name: c.name }, committer: { name: c.name } } })));
+      // The REST API lists at most 250 commits of a pull request.
+      return json(200, page(state.commits.slice(0, 250), url).map((c, i) => ({ sha: `c${i}`, author: c.author, committer: c.committer, commit: { author: { name: c.name }, committer: { name: c.name } } })));
     }
-    if (route === `GET ${base}/pulls/7`) return json(200, { number: 7, head: { sha: "headsha" }, merged: false });
+    if (route === `GET ${base}/pulls/7`) return json(200, { number: 7, head: { sha: "headsha" }, merged: false, commits: state.commits.length });
     if (route === `GET ${base}`) return json(200, { id: 77, default_branch: "main" });
     if (route === `GET ${base}/contents/${RECORD_PATH}`) {
       assert.equal(url.searchParams.get("ref"), "cla-signatures");
@@ -81,6 +86,11 @@ function fakeGitHub(init: Partial<State>) {
       const b = body as { content: string; sha?: string; branch: string; message: string };
       assert.equal(b.branch, "cla-signatures");
       if (!state.branch) return json(404, { message: "Branch not found" });
+      const fail = state.putFailures.shift();
+      if (fail !== undefined) {
+        recordSha += 1;
+        return json(fail, { message: fail === 409 ? "is at rec-other but expected rec-old" : "sha wasn't supplied" });
+      }
       if (state.record !== null) assert.equal(b.sha, `rec${recordSha}`, "an update names the SHA it read");
       else assert.equal(b.sha, undefined, "a new file has no SHA");
       state.record = Buffer.from(b.content, "base64").toString("utf8");
@@ -91,6 +101,10 @@ function fakeGitHub(init: Partial<State>) {
     if (route === `GET ${base}/git/ref/heads/main`) return json(200, { object: { sha: "main-head" } });
     if (route === `POST ${base}/git/refs`) {
       assert.deepEqual(body, { ref: "refs/heads/cla-signatures", sha: "main-head" });
+      if (state.refRace) {
+        state.branch = true;
+        return json(422, { message: "Reference already exists" });
+      }
       state.branch = true;
       return json(201, { ref: "refs/heads/cla-signatures" });
     }
@@ -125,6 +139,8 @@ const prEvent = (action = "opened", merged = false) => ({ action, number: 7, pul
 const commentEvent = (comment: Comment) => ({ action: "created", issue: { number: 7, pull_request: { url: "x" } }, comment, repository: { id: 77 } });
 
 async function check(gh: ReturnType<typeof fakeGitHub>, eventName: string, event: unknown) {
+  const e = event as { pull_request?: { commits?: number } };
+  if (e.pull_request && e.pull_request.commits === undefined) e.pull_request.commits = gh.state.commits.length;
   return run({ eventName, event, repository: REPO, token: "test-token", apiUrl: API, serverUrl: "https://github.example.test", runId: "4242", fetch: gh.fetch, log: () => {} });
 }
 
@@ -300,6 +316,9 @@ test("the cla workflow runs the script from the base ref with least privilege", 
   assert.deepEqual(uses, ["actions/checkout", "jdx/mise-action"]);
   assert.doesNotMatch(code, /head\.(?:sha|ref)|refs\/pull|github\.head_ref/, "never checks out the pull request's code");
   assert.match(code, /persist-credentials: false/);
+  assert.match(code, /- uses: actions\/checkout@\S+\n\s+with:\n\s+ref: \$\{\{ github\.sha \}\}\n/, "checks out the workflow's own base commit");
+  assert.match(code, /- uses: jdx\/mise-action@\S+\n\s+with:\n(?:\s+\S+: .*\n)*?\s+cache: false\n/, "a privileged job uses no cache");
+  for (const m of code.matchAll(/^\s*(?:- )?run: (.*)$/gm)) assert.doesNotMatch(m[1]!, /\$\{\{\s*github\.event/, "no event text is interpolated into a run step");
   assert.match(code, /install_args: node\n/);
   assert.match(code, /run: MISE_TASK_RUN_AUTO_INSTALL=false mise run cla\n/);
   assert.match(code, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
@@ -307,4 +326,81 @@ test("the cla workflow runs the script from the base ref with least privilege", 
   assert.doesNotMatch(code, /contributor-assistant/);
   const mise = readFileSync(`${repoRoot}mise.toml`, "utf8");
   assert.match(mise, /^\[tasks\.cla\]\n(?:.*\n)*?run = "node scripts\/cla\/cla\.mjs"$/m, "mise run cla runs the script");
+});
+
+// @spec DEPLOY-CI-014
+test("an unlinked author name is shown as an escaped code span that cannot mention, link or inject HTML", async () => {
+  const evil = "@CoderCoco `x` [click](https://evil.example) <img src=x onerror=alert(1)>";
+  const gh = fakeGitHub({ commits: [{ author: null, committer: null, name: evil }] });
+  assert.equal(await check(gh, "pull_request_target", prEvent()), 1);
+  const body = botComment(gh)[0]!.body;
+  assert.ok(!body.includes(evil), "the raw name never appears");
+  assert.doesNotMatch(body, /@CoderCoco/, "no mention survives");
+  assert.ok(body.includes("`@​CoderCoco x [click](https://evil.example) <img src=x onerror=alert(1)>`"), "the name sits in one code span, backticks removed, @ neutralised");
+});
+
+// @spec DEPLOY-CI-013
+test("a pull request of more than 250 commits fails and says so rather than checking the first 250", async () => {
+  const commits: Commit[] = Array.from({ length: 251 }, () => ({ author: coco, committer: coco, name: "Coco" }));
+  const gh = fakeGitHub({ commits });
+  assert.equal(await check(gh, "pull_request_target", prEvent()), 1);
+  assert.match(botComment(gh)[0]!.body, /251 commits/);
+  // On a comment event the count comes from the pull request itself.
+  const recheck: Comment = { id: 7010, user: coco, body: "recheck", created_at: "2026-11-27T10:00:00Z" };
+  const gh2 = fakeGitHub({ commits, comments: [recheck] });
+  assert.equal(await check(gh2, "issue_comment", commentEvent(recheck)), 1);
+  // Exactly 250 is checked as usual.
+  const gh3 = fakeGitHub({ commits: commits.slice(0, 250) });
+  assert.equal(await check(gh3, "pull_request_target", prEvent()), 0);
+});
+
+// @spec DEPLOY-CI-016
+test("a write rejected with 409 or 422 is retried from a fresh read", async () => {
+  for (const status of [409, 422]) {
+    const sign: Comment = { id: 7011, user: alice, body: SIGN_PHRASE, created_at: "2026-11-27T13:00:00Z" };
+    const gh = fakeGitHub({ commits: [{ author: alice, committer: alice, name: "Alice" }], comments: [sign], putFailures: [status] });
+    assert.equal(await check(gh, "issue_comment", commentEvent(sign)), 0, `after a ${status}`);
+    assert.equal(writes(gh).length, 2);
+    assert.match(gh.state.record!, /"name": "alice"/);
+  }
+  // Three rejections in a row give up and fail the run.
+  const sign: Comment = { id: 7012, user: alice, body: SIGN_PHRASE, created_at: "2026-11-27T13:00:00Z" };
+  const gh = fakeGitHub({ commits: [{ author: alice, committer: alice, name: "Alice" }], comments: [sign], putFailures: [409, 422, 409] });
+  await assert.rejects(check(gh, "issue_comment", commentEvent(sign)));
+});
+
+// @spec DEPLOY-CI-016
+test("a branch created by another run in between (422 Reference already exists) counts as created", async () => {
+  const sign: Comment = { id: 7013, user: alice, body: SIGN_PHRASE, created_at: "2026-11-27T14:00:00Z" };
+  const gh = fakeGitHub({ branch: false, record: null, refRace: true, commits: [{ author: alice, committer: alice, name: "Alice" }], comments: [sign] });
+  assert.equal(await check(gh, "issue_comment", commentEvent(sign)), 0);
+  assert.match(gh.state.record!, /"name": "alice"/);
+});
+
+// @spec DEPLOY-CI-013
+test("signatures match by account id: a renamed account stays signed, a new account with the recorded login does not", async () => {
+  const renamed: User = { login: "CocoRenamed", id: coco.id };
+  const gh = fakeGitHub({ commits: [{ author: renamed, committer: renamed, name: "Coco" }] });
+  assert.equal(await check(gh, "pull_request_target", prEvent()), 0);
+  const impostor: User = { login: "CoderCoco", id: 999999 };
+  const gh2 = fakeGitHub({ commits: [{ author: impostor, committer: impostor, name: "Coco" }] });
+  assert.equal(await check(gh2, "pull_request_target", prEvent()), 1);
+});
+
+// @spec DEPLOY-CI-015
+test("a signing comment authored by the bot's account records nothing", async () => {
+  const fromBot: Comment = { id: 7014, user: ghBot, body: SIGN_PHRASE, created_at: "2026-11-27T15:00:00Z" };
+  const gh = fakeGitHub({ commits: [{ author: alice, committer: alice, name: "Alice" }], comments: [fromBot] });
+  assert.equal(await check(gh, "issue_comment", commentEvent(fromBot)), 1);
+  assert.equal(writes(gh).length, 0);
+});
+
+// @spec DEPLOY-CI-014
+test("a comment by someone else that carries the marker is never the one updated", async () => {
+  const planted: Comment = { id: 60, user: bob, body: `${MARKER} planted`, created_at: "2026-11-27T00:00:00Z" };
+  const gh = fakeGitHub({ commits: [{ author: alice, committer: alice, name: "Alice" }], comments: [planted] });
+  assert.equal(await check(gh, "pull_request_target", prEvent()), 1);
+  assert.equal(planted.body, `${MARKER} planted`);
+  assert.ok(!gh.calls.some((x) => x.method === "PATCH"));
+  assert.equal(botComment(gh).length, 1);
 });

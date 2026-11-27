@@ -44,6 +44,7 @@
 
   /* Services: one block per service, each cell's label in front. */
   .svc-table, .svc-table tbody, .svc-table tr, .svc-table th, .svc-table td { display: block; }
+  .svc-table colgroup { display: none; }
   .svc-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); }
   .svc-table tr { padding: 10px 16px; border-bottom: 1px solid var(--line); }
   .svc-table th, .svc-table td { padding: 4px 0; border-bottom: 0; }

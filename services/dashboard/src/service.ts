@@ -75,7 +75,7 @@ export function dashboardService(deps: DashboardDeps) {
 
       // @spec DASH-STACK-007
       const stack = new StackService({ log, bus: () => feed.busState(), lock: new LifecycleLock({ by: "dashboard" }) });
-      const attach = deps.attachStack ?? ((s: StackService) => s.attach(new ObservedStackController({ onPhase: (kind, phase) => s.hooks.onPhase(kind, phase), warn: (msg) => log.warn(msg) }, s.hooks)));
+      const attach = deps.attachStack ?? ((s: StackService) => s.attach(new ObservedStackController({ onPhase: (kind, phase) => s.hooks.onPhase(kind, phase), onOutput: (kind, line) => s.hooks.onOutput(kind, line), warn: (msg) => log.warn(msg) }, s.hooks)));
       attach(stack);
 
       // The tracker's snapshot with Compose restart counts overlaid, so a service that dies before its first heartbeat shows crash-looping.

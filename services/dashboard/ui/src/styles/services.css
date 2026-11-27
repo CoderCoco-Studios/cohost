@@ -10,7 +10,14 @@
 .stack-last { display: flex; flex-direction: column; gap: 4px; }
 
 .svc-scroll { min-width: 0; }
-.svc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.svc-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+/* Fixed column widths: a cell whose text changes (the last-seen age, the restart count) never moves a column (DASH-UI-059). */
+.svc-col-name { width: 16%; }
+.svc-col-state { width: 18%; }
+.svc-col-why { width: 32%; }
+.svc-col-seen { width: 12%; }
+.svc-col-actions { width: 22%; }
+.svc-table th, .svc-table td { overflow-wrap: anywhere; }
 .svc-table th, .svc-table td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .svc-table thead th { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
 .svc-table tbody th { font-weight: 650; }
@@ -20,7 +27,7 @@
 .svc-state .needs { flex-basis: 100%; }
 .tag-iso { color: var(--build); background: var(--build-tint); border-color: transparent; }
 .svc-age { display: block; }
-.svc-restarts { display: block; }
+.svc-restarts { display: block; min-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .svc-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 
 .td-form { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -28,3 +35,19 @@
 .td-h { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
 .td-feed { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
 .td-feed > p { padding: 10px 12px; }
+
+/* Launch panel (DASH-UI-055 to 057): the last launch, rebuild or restart-all. */
+.launch-panel { display: flex; flex-direction: column; gap: 8px; }
+.launch-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.launch-table th, .launch-table td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.launch-table thead th { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.launch-table tr:last-child > * { border-bottom: 0; }
+.launch-step { display: flex; flex-direction: column; gap: 2px; }
+.launch-current { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.launch-st-failed { color: var(--bad); font-weight: 650; }
+.launch-st-building, .launch-st-restarting { color: var(--build); }
+.launch-st-cached, .launch-st-built, .launch-st-done { color: var(--ok); }
+.launch-failure { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--bad-tint); }
+.launch-pre { font-family: var(--mono); margin: 0; max-height: 320px; overflow: auto; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.launch-log > summary { cursor: pointer; }
+.launch-log .launch-pre { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }

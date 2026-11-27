@@ -27,7 +27,7 @@ function harness(o: { psJson?: string; psQ?: string | Error; inspect?: string | 
       return { stdout: o.psQ ?? "", stderr: "" };
     }
     if (args[1] === "ps") return { stdout: o.psJson ?? JSON.stringify([{ Service: "redis", State: "running", Health: "healthy" }]), stderr: "" };
-    if (args[1] === "up" && o.upFail) throw Object.assign(new Error("exit 1"), { stderr: o.upFail });
+    if (args.includes("up") && o.upFail) throw Object.assign(new Error("exit 1"), { stderr: o.upFail });
     return { stdout: "", stderr: "" };
   };
   const stack = new StackController({ provision: NO_PROVISION,
@@ -38,11 +38,11 @@ function harness(o: { psJson?: string; psQ?: string | Error; inspect?: string | 
 }
 
 // @spec CTRL-STACK-013
-test("rebuild: reports compose-build, runs up -d --build --remove-orphans with the launch timeout, then waits like launch", async () => {
+test("rebuild: reports compose-build, runs --progress plain up -d --build --remove-orphans with the launch timeout, then waits like launch", async () => {
   const h = harness();
   const r = await h.stack.rebuild();
   assert.equal(r.ok, true);
-  assert.deepEqual(h.calls[0], { args: ["compose", "up", "-d", "--build", "--remove-orphans"], timeoutMs: 30 * 60_000 });
+  assert.deepEqual(h.calls[0], { args: ["compose", "--progress", "plain", "up", "-d", "--build", "--remove-orphans"], timeoutMs: 30 * 60_000 });
   assert.deepEqual(h.phases, [["rebuild", "compose-build"], ["rebuild", "waiting"]]);
   assert.deepEqual(r.services, [{ service: "redis", status: "running", health: "healthy" }]);
 });
@@ -51,7 +51,7 @@ test("rebuild: reports compose-build, runs up -d --build --remove-orphans with t
 test("rebuild: a failing build resolves ok:false with the trimmed stderr and never polls; launch passes --build too (it is the same command)", async () => {
   const h = harness({ upFail: " build failed " });
   assert.deepEqual(await h.stack.rebuild(), { ok: false, detail: "build failed" });
-  assert.deepEqual(h.calls.map((c) => c.args[1]), ["up"]);
+  assert.deepEqual(h.calls.map((c) => c.args[3]), ["up"]);
   const l = harness();
   await l.stack.launch();
   assert.deepEqual(l.calls[0]!.args, h.calls[0]!.args);

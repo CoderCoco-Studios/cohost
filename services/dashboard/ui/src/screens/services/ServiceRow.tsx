@@ -10,7 +10,7 @@ import { needsAttention } from "../../state/derive";
 import type { ApiResult } from "../../state/api";
 import type { ServiceHealth, UnitDescriptor } from "../../state/types";
 import { egressNote, type EgressEntry } from "../../state/egress";
-import { lastSeen, unitTest, whyOf } from "./model";
+import { lastSeen, restartLine, unitTest, whyOf } from "./model";
 
 type Op = "start" | "restart" | "stop";
 const ING: Record<Op, string> = { start: "Starting", restart: "Restarting", stop: "Stopping" };
@@ -91,7 +91,7 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, blocked, isolatedB
       </td>
       <td data-label="Last seen">
         <span className="svc-age">{id === "dashboard" ? "now" : <Age s={s} />}</span>
-        <span className="svc-restarts small muted">{`${s.restarts} ${s.restarts === 1 ? "restart" : "restarts"}${s.containerRestarts ? ` · container restarted ${s.containerRestarts}` : ""}`}</span>
+        <span className="svc-restarts small muted">{restartLine(s)}</span>
       </td>
       <td data-label="Actions">
         {unit ? (

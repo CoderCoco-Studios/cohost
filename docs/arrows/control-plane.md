@@ -8,7 +8,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 120 specs: 103 `[x]`, 15 `[ ]`, 2 `[D]`.
 
-**MAPPED**: 120 specs: 118 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps. The control plane reads no control token (CTRL-CONFIG-001); `bearerOk` checks a bearer against the settings store's verifier (CTRL-CONFIG-003); the ears listener key comes from the store (CTRL-RUNTIME-017). Around every start it writes the projections and delivers the credentials (CTRL-RUNTIME-014, -018), including to a container Docker restarted since its recorded delivery, and refuses to start anything when the containers cannot be listed; a one-shot whose wait fails is removed (CTRL-RUNTIME-010). The healthcheck reports a unit that waits for its credentials as unhealthy (CTRL-CHECK-001). CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344.
+**MAPPED**: 125 specs: 123 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps. The control plane reads no control token (CTRL-CONFIG-001); `bearerOk` checks a bearer against the settings store's verifier (CTRL-CONFIG-003); the ears listener key comes from the store (CTRL-RUNTIME-017). Around every start it writes the projections and delivers the credentials (CTRL-RUNTIME-014, -018), including to a container Docker restarted since its recorded delivery, and refuses to start anything when the containers cannot be listed; a one-shot whose wait fails is removed (CTRL-RUNTIME-010). The healthcheck reports a unit that waits for its credentials as unhealthy (CTRL-CHECK-001). CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344.
 
 ## Orientation
 
@@ -28,9 +28,10 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 118 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (125 specs, prefix `CTRL`: 123 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
+- packages/control/test/build-progress.test.ts (build output streaming and the plain-progress parser, CTRL-STACK-020 to 024)
 - packages/control/test/cli.test.ts
 - packages/control/test/cli-main.test.ts
 - packages/control/test/compose.test.ts
@@ -50,7 +51,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - packages/control/test/stack-rebuild.test.ts
 
 ### Code
-- packages/control/src/cli.ts, config-gate.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts
+- packages/control/src/cli.ts, config-gate.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts, build-progress.ts
 - scripts/dev/perf-baseline.sh, scripts/dev/perf-connector.ts (connector mode, CTRL-LAT-030, -031)
 - packages/bus/src/index.ts (`Bus.serverTime`, CTRL-CHECK-004), crates/cohost-bus/src/transport.rs (CTRL-CHECK-004)
 - Consumers (owned elsewhere): services/dashboard/src/control.ts, routes.ts, stack.ts; docker-compose.yml (`x-ts-service`, realizes CTRL-CHECK-003, not annotated); Dockerfile

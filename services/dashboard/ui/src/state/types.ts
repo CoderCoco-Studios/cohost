@@ -31,7 +31,34 @@ export interface StackSnapshot {
   bus: "connected" | "unreachable";
   action: null | { kind: StackActionKind; phase: string; startedAt: number };
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: { service: string; status: string; health?: string }[]; finishedAt: number };
-  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string> }[];
+  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: boolean }[];
+}
+
+export type ProgressRowState = "building" | "cached" | "built" | "failed" | "restarting" | "done";
+
+/** One service of the Launch panel (DASH-UI-055). */
+export interface ProgressRow {
+  service: string;
+  state: ProgressRowState;
+  step?: number;
+  of?: number;
+  total?: number;
+  done?: number;
+  cached?: number;
+  current?: string;
+  detail?: string;
+}
+
+/** The `stack-progress` record of the last launch, rebuild or restart-all (DASH-FEED-013). */
+export interface StackProgress {
+  kind: StackActionKind;
+  startedAt: number;
+  running: boolean;
+  ok?: boolean;
+  finishedAt?: number;
+  rows: ProgressRow[];
+  lines: string[];
+  failure?: { service?: string; lines: string[] };
 }
 
 /** A bus event as `/ws` carries it; `replay` is set by the server on the connect replay only. */

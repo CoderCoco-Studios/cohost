@@ -1,4 +1,4 @@
-import type { HealthState, ServiceHealth, StackActionKind, StackSnapshot, UnitDescriptor } from "../../state/types";
+import type { HealthState, ProgressRowState, ServiceHealth, StackActionKind, StackProgress, StackSnapshot, UnitDescriptor } from "../../state/types";
 import { needsAttention } from "../../state/derive";
 
 /** `45s`, or `2m 05s` from a minute up. Negative spans (a skewed clock) read as `0s`. */
@@ -64,6 +64,23 @@ export function phaseWords(phase: string): string {
 export function stackStep(kind: StackActionKind, phase: string): 1 | 2 | undefined {
   if (kind !== "launch" && kind !== "rebuild") return undefined;
   return phase === "waiting" ? 2 : 1;
+}
+
+/** A Launch panel row's state in words (DASH-UI-055). */
+export function rowStateWords(s: ProgressRowState): string {
+  return s; // building, cached, built, failed, restarting, done read as they are
+}
+
+/** Whether the recorded action is running, finished or failed (DASH-UI-055). */
+export function outcomeWords(p: Pick<StackProgress, "running" | "ok">): string {
+  return p.running ? "running" : p.ok ? "finished" : "failed";
+}
+
+/** The Docker restart count of a service row, `1 restart` or `n restarts`; empty when the probe has not given one (DASH-UI-059). */
+// @spec DASH-UI-059
+export function restartLine(s: Pick<ServiceHealth, "containerRestarts">): string {
+  const n = s.containerRestarts;
+  return n === undefined ? "" : `${n} ${n === 1 ? "restart" : "restarts"}`;
 }
 
 export const KIND_LABEL: Record<StackActionKind, string> = { launch: "Launch", rebuild: "Rebuild", restart: "Restart all", stop: "Stop", consolidate: "Consolidation" };

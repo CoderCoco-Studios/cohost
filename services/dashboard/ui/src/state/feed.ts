@@ -1,6 +1,6 @@
 import { createStore, type Store } from "./store";
 import { parseCatalog, type CatalogState, type PendingConfirm } from "./tools";
-import type { FeedEvent, ServiceHealth, StackSnapshot } from "./types";
+import type { FeedEvent, ServiceHealth, StackProgress, StackSnapshot } from "./types";
 
 /** The event types that get a row in the Activity feed (DASH-UI-002); every other type is dropped from the log. */
 // @spec DASH-UI-042
@@ -28,6 +28,8 @@ export interface FeedState {
   /** When that snapshot arrived (page clock); a service's age is `lastSeenAgeMs + (now - servicesAt)`. */
   servicesAt: number;
   stack: StackSnapshot | null;
+  /** The latest `stack-progress` record, or null until one arrives (the Launch panel, DASH-UI-055). */
+  progress: StackProgress | null;
   /** Rendered event types, oldest first, at most `LOG_LIMIT`, replayed events included and flagged. */
   events: FeedEvent[];
   /** The latest event of each type (`brain.status`, `avatar.state`, ...), whether or not it is a rendered type. */
@@ -76,7 +78,7 @@ export function feedUrl(loc: Pick<Location, "protocol" | "host"> = location): st
   return `${loc.protocol === "https:" ? "wss:" : "ws:"}//${loc.host}/ws`;
 }
 
-const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, events: [], latest: {}, muted: false, lines: {}, confirms: [], tick: 0, catalog: null });
+const initial = (): FeedState => ({ status: "connecting", services: null, servicesAt: 0, stack: null, progress: null, events: [], latest: {}, muted: false, lines: {}, confirms: [], tick: 0, catalog: null });
 
 /** The line rows after one `brain.say` or `brain.clause` (DASH-UI-038..040); undefined when the event changes no row. */
 // @spec DASH-UI-038, DASH-UI-039, DASH-UI-040, DASH-UI-041
@@ -186,6 +188,7 @@ export function createFeed(deps: FeedDeps): Feed {
     const m = msg as { type?: unknown } & Record<string, unknown>;
     if (m.type === "services" && Array.isArray(m.services)) state.set((s) => ({ ...s, services: m.services as ServiceHealth[], servicesAt: now() }));
     else if (m.type === "stack") { const { type: _t, ...snap } = m; state.set((s) => ({ ...s, stack: snap as unknown as StackSnapshot })); }
+    else if (m.type === "stack-progress" && Array.isArray(m.rows) && Array.isArray(m.lines)) { const { type: _t, ...rec } = m; state.set((s) => ({ ...s, progress: rec as unknown as StackProgress })); }
     else if (typeof m.type === "string") onEvent(m as unknown as FeedEvent);
   }
 

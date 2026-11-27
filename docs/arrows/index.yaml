@@ -280,7 +280,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "465 specs: 454 [x], 11 [ ], 0 [D]. #372 built: the dashboard over the settings store (the gate on the store's verifier and session key, the settings, personality and secret routes, recovery for four causes, the recovery-key banner, the outbox and backup at start, re-delivery to waiting units). Open: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037)."
+    next: "478 specs: 467 [x], 11 [ ], 0 [D]. #386 built: the Launch panel (build rows, the kept output, the inline failure, stale containers) and one Docker restart count per row in a fixed-width Services table. #372 built: the dashboard over the settings store (the gate on the store's verifier and session key, the settings, personality and secret routes, recovery for four causes, the recovery-key banner, the outbox and backup at start, re-delivery to waiting units). Open: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037)."
     drift: null
 
   control-plane:
@@ -292,7 +292,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "120 specs: 118 [x], 0 [ ], 2 [D]. #372 built: projection and delivery around every start (with re-delivery to a container Docker restarted, and no start when the containers cannot be listed), cohostctl deliver, the unit runner, the config gate over checkStore, the listener key from the store, bearerOk over the store's verifier, the healthcheck reporting a waiting unit unhealthy. CTRL-LAT-009, -010 deferred. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
+    next: "125 specs: 123 [x], 0 [ ], 2 [D]. #386 built: the launch and rebuild `up` runs with --progress plain and streams its lines (CTRL-STACK-020, -021) to the BuildProgress parser (CTRL-STACK-022 to -024). #372 built: projection and delivery around every start (with re-delivery to a container Docker restarted, and no start when the containers cannot be listed), cohostctl deliver, the unit runner, the config gate over checkStore, the listener key from the store, bearerOk over the store's verifier, the healthcheck reporting a waiting unit unhealthy. CTRL-LAT-009, -010 deferred. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:

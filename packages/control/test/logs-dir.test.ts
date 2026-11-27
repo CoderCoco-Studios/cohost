@@ -57,7 +57,7 @@ test("StackController.launch and rebuild create data/logs before docker compose 
     const root = workspace();
     const { exec, calls } = recorder(root);
     await new StackController({ provision: NO_PROVISION, exec, onPath, cwd: root, env: {}, now: () => 0, sleep: async () => {} })[kind]();
-    const up = calls.find((c) => c.args[1] === "up");
+    const up = calls.find((c) => c.args.includes("up"));
     assert.ok(up, `${kind} ran docker compose up`);
     assert.equal(up.logs, true, `${kind}: data/logs exists before up`);
   }
@@ -79,6 +79,6 @@ test("a data/logs that cannot be created is a warning and the command still runs
   const stackWarnings: string[] = [];
   const stack = recorder(root);
   await new StackController({ provision: NO_PROVISION, exec: stack.exec, onPath, cwd: root, env: {}, now: () => 0, sleep: async () => {}, warn: (m) => stackWarnings.push(m) }).launch();
-  assert.ok(stack.calls.some((c) => c.args[1] === "up"), "launch still ran up");
+  assert.ok(stack.calls.some((c) => c.args.includes("up")), "launch still ran up");
   assert.equal(stackWarnings.length, 1);
 });

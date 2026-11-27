@@ -44,7 +44,7 @@ function useControlAndManifest(): [Loaded, () => void] {
  * by name, needing-attention rows first) with the lifecycle, pause and Test actions of the manifest's units, and the
  * per-unit test side sheet. Loading, empty, error and stale (socket closed) states follow the design.
  */
-// @spec DASH-UI-007, DASH-UI-021, DASH-UI-025, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001
+// @spec DASH-UI-007, DASH-UI-059, DASH-UI-021, DASH-UI-025, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001
 export function Screen(_props: ScreenProps) {
   const [load, reload] = useControlAndManifest();
   const services = useFeed((f) => f.services);
@@ -80,6 +80,7 @@ export function Screen(_props: ScreenProps) {
           : (
             <div className="svc-scroll">
               <table className="svc-table" aria-label="Services">
+                <colgroup><col className="svc-col-name" /><col className="svc-col-state" /><col className="svc-col-why" /><col className="svc-col-seen" /><col className="svc-col-actions" /></colgroup>
                 <thead><tr><th scope="col">Service</th><th scope="col">State</th><th scope="col">Why</th><th scope="col">Last seen</th><th scope="col">Actions</th></tr></thead>
                 <tbody>
                   {rows!.map((s) => (

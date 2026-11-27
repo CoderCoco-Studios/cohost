@@ -723,7 +723,7 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
     for (const line of task(name).run) assert.match(line, /^scripts\/test-env\.sh node /, `${name}: ${line}`);
   }
   const script = join(repoRoot, "scripts", "test-env.sh");
-  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_KEY_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
+  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_KEY_FILE COHOST_TEST_ENV; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
   const r = spawnSync(script, ["bash", "-c", probe], { encoding: "utf8", cwd: repoRoot, env: { PATH: process.env.PATH!, COHOST_DATA_DIR: "/owner/data", CONFIG_DIR: "/owner/config", COHOST_KEY_FILE: "/owner/master.key" } });
   assert.equal(r.status, 3, `the command's status is the run's status: ${r.stderr}`);
   const vars = Object.fromEntries(r.stdout.split("\n").filter((l) => l.includes("=")).map((l) => l.split("=") as [string, string]));
@@ -734,8 +734,107 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
   assert.ok(!data.startsWith(repoRoot) && !conf.startsWith(repoRoot));
   assert.equal(vars.COHOST_ENV_FILE, join(conf, ".env"));
   assert.equal(vars.COHOST_KEY_FILE, join(conf, "master.key"), "no test reads or creates the owner's master key");
+  assert.equal(vars.COHOST_TEST_ENV, "1", "the store refuses its default key path under the test environment (STORE-KEY-001)");
   const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).toSorted();
   for (const f of examples) assert.ok(r.stdout.split("\n").includes(f), `${f} copied`);
   assert.equal(existsSync(data), false, "the data directory is removed");
   assert.equal(existsSync(conf), false, "the config directory is removed");
+});
+
+/** Test sources: every `.ts` and `.tsx` file under a `test` directory of a package or a service, recursively. */
+function testSources(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name);
+      if (entry.isDirectory()) { if (entry.name !== "node_modules") walk(p); }
+      else if (/\.tsx?$/.test(entry.name)) out.push(p);
+    }
+  };
+  for (const top of ["packages", "services"]) {
+    for (const d of readdirSync(join(repoRoot, top))) if (existsSync(join(repoRoot, top, d, "test"))) walk(join(repoRoot, top, d, "test"));
+  }
+  return out;
+}
+
+/** Each object literal assigned to `env` (`env: {…}` or `env = {…}`), braces matched, with its line and the text around it. */
+function envLiterals(text: string): { line: number; body: string; around: string }[] {
+  const out: { line: number; body: string; around: string }[] = [];
+  for (const m of text.matchAll(/\benv\s*[:=]\s*\{/g)) {
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    for (; i < text.length; i++) {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}" && --depth === 0) break;
+    }
+    out.push({ line: text.slice(0, m.index).split("\n").length, body: text.slice(m.index, i + 1), around: text.slice(Math.max(0, m.index - 400), i + 401) });
+  }
+  return out;
+}
+
+// The programs that open the settings store, as a test names them to start them.
+const STORE_PROGRAMS = /dashboard["', /]+dist["', /]+(?:index|unlock-link)\.js|store["', /]+dist["', /]+cli|control["', /]+dist["', /]+(?:cli|run-unit)\.js|mise run config:[a-z]/;
+
+/**
+ * The lines of `text` holding an environment built from scratch (it names `PATH` and does not spread `process.env`) within 400
+ * characters of a store-opening program (the spawn call, or the function that builds the environment for it) and naming no
+ * `COHOST_KEY_FILE`.
+ */
+function keyFileOffenders(text: string): number[] {
+  return envLiterals(text)
+    .filter(({ body, around }) => !/\.\.\.\s*process\.env\b/.test(body) && /\bPATH\b/.test(body) && STORE_PROGRAMS.test(around) && !/\bCOHOST_KEY_FILE\b/.test(body))
+    .map((e) => e.line);
+}
+
+// @spec DEPLOY-TOOL-022
+test("a test that starts a store-opening program with an environment of its own names COHOST_KEY_FILE in it", () => {
+  const offenders: string[] = [];
+  for (const f of testSources()) {
+    if (rel(f) === "packages/config/test/toolchain.test.ts") continue; // this file's own samples
+    for (const line of keyFileOffenders(readFileSync(f, "utf8"))) offenders.push(`${rel(f)}:${line}`);
+  }
+  assert.deepEqual(offenders, [], "an environment built from scratch drops test-env.sh's COHOST_KEY_FILE, so the program would use ~/.config/cohost/master.key");
+});
+
+// @spec DEPLOY-TOOL-022
+test("the environment scan flags a hand-built environment with no COHOST_KEY_FILE beside a store program, and nothing else", () => {
+  const dash = 'spawn(node, [join(repo, "services", "dashboard", "dist", "index.js")], {\n  env: { PATH: process.env.PATH, COHOST_DATA_DIR: d },\n});';
+  assert.deepEqual(keyFileOffenders(`x;\n${dash}`), [3]);
+  assert.deepEqual(keyFileOffenders(dash.replace("COHOST_DATA_DIR: d", "COHOST_DATA_DIR: d, COHOST_KEY_FILE: k")), []);
+  assert.deepEqual(keyFileOffenders(dash.replace("PATH: process.env.PATH", "...process.env")), []);
+  assert.deepEqual(keyFileOffenders('spawnSync("sh", [script], { env: { PATH: process.env.PATH } });'), [], "no store program nearby");
+  assert.deepEqual(keyFileOffenders('const env = {\n  PATH: process.env.PATH,\n};\nspawnSync("mise", ["run", "x"]); // mise run config:import'), [1]);
+});
+
+// The tasks that open the settings store and may print the recovery key or ask for a value without echo.
+const RAW_TASKS = [...CONFIG_TASKS, "dashboard", "dashboard:unlock", "deliver", "cohostctl"];
+
+// @spec DEPLOY-TOOL-024, STORE-KEY-002
+test("the tasks that open the settings store are raw, so mise gives them the terminal", () => {
+  const notRaw = RAW_TASKS.filter((n) => task(n).raw !== true);
+  assert.deepEqual(notRaw, [], "mise reads a task's output by line through a pipe unless the task is raw");
+});
+
+// @spec DEPLOY-TOOL-024, STORE-KEY-002
+test("under a pseudo-terminal, mise run gives a raw task with dependencies a terminal and a plain one a pipe", (t) => {
+  if (spawnSync("script", ["--version"], { encoding: "utf8" }).status !== 0) { t.skip("util-linux script is not installed"); return; }
+  const dir = mkdtempSync(join(tmpdir(), "cohost-mise-raw-"));
+  try {
+    const probe = `node -e 'process.stdout.write("tty=" + Boolean(process.stdout.isTTY) + "\\n")'`;
+    writeFileSync(join(dir, "mise.toml"), [
+      "[tasks.a]", 'run = "true"', "[tasks.b]", 'run = "true"',
+      "[tasks.plain]", 'depends = ["a", "b"]', `run = ["true", ${JSON.stringify(probe)}]`,
+      "[tasks.rawtask]", 'depends = ["a", "b"]', "raw = true", `run = ["true", ${JSON.stringify(probe)}]`,
+    ].join("\n"));
+    const env = { ...process.env, MISE_TRUSTED_CONFIG_PATHS: dir, MISE_YES: "1", NO_COLOR: "1" };
+    const run = (name: string) => spawnSync("script", ["-qec", `mise run ${name}`, "/dev/null"], { cwd: dir, encoding: "utf8", env, timeout: 60_000 });
+    const raw = run("rawtask");
+    assert.equal(raw.status, 0, raw.stdout + raw.stderr);
+    assert.match(raw.stdout, /^tty=true\r?$/m, raw.stdout);
+    const plain = run("plain");
+    assert.equal(plain.status, 0, plain.stdout + plain.stderr);
+    assert.match(plain.stdout, /tty=false/, "without raw the task's output is a pipe, the case raw = true fixes");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

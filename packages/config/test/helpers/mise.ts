@@ -20,6 +20,7 @@ export interface MiseTask {
   dir: string | null;
   env: unknown;
   shell: string | null;
+  raw: boolean;
 }
 
 let cached: Map<string, MiseTask> | undefined;

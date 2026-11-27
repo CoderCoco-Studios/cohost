@@ -22,6 +22,30 @@ test("the key file is COHOST_KEY_FILE, else $XDG_CONFIG_HOME/cohost/master.key, 
   assert.equal(keyFilePath({ XDG_CONFIG_HOME: "" }), join(homedir(), ".config", "cohost", "master.key"));
 });
 
+// @spec STORE-KEY-001
+test("under the test environment the key file has no default: COHOST_TEST_ENV with no COHOST_KEY_FILE fails, naming both", () => {
+  for (const env of [{ COHOST_TEST_ENV: "1" }, { COHOST_TEST_ENV: "1", COHOST_KEY_FILE: "", XDG_CONFIG_HOME: "/xdg" }]) {
+    assert.throws(() => keyFilePath(env), (e: Error) => /COHOST_KEY_FILE/.test(e.message) && /COHOST_TEST_ENV/.test(e.message) && e.message.includes("master.key"));
+  }
+  assert.equal(keyFilePath({ COHOST_TEST_ENV: "1", COHOST_KEY_FILE: "/k/x.key" }), "/k/x.key");
+  assert.equal(keyFilePath({ COHOST_TEST_ENV: "", XDG_CONFIG_HOME: "/xdg" }), "/xdg/cohost/master.key", "an empty marker is no marker");
+});
+
+// @spec STORE-KEY-001
+test("opening the store under the test environment with no key file named fails and creates no key", async () => {
+  const sb = sandbox();
+  const saved = { t: process.env.COHOST_TEST_ENV, k: process.env.COHOST_KEY_FILE };
+  try {
+    process.env.COHOST_TEST_ENV = "1";
+    delete process.env.COHOST_KEY_FILE;
+    await assert.rejects(sb.open({ keyFile: undefined }), /COHOST_KEY_FILE/);
+    assert.equal(existsSync(sb.keyFile), false);
+  } finally {
+    if (saved.t === undefined) delete process.env.COHOST_TEST_ENV; else process.env.COHOST_TEST_ENV = saved.t;
+    if (saved.k === undefined) delete process.env.COHOST_KEY_FILE; else process.env.COHOST_KEY_FILE = saved.k;
+  }
+});
+
 // @spec STORE-KEY-001, STORE-KEY-002
 test("a missing key is created on open: 0700 directory, 0600 file holding cohost-key-1: and 32 bytes of base64url, no temporary file left", async () => {
   const sb = sandbox();

@@ -19,5 +19,8 @@ export COHOST_DATA_DIR="$data"
 export CONFIG_DIR="$conf"
 export COHOST_ENV_FILE="$conf/.env"
 export COHOST_KEY_FILE="$conf/master.key"
+# The store refuses its default key path while this is set (settings-store STORE-KEY-001), so a test that opens it with
+# COHOST_KEY_FILE unset fails instead of reading or creating the owner's ~/.config/cohost/master.key.
+export COHOST_TEST_ENV=1
 
 "$@"

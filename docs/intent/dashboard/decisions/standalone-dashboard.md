@@ -86,7 +86,7 @@ publishes, reaches voice on a newly published loopback port, reads and writes
 the same `./config` files Compose bind-mounts, and must start and serve its
 page with Redis down.
 
-### How it listens: one loopback listener (status quo of control mode)
+### How it listens: one loopback listener
 
 Everything on `127.0.0.1:3000`. Host-local by construction, but an OBS Browser
 Source on a second PC cannot load the sink. Fails a major criterion.
@@ -110,9 +110,9 @@ listener has no code path to a gated route. The owner's own URL
 (`http://localhost:3000`) and a same-PC OBS source (`http://localhost:3000/?sink=1`)
 are unchanged; a second-PC OBS source moves to port 3001. When the owner sets
 `DASHBOARD_HOST` to a non-loopback address, the full surface is reachable from
-other machines, and the dashboard then refuses to start unless control mode
-and its token are on, so every stack and lifecycle action needs
-`CONTROL_TOKEN`, as every Viewers route does. One more port
+other machines, and every stack and lifecycle action there needs
+`CONTROL_TOKEN`, as every Viewers route does (the dashboard does not start
+without it). One more port
 and one more environment variable.
 
 ## Selection

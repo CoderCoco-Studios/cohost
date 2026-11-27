@@ -18,7 +18,7 @@ Gates:
 
 - **Settings apply on restart** (inherited, HLD tenet 10). An option in which an edit needs anything beyond restarting the services that read it fails.
 - **No secret is returned by any read route** (inherited, HLD Trust boundary). An option that has to read a secret back to the page fails.
-- **The dashboard cannot edit its own access controls** (doc-local). A page served by the dashboard must not be able to change `CONTROL_TOKEN`, `CONTROL_ENABLED`, `CONTROL_ADVANCED` or `DASHBOARD_HOST`; an option that makes them editable there fails, because a UI that can remove its own lock is a privilege escalation.
+- **The dashboard cannot edit its own access controls** (doc-local). A page served by the dashboard must not be able to change `CONTROL_TOKEN`, `CONTROL_ADVANCED` or `DASHBOARD_HOST`; an option that makes them editable there fails, because a UI that can remove its own lock is a privilege escalation.
 - **Every service can load its settings on Redis alone, or with no bus at all** (inherited, HLD tenet 6; the `consolidate` and `reembed` one-shots never open the bus). An option whose settings are reachable only through the bus fails.
 
 Weighted criteria:
@@ -89,8 +89,8 @@ What it obliges downstream:
 
 - The loader merges `secrets.yaml`, rejects every `${VAR}` placeholder in `config.yaml`, and applies isolation overrides by key path from `COHOST_ISOLATION`, the only environment variable that can change a setting (config). A `config.yaml` that holds a placeholder fails the load of every process, the dashboard included, so the dashboard does not start; the owner fixes the file by hand, and the load error names each key.
 - Credentials reach a client only from `secrets.yaml`: a provider whose secret is not set is not configured, whatever the process environment holds, and no SDK default credential lookup is consulted (model-backends).
-- The settings editor edits every key the same way whatever form it has in the file, reports a key a running isolated unit overrides, and the schema route serves a presentation table, including which keys are sensitive, so the screen names every setting without hard-coding sections (module-contract).
-- A config write that changes where a secret-bearing request goes needs the control token in both control modes, like the secret write (dashboard, config).
+- The settings editor edits every key the same way whatever form it has in the file, reports a key a running isolated unit overrides, and the schema route serves a presentation table, including which keys are sensitive (a warning hint the screen shows beside them), so the screen names every setting without hard-coding sections (module-contract).
+- Every config write, like the secret write and every other mutation, needs the control token or the unlocked browser's session cookie; a key that decides where a secret-bearing request goes carries a warning on the settings screen and needs nothing more (dashboard, config).
 - The `models` puller reads model names from config, not from `.env` (deployment).
 - The dashboard owns the write-only route for secrets and the port and upload-limit keys it reads from config (dashboard).
 
@@ -103,8 +103,8 @@ Fit: the selection would flip toward a store if the stack gained a second host t
 | Setting | Home | Reason |
 | --- | --- | --- |
 | Every behaviour and operator setting (models, hooks, timings, voice, avatar, senses, Discord guild and channel, Twitch channel, OBS host, port and source, VTube Studio and VMC host and port, speech-to-text model, upload limits, dashboard ports) | `config.yaml`, literal keys with schema defaults | Edited whole by the Settings screen; applied by restart |
-| `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key`, `vision.obs.password`, `ears.http.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `connections.discord.token` | `secrets.yaml` (git-ignored, mode 0600, same bind-mounted directory) | Credentials; never returned by a read route; written only through the dashboard's write-only route; every container may read the file |
-| `CONTROL_TOKEN`, `CONTROL_ENABLED`, `CONTROL_ADVANCED`, `DASHBOARD_HOST` | `.env` | The dashboard's access controls; read once at dashboard start; a UI that can remove its own lock is a privilege escalation |
+| `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key`, `vision.obs.password`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `connections.discord.token` | `secrets.yaml` (git-ignored, mode 0600, same bind-mounted directory) | Credentials; never returned by a read route; written only through the dashboard's write-only route; every container may read the file |
+| `CONTROL_TOKEN`, `CONTROL_ADVANCED`, `DASHBOARD_HOST` | `.env` | The dashboard's access controls; read once at dashboard start; a UI that can remove its own lock is a privilege escalation. `CONTROL_TOKEN` is cohost's one lock, also the ears audio listener's bearer |
 | `CONFIG_DIR`, `COHOST_ENV_FILE`, `COHOST_DATA_DIR`, `COHOST_DOCKER_BIN` | `.env` or the shell | Locate the files and tools needed before configuration can be read |
 | `REDIS_URL`, `DATABASE_URL`, `OLLAMA_URL`, `TTS_URL`, `STT_URL`, `VOICE_URL`, `VOICE_PORT` | `.env` or the shell (Compose pins the first six for containers) | Infrastructure addresses a service needs before it can open the bus; per machine |
 | `COMPOSE_FILE`, `COMPOSE_PROFILES`, `COMPOSE_PATH_SEPARATOR`, `COMPOSE_PROJECT_NAME`, `KOKORO_IMAGE`, `SPEACHES_IMAGE` | `.env` | Read by `docker compose` itself, before any container exists |

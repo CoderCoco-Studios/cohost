@@ -4,7 +4,9 @@ Compose topology, the single parameterised Dockerfile, the project's toolchains 
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 171 specs: 120 `[x]`, 51 `[ ]`, 0 `[D]`; projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#376 in-repo CLA check (spec stage):** DEPLOY-CI-005 rewritten and DEPLOY-CI-013 to -017 added for `scripts/cla/cla.mjs`, which replaces the archived CLA Assistant Lite action; 176 specs: 119 `[x]`, 57 `[ ]`, 0 `[D]`.
+
+**#372 settings-store design (docs only, not built):** projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller reads `config.yaml` (DEPLOY-COMPOSE-008, -011), Compose carries no operator credential and mounts `./config` (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` is seeded and ignored (DEPLOY-INST-005, DEPLOY-REPO-003, DEPLOY-IMG-005), the dashboard ports are `config.yaml` keys (DEPLOY-INST-008, DEPLOY-HOST-002, -003), the dashboard UI build and its place in `build`, `typecheck`, `test` and `dashboard` (DEPLOY-REPO-002, DEPLOY-HOST-001) and the operator documentation, README quick start and Bedrock guidance follow (DEPLOY-README-002, -005, -007).
 
@@ -49,14 +51,14 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - packages/control/test/compose.test.ts
 - packages/control/test/healthcheck.test.ts (control-plane's file, cited from DEPLOY-HC-002 by a `<!-- test: -->` pointer, not annotated here)
 - scripts/compose-smoke.sh (run by `.github/workflows/compose-smoke.yml`; guards DEPLOY-IMG-002 and DEPLOY-IMG-003)
-- `.github/workflows/cla.yml` has no test: it runs only on `pull_request_target` from the base branch, and the test globs cover only `packages/*/test` and `services/*/test`.
+- packages/config/test/cla.test.ts (`scripts/cla/cla.mjs` against a mocked GitHub API, and the `cla` workflow's shape; the workflow itself runs only on `pull_request_target` from the base branch)
 
 ### Code
 Files carrying `@spec DEPLOY-` annotations (trailing comments on mapping keys in the Compose files, appended to existing comment lines in `Dockerfile` and `scripts/install.sh`, full comment lines elsewhere):
 - docker-compose.yml, docker-compose.gpu.yml, Dockerfile, .dockerignore
 - docker/tts-pocket/entrypoint.sh, docker/stt-nemotron/Dockerfile, docker/stt-kyutai/Dockerfile (the engine servers, DEPLOY-ENG-*)
 - mise.toml, scripts/zig-cc, scripts/zig-cxx, scripts/zig-ar, scripts/fetch-mise.sh, scripts/doctor.sh
-- scripts/install.sh, scripts/compose-smoke.sh, scripts/lid-check.mjs, scripts/dev/bus-pub.ts, scripts/dev/bus-tail.ts, scripts/dev/stub-llm.ts, scripts/dev/stub-tts.ts
+- scripts/install.sh, scripts/compose-smoke.sh, scripts/lid-check.mjs, scripts/cla/cla.mjs, scripts/dev/bus-pub.ts, scripts/dev/bus-tail.ts, scripts/dev/stub-llm.ts, scripts/dev/stub-tts.ts
 - .github/workflows/test.yml, .github/workflows/compose-smoke.yml, .github/workflows/lid-check.yml, .github/workflows/pages.yml, .github/workflows/cla.yml, .github/workflows/docs-build.yml
 
 Cited from the specs with `<!-- impl: -->` (files owned elsewhere or plain data): package.json, pnpm-workspace.yaml, tsconfig.json, tsconfig.base.json, services/dashboard/tsconfig.json, .gitignore, LICENSE, CONTRIBUTING.md, CLA.md, COMMERCIAL.md, README.md, .github/workflows/cla.yml, docs/.vitepress/config.ts (DEPLOY-LIC-004's footer), packages/control/src/healthcheck.ts
@@ -91,7 +93,7 @@ Cited from the specs, not annotated: .env.example (DEPLOY-README-001, -002), doc
 | Linting | DEPLOY-LINT-001 to DEPLOY-LINT-010 | 10 | 10 | 0 | 0 |
 | Image build | DEPLOY-IMG-001 to DEPLOY-IMG-006 | 6 | 6 | 0 | 0 |
 | Installer | DEPLOY-INST-001 to DEPLOY-INST-017 | 17 | 16 | 0 | 1 |
-| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-012 | 12 | 12 | 0 | 0 |
+| Continuous integration | DEPLOY-CI-001 to DEPLOY-CI-017 | 17 | 11 | 0 | 6 |
 | Licensing and contribution | DEPLOY-LIC-001 to DEPLOY-LIC-007 | 7 | 7 | 0 | 0 |
 | Workspace and repository hygiene | DEPLOY-REPO-001 to DEPLOY-REPO-006 | 6 | 6 | 0 | 0 |
 | Host-run dashboard | DEPLOY-HOST-001 to DEPLOY-HOST-006 | 6 | 5 | 0 | 1 |

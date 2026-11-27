@@ -4,6 +4,8 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Status
 
+**#372 settings-store design (docs only, not built):** 113 specs: 108 `[x]`, 5 `[ ]`, 0 `[D]`; SHARED-BOOT-009 to 011 new: the boot order for a unit that waits for its credentials ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+
 **AUDITED** for the specs marked `[x]`. Spec file: 110 specs, 110 `[x]`, 0 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, (at the `discord-voice` subpath) `createDiscordVoiceSession`, (at the `untrusted` subpath) the untrusted text guard's `boundText`, `quoteUntrusted`, `speakerLabel`, `untrustedNotice`, `normalizeKey`, `createOnceCounter` and `untrustedToolNotice`, and (at the package root) `parseVideoValue`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
 
 ## Spec Coverage

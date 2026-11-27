@@ -4,9 +4,11 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
+**#372 settings-store design (docs only, not built):** 120 specs: 103 `[x]`, 15 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 118 specs: 113 `[x]`, 3 `[ ]`, 2 `[D]`.
 
-**MAPPED**: 118 specs: 116 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 0 gaps (CTRL-RUNTIME-017, the ears listener key derived at each projection in `packages/control/src/secrets.ts`, and CTRL-CONFIG-001 and -002, the one lock of #370 in `packages/control/src/config.ts`: `CONTROL_TOKEN` always required, `CONTROL_ENABLED` retired, `CONTROL_ADVANCED` a safety switch, are built; CTRL-RUNTIME-016, `data/logs` created before Compose, is built in `packages/control/src/logs-dir.ts`, #349); CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344. The last audit pass (at cb06bf3) covered the other 111 (all but CTRL-RUNTIME-014 and -015, which are verified by their tests), and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
+**MAPPED**: 118 specs: 113 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 3 gaps (CTRL-RUNTIME-017, the ears listener verifier derived at each projection, and CTRL-CONFIG-001 and -002, rewritten for the one lock of #370: `CONTROL_TOKEN` always required, `CONTROL_ENABLED` retired, `CONTROL_ADVANCED` a safety switch; CTRL-RUNTIME-016, `data/logs` created before Compose, is built in `packages/control/src/logs-dir.ts`, #349); CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344. The last audit pass (at cb06bf3) covered the other 111 (all but CTRL-RUNTIME-014 and -015, which are verified by their tests), and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
 
 ## Orientation
 
@@ -26,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (118 specs, prefix `CTRL`: 116 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 103 `[x]`, 15 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
 - packages/control/test/cli.test.ts
@@ -74,11 +76,11 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
 | Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-006 | 6 | 6 | 0 | 0 |
-| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -017 | 13 | 13 | 0 | 0 |
+| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -017 | 13 | 12 | 0 | 1 |
 | Controller guards and orchestration | CTRL-GUARD-001, -003 to -008 | 7 | 7 | 0 | 0 |
 | Stack controller | CTRL-STACK-001 to CTRL-STACK-019 | 19 | 19 | 0 | 0 |
 | Lifecycle lock | CTRL-LOCK-001 to CTRL-LOCK-004 | 4 | 4 | 0 | 0 |
-| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 3 | 0 | 0 |
+| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 2 | 0 | 1 |
 | Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 11 | 0 | 0 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 4 | 0 | 0 |
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -018 | 16 | 16 | 0 | 0 |
@@ -87,7 +89,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Early-reply latency | CTRL-LAT-018 to CTRL-LAT-033 | 16 | 16 | 0 | 0 |
 | Streamed-line latency | CTRL-LAT-015 to CTRL-LAT-017 | 3 | 3 | 0 | 0 |
 
-**Summary:** 118 specs: 116 implemented (CTRL-CONFIG-001, -002, CTRL-RUNTIME-017 of #370 among them), 0 gaps, 2 deferred (CTRL-RUNTIME-016 built, #349). The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
+**Summary:** 118 specs: 113 implemented, 3 gaps (CTRL-CONFIG-001, -002, CTRL-RUNTIME-017, #370), 2 deferred (CTRL-RUNTIME-016 built, #349). The early-reply latency specs (CTRL-LAT-018 to 033, with CTRL-LAT-003 to 005 revised) are implemented. `node scripts/lid-check.mjs` finds no reverse orphans.
 
 ## Key Findings
 

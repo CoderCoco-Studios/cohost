@@ -26,6 +26,7 @@ A "key" of a section is a scalar or an array (an array of objects included) unde
 - [x] **MOD-MAN-015**: Each unit in `SERVICE_MANIFEST` shall carry a `secrets` list, and a test shall fail when a listed path is not a path of `SECRET_PATHS` (the wildcard `tools.servers.*.token` counting as one) or lies outside every section the unit's `config` names, or when a unit's list holds a path twice. The initial lists are the table of the module-contract LLD (§ Initial `secrets` declarations).
 - [ ] **MOD-MAN-016**: Each unit in `SERVICE_MANIFEST` shall carry a `documents` list naming which of `personality` and `expressions` it reads (`cortex` and `memory` `personality`, `avatar` `expressions`, every other unit none), and a test shall fail when a unit's source calls `loadPersonality` or `loadExpressions` for a document its list lacks.
 - [ ] **MOD-MAN-017**: Each unit in `SERVICE_MANIFEST` shall carry `stateKey`, true for `chat` and `avatar` (settings-store STORE-STATE-001) and false for every other unit.
+- [ ] **MOD-MAN-018**: Each unit's service shall have a boot test that runs its entry through `runService` (MOD-MAN-009) against a projection holding only the sections and documents its manifest entry declares and fake backends, through the service's start-up and the handling of one declared test input, so that a read of an undeclared section (config CFG-LOAD-001) fails the test in CI.
 
 ## Settings editor (MOD-CFG)
 

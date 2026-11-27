@@ -4,7 +4,7 @@ Compose topology, the single parameterised Dockerfile, the project's toolchains 
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 170 specs: 125 `[x]`, 45 `[ ]`, 0 `[D]`; projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 171 specs: 120 `[x]`, 51 `[ ]`, 0 `[D]`; projection mounts, the `/run/cohost` tmpfs, the installer's `config:token`, dev tasks through the unit runner; the secrets-file scoping specs retired ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the `models` puller reads `config.yaml` (DEPLOY-COMPOSE-008, -011), Compose carries no operator credential and mounts `./config` (DEPLOY-COMPOSE-023 to -025), `secrets.yaml` is seeded and ignored (DEPLOY-INST-005, DEPLOY-REPO-003, DEPLOY-IMG-005), the dashboard ports are `config.yaml` keys (DEPLOY-INST-008, DEPLOY-HOST-002, -003), the dashboard UI build and its place in `build`, `typecheck`, `test` and `dashboard` (DEPLOY-REPO-002, DEPLOY-HOST-001) and the operator documentation, README quick start and Bedrock guidance follow (DEPLOY-README-002, -005, -007).
 
@@ -34,7 +34,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/deployment/deployment-design.md
 
 ### EARS
-- docs/intent/deployment/deployment-specs.md (170 specs, prefix `DEPLOY`: 125 `[x]`, 45 `[ ]`, 0 `[D]`)
+- docs/intent/deployment/deployment-specs.md (171 specs, prefix `DEPLOY`: 120 `[x]`, 51 `[ ]`, 0 `[D]`)
 
 ### Tests
 - packages/config/test/compose-standalone.test.ts

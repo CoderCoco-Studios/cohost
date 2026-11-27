@@ -4,6 +4,8 @@ The connector protocol (registration, heartbeat, capabilities, source and sink t
 
 ## Status
 
+**#372 settings-store design (docs only, not built):** 58 specs: 53 `[x]`, 4 `[ ]`, 1 `[D]`; CONN-DISC-001 takes the bot token from the delivery ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the Discord token comes from `connections.discord.token` in `secrets.yaml` (CONN-DISC-001, -002, CONN-INJ-006). Total 58 specs: 54 `[x]`, 3 `[ ]` (CONN-DESK-001, 004 and 005, the desktop helper), 1 `[D]`.
 
 **PARTIAL** (chunks 1 to 4 of the build order are built; sampled 2026-11-12, counts recomputed at #198): 58 specs, 54 implemented, 3 gaps (`[ ]`: the desktop helper's registration, CONN-DESK-001, 004, 005), 1 deferred (`[D]`, the desktop helper's move onto frames, CONN-DESK-002). Built: the protocol library (`packages/bus/src/connector.ts`, `registrar.ts`, including the consumer's `ConnectorRegistry` view), the utterance writer (`packages/shared/src/utterance.ts`), `services/connector-discord`, ears' connector source (`services/ears/src/connector-source.ts`) and mouth's connector sink (`services/mouth/src/connector-output.ts`). Open: the desktop helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 015, 018, 019, 022 in ears) and the live verification of chunk 5. Its pure core (registration, lifecycle, delivery) is in `crates/cohost-desktop-audio`; no Redis registry store or binary exists yet.

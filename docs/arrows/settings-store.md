@@ -4,7 +4,7 @@
 
 ## Status
 
-**MAPPED, not built.** 66 specs: 0 `[x]`, 66 `[ ]`, 0 `[D]`. Designed under #372; the implementation follows the PR order in the design PR. Every segment that reads settings or credentials changes with it: config (the projection loader), control-plane (projection and delivery around every start), dashboard (Settings, the secret write, the token check, recovery), module-contract (the settings routes, `documents`, `stateKey`), deployment (mounts, `tmpfs`, installer, dev tasks), shared-runtime (waiting for the credentials message), memory, chat and avatar.
+**MAPPED, not built.** 68 specs: 0 `[x]`, 68 `[ ]`, 0 `[D]`. Designed under #372; the implementation follows the PR order in the design PR. Every segment that reads settings or credentials changes with it: config (the projection loader), control-plane (projection and delivery around every start), dashboard (Settings, the secret write, the token check, recovery), module-contract (the settings routes, `documents`, `stateKey`), deployment (mounts, `tmpfs`, installer, dev tasks), shared-runtime (waiting for the credentials message), memory, chat and avatar.
 
 ## Orientation
 
@@ -21,7 +21,7 @@
 - docs/intent/settings-store/settings-store-design.md
 
 ### EARS
-- docs/intent/settings-store/settings-store-specs.md (66 specs, prefix `STORE`: 0 `[x]`, 66 `[ ]`, 0 `[D]`)
+- docs/intent/settings-store/settings-store-specs.md (68 specs, prefix `STORE`: 0 `[x]`, 68 `[ ]`, 0 `[D]`)
 
 ### Tests
 None yet.

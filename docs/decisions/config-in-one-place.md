@@ -76,7 +76,7 @@ Every operator setting, the persona, the emotion map and every credential live i
 - No secret returned: **passes**; reads report set or not set, and credentials are written only through a write-only route or `mise run config:secret`.
 - Access controls: **passes**; `CONTROL_ADVANCED` and `DASHBOARD_HOST` stay in `.env`, and the token is in no file the dashboard serves or reads.
 - Redis alone or no bus: **passes**; a service reads its projection, a local file, and receives its credentials without the bus.
-- Unattended start: **passes**; the master key file is read without a prompt.
+- Unattended start: **passes, with one stated exception**: the master key file is read without a prompt, but after a reboot the containers Docker restarts wait for their credentials until the dashboard starts (it delivers at its own start) or `mise run deliver` runs. Starting the dashboard at logon closes the gap; that autostart is a recommended follow-up, not built. A second stated exception concerns "every setting through the dashboard": a store so damaged that its token verifier cannot be read is fixed with host commands (`mise run config:restore`, `config:import`, `config:key -- --restore`), and the recovery key made when credentials are discarded is shown only on the dashboard's terminal or by `mise run config:key -- --show`.
 - One place for the operator: **strong**; one file, one schema version, one backup and one export.
 - Nothing secret at rest: **strong**; ciphertext in the store and its backups, nothing in projections, `.env`, a container environment or a bind mount. The master key file is the accepted root of trust.
 - Least privilege: **strong**; a unit sees only its declared sections, documents and credentials, and only the control plane can decrypt.

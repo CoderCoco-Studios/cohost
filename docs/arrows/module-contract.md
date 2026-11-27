@@ -4,7 +4,7 @@ The four obligations every application service meets (dashboard-configurable thr
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 64 specs: 45 `[x]`, 19 `[ ]`, 0 `[D]`; the settings routes over the store, the manifest's `documents` and `stateKey` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 65 specs: 45 `[x]`, 20 `[ ]`, 0 `[D]`; the settings routes over the store, the manifest's `documents` and `stateKey` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Under the one-place configuration design ([decision](../decisions/config-in-one-place.md)) the settings editor reports secrets as set or not set, lists the units that run an isolation override, serves the presentation table with the schema and answers the success and error shapes of MOD-CFG-001 to -021, `?dryRun=1` (MOD-CFG-013) included, both realized by the dashboard's Settings screen. MOD-UI-001 to -006 are retired lines whose behaviour is the dashboard's DASH-SET-*, marked `[x]` like the dashboard's other retired lines. The MOD-CFG and MOD-UI specs total 28: 25 `[x]`, 3 `[ ]`, 0 `[D]`.
 

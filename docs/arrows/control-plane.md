@@ -4,7 +4,7 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 119 specs: 104 `[x]`, 13 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 120 specs: 102 `[x]`, 16 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 118 specs: 113 `[x]`, 3 `[ ]`, 2 `[D]`.
 
@@ -28,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (119 specs, prefix `CTRL`: 104 `[x]`, 13 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 102 `[x]`, 16 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
 - packages/control/test/cli.test.ts

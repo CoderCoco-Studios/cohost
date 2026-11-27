@@ -4,7 +4,7 @@
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 268 specs: 218 `[x]`, 50 `[ ]`, 0 `[D]`; the loader reads the unit's projection and the delivered credentials; the YAML and secrets-file specs are retired (still `[ ]` while the code has them) ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 268 specs: 216 `[x]`, 52 `[ ]`, 0 `[D]`; the loader reads the unit's projection and the delivered credentials; the YAML and secrets-file specs are retired (still `[ ]` while the code has them) ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): the secrets file (CFG-SEC-*), the presentation table (CFG-PRES-*), the models list (CFG-MODEL-*), the override map (CFG-ISO-006) and the literal-only loader; CFG-ENV-012 is enforced by a test that scans cohost source for environment reads. The specs added since the last audit are not covered by it.
 
@@ -25,7 +25,7 @@ Orientation:
 - docs/intent/config/config-design.md
 
 ### EARS
-- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 218 `[x]`, 50 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
+- docs/intent/config/config-specs.md (268 specs, prefix `CFG`: 216 `[x]`, 52 `[ ]`, 0 `[D]`; CFG-URL-003 is a retired placeholder, CFG-USR-005 does not exist, and no number is reused)
 
 ### Tests
 `@spec CFG-` annotations are in:

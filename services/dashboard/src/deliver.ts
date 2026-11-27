@@ -24,9 +24,12 @@ export interface RedelivererDeps {
  * per container start is made; a run asked for while one is running runs once more after it; a run that finds a lifecycle
  * action holding the lock is skipped (that action delivers to what it starts).
  */
+/** The heartbeat interval assumed for a heartbeat that names none (shared-runtime's default). */
+const DEFAULT_INTERVAL_MS = 5000;
+
 // @spec STORE-DLV-005
 export class Redeliverer {
-  private readonly beats = new Map<string, { state: string; detail?: string; at: number }>();
+  private readonly beats = new Map<string, { state: string; detail?: string; at: number; intervalMs: number }>();
   private readonly delivered = new Map<string, number>();
   private running: Promise<void> | undefined;
   private again = false;
@@ -39,8 +42,8 @@ export class Redeliverer {
   }
 
   /** Records a unit's heartbeat; a `waiting for credentials` one asks for a run. */
-  observe(hb: { service: string; state: string; detail?: string }): void {
-    this.beats.set(hb.service, { state: hb.state, ...(hb.detail !== undefined ? { detail: hb.detail } : {}), at: this.now() });
+  observe(hb: { service: string; state: string; detail?: string; intervalMs?: number }): void {
+    this.beats.set(hb.service, { state: hb.state, ...(hb.detail !== undefined ? { detail: hb.detail } : {}), at: this.now(), intervalMs: hb.intervalMs ?? DEFAULT_INTERVAL_MS });
     if (this.live && hb.state === "starting" && hb.detail === WAITING_FOR_CREDENTIALS && this.waits(hb.service)) void this.run();
   }
 
@@ -53,9 +56,17 @@ export class Redeliverer {
     return this.run();
   }
 
+  /**
+   * Whether `unit` waits: its newest heartbeat says so and arrived more than one heartbeat interval after its last delivery. A
+   * waiting heartbeat the unit sent before it took the delivered message can arrive just after the delivery; holding off for
+   * one interval keeps a second message from being left unclaimed in its `/run/cohost`. A container started again meanwhile is
+   * still delivered to, by its changed `StartedAt`.
+   */
   private waits(unit: string): boolean {
     const b = this.beats.get(unit);
-    return b !== undefined && b.state === "starting" && b.detail === WAITING_FOR_CREDENTIALS && b.at > (this.delivered.get(unit) ?? -Infinity);
+    if (b === undefined || b.state !== "starting" || b.detail !== WAITING_FOR_CREDENTIALS) return false;
+    const last = this.delivered.get(unit);
+    return last === undefined || b.at > last + b.intervalMs;
   }
 
   /** The units waiting and the units ready, by their newest heartbeats. */

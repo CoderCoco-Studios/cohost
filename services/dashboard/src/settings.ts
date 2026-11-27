@@ -83,7 +83,8 @@ function parseBody(raw: string): Body | "notjson" | undefined {
 // @spec MOD-CFG-016, MOD-CFG-017, MOD-CFG-018, MOD-CFG-019, MOD-CFG-020
 export async function handleConfig(d: SettingsDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (!url.pathname.startsWith("/config/")) return false;
-  const name = decodeURIComponent(url.pathname.slice("/config/".length));
+  let name: string;
+  try { name = decodeURIComponent(url.pathname.slice("/config/".length)); } catch { json(res, 404, { ok: false, detail: "unknown section" }); return true; }
   const sections = declaredSections(d.manifest);
 
   if (req.method === "GET" && name === "schema") {

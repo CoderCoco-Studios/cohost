@@ -234,9 +234,14 @@ export function createDashboardHandler(d: DashboardDeps): http.RequestListener {
           res.end(JSON.stringify(written.conflict ? { ok: false, etag: String(written.revision) } : { ok: false, issues: written.issues }));
           return;
         }
-        writeProjections(d.store, root, personalityUnits());
+        // The document is saved: a projection that cannot be written is a warning, and the units still reload what they hold.
+        let warning: string | undefined;
+        try { writeProjections(d.store, root, personalityUnits()); } catch (err) {
+          warning = `the personality is saved, but its projections could not be rewritten: ${err instanceof Error ? err.message : String(err)}; units that start now read the previous text`;
+          d.log.warn({ err }, warning);
+        }
         await d.bus.publish("control", { cmd: "reload_personality" });
-        res.writeHead(204); res.end();
+        res.writeHead(204, warning ? { "x-cohost-warning": warning.replace(/[^\x20-\x7e]/g, "?").slice(0, 500) } : {}); res.end();
         return;
       }
       // @spec DASH-HTTP-007, DASH-HTTP-008, DASH-HTTP-017

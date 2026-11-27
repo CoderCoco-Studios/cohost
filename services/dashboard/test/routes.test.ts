@@ -1,5 +1,5 @@
 import { test, after } from "node:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
@@ -112,6 +112,33 @@ test("a personality save rewrites the projection of every unit that declares the
     assert.equal(p.revision, st.store.revision(), u.id);
   }
   assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
+});
+
+// @spec DASH-HTTP-006
+test("a personality save whose projections cannot be written is still saved and reloaded: 204 with a warning header and a log line", async () => {
+  rmSync(join(st.root, "data"), { recursive: true, force: true });
+  mkdirSync(st.root, { recursive: true });
+  const elsewhere = mkdtempSync(join(tmpdir(), "dash-routes-elsewhere-"));
+  symlinkSync(elsewhere, join(st.root, "data")); // the projections refuse a symbolic link
+  bus.clear();
+  try {
+    const r = await post("/personality", "# Coco v4\n", "PUT");
+    assert.equal(r.status, 204);
+    assert.match(r.headers.get("x-cohost-warning") ?? "", /saved, but its projections could not be rewritten/);
+    assert.equal(personality(), "# Coco v4\n");
+    assert.deepEqual(bus.published, [{ type: "control", data: { cmd: "reload_personality" } }]);
+    assert.ok(rec.lines.some((l) => l.level === "warn" && /projections could not be rewritten/.test(String(l.msg))));
+  } finally {
+    rmSync(join(st.root, "data"), { force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+// @spec MOD-CFG-003
+test("a /config/ path with a malformed percent escape is 404 unknown section", async () => {
+  const r = await fetch(`${base}/config/%E0%A4%A`);
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { ok: false, detail: "unknown section" });
 });
 
 // @spec DASH-HTTP-006

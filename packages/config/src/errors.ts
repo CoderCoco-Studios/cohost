@@ -1,9 +1,9 @@
-/** What kind of fault a problem of the operator's files is (CFG-RCV-001). */
+/** What kind of fault a problem of the configuration is (CFG-RCV-001). */
 export type ConfigProblemKind = "syntax" | "placeholder" | "schema" | "secrets";
 
 /**
- * One fault of `config.yaml` or `secrets.yaml`: the file's path, the key's dotted path (each list index written `[i]`, empty for
- * the file as a whole), the loader's message for it and its kind. No field carries a value of the file.
+ * One fault of the configuration a unit loads: the projection's path, the key's dotted path (each list index written `[i]`,
+ * empty for the projection as a whole), the loader's message for it and its kind. No field carries a value.
  */
 export interface ConfigProblem {
   file: string;
@@ -13,8 +13,7 @@ export interface ConfigProblem {
 }
 
 /**
- * The loader's failure for a fault of the operator's files (CFG-LOAD-003, CFG-LOAD-007, CFG-ENV-011, CFG-SEC-006): the message is
- * the readable `Invalid <file>:` text, and `problems` is the same list as data, which callers read instead of the message.
+ * The loader's failure for a fault of the projection (CFG-LOAD-003, CFG-LOAD-007): the message is the readable `Invalid <file>:` text, and `problems` is the same list as data, which callers read instead of the message.
  */
 // @spec CFG-RCV-001
 export class ConfigError extends Error {

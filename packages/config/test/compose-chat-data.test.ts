@@ -57,8 +57,10 @@ test("connector-discord waits for redis alone, publishes no port, mounts only it
 });
 
 // @spec DEPLOY-README-004
-test("secrets.example.yaml carries the Discord bot token as the one bot, and config.example.yaml its guild and channel", () => {
+test("secrets.example.yaml, the credentials part of config:import, carries the Discord bot token as the one bot, and config.example.yaml its guild and channel", () => {
   const secrets = readFileSync(root("config/secrets.example.yaml"), "utf8");
+  assert.match(secrets, /config:import -- --secrets/, "its header names the import it is the input of");
+  assert.doesNotMatch(secrets, /secrets\/secrets\.yaml|secrets\/units/, "no credentials file of before the settings store");
   const tokenLine = secrets.split("\n").find((l) => /^\s+token: ""/.test(l) && /Discord|bot/i.test(l))!;
   assert.ok(tokenLine, "connections.discord.token has a comment");
   assert.match(secrets, /connections:\n {2}discord:\n {4}token: ""/);

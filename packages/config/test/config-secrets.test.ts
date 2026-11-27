@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { loadDotEnv, writeFileAtomic, SECRET_PATHS, ConfigSchema, sectionJsonSchema, earsListenerVerifier, type Config } from "../src/index.js";
 import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, loadSettings } from "./helpers/config-sandbox.js";
@@ -165,4 +165,14 @@ test("an ears.http.verifier that is not 64 lowercase hex digits is dropped with 
     assert.ok(!about[0]!.includes(bad), "the value is never in the warning");
   }
   assert.equal(earsListenerVerifier(loadSettings(MINIMAL_YAML)), undefined, "no delivery: no key");
+});
+
+// @spec CFG-SEC-021
+test("no module of @cohost/config reads, writes or names a credentials file, the settings store's database or the master key file", () => {
+  const dir = new URL("../src/", import.meta.url);
+  for (const name of readdirSync(dir).filter((f) => f.endsWith(".ts"))) {
+    const text = readFileSync(new URL(name, dir), "utf8");
+    assert.doesNotMatch(text, /secrets\.yaml|secrets\/units|COHOST_SECRETS_FILE|master\.key|COHOST_KEY_FILE|cohost\.db|data\/store/, `${name} names a credentials file, the store or the key`);
+    assert.doesNotMatch(text, /from\s+["'](?:@cohost\/store|node:sqlite)["']/, `${name} imports the store`);
+  }
 });

@@ -29,7 +29,7 @@ function rig(o: { deliver?: (w: string[]) => string[]; held?: () => boolean } = 
   const rec = recordingLog();
   let clock = 0;
   const r = new Redeliverer({ redeliver, acquire, log: rec.log, now: () => ++clock });
-  return { r, calls, rec, acquired, released: () => released, holdNext: () => { hold = true; }, openAll: () => { hold = false; for (const g of gates.splice(0)) g(); } };
+  return { r, calls, rec, acquired, released: () => released, advance: (ms: number) => { clock += ms; }, holdNext: () => { hold = true; }, openAll: () => { hold = false; for (const g of gates.splice(0)) g(); } };
 }
 
 // @spec STORE-DLV-005
@@ -59,8 +59,31 @@ test("a unit counts as waiting only for a waiting heartbeat received after its l
   await t.r.run();
   assert.deepEqual(t.calls.at(-1), { waiting: [], ready: [] });
   assert.equal(t.calls.length, n + 1);
-  // A new waiting heartbeat (the container restarted) asks for a delivery again.
+  // A new waiting heartbeat a heartbeat interval later (the container restarted) asks for a delivery again.
+  t.advance(6000);
   t.r.observe(waiting("cortex"));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(t.calls.at(-1), { waiting: ["cortex"], ready: [] });
+  assert.equal(t.rec.lines.filter((l) => l.msg === "delivered credentials to cortex").length, 2);
+});
+
+// @spec STORE-DLV-005
+test("a waiting heartbeat arriving within one heartbeat interval of a delivery asks for none: no second message is left unclaimed", async () => {
+  const t = rig();
+  await t.r.start();
+  t.r.observe({ ...waiting("cortex"), intervalMs: 2000 });
+  await new Promise((r) => setImmediate(r));
+  const n = t.calls.length;
+  assert.equal(t.rec.lines.filter((l) => l.msg === "delivered credentials to cortex").length, 1);
+  // The unit sent this one before it took the message: within the interval it is not a new wait.
+  t.advance(1500);
+  t.r.observe({ ...waiting("cortex"), intervalMs: 2000 });
+  await t.r.run();
+  assert.deepEqual(t.calls.at(-1), { waiting: [], ready: [] });
+  assert.equal(t.calls.length, n + 1);
+  // Still waiting past the interval: it did not get the message, so it is delivered to again.
+  t.advance(1000);
+  t.r.observe({ ...waiting("cortex"), intervalMs: 2000 });
   await new Promise((r) => setImmediate(r));
   assert.deepEqual(t.calls.at(-1), { waiting: ["cortex"], ready: [] });
   assert.equal(t.rec.lines.filter((l) => l.msg === "delivered credentials to cortex").length, 2);

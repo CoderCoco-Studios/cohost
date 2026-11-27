@@ -284,7 +284,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
       const e = etag();
       json(res, 200, {
         active: true, cause, ...(e !== undefined ? { etag: e } : {}), problems: recoveryProblems(problems, await tree()),
-        backups: listBackups(opts.dataDir), gated: peek !== undefined,
+        backups: listBackups(opts.dataDir), gated: peek?.verifier !== undefined,
       });
       return;
     }
@@ -302,10 +302,10 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
     const op = method === "POST" ? RECOVERY_POST.exec(url.pathname)?.[1] : undefined;
     if (!op) { req.resume(); json(res, 503, { ok: false, detail: RECOVERY_DETAIL }); return; }
 
-    // A store whose verifier cannot be read is fixed on the host, as the owner's OS user (DASH-RCV-028).
-    if (peekStore(opts) === undefined) {
+    // A store whose verifier cannot be read (or holds none) is fixed on the host, as the owner's OS user (DASH-RCV-028).
+    if (peekStore(opts)?.verifier === undefined) {
       req.resume();
-      json(res, 409, { ok: false, detail: `the settings store cannot be read, so the dashboard cannot check the control token: fix it on the host with ${HOST_COMMANDS}` });
+      json(res, 409, { ok: false, detail: `the settings store's token verifier cannot be read, so the dashboard cannot check the control token: fix it on the host with ${HOST_COMMANDS}` });
       return;
     }
     // Every recovery write passes the one gate, whatever address the full surface is bound to: no write is exempt (DASH-RCV-003).
@@ -567,6 +567,8 @@ export async function startDashboard(o: StartOptions): Promise<void> {
     problems = await checkStore(storeOpts);
   }
   store ??= await openStore(storeOpts);
+  // A recovery import into a new store, or a restore of a backup taken before the token was set, can leave no verifier.
+  if (!store.hasVerifier()) { fail(noVerifier); return; }
 
   const root = o.root ?? findWorkspaceRoot() ?? process.cwd();
   const outbox = applyPersonalityOutbox(store, store.dataDir);

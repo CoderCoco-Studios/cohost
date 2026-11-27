@@ -15,7 +15,7 @@ function restoreEnv(to: NodeJS.ProcessEnv = initialEnv): void {
 afterEach(() => { restoreEnv(); setConfigLogger(undefined); });
 
 import { ConfigSchema, ModuleSchema, unknownKeys, type Config } from "../src/index.js";
-import { loadSettings, exampleYaml, projectionDir } from "./helpers/config-sandbox.js";
+import { loadSettings, exampleYaml, projectionDir, MINIMAL_YAML } from "./helpers/config-sandbox.js";
 
 // @spec CFG-SCH-004
 test("reflex match must be a valid regex (a bad one would crash-loop salience)", () => {
@@ -865,4 +865,14 @@ test("brain.affect.count_window_ms defaults to 30000 and is a positive integer",
   assert.equal(ConfigSchema.parse(baseCfg()).brain.affect.count_window_ms, 30000);
   assert.equal(affect({ count_window_ms: 1 }).success, true);
   for (const v of [0, -5, 1.5]) assert.deepEqual(issuePaths(affect({ count_window_ms: v })), ["brain.affect.count_window_ms"], `count_window_ms=${v}`);
+});
+
+// @spec CFG-ENV-004
+test("loadConfig loads .env first, setting only the variables the environment does not define", () => {
+  sandbox({ ".env": "COHOST_DOTENV_PROBE=from-dotenv\nCOHOST_DOTENV_KEPT=from-dotenv\n" });
+  delete process.env.COHOST_DOTENV_PROBE;
+  process.env.COHOST_DOTENV_KEPT = "from-the-environment";
+  loadSettings(MINIMAL_YAML);
+  assert.equal(process.env.COHOST_DOTENV_PROBE, "from-dotenv");
+  assert.equal(process.env.COHOST_DOTENV_KEPT, "from-the-environment", "a defined variable is not overridden");
 });

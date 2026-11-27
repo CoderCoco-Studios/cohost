@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { ConfigSchema, ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, secretPathOf, type Config, type ExpressionMap } from "./schema.js";
 import { SECTION_PATHS } from "./presentation.js";
 import { applyIsolation, coerceEmptyNumbers, decodeIsolation, unknownKeys, ISOLATION_ENV, ISOLATION_OVERRIDES, type ConfigIssue, type IsolationName, type IsolationOverrides } from "./pipeline.js";
-import { configDir } from "./paths.js";
+import { configDir, loadDotEnv } from "./paths.js";
 import { diag } from "./diag.js";
 import { ConfigError, bracketIndexes, invalidMessage } from "./errors.js";
 
@@ -137,8 +137,10 @@ export function resetConfigCache(): void { cached = undefined; }
  * secret paths. Reading a section the projection does not hold throws. Cached: a later call returns the same object unless it
  * passes `force`, or names a directory, unit, isolation value or credentials other than the cached load's.
  */
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SCH-086, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
+// @spec CFG-ENV-004, CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SCH-086, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
 export function loadConfig(opts: LoadOptions = {}): Config {
+  // `.env` first (CFG-ENV-004): it sets only what the environment does not, so loading it again changes nothing.
+  loadDotEnv();
   if (cached && !opts.force && cacheFits(opts, cached.key)) return cached.cfg;
   const dir = opts.dir ?? configDir();
   const isolation = opts.isolation ?? process.env[ISOLATION_ENV] ?? "";

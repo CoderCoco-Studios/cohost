@@ -7,8 +7,11 @@
 import { Bus, type HeartbeatEvent } from "@cohost/bus";
 import { STALE_FACTOR } from "./health.js";
 
-/** The heartbeat detail of a unit waiting for its credentials message (shared-runtime SHARED-BOOT-009). */
-const WAITING = "waiting for credentials";
+/**
+ * The heartbeat detail of a unit waiting for its credentials message: shared-runtime's `WAITING_FOR_CREDENTIALS`
+ * (SHARED-BOOT-009), which the control plane cannot import (`@cohost/shared` is not its dependency); a test pins the two equal.
+ */
+export const WAITING_DETAIL = "waiting for credentials";
 
 // @spec CTRL-CHECK-001, STORE-DLV-005
 export function isHealthy(service: string, recent: HeartbeatEvent[], now = Date.now()): boolean {
@@ -16,7 +19,7 @@ export function isHealthy(service: string, recent: HeartbeatEvent[], now = Date.
   if (!latest || latest.data.state === "stopping") return false;
   // A unit waiting for its credentials is not serving: past the healthcheck's start period it counts as unhealthy, so a Launch
   // cannot report success while a unit waits (settings-store STORE-DLV-005).
-  if (latest.data.state === "starting" && latest.data.detail === WAITING) return false;
+  if (latest.data.state === "starting" && latest.data.detail === WAITING_DETAIL) return false;
   return now - latest.ts < STALE_FACTOR * latest.data.intervalMs;
 }
 

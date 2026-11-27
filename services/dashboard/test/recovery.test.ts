@@ -23,10 +23,12 @@ interface RigOpts extends Partial<RecoveryHandlerDeps> {
   before?: (s: Store) => unknown;
   /** Wraps the handler (a test that fakes the peer's address). */
   wrap?: (h: http.RequestListener) => http.RequestListener;
+  /** Whether the store holds the test token's verifier (default true). */
+  token?: boolean;
 }
 
 async function rig(cause: BrokenCause, o: RigOpts = {}): Promise<Rig> {
-  const st = await brokenStore(cause, { ...(o.before ? { before: o.before } : {}) });
+  const st = await brokenStore(cause, { ...(o.before ? { before: o.before } : {}), ...(o.token === false ? { token: false } : {}) });
   const dir = mkdtempSync(join(tmpdir(), "cohost-rcv-"));
   const logs: string[] = [];
   const notices: string[] = [];
@@ -76,6 +78,21 @@ test("GET /recovery with invalid settings lists every failing key with its secti
     for (const p of s.problems) assert.equal(p.sensitive, false);
     assert.equal(db(r), before, "a read writes nothing");
     assert.equal(r.valid(), 0);
+  } finally { await r.close(); }
+});
+
+// @spec DASH-RCV-004, DASH-RCV-028
+test("a readable store that holds no verifier is not gated: every recovery write is 409 naming the host commands, and nothing is written", async () => {
+  const r = await rig("invalid-settings", { token: false });
+  try {
+    const s = await state(r);
+    assert.equal(s.cause, "invalid-settings");
+    assert.equal(s.gated, false, "no verifier to check a bearer against");
+    const before = dbState(r.st.opts.dataDir!);
+    const res = await fetch(`${r.url}/recovery/reset-all`, { method: "POST", headers: { ...AUTH, "content-type": "application/json" }, body: JSON.stringify({ etag: s.etag }) });
+    assert.equal(res.status, 409);
+    assert.ok(((await res.json()) as { detail: string }).detail.includes(HOST_COMMANDS));
+    assert.equal(dbState(r.st.opts.dataDir!), before);
   } finally { await r.close(); }
 });
 

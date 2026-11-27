@@ -35,7 +35,7 @@ export interface FeedDeps {
   /** Receives the driver of each `avatar.state` seen on the stream: the renderer relay's state comes from it (DASH-AVR-020). */
   onAvatarState?: (driver: string) => void;
   /** Every heartbeat, seeded and live: the credentials re-delivery follows them (settings-store STORE-DLV-005). */
-  onHeartbeat?: (hb: { service: string; state: string; detail?: string }) => void;
+  onHeartbeat?: (hb: { service: string; state: string; detail?: string; intervalMs?: number }) => void;
 }
 
 /** The slice of the service logger the feed's failure handling uses. */

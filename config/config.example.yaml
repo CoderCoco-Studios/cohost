@@ -1,9 +1,10 @@
-# Every operator setting: models, hooks, timings, voice, avatar, senses, addresses and ports. Copy to config.yaml
-# (install.sh does this); config.yaml is git-ignored and is the one that's read. Every value is a literal, edited here or
-# on the dashboard's Settings screen; no environment variable is read and a placeholder written as a dollar sign and braces fails the load.
-# Credentials (API keys, tokens, passwords) live in secrets/secrets.yaml, outside this directory (see secrets.example.yaml); .env holds
-# only what must exist before this file can be read, and the dashboard's own access controls.
-
+# Every operator setting: models, hooks, timings, voice, avatar, senses, addresses and ports. The settings store imports this
+# file as its seed when it is created (`mise run config:import` takes the same shape); the owner changes settings on the
+# dashboard's Settings screen or with `mise run config:set`, never by editing a file. Every value is a literal: no environment
+# variable is read and a placeholder written as a dollar sign and braces is refused.
+# Credentials (API keys, tokens, passwords) are not settings: they are kept encrypted in the settings store, set on the Settings
+# screen or with `mise run config:secret`; .env holds only what must exist before the store can be read, and the dashboard's
+# own access controls.
 cohost:
   name: "Coco"                 # how the co-host refers to itself / is addressed in chat
   streamer: "Chris"            # your name as the LLM should know it
@@ -14,9 +15,9 @@ llm:
   #   ollama     local GPU (default). The `models` service (`docker compose up models`) pulls the Ollama models that
   #              llm.model, llm.embed_model and vision.model name, and optionally the hook models; ears.stt_model is not pulled by it.
   #   openai     any OpenAI-compatible endpoint: a vLLM box you rent by the hour, OpenRouter, Groq, Together ...
-  #              (the API key is llm.openai.api_key in secrets.yaml)
-  #   anthropic  Claude via the Claude API           (llm.claude.api_key in secrets.yaml)
-  #   bedrock    Claude via Amazon Bedrock            (region below; llm.bedrock.access_key_id and secret_access_key in secrets.yaml)
+  #              (the API key is llm.openai.api_key in the settings store)
+  #   anthropic  Claude via the Claude API           (llm.claude.api_key in the settings store)
+  #   bedrock    Claude via Amazon Bedrock            (region below; llm.bedrock.access_key_id and secret_access_key in the settings store)
   # Recipes for each: the "Choose a model" page of the docs site (docs/guide/tune/model.md)
   #   mock       deterministic offline replies only; for isolated runs, never a default.
   #              Memory's embedder is chosen separately by brain.memory.embedder, not by this provider.
@@ -35,12 +36,12 @@ llm:
     max_tokens: 2048           # caps thinking + reply together
     fallbacks: true            # Claude API only: retry on another Claude model if a classifier declines
   bedrock:
-    region: ""                 # AWS region of the Bedrock endpoint, e.g. us-east-1; required with the two keys in secrets.yaml
+    region: ""                 # AWS region of the Bedrock endpoint, e.g. us-east-1; required with the two keys in the settings store
 
 vision:
   enabled: false               # flip on once the `eyes` profile is running; false = eyes idles, never touches OBS
   model: "qwen2.5vl:3b"        # the describer model; Ollama pulls it when provider is ollama. Blank = none (eyes reports it down while enabled)
-  provider: "ollama"           # ollama | openai | anthropic | bedrock (hosted, credentials in secrets.yaml and llm) | stub (fixed text, no model; isolated runs)
+  provider: "ollama"           # ollama | openai | anthropic | bedrock (hosted, credentials in the settings store and llm) | stub (fixed text, no model; isolated runs)
   interval_ms: 8000            # how often to look at the game
   temperature: 0.2             # vision model sampling temperature (0 to 2)
   num_predict: 60              # longest description the model may write, in tokens
@@ -51,7 +52,7 @@ vision:
   upload_max_bytes: 8388608    # injected uploads: largest image accepted (8 MiB, the dashboard's upload cap)
   obs:
     host: "host.docker.internal"  # OBS WebSocket host; from Docker on the same machine use host.docker.internal, on a 2nd PC its LAN IP
-    port: 4455                 # OBS WebSocket port (Tools > WebSocket Server Settings); the password is vision.obs.password in secrets.yaml
+    port: 4455                 # OBS WebSocket port (Tools > WebSocket Server Settings); the password is vision.obs.password in the settings store
     source: "Game Capture"     # the OBS source to screenshot
     width: 896                 # downscale before sending to the VLM
 
@@ -60,9 +61,9 @@ chat:
   fake:
     interval_ms: 8000          # sources includes fake: gap between scripted messages
   twitch:
-    channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in secrets.yaml
+    channel: ""                # the Twitch channel to read; the credentials are chat.twitch.* in the settings store
   youtube:
-    video: ""                  # the YouTube video or live stream whose chat is read; its API key is the secret chat.youtube.api_key in secrets.yaml
+    video: ""                  # the YouTube video or live stream whose chat is read; its API key is the secret chat.youtube.api_key in the settings store
     transport: stream          # stream | poll (blank is stream)
     poll_floor_ms: 12000       # transport poll: the shortest gap between two chat polls (at least 1000)
     recheck_ms: 120000         # how often the video is checked again for a live chat (at least 30000)
@@ -215,12 +216,12 @@ voice:
   voice: "af_heart"            # kokoro: a voice id or mix; pocket: a catalogue name or an http(s) URL; openai: any voice name; blank = kokoro af_heart, pocket alba
   speed: 1.05                  # 0.25 to 4
   timeout_ms: 15000            # bound on the wait for the first audio byte of a synthesis, and on each gap between its chunks
-  # openai: an OpenAI-compatible speech server, used with engine openai. The API key is voice.openai.api_key in secrets.yaml.
+  # openai: an OpenAI-compatible speech server, used with engine openai. The API key is voice.openai.api_key in the settings store.
   # openai:
   #   base_url: "https://api.openai.com/v1"
   #   model: "tts-1"
   pocket:
-    # the Pocket TTS server, used with engine pocket; blank is a configuration gap. The gated-weights token is in secrets.yaml.
+    # the Pocket TTS server, used with engine pocket; blank is a configuration gap. The gated-weights token is kept in the settings store.
     url: "http://tts-pocket:8000"
   # Optional Kokoro-FastAPI knobs; a key left out keeps the server's own default. Restart voice to apply.
   # voice also accepts a mix, e.g. "af_bella(2)+af_sky".
@@ -272,7 +273,7 @@ renderer:
 
 ears:
   # Where audio comes from: a list of sources, all started at once and read at start. Each clip carries the name of its source.
-  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord; the token is connections.discord.token in secrets.yaml)
+  #   discord  the Discord voice channel, served by the Discord connector (service connector-discord; the token is connections.discord.token in the settings store)
   #   http     POST 16-bit PCM or WAV clips to http://<http.host>:<http.port>/audio (no account needed)
   #   dir      drop .wav files in dir.path; each is heard once, then renamed .done / .rejected / .failed (no account needed)
   #   <tag>    any other connector's source tag, such as desktop
@@ -310,7 +311,7 @@ ears:
   stt_fallback_engine: "speaches" # speaches | openai | none: batch engine for whole clips a streaming engine cannot serve
   stt_timeout_ms: 20000        # bound on one speech-to-text request
   max_stt_sessions: 2          # speech-to-text sessions that run at once (at least 1)
-  # openai: an OpenAI-compatible transcription server (stt_engine or stt_fallback_engine openai). Its key goes in secrets.yaml.
+  # openai: an OpenAI-compatible transcription server (stt_engine or stt_fallback_engine openai). Its key is kept in the settings store.
   # openai:
   #   base_url: "https://api.openai.com/v1"
   nemotron:
@@ -328,7 +329,7 @@ ears:
 
 # External connectors that attach to the bus. The Discord connector (service `connector-discord`) holds the bot's one voice
 # connection: it publishes what people say as source `discord` and plays sink `discord` into the channel. The bot token is
-# connections.discord.token in secrets.yaml.
+# connections.discord.token in the settings store.
 connections:
   discord:
     enabled: true              # false = the connector idles and holds no connection (isolated runs)
@@ -369,7 +370,7 @@ dashboard:
     max_bytes: 104857600       # largest .vrm file accepted (100 MiB; 1 MiB to 1 GiB)
 
 # The MCP servers the co-host may call and the tools it may use. No tool is enabled until tools.allow names it; a server
-# listed here is called only for an allowed tool. A server's token lives in secrets.yaml, never here.
+# listed here is called only for an allowed tool. A server's token is kept in the settings store, never here.
 tools:
   mode: live                   # live calls the servers below; mock returns canned results and calls no server
   timeout_ms: 10000            # one tool call's limit before it counts as failed (ms)
@@ -380,7 +381,7 @@ tools:
   max_tools_per_server: 32     # tools taken from one server's list (at least 1)
   max_tools: 64                # tools in the catalogue across all servers (at least 1)
   owner_sources: all           # all, or a list of listening sources whose speech counts as yours, such as [discord]
-  servers: {}                  # name: { url: "https://...", header: "", external: false }; the token goes in secrets.yaml
+  servers: {}                  # name: { url: "https://...", header: "", external: false }; the token is kept in the settings store
   allow: {}                    # tool name (server__tool): { enabled: true, acts: false, chat: false, confirm: true }
   timer:
     max_active: 5              # timers the co-host may have running at once (at least 1)

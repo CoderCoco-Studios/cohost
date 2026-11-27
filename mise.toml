@@ -165,7 +165,7 @@ run = [
 ]
 
 [tasks."dashboard:unlock"]
-description = "Print a fresh unlock link for the running dashboard (asks it with CONTROL_TOKEN from .env)"
+description = "Print a fresh unlock link for the running dashboard (the control token from CONTROL_TOKEN in this command's environment, else a hidden prompt)"
 depends = ["build:native"]
 run = ["tsc -b services/dashboard", "node services/dashboard/dist/unlock-link.js"]
 

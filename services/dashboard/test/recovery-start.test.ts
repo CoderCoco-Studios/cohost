@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writePersonalityOutbox, sha256Hex } from "@cohost/config";
 import { DatabaseSync } from "node:sqlite";
-import { SCHEMA_VERSION, backupDir, checkStore, listBackups, openStore, personalityUnits, projectionDir, projectionsDir, storeFile, type Store } from "@cohost/store";
+import { SCHEMA_VERSION, backupDir, checkStore, importToStore, listBackups, openStore, personalityUnits, projectionDir, projectionsDir, readExport, storeFile, type Store, type StoreOptions } from "@cohost/store";
 import { runRecovery, startDashboard } from "../src/recovery.js";
 import { freshUnlockLink } from "../src/unlock-link.js";
 import { AUTH, TOKEN } from "./control-fixture.js";
@@ -267,6 +267,59 @@ test("startDashboard refuses CONTROL_TOKEN in its environment, and a store that 
   const inRecovery = await start(brokenNone.opts);
   assert.deepEqual(inRecovery.exits, [1], "a broken store with no verifier is refused before recovery mode binds");
   assert.ok(inRecovery.lines.some((l) => /^fatal .*holds no control token/.test(l)), inRecovery.lines.join("\n"));
+});
+
+/** startDashboard over `opts`, not awaited: recovery mode keeps it running until a request finds the store usable. */
+function startLive(opts: StoreOptions) {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-dash-live-"));
+  const { lines, log } = quietLog();
+  const exits: number[] = [];
+  const runs: number[] = [];
+  const done = startDashboard({
+    makeLog: () => log, env: {}, envFile: join(dir, ".env"), exit: (c) => { exits.push(c); },
+    store: { ...opts, notice: { isTTY: false, write: () => undefined, warn: () => undefined }, warn: () => undefined },
+    root: join(dir, "root"), recovery: { signals: false, print: () => {}, uiDir: join(dir, "ui") },
+    run: async (store) => { runs.push(store.revision()); store.close(); },
+  });
+  return { lines, exits, runs, done };
+}
+
+// @spec DASH-CTRL-002, STORE-TOK-005
+test("a store left with no verifier by recovery (an import into a damaged store on the host, a restore of a backup from before the token) is refused at start", async () => {
+  // An import on the host over a store damaged while recovery mode runs makes a new store, which holds no verifier. (A store
+  // damaged at start binds the default port, which a test must not take; the damage here comes after the listener is up.)
+  const port = await freePort();
+  const damaged = await brokenStore("invalid-settings", { edits: { dashboard: { port } } });
+  const a = startLive(damaged.opts);
+  await until("the recovery listener", async () => ((await fetch(`http://127.0.0.1:${port}/health`)).ok ? true : undefined), 10_000);
+  writeFileSync(storeFile(damaged.opts.dataDir!), "broken ".repeat(1000));
+  const exported = `cohost_export: 1\nsettings:\n${readFileSync(join(repo, "config", "config.example.yaml"), "utf8").split("\n").map((l) => (l ? `  ${l}` : l)).join("\n")}\n`;
+  const { plan, issues } = readExport(exported);
+  assert.deepEqual(issues, []);
+  const imported = await importToStore(plan, { ...damaged.opts, notice: { isTTY: false, write: () => undefined, warn: () => undefined }, warn: () => undefined });
+  assert.ok(imported.result.ok && imported.moved, JSON.stringify(imported.result));
+  assert.deepEqual(JSON.parse((await raw(port, "GET", "/recovery")).text).active, false);
+  await a.done;
+  assert.deepEqual(a.exits, [1]);
+  assert.deepEqual(a.runs, []);
+  assert.ok(a.lines.some((l) => /^fatal .*holds no control token: run mise run config:token/.test(l)), a.lines.join("\n"));
+
+  // A restore through the recovery page of a backup taken before the token was set.
+  const port2 = await freePort();
+  let preToken = "";
+  const st = await brokenStore("invalid-settings", {
+    edits: { dashboard: { port: port2 } }, token: false,
+    before: async (s) => { preToken = await s.backup(); s.setToken(TOKEN); },
+  });
+  const b = startLive(st.opts);
+  await until("the invalid-settings listener", async () => ((await fetch(`http://127.0.0.1:${port2}/health`)).ok ? true : undefined), 10_000);
+  const name = preToken.split("/").at(-1)!;
+  const restored = await raw(port2, "POST", "/recovery/restore", AUTH, { backup: name });
+  assert.equal(restored.status, 200, restored.text);
+  await b.done;
+  assert.deepEqual(b.exits, [1]);
+  assert.deepEqual(b.runs, []);
+  assert.ok(b.lines.some((l) => /^fatal .*holds no control token/.test(l)), b.lines.join("\n"));
 });
 
 // @spec STORE-OUT-002, STORE-PROJ-006

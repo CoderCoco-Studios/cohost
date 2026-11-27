@@ -33,6 +33,7 @@ import { configRefusal } from "./config-gate.js";
 import { ComposeProvisioner, storeSource } from "./provision.js";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import { defaultExec, type ExecFile } from "./runtime.js";
+import { WAITING_DETAIL as WAITING } from "./healthcheck.js";
 
 export type CliCommand =
   | { cmd: "status"; id?: string }
@@ -268,8 +269,6 @@ export interface CliWiring {
 /** The commands that start a service or deliver credentials, refused while the settings store cannot be used (CTRL-CLI-018). */
 const GATED = new Set(["launch", "rebuild", "start", "restart", "restart-all", "deliver", "consolidate", "reembed"]);
 
-/** The heartbeat detail of a unit waiting for its credentials message (shared-runtime SHARED-BOOT-009). */
-const WAITING = "waiting for credentials";
 
 /**
  * The units waiting for credentials and the units ready, by each unit's newest heartbeat. A unit whose newest heartbeat is

@@ -207,13 +207,13 @@ test("the Compose file names no profile `tools`, so the service named tools and 
 });
 
 // @spec DEPLOY-REPO-001
-test("the root tsconfig.json is a solution file referencing the 8 packages, the 13 services, the two test projects and nothing else", () => {
+test("the root tsconfig.json is a solution file referencing the 9 packages, the 13 services, the two test projects and nothing else", () => {
   const ts = JSON.parse(readFileSync(root("tsconfig.json"), "utf8")) as { files: string[]; references: { path: string }[] };
   assert.deepEqual(ts.files, []);
   const paths = ts.references.map((r) => r.path);
   const dir = (d: string) => readdirSync(root(d), { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== "node_modules").map((e) => `${d}/${e.name}`);
   const packages = dir("packages"), services = dir("services");
-  assert.equal(packages.length, 8, packages.join(","));
+  assert.equal(packages.length, 9, packages.join(","));
   assert.equal(services.length, 13, services.join(","));
   assert.ok(services.includes("services/tools"));
   assert.deepEqual([...paths].toSorted(), [...packages, ...services, "services/voice/tsconfig.test.json", "services/avatar/test"].toSorted());

@@ -24,5 +24,7 @@ mise run example:audio-send:ts -- clip.wav
 mise run example:audio-send:sh -- clip.wav
 ```
 
+`send.sh` passes the token to `openssl` as an argument, readable in the process
+list while it runs: on a shared machine, use the Python or TypeScript client.
 The explanation is on the
 [Send audio to ears page](https://codercoco-studios.github.io/cohost/advanced/extend/audio-in).

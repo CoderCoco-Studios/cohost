@@ -702,8 +702,8 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
     for (const line of task(name).run) assert.match(line, /^scripts\/test-env\.sh node /, `${name}: ${line}`);
   }
   const script = join(repoRoot, "scripts", "test-env.sh");
-  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_SECRETS_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
-  const r = spawnSync(script, ["bash", "-c", probe], { encoding: "utf8", cwd: repoRoot, env: { PATH: process.env.PATH!, COHOST_DATA_DIR: "/owner/data", CONFIG_DIR: "/owner/config" } });
+  const probe = "for k in COHOST_DATA_DIR CONFIG_DIR COHOST_ENV_FILE COHOST_SECRETS_FILE COHOST_KEY_FILE; do printf '%s=%s\\n' \"$k\" \"${!k}\"; done; ls \"$CONFIG_DIR\"; exit 3";
+  const r = spawnSync(script, ["bash", "-c", probe], { encoding: "utf8", cwd: repoRoot, env: { PATH: process.env.PATH!, COHOST_DATA_DIR: "/owner/data", CONFIG_DIR: "/owner/config", COHOST_KEY_FILE: "/owner/master.key" } });
   assert.equal(r.status, 3, `the command's status is the run's status: ${r.stderr}`);
   const vars = Object.fromEntries(r.stdout.split("\n").filter((l) => l.includes("=")).map((l) => l.split("=") as [string, string]));
   const data = vars.COHOST_DATA_DIR!;
@@ -713,6 +713,7 @@ test("the test tasks run through test-env.sh, which gives the run temporary data
   assert.ok(!data.startsWith(repoRoot) && !conf.startsWith(repoRoot));
   assert.equal(vars.COHOST_ENV_FILE, join(conf, ".env"));
   assert.equal(vars.COHOST_SECRETS_FILE, join(conf, "secrets", "secrets.yaml"));
+  assert.equal(vars.COHOST_KEY_FILE, join(conf, "master.key"), "no test reads or creates the owner's master key");
   const examples = readdirSync(join(repoRoot, "config")).filter((f) => f.includes(".example.")).toSorted();
   for (const f of examples) assert.ok(r.stdout.split("\n").includes(f), `${f} copied`);
   assert.equal(existsSync(data), false, "the data directory is removed");

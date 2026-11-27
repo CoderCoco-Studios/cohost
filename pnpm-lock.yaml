@@ -292,6 +292,12 @@ importers:
         specifier: ^0.0.8
         version: 0.0.8
 
+  packages/store:
+    dependencies:
+      '@cohost/config':
+        specifier: workspace:*
+        version: link:../config
+
   packages/testing:
     dependencies:
       '@cohost/bus':

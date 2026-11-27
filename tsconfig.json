@@ -8,6 +8,7 @@
     { "path": "packages/working-memory" },
     { "path": "packages/shared" },
     { "path": "packages/control" },
+    { "path": "packages/store" },
     { "path": "packages/testing" },
     { "path": "services/chat" },
     { "path": "services/salience" },

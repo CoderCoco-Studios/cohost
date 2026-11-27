@@ -257,6 +257,15 @@ test("projecting an operator file that sets every path of SECRET_PATHS gives eac
   assert.equal((read(w, "ears") as { ears: { http: { verifier: string } } }).ears.http.verifier, key);
 });
 
+// @spec CFG-SEC-020, DEPLOY-SECRET-012
+test("a unit that declares no secret path but has a derived entry still gets its projection, holding only that entry", async () => {
+  const w = workspace(OPERATOR);
+  const key = "cd".repeat(32);
+  await projectSecrets(w.root, [{ composeName: "ears", secrets: [] }, { composeName: "plain", secrets: [] }], { ears: { "ears.http.verifier": key } });
+  assert.deepEqual(read(w, "ears"), { ears: { http: { verifier: key } } });
+  assert.equal(existsSync(join(w.units, "plain")), false, "a unit with neither a declared path nor a derived entry gets no directory");
+});
+
 // @spec DEPLOY-SECRET-007
 test("the operator's file is rejected when it resolves inside ./config, ./data or ./secrets/units, a regular file included", async () => {
   for (const sub of ["config", "data", join("secrets", "units")]) {

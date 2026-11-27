@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ConfigSchema, parseYaml } from "@cohost/config";
@@ -295,4 +295,28 @@ test("a backup taken before a rotation restores with the kept rotated key, which
   assert.equal(r.secret("llm.openai.api_key"), "sk-before");
   r.close();
   assert.ok(readdirSync(join(sb.keyFile, "..")).some((n) => n.startsWith("master.key.replaced-")), "the rotated-to key is kept as replaced");
+});
+
+// @spec STORE-TASK-005, STORE-KEY-003
+test("a restore with the key file missing creates no key and prints no recovery key: it installs the backup's kept key", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.write({ secrets: { "llm.openai.api_key": "sk-kept" } });
+  const backup = await s.backup();
+  const oldKey = readFileSync(sb.keyFile, "utf8");
+  // The live store holds no credential, so opening it with the key file missing would otherwise make a new key.
+  s.write({ secrets: { "llm.openai.api_key": null } });
+  s.rotateKey({ isTTY: false, write: () => undefined, warn: () => undefined });
+  s.close();
+  rmSync(sb.keyFile);
+  sb.notices.length = 0;
+  sb.pointers.length = 0;
+  await restoreBackup(backup, sb.opts);
+  assert.deepEqual(sb.notices, []);
+  assert.deepEqual(sb.pointers, []);
+  assert.ok(!readdirSync(join(sb.keyFile, "..")).some((n) => n.startsWith("master.key.replaced-")), "no key was made and then replaced");
+  assert.equal(readFileSync(sb.keyFile, "utf8"), oldKey);
+  const r = await sb.open();
+  assert.equal(r.secret("llm.openai.api_key"), "sk-kept");
+  r.close();
 });

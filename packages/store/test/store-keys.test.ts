@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { chmodSync, existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -75,7 +75,7 @@ test("a missing key while the store holds credentials is refused, naming the key
   unlinkSync(sb.keyFile);
   const e = await rejection(sb.open());
   assert.equal(e.kind, "key-missing");
-  for (const part of [sb.keyFile, storeFile(sb.data), "2 stored credentials", "mise run config:key -- --restore", "mise run config:reset-credentials"]) assert.ok(e.message.includes(part), part);
+  for (const part of [sb.keyFile, storeFile(sb.data), "2 stored credentials", "mise run config:key -- --restore", "mise run config:restore", "mise run config:reset-credentials", "No kept key file"]) assert.ok(e.message.includes(part), part);
   assert.equal(existsSync(sb.keyFile), false);
   assert.deepEqual((await checkStore(sb.opts)).map((p) => p.cause), ["key"]);
   assert.equal(existsSync(sb.keyFile), false);
@@ -283,4 +283,35 @@ test("discarding credentials deletes every secret and key row, makes a new key a
   assert.equal(mode(join(dirname(sb2.keyFile), kept[0]!)), 0o600);
   assert.equal(readFileSync(join(dirname(sb2.keyFile), kept[0]!), "utf8"), oldKey);
   (await sb.open()).close();
+});
+
+// @spec STORE-KEY-005, STORE-KEY-009
+test("two key files moved aside in the same second both survive: the later takes the next free name", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-27T12:00:00Z") });
+  try {
+    const first = readFileSync(sb.keyFile, "utf8");
+    await s.resetCredentials({ isTTY: false, write: () => undefined, warn: () => undefined });
+    const second = readFileSync(sb.keyFile, "utf8");
+    await s.resetCredentials({ isTTY: false, write: () => undefined, warn: () => undefined });
+    const kept = readdirSync(dirname(sb.keyFile)).filter((n) => n.startsWith("master.key.discarded-")).toSorted();
+    assert.deepEqual(kept, ["master.key.discarded-20261127T120000Z", "master.key.discarded-20261127T120001Z"]);
+    assert.deepEqual(kept.map((n) => readFileSync(join(dirname(sb.keyFile), n), "utf8")), [first, second]);
+  } finally {
+    mock.timers.reset();
+    s.close();
+  }
+});
+
+// @spec STORE-KEY-003
+test("the missing-key refusal lists the kept key files beside the key file", async () => {
+  const sb = sandbox();
+  const s = await sb.open();
+  s.write({ secrets: { "llm.openai.api_key": "sk-a" } });
+  s.rotateKey({ isTTY: false, write: () => undefined, warn: () => undefined });
+  s.close();
+  unlinkSync(sb.keyFile);
+  const e = await rejection(sb.open());
+  assert.match(e.message, /Kept key files beside it may hold the key: .*master\.key\.rotated-\d{8}T\d{6}Z/);
 });

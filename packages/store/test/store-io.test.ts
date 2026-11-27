@@ -141,7 +141,7 @@ test("parts replace only themselves: the settings, the personality, the expressi
 test("an export whose key derivation parameters are out of bounds is an issue at secrets.kdf, not a crash", async () => {
   const { s } = await populated();
   const doc = parseYaml(exportStore(s, { passphrase: PASS })) as { secrets: { kdf: Record<string, unknown>; values: Record<string, string> } };
-  for (const bad of [{ N: 1.5 }, { N: 3000 }, { N: 1 << 22 }, { r: 0 }, { p: 9 }, { N: 1 << 20, r: 8 }, { salt: "abc" }, { N: "x" }]) {
+  for (const bad of [{ N: 1 << 18, r: 8 }, { N: 1.5 }, { N: 3000 }, { N: 1 << 22 }, { r: 0 }, { p: 9 }, { N: 1 << 20, r: 8 }, { salt: "abc" }, { N: "x" }]) {
     const r = openSecrets({ ...doc.secrets, kdf: { ...doc.secrets.kdf, ...bad } } as never, PASS);
     assert.deepEqual(r.issues.map((i) => i.path), ["secrets.kdf"], JSON.stringify(bad));
   }

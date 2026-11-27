@@ -76,6 +76,11 @@ export interface StoreOptions {
    * that needs the key throws it. The recovery tasks and `checkStore` open this way.
    */
   keyOptional?: boolean;
+  /**
+   * Whether a missing key file may be created (STORE-KEY-002); true by default. A restore passes false: it installs the key the
+   * backup was encrypted under instead, and must not print a recovery key for a key that is then replaced.
+   */
+  createKey?: boolean;
 }
 
 /** A change for `write`: sections, documents and credentials to set (a value) or remove (`null`). */
@@ -356,7 +361,7 @@ export async function openStore(opts: StoreOptions = {}): Promise<Store> {
     warnLooseModes(file, warn);
     const store = new Store(db, { data, file, keyFile, busyTimeoutMs, warn });
     if (version < SCHEMA_VERSION) await store.migrate(version);
-    store.loadKey(opts.notice ?? defaultNotice(), opts.keyOptional ?? false);
+    store.loadKey(opts.notice ?? defaultNotice(), opts.keyOptional ?? false, opts.createKey ?? true);
     if (created && (opts.seed ?? true)) {
       const issues = store.seed(opts.seedDir ?? join(findWorkspaceRoot() ?? process.cwd(), "config"));
       if (issues.length > 0) {
@@ -448,7 +453,7 @@ export class Store {
   }
 
   /** Reads, or creates, the master key, and checks it against `meta.key_id` (STORE-KEY-002 to -005). */
-  loadKey(notice: NoticeOut, optional: boolean): void {
+  loadKey(notice: NoticeOut, optional: boolean, create = true): void {
     try {
       checkPrivateDir(dirname(this.keyFile), "master key");
       let key = readKeyFile(this.keyFile);
@@ -457,9 +462,12 @@ export class Store {
         if (n.secrets + n.keys > 0) {
           throw new StoreError("key-missing",
             `the master key file ${this.keyFile} is missing and the settings store ${this.file} holds ${n.secrets} stored credential${n.secrets === 1 ? "" : "s"} ` +
-            `and ${n.keys} generated key${n.keys === 1 ? "" : "s"} encrypted under it: restore the key with mise run config:key -- --restore ` +
-            "(it asks for the recovery key), or discard them with mise run config:reset-credentials");
+            `and ${n.keys} generated key${n.keys === 1 ? "" : "s"} encrypted under it. ` +
+            this.keptKeysHint() +
+            "Restore the key with mise run config:key -- --restore (it asks for the recovery key, which is a key file's text), restore a backup " +
+            "with mise run config:restore -- <file> (it uses a kept key file the backup was made under), or discard them with mise run config:reset-credentials");
         }
+        if (!create) throw new StoreError("key-missing", `the master key file ${this.keyFile} is missing`);
         const made = createKeyFile(this.keyFile);
         key = made.key;
         if (made.created && !recoveryNotice(notice, key)) this.immediate(() => { this.setMeta("recovery_key_unconfirmed", "1"); this.bump(); });
@@ -477,6 +485,14 @@ export class Store {
       this.key = undefined;
       this.keyProblem = e;
     }
+  }
+
+  /** A sentence naming the key files an earlier rotation, restore or discard kept beside the key file, or nothing. */
+  private keptKeysHint(): string {
+    const kept = keptKeyFiles(this.keyFile);
+    return kept.length === 0
+      ? `No kept key file (${basename(this.keyFile)}.rotated-…, .replaced-…, .discarded-…) is beside it. `
+      : `Kept key files beside it may hold the key: ${kept.join(", ")}. `;
   }
 
   private requireKey(): Buffer {
@@ -832,9 +848,7 @@ export class Store {
       throw e;
     }
     try {
-      const kept = `${this.keyFile}.rotated-${stamp()}`;
-      linkSync(this.keyFile, kept);
-      chmodSync(kept, 0o600);
+      this.keepKeyFile("rotated");
       staged.commit();
     } catch (e) {
       throw new StoreError("key-missing",
@@ -850,9 +864,26 @@ export class Store {
   /** Moves an existing key file aside (kept, since older backups may need it) before another is written in its place. */
   private moveKeyAside(label: string): void {
     if (!existsSync(this.keyFile)) return;
-    const kept = `${this.keyFile}.${label}-${stamp()}`;
-    renameSync(this.keyFile, kept);
-    chmodSync(kept, 0o600);
+    this.keepKeyFile(label);
+    unlinkSync(this.keyFile);
+  }
+
+  /**
+   * Links the key file to `master.key.<label>-<stamp>` (mode 0600) and returns that name. A name already taken (two moves in
+   * one second) is never overwritten: the link fails with `EEXIST` and the next second's name is tried, as backups do.
+   */
+  private keepKeyFile(label: string): string {
+    for (let at = Date.now(); ; at += 1000) {
+      const kept = `${this.keyFile}.${label}-${stamp(new Date(at))}`;
+      try {
+        linkSync(this.keyFile, kept);
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
+        throw e;
+      }
+      chmodSync(kept, 0o600);
+      return kept;
+    }
   }
 
   /** Installs `key` as the key file, the current one kept as `master.key.replaced-<stamp>` (a restore under a kept key). */
@@ -1059,7 +1090,7 @@ export async function restoreBackup(source: string, opts: StoreOptions = {}): Pr
     let live: Store | undefined;
     if (existsSync(file)) {
       try {
-        live = await openStore({ ...opts, keyOptional: true, seed: false });
+        live = await openStore({ ...opts, keyOptional: true, seed: false, createKey: false });
         await live.backup({ keep: source });
       } catch (e) {
         live?.close();
@@ -1068,7 +1099,7 @@ export async function restoreBackup(source: string, opts: StoreOptions = {}): Pr
         moveDamagedAside(data);
       }
     }
-    live ??= await openStore({ ...opts, keyOptional: true, seed: false });
+    live ??= await openStore({ ...opts, keyOptional: true, seed: false, createKey: false });
     try {
       const revision = live.replaceFrom(copy);
       if (installKey) live.installKey(installKey);

@@ -113,14 +113,15 @@ const isInt = (n: unknown): n is number => typeof n === "number" && Number.isInt
 
 /**
  * Why an export's key derivation parameters cannot be used, or undefined: integers, `N` a power of two from 2^10 to 2^20, `r`
- * 1 to 16, `p` 1 to 4, scrypt's memory (128·N·r bytes) within the 256 MiB an export may take, and a salt of at least 16 bytes.
+ * 1 to 16, `p` 1 to 4, scrypt's memory (128·r·(N + 2) + 128·r·p bytes) within the 256 MiB an export may take, and a salt of at least 16 bytes.
  */
 function kdfProblem(kdf: ExportSecrets["kdf"]): string | undefined {
   const { N, r, p, salt } = kdf as Partial<Record<"N" | "r" | "p", unknown>> & { salt?: unknown };
   if (!isInt(N) || !isInt(r) || !isInt(p)) return "N, r and p must be integers";
   if (N < 1024 || N > 1 << 20 || (N & (N - 1)) !== 0) return "N must be a power of two from 1024 to 1048576";
   if (r < 1 || r > 16 || p < 1 || p > 4) return "r must be 1 to 16 and p 1 to 4";
-  if (128 * N * r > EXPORT_SCRYPT.maxmem) return `N and r ask for more than ${EXPORT_SCRYPT.maxmem} bytes of memory`;
+  // OpenSSL's scrypt memory: 128·r·(N + 2) for V and the work buffer, plus 128·r·p for B.
+  if (128 * r * (N + 2) + 128 * r * p > EXPORT_SCRYPT.maxmem) return `N, r and p ask for more than ${EXPORT_SCRYPT.maxmem} bytes of memory`;
   if (typeof salt !== "string" || !/^[A-Za-z0-9_-]+$/.test(salt) || Buffer.from(salt, "base64url").length < 16) return "the salt must be at least 16 bytes in base64url";
   return undefined;
 }
@@ -130,7 +131,12 @@ export function openSecrets(sealed: ExportSecrets, passphrase: string): { values
   const problem = kdfProblem(sealed.kdf);
   if (problem) return { values: {}, issues: [{ path: "secrets.kdf", message: problem }] };
   const kdf = sealed.kdf;
-  const key = deriveKey(passphrase, Buffer.from(kdf.salt, "base64url"), kdf);
+  let key: Buffer;
+  try {
+    key = deriveKey(passphrase, Buffer.from(kdf.salt, "base64url"), kdf);
+  } catch (e) {
+    return { values: {}, issues: [{ path: "secrets.kdf", message: `the key cannot be derived: ${(e as Error).message}` }] };
+  }
   const values: Record<string, string> = {};
   const issues: StoreIssue[] = [];
   for (const [path, text] of Object.entries(sealed.values)) {

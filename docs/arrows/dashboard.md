@@ -68,34 +68,34 @@ Orientation:
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 7 | 0 | 0 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 12 | 0 | 0 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-011 (006 retired) | 10 | 0 | 0 |
-| Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-011 (006 retired) | 4 | 0 | 6 |
+| Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 3 | 0 | 1 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
-| Test-input injection | DASH-INJ-001 to DASH-INJ-012 | 12 | 0 | 0 |
+| Test-input injection | DASH-INJ-001 to DASH-INJ-012 | 11 | 0 | 1 |
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
-| Web page | DASH-UI-001 to DASH-UI-037 (016 retired) | 37 | 0 | 0 |
+| Web page | DASH-UI-001 to DASH-UI-037 (016 retired) | 35 | 0 | 2 |
 | Streamed lines on the page | DASH-UI-038 to DASH-UI-054 | 17 | 0 | 0 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-010 | 10 | 0 | 0 |
-| Stack control | DASH-STACK-001 to DASH-STACK-010 | 10 | 0 | 0 |
-| Docs site | DASH-DOCS-001 to DASH-DOCS-016 | 16 | 0 | 0 |
-| Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-023 | 23 | 0 | 0 |
+| Stack control | DASH-STACK-001 to DASH-STACK-010 | 8 | 0 | 2 |
+| Docs site | DASH-DOCS-001 to DASH-DOCS-016 | 15 | 0 | 1 |
+| Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-023 | 21 | 0 | 2 |
 | Build and serving | DASH-BUILD-001 to DASH-BUILD-011 | 11 | 0 | 0 |
-| Secret write | DASH-SECRET-001 to DASH-SECRET-015 | 15 | 0 | 0 |
+| Secret write | DASH-SECRET-001 to DASH-SECRET-015 | 14 | 0 | 1 |
 | Pick lists | DASH-OPT-001 to DASH-OPT-005 | 5 | 0 | 0 |
 | Egress marks | DASH-EGR-001 to DASH-EGR-004 | 4 | 0 | 0 |
-| Access dialog | DASH-ACC-001 to DASH-ACC-012 | 12 | 0 | 0 |
-| Unlock link | DASH-UNL-001 to DASH-UNL-008 | 8 | 0 | 0 |
+| Access dialog | DASH-ACC-001 to DASH-ACC-012 | 9 | 0 | 3 |
+| Unlock link | DASH-UNL-001 to DASH-UNL-008 | 6 | 0 | 2 |
 | Navigation and shortcuts | DASH-NAV-001 to DASH-NAV-004 | 4 | 0 | 0 |
 | Theme | DASH-THEME-001 to DASH-THEME-006 | 6 | 0 | 0 |
 | Accessibility and layout | DASH-A11Y-001 to DASH-A11Y-008 | 8 | 0 | 0 |
-| Settings screen | DASH-SET-001 to DASH-SET-034 | 34 | 0 | 0 |
+| Settings screen | DASH-SET-001 to DASH-SET-034 | 32 | 0 | 2 |
 | Health | DASH-HEALTH-001 | 1 | 0 | 0 |
-| Tools settings and confirmation | DASH-TOOL-001 to DASH-TOOL-026 | 26 | 0 | 0 |
+| Tools settings and confirmation | DASH-TOOL-001 to DASH-TOOL-026 | 25 | 0 | 1 |
 | Avatar renderer: applied view and relay | DASH-AVR-001 to DASH-AVR-035 (022, 025 absent) | 33 | 0 | 0 |
-| Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 37 | 0 | 0 |
+| Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 36 | 0 | 1 |
 | Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-040 | 29 | 0 | 11 |
 | Avatar renderer: settings and visibility | DASH-AVS-001 to DASH-AVS-011 | 11 | 0 | 0 |
-| Config recovery mode | DASH-RCV-001 to DASH-RCV-023 | 23 | 0 | 0 |
+| Config recovery mode | DASH-RCV-001 to DASH-RCV-023 | 13 | 0 | 10 |
 
 
 

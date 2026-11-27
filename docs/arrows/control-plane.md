@@ -74,11 +74,11 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 | Category | Spec IDs | Specs | Implemented | Deferred | Gaps |
 |----------|----------|-------|-------------|----------|------|
 | Service manifest | CTRL-MANIFEST-001 to CTRL-MANIFEST-006 | 6 | 6 | 0 | 0 |
-| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -016 | 12 | 12 | 0 | 0 |
+| Runtime adapters | CTRL-RUNTIME-001 to -004, CTRL-RUNTIME-009 to -017 | 13 | 12 | 0 | 1 |
 | Controller guards and orchestration | CTRL-GUARD-001, -003 to -008 | 7 | 7 | 0 | 0 |
 | Stack controller | CTRL-STACK-001 to CTRL-STACK-019 | 19 | 19 | 0 | 0 |
 | Lifecycle lock | CTRL-LOCK-001 to CTRL-LOCK-004 | 4 | 4 | 0 | 0 |
-| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 3 | 0 | 0 |
+| Control configuration | CTRL-CONFIG-001 to CTRL-CONFIG-003 | 3 | 1 | 0 | 2 |
 | Health derivation | CTRL-HEALTH-001 to CTRL-HEALTH-011 | 11 | 11 | 0 | 0 |
 | Container healthcheck | CTRL-CHECK-001 to CTRL-CHECK-004 | 4 | 4 | 0 | 0 |
 | cohostctl command line | CTRL-CLI-001 to -005, -008 to -018 | 16 | 16 | 0 | 0 |

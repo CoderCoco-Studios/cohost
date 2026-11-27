@@ -12,10 +12,10 @@ Under the one-place configuration design ([decision](../decisions/config-in-one-
 
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
-| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-014 | 13 | 0 | 1 |
-| Settings editor | MOD-CFG-001 to MOD-CFG-022 | 22 | 0 | 0 |
+| Service descriptor and derived lists | MOD-MAN-001 to MOD-MAN-015 | 15 | 0 | 0 |
+| Settings editor | MOD-CFG-001 to MOD-CFG-022 | 21 | 0 | 1 |
 | Lifecycle and health | MOD-LIFE-001 to MOD-LIFE-003 | 3 | 0 | 0 |
-| Pause and resume | MOD-PAUSE-001 to MOD-PAUSE-003 | 3 | 0 | 0 |
+| Pause and resume | MOD-PAUSE-001 to MOD-PAUSE-003 | 2 | 0 | 1 |
 | Test side sheet and inputs | MOD-TEST-001 to MOD-TEST-008 | 5 | 0 | 3 |
 | Page (retired to DASH-SET-*) | MOD-UI-001 to MOD-UI-006 | 6 | 0 | 0 |
 | Example service | MOD-EX-001 to MOD-EX-005 | 5 | 0 | 0 |

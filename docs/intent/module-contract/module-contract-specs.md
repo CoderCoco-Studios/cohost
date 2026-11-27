@@ -82,7 +82,7 @@ The Settings screen is the dashboard segment's (DASH-SET-*); the lines below are
 - [x] **MOD-UI-003**: Retired. Check and Save are DASH-SET-006. Number not reused.
 - [x] **MOD-UI-004**: Retired. The conflict on a `409` is DASH-SET-011. Number not reused.
 - [x] **MOD-UI-005**: Retired. The restart banner after a save and restarting the listed units are DASH-SET-007 and DASH-SET-008. Number not reused.
-- [x] **MOD-UI-006**: Retired. The banner with control disabled is DASH-SET-008. Number not reused.
+- [x] **MOD-UI-006**: Retired. The Restart banner is DASH-SET-008. Number not reused.
 
 ## Example service (MOD-EX)
 

@@ -44,12 +44,12 @@ EARS-ECHO-001 to EARS-ECHO-009 are the echo gate for `ears.echo_suppress_sources
 | EARS-VAD-001 to 008 | endpointing | 8 | 8 `[x]` |
 | EARS-PART-001 to 022 | partial transcripts | 22 | 21 `[x]`, 1 `[D]` |
 | EARS-CAP-001 to 012 | capture sources (`http`, `dir`) | 12 | 12 `[x]` |
-| EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 13 `[x]`, 1 `[ ]`, 1 `[D]` |
-| EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 4 `[x]`, 3 `[ ]` |
+| EARS-SRC-001 to 016 | multiple sources, desktop source | 15 | 11 `[x]`, 3 `[ ]`, 1 `[D]` |
+| EARS-SRC-017 to 023 | desktop helper: clip cutting, delivery, token, CI | 7 | 3 `[x]`, 4 `[ ]` |
 | EARS-CON-001 to 005 | connector sources | 5 | 5 `[x]` |
 | EARS-ECHO-001 to 009 | echo gate | 9 | 9 `[x]` |
 | EARS-EARLY-001 to 026 | early transcription | 26 | 26 `[x]` |
-| EARS-EX-001 to 007 | example audio clients and scripts | 7 | 7 `[x]` |
+| EARS-EX-001 to 007 | example audio clients and scripts | 7 | 6 `[x]`, 1 `[ ]` |
 | EARS-INJ-005 to 012 | audio injection | 7 | 7 `[x]` |
 | EARS-STUB-001 to 002 | stub transcriber | 2 | 2 `[x]` |
 | EARS-HLTH-001 to 012 | health | 12 | 12 `[x]` |

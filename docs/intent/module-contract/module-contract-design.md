@@ -89,7 +89,7 @@ Initial `secrets` declarations, checked against the credentials each service's c
 |---|---|
 | chat | `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `chat.youtube.api_key` |
 | eyes | `vision.obs.password`, `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
-| ears | `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` (plus the derived listener verifier the control plane adds to its delivery, not a declared path, config CFG-SEC-020) |
+| ears | `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` (plus the derived listener key the control plane adds to its delivery, not a declared path, config CFG-SEC-020) |
 | salience, affect, memory, cortex | `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 | tools | `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.youtube.api_key` |
 | voice | `voice.openai.api_key` |

@@ -71,9 +71,9 @@ Orientation:
 | Category | Spec IDs | Implemented | Deferred | Gaps |
 |----------|----------|-------------|----------|------|
 | Config directory and seeding | CFG-DIR-001 to CFG-DIR-007 | 7 | 0 | 0 |
-| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 12 | 0 | 0 |
+| Environment handling | CFG-ENV-001 to CFG-ENV-012 | 10 | 0 | 2 |
 | Loading and validation pipeline | CFG-LOAD-001 to CFG-LOAD-008 | 8 | 0 | 0 |
-| Secrets file | CFG-SEC-001 to CFG-SEC-018 | 18 | 0 | 0 |
+| Secrets file | CFG-SEC-001 to CFG-SEC-020 | 18 | 0 | 2 |
 | Presentation table | CFG-PRES-001 to CFG-PRES-014 | 14 | 0 | 0 |
 | Renderer presentation | CFG-PRES-018 to CFG-PRES-020 | 3 | 0 | 0 |
 | Tools presentation | CFG-PRES-016 to CFG-PRES-017 | 2 | 0 | 0 |
@@ -81,7 +81,7 @@ Orientation:
 | Models list | CFG-MODEL-001 to CFG-MODEL-002 | 2 | 0 | 0 |
 | Egress destinations | CFG-EGR-001 to CFG-EGR-013 | 13 | 0 | 0 |
 | Tools egress | CFG-EGR-014 to CFG-EGR-016 | 3 | 0 | 0 |
-| Schema | CFG-SCH-001 to CFG-SCH-071 | 71 | 0 | 0 |
+| Schema | CFG-SCH-001 to CFG-SCH-071 | 69 | 0 | 2 |
 | Renderer section | CFG-SCH-097 to CFG-SCH-101 | 5 | 0 | 0 |
 | Streamed-line clause settings | CFG-SCH-072 to CFG-SCH-074 | 3 | 0 | 0 |
 | Tools section and reminder expiry | CFG-SCH-075 to CFG-SCH-096 | 22 | 0 | 0 |
@@ -89,7 +89,7 @@ Orientation:
 | Logger | CFG-LOG-001 to CFG-LOG-025 | 25 | 0 | 0 |
 | Logging settings | CFG-SCH-113, CFG-SCH-114, CFG-USR-022, CFG-PRES-021 | 4 | 0 | 0 |
 | Service URLs | CFG-URL-001 to CFG-URL-004 | 4 | 0 | 0 |
-| User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 20 | 0 | 0 |
+| User-owned files | CFG-USR-001 to CFG-USR-021 (CFG-USR-005 does not exist) | 19 | 0 | 1 |
 | Early-reply settings | CFG-SCH-102 to CFG-SCH-112 | 11 | 0 | 0 |
 | Structured errors and recovery editing | CFG-RCV-001 to CFG-RCV-006 | 6 | 0 | 0 |
 

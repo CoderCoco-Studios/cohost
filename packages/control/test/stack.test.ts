@@ -30,7 +30,7 @@ function harness(o: { psAnswers?: Array<string | Error>; upFail?: string; stopFa
       if (v instanceof Error) throw v;
       return { stdout: v, stderr: "" };
     }
-    if (args[1] === "up" && o.upFail) throw Object.assign(new Error("exit 1"), { stderr: ` ${o.upFail} \n` });
+    if (args.includes("up") && o.upFail) throw Object.assign(new Error("exit 1"), { stderr: ` ${o.upFail} \n` });
     if (args[1] === "stop" && o.stopFail) throw Object.assign(new Error("exit 1"), { stderr: o.stopFail });
     return { stdout: "", stderr: "" };
   };
@@ -83,10 +83,10 @@ test("status: a failing command, a timeout or unparsable output is docker unavai
 });
 
 // @spec CTRL-STACK-002
-test("launch: reports compose-build, runs up -d --build --remove-orphans with a 30 minute timeout, then waits", async () => {
+test("launch: reports compose-build, runs --progress plain up -d --build --remove-orphans with a 30 minute timeout, then waits", async () => {
   const h = harness({ psAnswers: [ps(ready)] });
   assert.equal((await h.stack.launch()).ok, true);
-  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: h.cwd, timeoutMs: 30 * 60_000 });
+  assert.deepEqual(h.calls[0], { file: "docker", args: ["compose", "--progress", "plain", "up", "-d", "--build", "--remove-orphans"], env: { BASE: "1", COHOST_ISOLATION: "" }, cwd: h.cwd, timeoutMs: 30 * 60_000 });
   assert.deepEqual(h.phases, [["launch", "compose-build"], ["launch", "waiting"]]);
 });
 
@@ -295,7 +295,7 @@ test("every docker compose call sets COHOST_ISOLATION to the empty string, whate
 
 // @spec CTRL-STACK-018
 test("launch: enabled engine profiles add no argument: the command is the same with COMPOSE_PROFILES naming pocket, nemotron and kyutai, or none of them", async () => {
-  const argv = ["compose", "up", "-d", "--build", "--remove-orphans"];
+  const argv = ["compose", "--progress", "plain", "up", "-d", "--build", "--remove-orphans"];
   const dir = mkdtempSync(join(tmpdir(), "cohost-stack-")); // data/logs goes under the workspace root, so a writable one
   for (const profiles of [undefined, "pocket", "nemotron,kyutai", "discord,ears,pocket,nemotron,kyutai"]) {
     const calls: Call[] = [];
@@ -303,7 +303,7 @@ test("launch: enabled engine profiles add no argument: the command is the same w
     const env: NodeJS.ProcessEnv = { BASE: "1", ...(profiles ? { COMPOSE_PROFILES: profiles } : {}) };
     const stack = new StackController({ provision: NO_PROVISION, exec, cwd: dir, env, onPath: (n) => n === "docker", now: () => 0, sleep: async () => {} });
     assert.equal((await stack.launch()).ok, true);
-    const up = calls.find((c) => c.args[1] === "up")!;
+    const up = calls.find((c) => c.args.includes("up"))!;
     assert.deepEqual([up.file, ...up.args], ["docker", ...argv], `COMPOSE_PROFILES=${profiles}`);
     assert.equal(up.env.COMPOSE_PROFILES, profiles, "the variable reaches Compose unchanged, which selects the profiles");
     assert.ok(!calls.some((c) => c.args.includes("--profile")), "no --profile argument is added");

@@ -4,6 +4,8 @@ Service manifest, heartbeat contract and health derivation, start/stop/restart c
 
 ## Status
 
+**#372 settings-store design (docs only, not built):** 120 specs: 102 `[x]`, 16 `[ ]`, 2 `[D]`; projection before and credential delivery after every start, the listener key from the store, `configRefusal` over `checkStore` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): isolation presets are delivered as `COHOST_ISOLATION` and the stack status reports each running container's overrides (CTRL-STACK-014, -016). Total 118 specs: 113 `[x]`, 3 `[ ]`, 2 `[D]`.
 
 **MAPPED**: 118 specs: 113 implemented, 2 deferred (CTRL-LAT-009, CTRL-LAT-010), 3 gaps (CTRL-RUNTIME-017, the ears listener verifier derived at each projection, and CTRL-CONFIG-001 and -002, rewritten for the one lock of #370: `CONTROL_TOKEN` always required, `CONTROL_ENABLED` retired, `CONTROL_ADVANCED` a safety switch; CTRL-RUNTIME-016, `data/logs` created before Compose, is built in `packages/control/src/logs-dir.ts`, #349); CTRL-LAT-030 and -031 run through the `perf:baseline` task of deployment #344. The last audit pass (at cb06bf3) covered the other 111 (all but CTRL-RUNTIME-014 and -015, which are verified by their tests), and the status returns to AUDITED when an audit pass re-verifies the segment. CTRL-RUNTIME-014 and -015 (the secrets projection before compose actions, and its command-line entry; #318) are built in `packages/control/src/secrets.ts` and `project-secrets.ts`. The early-reply latency specs (CTRL-LAT-003 to 005, 018 to 033) are implemented. The `CHAT_SOURCES` preset is built (CTRL-RUNTIME-009).
@@ -26,7 +28,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (118 specs, prefix `CTRL`: 113 `[x]`, 3 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 102 `[x]`, 16 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
 - packages/control/test/cli.test.ts

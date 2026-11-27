@@ -4,6 +4,8 @@ Memory region: embeds what happened, answers recall and viewer-notes requests, k
 
 ## Status
 
+**#372 settings-store design (docs only, not built):** 178 specs: 177 `[x]`, 1 `[ ]`, 0 `[D]`; MEM-REFLECT-007 writes the personality outbox ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+
 **MAPPED**: 178 specs: 178 implemented, 0 deferred, 0 gaps (MEM-START-007, the one-shots logging a config failure and exiting 1, is built, #349; MEM-REEMBED-001 and MEM-CONSOL-012 run through the `mise run` tasks of deployment #344). Viewer identity by platform and user id (viewerKey), chat ids on rows, and forgetting removed chat are implemented in both stores and proven by the contract, including the Postgres run in CI. Streamed lines are held by id and written as one `self` row on their closing clause, an idle or muted status, the 300 s idle bound or stop (MEM-WRITE-010 to MEM-WRITE-019). Name-only surfacing reaches name-keyed rows only (MEM-SURF-006), and a link's `discord_display` is never a name key (MEM-VOICE-007); a voice turn reaches a linked speaker's notes by `speakerId` through the link (MEM-SURF-008); a key-looking owner placeholder name is refused (MEM-REG-006); the Discord id guard is MEM-VOICE-011. Retention of YouTube viewers is an owner decision recorded in the LLD.
 
 ## References

@@ -15,7 +15,8 @@ into embedded rows, answers "what do we remember about X" requests over the bus,
 and tells the cortex who a viewer is: whether they are new or a regular, and the
 short, fading notes the co-host keeps about each viewer (Viewer notes). A
 separate, offline CLI (`reflect.ts`) consolidates stored memories into the
-`## Learned` section of `personality.md`.
+`## Learned` section of the personality, which it reads from its projection and
+writes to the personality outbox (settings-store STORE-OUT-001).
 
 Guiding shape, as observed:
 
@@ -621,7 +622,7 @@ overrides `MEMORY_STORE`, `MEMORY_EMBEDDER` replace them by key path, config CFG
 `cohost.name`, `cohost.streamer` (reflect), `llm.*` (Ollama client), `DATABASE_URL`,
 `HEARTBEAT_INTERVAL_MS` (heartbeat package).
 
-The one-shots `consolidate`, `reembed` and `reflect` do not run on `runService`; each creates its logger first and loads the configuration inside a `try`, so a broken `config.yaml` ends the one-shot with the loader's message in the readable terminal form and in its log file and status 1 (MEM-START-007), as `runService` does for the service (shared-runtime SHARED-BOOT-002).
+The one-shots `consolidate`, `reembed` and `reflect` do not run on `runService`; each creates its logger first and loads the configuration inside a `try`, so a missing projection or an invalid section ends the one-shot with the loader's message in the readable terminal form and in its log file and status 1 (MEM-START-007), as `runService` does for the service (shared-runtime SHARED-BOOT-002).
 
 Startup sequence (`startMemory` in `services/memory/src/startup.ts`, called from
 `memoryMain` in `main.ts` (`runMemory`, on the shared `runService` bootstrap); its dependencies are injected so `startup.test.ts` runs it without
@@ -688,14 +689,19 @@ passes and the `consolidate` one-shot share), so it never overlaps them.
    last section; a `## Learned` heading is added at the end when the text has none
    (`MEM-REFLECT-007`, `appendLearned`, `learned.ts`; only a line that is
    exactly `## Learned` is the heading). The shipped template ends with `## Learned`
-   (`config/personality.example.md`). The result is saved with
-   `savePersonality`, `meta.last_reflection` advances (below), and the block is
-   printed (`reflect-run.ts`).
+   (`config/personality.example.md`). The whole new text is written to the
+   personality outbox, `<dataDir()>/memory/personality-outbox.md`, with the
+   projection revision it read (settings-store STORE-OUT-001), `meta.last_reflection`
+   advances (below), and the block is printed (`reflect-run.ts`). `reflect` runs
+   under the unit runner with the `memory` unit, and the runner, after `reflect`
+   exits 0, saves the outbox as the store's `personality` document when the
+   document has not changed since that revision (STORE-OUT-002); a service never
+   writes the store.
 7. Failures (including missing tables at `connect`) log `reflect failed` and
    set `process.exitCode = 1`; the store is closed in `finally` (`runReflectCommand` in `reflect-run.ts`; `MEM-REFLECT-009`).
 
 The pass itself is `runReflect` in `reflect-run.ts`, with the config, chat provider,
-store, personality load/save and clock injected; `reflect.ts` is the wiring that
+store, personality load, outbox write and clock injected; `reflect.ts` is the wiring that
 runs it at load. When the chat provider is the mock backend (`name === "mock"`),
 `runReflect` logs one warning naming it before reading any memory
 (`MEM-REFLECT-010`, `LLM-MOCK-005`), so canned bullets are never mistaken for a real
@@ -763,7 +769,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 | Isolated backend | Separate in-process store that embeds with `@cohost/llm`'s `HashEmbedder` | Its own unsigned hash embedder | One embedder means fake-store tests exercise the vectors hash mode really stores; a second hasher with different tokens, signs and empty-text output made the two disagree. The fake still ignores `brain.memory.embedder` and needs no network. Owner decision (shared-runtime, Hash embedding). |
 | Reflection with the in-memory store | Logged no-op | reflect over the fake | Commit `719ce5a`: "`reflect` still uses the Postgres store (it runs in a separate process, so a fake would be empty)"; `reflect.ts` |
 | Mode reporting | `mock` if either store or embedder is non-default | per-dependency mode | `live` means memory as a real stream needs it: persistent rows and semantic recall. Either substitute (the in-process store forgets on restart; the hash embedder matches words, not meaning) means recall is not real, so the mode says `mock`; which dependency is substituted is already visible per dependency as `n/a` in `deps`; `health.ts` |
-| Reflection placement | Offline CLI, writes personality file | in-service timer; DB-only learned facts | Comments `index.ts` ("Consolidation (\"sleep\") is reflect.ts, run between streams") and `reflect.ts` ("This is how the personality drifts over time instead of resetting every stream. Edit the file by hand whenever you like.") |
+| Reflection placement | Offline CLI, writes the new personality to the outbox the unit runner applies to the settings store (settings-store STORE-OUT-001) | in-service timer; DB-only learned facts; `reflect` opening the store itself | Comments `index.ts` ("Consolidation (\"sleep\") is reflect.ts, run between streams") and `reflect.ts` ("This is how the personality drifts over time instead of resetting every stream"). The owner edits the personality on the dashboard or with `mise run config:personality`; services never open the store, so the outbox is the one-shot's write path. |
 | Reflection input cap | Oldest 600 rows since last reflection; the cursor `(ts, id)` advances to the newest row read; fewer than 5 rows leaves it unchanged | newest 600; jump the cursor to now; timestamp-only cursor; paginate within one run | Cap: 600 rows bounds the size of one reflection prompt; rows beyond it are read in the next pass. The cap is a row count, not a token budget, so whether 600 rows fit depends on line length and the model's context (`llm.num_ctx`) (`reflect-run.ts`). Cursor: owner decision 2026-11-01, so no memory is skipped permanently; `MEM-REFLECT-008` |
 | Cursor timestamp representation | The exact microsecond ISO text Postgres returns (`to_char(ts AT TIME ZONE 'UTC', ...US"Z"')`), compared as `$1::timestamptz` | the JS `Date` of the row's `ts` | A `Date` keeps milliseconds, so the cursor would round down and the newest row read would be read again every pass, inflating the "fewer than 5" count (`MEM-REFLECT-003`) and re-feeding a row to the LLM; `MEM-REFLECT-008` |
 | Learned block placement | End of the `## Learned` section | end of file | owner decision 2026-11-01 (low priority: the shipped template ends with `## Learned`); `MEM-REFLECT-007` |
@@ -787,7 +793,7 @@ The running cortex does not learn of the change until a `reload_personality` con
 - Config keys read besides `brain.memory.*`: `viewer_text.max_chars`, `viewer_text.max_name_chars`, `brain.input_limits.speech_max_chars`.
 - Depends on: shared-runtime (`@cohost/shared/untrusted`), event-bus (events `chat.message`, `speech.heard`, `brain.say`, `brain.clause`,
   `memory.*`, `Bus.subscribe/publish`, start mode `resume`, the `onReady` group-ready option), config
-  (`loadConfig`, `urls.database`, `loadPersonality/savePersonality`,
+  (`loadConfig`, `urls.database`, `loadPersonality`,
   `brain.memory.*`), model-backends (`Ollama`, `HashEmbedder`, `createChatProvider`),
   region-hooks (`Module` for `memory.capture` and `memory.consolidator`),
   control-plane (heartbeat contract, `startHeartbeat`, `tracked`, manifest start

@@ -224,10 +224,11 @@ export async function bootUnit<B = Bus>(unit: string, opts: BootOptions<B>): Pro
   mkdirSync(dataDir, { mode: 0o700 });
   writeUnitProjection(unit, configDir, opts);
 
-  const saved: Record<string, string | undefined> = {};
+  // The whole environment is restored at stop; the boot sets only the variables named below.
+  const saved: NodeJS.ProcessEnv = { ...process.env };
   const setEnv = (name: string, value: string | undefined): void => {
-    if (!(name in saved)) saved[name] = process.env[name];
-    if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    if (value === undefined) Reflect.deleteProperty(process.env, name);
+    else Object.assign(process.env, { [name]: value });
   };
   setEnv("CONFIG_DIR", configDir);
   setEnv("COHOST_DATA_DIR", dataDir);
@@ -268,9 +269,8 @@ export async function bootUnit<B = Bus>(unit: string, opts: BootOptions<B>): Pro
     stop: async () => {
       for (const fn of shutdown.splice(0)) await fn();
       await transport.close();
-      for (const [name, value] of Object.entries(saved)) {
-        if (value === undefined) delete process.env[name]; else process.env[name] = value;
-      }
+      for (const name of Object.keys(process.env)) if (!(name in saved)) Reflect.deleteProperty(process.env, name);
+      Object.assign(process.env, saved);
       resetConfigCache();
       rmSync(root, { recursive: true, force: true });
       const undeclared = booted.undeclaredReads();

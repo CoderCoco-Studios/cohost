@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, openSync, renameSync, writeFileSync, closeSync } from "node:fs";
+import { existsSync, mkdtempSync, openSync, renameSync, writeFileSync, closeSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkCredentialsMessage, receiveCredentials, CREDENTIALS_FD_ENV, MAX_CREDENTIALS_BYTES } from "../src/index.js";
@@ -89,6 +89,39 @@ test("the wait finds a file written into a directory that did not exist when it 
   mkdirSync(dir);
   deliver(dir, msg({}));
   assert.deepEqual((await pending).credentials, {});
+});
+
+// @spec SHARED-BOOT-010
+test("a delivery renamed in after the file is claimed survives, and the next receive gets it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-run-"));
+  deliver(dir, msg({ credentials: { "chat.youtube.api_key": "first" } }));
+  const first = await receiveCredentials("chat", {
+    dir, env: {}, recheckMs: 20,
+    onClaim: () => { deliver(dir, msg({ credentials: { "chat.youtube.api_key": "second" } })); },
+  });
+  assert.deepEqual(first.credentials, { "chat.youtube.api_key": "first" });
+  assert.equal(existsSync(join(dir, "credentials.json")), true, "the later delivery is not deleted");
+  assert.equal(existsSync(join(dir, ".credentials.claimed")), false, "the claimed file is deleted");
+  assert.deepEqual((await receiveCredentials("chat", { dir, env: {}, recheckMs: 20 })).credentials, { "chat.youtube.api_key": "second" });
+});
+
+// @spec SHARED-BOOT-010
+test("a delivered symbolic link, or a file over 64 KiB, is refused without being read and waited past", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-run-"));
+  const target = join(mkdtempSync(join(tmpdir(), "cohost-elsewhere-")), "secret.json");
+  writeFileSync(target, msg({ credentials: { "chat.youtube.api_key": "via-link" } }));
+  symlinkSync(target, join(dir, "credentials.json"));
+  const { lines, log } = capture();
+  const pending = receiveCredentials("chat", { dir, env: {}, recheckMs: 20, log });
+  await new Promise((r) => setTimeout(r, 60));
+  assert.match(lines[0]?.msg ?? "", /symbolic link/);
+  writeFileSync(join(dir, ".big"), " ".repeat(MAX_CREDENTIALS_BYTES + 1));
+  renameSync(join(dir, ".big"), join(dir, "credentials.json"));
+  await new Promise((r) => setTimeout(r, 60));
+  assert.match(lines[1]?.msg ?? "", /larger than/);
+  deliver(dir, msg({ credentials: { "chat.youtube.api_key": "real" } }));
+  assert.deepEqual((await pending).credentials, { "chat.youtube.api_key": "real" });
+  assert.equal(existsSync(target), true, "the link's target is untouched");
 });
 
 // @spec SHARED-BOOT-010

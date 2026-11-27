@@ -9,6 +9,8 @@ import { basename } from "node:path";
 import { writeFileAtomic, type Logger } from "@cohost/config";
 
 const VERSION = "cohost-state-v1";
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
 
 /** The associated data binding a state file's content to its unit and file name. */
 export const stateAad = (unit: string, name: string): Buffer => Buffer.from(`cohost/state/v1|${unit}|${name}`, "utf8");
@@ -24,8 +26,8 @@ const checkKey = (key: Buffer): void => {
 // @spec STORE-STATE-002
 export function writeStateFile(file: string, unit: string, key: Buffer, text: string): void {
   checkKey(key);
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce, { authTagLength: TAG_BYTES });
   cipher.setAAD(stateAad(unit, basename(file)));
   const ciphertext = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
@@ -50,7 +52,9 @@ export function readStateFile(file: string, unit: string, key: Buffer, log?: Pic
   try {
     if (parts.length !== 4 || parts[0] !== VERSION) throw new Error("not a state file");
     const [nonce, tag, ciphertext] = parts.slice(1).map((p) => Buffer.from(p, "base64url")) as [Buffer, Buffer, Buffer];
-    const decipher = createDecipheriv("aes-256-gcm", key, nonce);
+    // A shortened tag would weaken the check, so the nonce and tag lengths are exact.
+    if (nonce.length !== NONCE_BYTES || tag.length !== TAG_BYTES) throw new Error("bad nonce or tag length");
+    const decipher = createDecipheriv("aes-256-gcm", key, nonce, { authTagLength: TAG_BYTES });
     decipher.setAAD(stateAad(unit, basename(file)));
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");

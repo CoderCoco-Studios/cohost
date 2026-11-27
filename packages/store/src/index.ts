@@ -18,4 +18,4 @@ export {
   exportStore, readExport, readParts, openSecrets, planChange, importPlan, EXPORT_SCRYPT, MIN_PASSPHRASE_LENGTH,
   type ExportSecrets, type ImportPlan, type ImportParts, type ImportSummary,
 } from "./codec.js";
-export { applyPersonalityOutbox, type OutboxResult } from "./outbox.js";
+export { applyPersonalityOutbox, type OutboxResult, type OutboxStore } from "./outbox.js";

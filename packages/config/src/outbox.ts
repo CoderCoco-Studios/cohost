@@ -31,10 +31,9 @@ export function writePersonalityOutbox(readText: string, text: string, data: str
   return file;
 }
 
-/** The outbox, or undefined when there is none; an outbox that is not `{base, text}` throws naming the file. */
+/** The outbox at `file` (default the outbox path), or undefined when there is none; one that is not `{base, text}` throws naming the file. */
 // @spec STORE-OUT-002
-export function readPersonalityOutbox(data: string = dataDir()): PersonalityOutbox | undefined {
-  const file = outboxPath(data);
+export function readPersonalityOutbox(data: string = dataDir(), file: string = outboxPath(data)): PersonalityOutbox | undefined {
   let text: string;
   try {
     text = readFileSync(file, "utf8");

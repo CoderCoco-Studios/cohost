@@ -4,7 +4,7 @@
  * as `/run/cohost/credentials.json` in a RAM-only mount, written through a rename; a host-run program's arrives on the pipe
  * the unit runner passes as the descriptor `COHOST_CREDENTIALS_FD` names.
  */
-import { createReadStream, readFileSync, unlinkSync, watch, type FSWatcher } from "node:fs";
+import { closeSync, constants, createReadStream, fstatSync, openSync, readSync, renameSync, rmSync, watch, type FSWatcher } from "node:fs";
 import { join } from "node:path";
 import { EARS_VERIFIER_PATH, secretPathMatches, unitSettings, type Logger } from "@cohost/config";
 
@@ -12,6 +12,8 @@ import { EARS_VERIFIER_PATH, secretPathMatches, unitSettings, type Logger } from
 export const CREDENTIALS_DIR = "/run/cohost";
 /** The message's file name in `CREDENTIALS_DIR`. */
 export const CREDENTIALS_FILE = "credentials.json";
+/** The name a delivered message is renamed to while it is read, so a later delivery is never the file deleted. */
+const CLAIMED_FILE = ".credentials.claimed";
 /** The environment variable naming the descriptor a host-run program reads its message from. */
 export const CREDENTIALS_FD_ENV = "COHOST_CREDENTIALS_FD";
 /** The largest message accepted, bytes (STORE-DLV-002). */
@@ -39,6 +41,8 @@ export interface ReceiveOptions {
   recheckMs?: number;
   /** Ends the wait: the promise rejects with the signal's reason. */
   signal?: AbortSignal;
+  /** Test seam: called after a delivered file is claimed and before it is read. */
+  onClaim?: () => void;
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
@@ -78,6 +82,45 @@ export function checkCredentialsMessage(unit: string, text: string): { ok: true;
   return { ok: true, value: { revision: raw.revision as number, credentials, ...(stateKey ? { stateKey } : {}) } };
 }
 
+/**
+ * Claims a delivered file: renames it to `claimed` in the same directory, so a later delivery renamed into place is a new file
+ * this call never deletes, then reads the claimed file without following a symbolic link, only when it is a regular file of at
+ * most `MAX_CREDENTIALS_BYTES`, and deletes it. Undefined when nothing is delivered; `refused` names why a claimed path was
+ * not read.
+ */
+function claimMessage(file: string, claimed: string, onClaim?: () => void): string | { refused: string } | undefined {
+  try {
+    renameSync(file, claimed);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw e;
+  }
+  onClaim?.();
+  let fd: number | undefined;
+  try {
+    try {
+      fd = openSync(claimed, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ELOOP") return { refused: "the delivered path is a symbolic link" };
+      throw e;
+    }
+    const st = fstatSync(fd);
+    if (!st.isFile()) return { refused: "the delivered path is not a regular file" };
+    if (st.size > MAX_CREDENTIALS_BYTES) return { refused: `the message is larger than ${MAX_CREDENTIALS_BYTES} bytes` };
+    const buf = Buffer.alloc(st.size);
+    let off = 0;
+    while (off < st.size) {
+      const n = readSync(fd, buf, off, st.size - off, off);
+      if (n === 0) break;
+      off += n;
+    }
+    return buf.subarray(0, off).toString("utf8");
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(claimed, { force: true });
+  }
+}
+
 /** The descriptor's content to its end, refused past `MAX_CREDENTIALS_BYTES`. */
 async function readDescriptor(fd: number): Promise<string> {
   const chunks: Buffer[] = [];
@@ -93,7 +136,8 @@ async function readDescriptor(fd: number): Promise<string> {
 /**
  * Receives `unit`'s credentials message. With `COHOST_CREDENTIALS_FD` set it reads that descriptor to its end; a refused
  * message there rejects, since nothing follows it on a closed pipe. Otherwise it waits for `/run/cohost/credentials.json`
- * (watching the directory and looking again at least once a second, with no timeout), reads it and deletes it; a refused
+ * (watching the directory and looking again at least once a second, with no timeout), claims it by renaming it to
+ * `.credentials.claimed`, reads that (no symbolic link, a regular file, at most 64 KiB) and deletes it; a refused
  * message is logged with the reason and waited past, so a corrected delivery can follow. Values are never logged.
  */
 // @spec SHARED-BOOT-010, STORE-DLV-004
@@ -123,15 +167,9 @@ export async function receiveCredentials(unit: string, opts: ReceiveOptions = {}
   try {
     for (;;) {
       signal?.throwIfAborted();
-      let text: string | undefined;
-      try {
-        text = readFileSync(file, "utf8");
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-      }
+      const text = claimMessage(file, join(dir, CLAIMED_FILE), opts.onClaim);
       if (text !== undefined) {
-        try { unlinkSync(file); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
-        const checked = checkCredentialsMessage(unit, text);
+        const checked = typeof text === "string" ? checkCredentialsMessage(unit, text) : { ok: false as const, reason: text.refused };
         if (checked.ok) return checked.value;
         opts.log?.warn({ file, reason: checked.reason }, `refused the credentials message: ${checked.reason}; waiting for another delivery`);
         continue;

@@ -56,3 +56,24 @@ test("a file that does not decrypt (another key, another unit, a renamed file, d
   assert.deepEqual(lines, []);
   assert.throws(() => writeStateFile(file, "chat", Buffer.alloc(16), "x"), /32 bytes/);
 });
+
+// @spec STORE-STATE-002
+test("a truncated tag, a short nonce or a bit-flipped ciphertext fails: the file counts as absent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-state-"));
+  const file = join(dir, "twitch-token.enc");
+  const key = randomBytes(32);
+  writeStateFile(file, "chat", key, "refresh-abc");
+  const [version, nonce, tag, ct] = readFileSync(file, "utf8").trim().split(".") as [string, string, string, string];
+  const b = (s: string): Buffer => Buffer.from(s, "base64url");
+  const variants: Record<string, string[]> = {
+    "truncated tag": [version, nonce, b(tag).subarray(0, 12).toString("base64url"), ct],
+    "short nonce": [version, b(nonce).subarray(0, 8).toString("base64url"), tag, ct],
+    "flipped ciphertext": [version, nonce, tag, (() => { const c = b(ct); c[0]! ^= 1; return c.toString("base64url"); })()],
+  };
+  for (const [name, parts] of Object.entries(variants)) {
+    writeFileSync(file, `${parts.join(".")}\n`);
+    const { lines, log } = capture();
+    assert.equal(readStateFile(file, "chat", key, log), undefined, name);
+    assert.equal(lines.length, 1, name);
+  }
+});

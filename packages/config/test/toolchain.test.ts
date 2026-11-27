@@ -811,7 +811,7 @@ const RAW_TASKS = [...CONFIG_TASKS, "dashboard", "dashboard:unlock", "deliver", 
 
 // @spec DEPLOY-TOOL-024, STORE-KEY-002
 test("the tasks that open the settings store are raw, so mise gives them the terminal", () => {
-  const notRaw = RAW_TASKS.filter((n) => task(n).raw !== true);
+  const notRaw = RAW_TASKS.filter((n) => !task(n).raw);
   assert.deepEqual(notRaw, [], "mise reads a task's output by line through a pipe unless the task is raw");
 });
 

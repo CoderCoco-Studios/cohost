@@ -26,12 +26,12 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (465 specs, prefix `DASH`: 454 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (478 specs, prefix `DASH`: 467 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
-- services/dashboard/test/applied-view.test.ts, models.test.ts, models-upload.test.ts, models-applied.test.ts, models-transport.test.ts (the avatar model store, DASH-MDL and the applied view), body.test.ts, control.test.ts, dev-proxy.test.ts, docs-script.test.ts, docs.test.ts, egress.test.ts, feed.test.ts, host-docs.test.ts, host.test.ts, inject-connector.test.ts, inject-event.test.ts, inject.test.ts, options.test.ts, root-scripts.test.ts, routes.test.ts, routing.test.ts, secrets.test.ts, service.test.ts, stack-lock.test.ts, stack-rebuild.test.ts, stack.test.ts, static.test.ts, uploads.test.ts, viewers.test.ts, ws-origin.test.ts
-- services/dashboard/test/ui/*.test.tsx (the React UI on `happy-dom` and Testing Library, and the renderer page's pure modules: `avatar-pose`, `avatar-motion`, `avatar-loader`, `avatar-session`, `notices`, `build`; `access`, `access-dialog`, `api`, `audio`, `components-display`, `components-form`, `dialog`, `egress-note`, `feed`, `live-avatar`, `live-feed`, `live-inject`, `live-say`, `personality`, `pickers`, `routes`, `services`, `services-stack`, `services-test-sheet`, `settings-model`, `settings-page`, `settings-real`, `settings-secrets`, `shell`, `sink`, `stylesheet`, `theme`, `tokens`, `viewers`)
+- services/dashboard/test/applied-view.test.ts, models.test.ts, models-upload.test.ts, models-applied.test.ts, models-transport.test.ts (the avatar model store, DASH-MDL and the applied view), body.test.ts, control.test.ts, dev-proxy.test.ts, docs-script.test.ts, docs.test.ts, egress.test.ts, feed.test.ts, host-docs.test.ts, host.test.ts, inject-connector.test.ts, inject-event.test.ts, inject.test.ts, options.test.ts, root-scripts.test.ts, routes.test.ts, routing.test.ts, secrets.test.ts, service.test.ts, stack-lock.test.ts, stack-progress.test.ts, stack-rebuild.test.ts, stack.test.ts, static.test.ts, uploads.test.ts, viewers.test.ts, ws-origin.test.ts
+- services/dashboard/test/ui/*.test.tsx (the React UI on `happy-dom` and Testing Library, and the renderer page's pure modules: `avatar-pose`, `avatar-motion`, `avatar-loader`, `avatar-session`, `notices`, `build`; `access`, `access-dialog`, `api`, `audio`, `components-display`, `components-form`, `dialog`, `egress-note`, `feed`, `live-avatar`, `live-feed`, `live-inject`, `live-say`, `personality`, `pickers`, `routes`, `services`, `services-launch`, `services-stack`, `services-test-sheet`, `settings-model`, `settings-page`, `settings-real`, `settings-secrets`, `shell`, `sink`, `stylesheet`, `theme`, `tokens`, `viewers`)
 - packages/control/test/derived-lists.test.ts
 - Out of segment, cited only: packages/config/test/config.test.ts (DASH-SINK-004 via `urls.voice()`)
 
@@ -51,7 +51,7 @@ Orientation:
 2. `host.ts` — the full-surface and LAN listeners, the LAN allow-list, the Host and Origin checks, port resolution.
 3. `routes.ts` — `createDashboardHandler`: all HTTP routes, the bearer gate, the audio proxy, lifecycle body parsing and refusal mapping; `body.ts` is the shared body reader.
 4. `feed.ts` — `createFeed`: shared `bus.tail`, 60-event backfill per client, health stream seeding and tailing, `services` and `stack` pushes, the 1 s staleness tick, bus reachability.
-5. `stack.ts` — `StackService`: the stack probe, the one action slot, the last result.
+5. `stack.ts` — `StackService`: the stack probe, the one action slot, the last result, and the launch progress record (rows, the 200-line output ring, the failure) pushed as `stack-progress` (DASH-STACK-011 to 017, DASH-FEED-013).
 6. `control.ts` — `setupControl`: reads `CONTROL_*` and `DASHBOARD_HOST`, builds `ServiceController` (from `@cohost/control`) with a `service.lifecycle` audit publisher.
 7. `inject.ts` + `uploads.ts` — `/inject/*`; the upload size caps and TTL, with the bytes written to Redis through `Bus.putUpload`.
 8. `routing.ts`, `settings.ts`, `viewers.ts` — `POST /mouth/routing`, the settings editor routes, the `/viewers` routes.

@@ -28,9 +28,10 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - docs/intent/control-plane/control-plane-design.md
 
 ### EARS
-- docs/intent/control-plane/control-plane-specs.md (120 specs, prefix `CTRL`: 118 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
+- docs/intent/control-plane/control-plane-specs.md (125 specs, prefix `CTRL`: 123 `[x]`, 0 `[ ]`, 2 `[D]`; CTRL-LAT-030 and -031 name the `perf:baseline` task of deployment #344)
 
 ### Tests
+- packages/control/test/build-progress.test.ts (build output streaming and the plain-progress parser, CTRL-STACK-020 to 024)
 - packages/control/test/cli.test.ts
 - packages/control/test/cli-main.test.ts
 - packages/control/test/compose.test.ts
@@ -50,7 +51,7 @@ Built since the one-place configuration design ([decision](../decisions/config-i
 - packages/control/test/stack-rebuild.test.ts
 
 ### Code
-- packages/control/src/cli.ts, config-gate.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts
+- packages/control/src/cli.ts, config-gate.ts, config.ts, controller.ts, docker.ts, health.ts, healthcheck.ts, latency.ts, lock.ts, manifest.ts, runtime.ts, stack.ts, build-progress.ts
 - scripts/dev/perf-baseline.sh, scripts/dev/perf-connector.ts (connector mode, CTRL-LAT-030, -031)
 - packages/bus/src/index.ts (`Bus.serverTime`, CTRL-CHECK-004), crates/cohost-bus/src/transport.rs (CTRL-CHECK-004)
 - Consumers (owned elsewhere): services/dashboard/src/control.ts, routes.ts, stack.ts; docker-compose.yml (`x-ts-service`, realizes CTRL-CHECK-003, not annotated); Dockerfile

@@ -89,7 +89,7 @@ Initial `secrets` declarations, checked against the credentials each service's c
 |---|---|
 | chat | `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.twitch.access_token`, `chat.twitch.refresh_token`, `chat.youtube.api_key` |
 | eyes | `vision.obs.password`, `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
-| ears | `ears.http.token`, `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` |
+| ears | `ears.openai.api_key`, `ears.nemotron.api_key`, `ears.kyutai.api_key` (plus the derived listener key the control plane adds to its delivery, not a declared path, config CFG-SEC-020) |
 | salience, affect, memory, cortex | `llm.openai.api_key`, `llm.claude.api_key`, `llm.bedrock.access_key_id`, `llm.bedrock.secret_access_key` |
 | tools | `tools.servers.*.token`, `chat.twitch.client_id`, `chat.twitch.client_secret`, `chat.youtube.api_key` |
 | voice | `voice.openai.api_key` |
@@ -110,7 +110,7 @@ The optional engine servers (`tts-pocket`, `stt-nemotron`, `stt-kyutai`, each be
 |---|---|---|
 | `GET /config/schema` | no | `{ groups, sections: [{ path, title, group, about, page?, services, schema, secrets, keys }] }`: the ordered group names, every declared section with its plain name, group, one-sentence description and optional host screen, the services that read it, its JSON Schema generated from the zod schema, the names of its secret keys, and the presentation of each key (below) |
 | `GET /config/:section` | no | `{ section, etag, keys, unknown }` (below) |
-| `PUT /config/:section` | yes; also, in both control modes, when it changes a `sensitive` key (dashboard DASH-CTRL-009) | Validate and write; `?dryRun=1` validates and writes nothing and is never gated by the sensitive-key rule |
+| `PUT /config/:section` | yes, like every mutation (dashboard DASH-CTRL-004), a change to a `sensitive` key included | Validate and write; `?dryRun=1` validates and writes nothing and is never gated |
 
 `:section` is a declared dotted path; anything else is `404`. Bodies are capped at 64 KiB like the other JSON routes.
 
@@ -123,7 +123,7 @@ Each section entry carries its `title`, `group` (one of `groups`), `about` and, 
 | `help` | One sentence for the operator; present for every key. It is also the key's JSON Schema `description` |
 | `label` | Display name where the key name is not plain; the page falls back to the key name |
 | `unit` | `ms`, `bytes`, `days` and the like, shown beside the input |
-| `sensitive` | `true` on a key that decides where a credential or the co-host's private context goes (config CFG-PRES-011); the page asks for the control token before it saves a change to one |
+| `sensitive` | `true` on a key that decides where a credential or the co-host's private context goes (config CFG-PRES-011); the page shows a warning beside it, and a save that changes it is gated like any other (dashboard DASH-SET-028) |
 | `items` | For an array of objects, a map from each item property to `{ help, label?, unit? }` |
 | `widget` | A hint from a closed set: `{ type: "timezone" }`, `{ type: "voice" }`, `{ type: "sources" }`, `{ type: "textarea" }`, `{ type: "model", kind: chat \| small \| vision \| embed \| stt }`, `{ type: "options", options: [{ value, label }] }`, `{ type: "mcp-servers" }`, `{ type: "tool-list" }` |
 
@@ -165,7 +165,7 @@ The route never restarts anything itself.
 
 ### Applying
 
-After a save the Settings screen offers to restart the units in `restart` ([dashboard](../dashboard/dashboard-design.md), DASH-SET-007, DASH-SET-008). Each restart goes through the existing lifecycle route, in its default mode and not isolated, so it is guarded, audited and holds the dashboard's one action slot like any other. A unit not running picks the change up at its next start. With control disabled the lifecycle routes do not exist; the screen then says which units to restart and how (`cohostctl restart`).
+After a save the Settings screen offers to restart the units in `restart` ([dashboard](../dashboard/dashboard-design.md), DASH-SET-007, DASH-SET-008). Each restart goes through the existing lifecycle route, in its default mode and not isolated, so it is guarded, audited and holds the dashboard's one action slot like any other. A unit not running picks the change up at its next start.
 
 The owner may save several sections and apply once.
 

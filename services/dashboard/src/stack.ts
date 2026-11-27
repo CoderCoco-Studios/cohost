@@ -206,6 +206,11 @@ export class StackService {
   /** Takes a status as current, keeping each container's restart count across reads that lack one (DASH-STACK-016). */
   // @spec DASH-STACK-016
   private observe(s: StackStatus): void {
+    if (!s.docker.ok) { // a failed read lists no containers: it says nothing about the counts, so they are kept
+      this.status = s;
+      this.refresh();
+      return;
+    }
     // Rebuilt from each status, so a container that is gone (recreated under a new id, or removed) leaves no count behind.
     const next = new Map<string, number>();
     const services = s.services.map((c) => {

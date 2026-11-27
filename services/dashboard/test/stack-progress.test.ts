@@ -196,6 +196,17 @@ test("a status without restart counts keeps each container's last count while it
   assert.equal(count(), undefined, "the count of a1 was dropped when a1 was missing from a status");
 });
 
+// @spec DASH-STACK-016
+test("a failed status read keeps the restart counts", async () => {
+  const { svc, f } = service({ initial: { docker: { ok: true }, services: [{ service: "memory", status: "running", id: "a1", restartCount: 2 }] } });
+  await svc.probe();
+  f.setStatus({ docker: { ok: false, detail: "daemon gone" }, services: [] });
+  await svc.probe();
+  f.setStatus({ docker: { ok: true }, services: [{ service: "memory", status: "running", id: "a1" }] });
+  await svc.probe();
+  assert.equal(svc.snapshot().services.find((c) => c.service === "memory")!.restartCount, 2);
+});
+
 class Sock implements FeedSocket {
   readyState = 1;
   sent: Array<{ type: string } & Record<string, unknown>> = [];

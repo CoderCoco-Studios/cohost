@@ -40,6 +40,8 @@ export type ExecFile = (file: string, args: string[], opts: { env: NodeJS.Proces
 export const STREAM_TAIL_CHARS = 65_536;
 /** How long a streamed exec waits after SIGTERM at its timeout before it sends SIGKILL. */
 export const KILL_GRACE_MS = 10_000;
+/** How long a streamed exec waits, after the process exits, for its output pipes to close before it settles anyway. */
+export const CLOSE_GRACE_MS = 2_000;
 
 /** A consolidation pass makes model calls and can take minutes; the lifecycle verbs' 120 s would kill it. */
 export const CONSOLIDATE_TIMEOUT_MS = 30 * 60_000;
@@ -50,12 +52,13 @@ export const defaultExec: ExecFile = (file, args, opts) => (opts.onOutput ? stre
 /**
  * `spawn` (no shell) that forwards each output chunk and keeps the last `STREAM_TAIL_CHARS` of each stream, so a command that
  * prints without end (a long image build) never hits a buffer limit and never holds all of its output in memory. At its
- * timeout it sends SIGTERM, then SIGKILL after `killGraceMs`; once the SIGKILL is sent it settles when the process exits,
- * even while a process it started still holds the output pipes open, so a caller (and the lifecycle lock it holds) never waits
- * for ever.
+ * timeout it sends SIGTERM, then SIGKILL after `killGraceMs` unless the process has exited by then. Once the process has
+ * exited it waits at most `closeGraceMs` for the output pipes to close (a process it started can hold them open) and then
+ * settles with the exit's code and signal, so a caller (and the lifecycle lock it holds) never waits for ever. A settle forced
+ * that way closes the pipes, so output still buffered in them (at most the last chunk) is dropped.
  */
 // @spec CTRL-STACK-021
-export function streamExecWith(killGraceMs = KILL_GRACE_MS): ExecFile {
+export function streamExecWith(killGraceMs = KILL_GRACE_MS, closeGraceMs = CLOSE_GRACE_MS): ExecFile {
   return (file, args, opts) =>
     new Promise((resolve, reject) => {
       const { timeoutMs, input, onOutput, ...rest } = opts;
@@ -68,35 +71,47 @@ export function streamExecWith(killGraceMs = KILL_GRACE_MS): ExecFile {
       child.stdout.setEncoding("utf8").on("data", take("stdout"));
       child.stderr.setEncoding("utf8").on("data", take("stderr"));
       let timedOut = false;
-      let killed = false;
       let settled = false;
+      let exited: { code: number | null; signal: NodeJS.Signals | null } | undefined;
       let kill: NodeJS.Timeout | undefined;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        child.kill("SIGTERM");
-        kill = setTimeout(() => { killed = true; child.kill("SIGKILL"); }, killGraceMs);
-      }, timeoutMs ?? DEFAULT_TIMEOUT_MS);
+      let closeWait: NodeJS.Timeout | undefined;
+      const clearTimers = () => {
+        clearTimeout(timer);
+        if (kill) clearTimeout(kill);
+        if (closeWait) clearTimeout(closeWait);
+      };
       const settle = (code: number | null, signal: NodeJS.Signals | null) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        if (kill) clearTimeout(kill);
+        clearTimers();
         if (code === 0 && !timedOut) resolve({ ...tails });
         else reject(Object.assign(new Error(`Command failed: ${file} ${args.join(" ")}${timedOut ? " (timed out)" : signal ? ` (${signal})` : ` (exit ${code})`}`), { code, signal, killed: timedOut }, tails));
       };
+      /** Settles on the recorded exit without waiting for `close`: the pipes are held by a process the program started. */
+      const forceSettle = () => {
+        if (!exited) return;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        settle(exited.code, exited.signal);
+      };
+      const timer = setTimeout(() => {
+        if (exited) { forceSettle(); return; } // it ended in time; only its pipes are still open
+        timedOut = true;
+        child.kill("SIGTERM");
+        kill = setTimeout(() => {
+          if (exited) forceSettle();
+          else child.kill("SIGKILL");
+        }, killGraceMs);
+      }, timeoutMs ?? DEFAULT_TIMEOUT_MS);
       child.on("error", (err) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        if (kill) clearTimeout(kill);
+        clearTimers();
         reject(Object.assign(err, tails));
       });
-      // After SIGKILL the exit is final: a grandchild holding the pipes must not keep `close` (and the caller) waiting.
       child.on("exit", (code, signal) => {
-        if (!killed) return;
-        child.stdout.destroy();
-        child.stderr.destroy();
-        settle(code, signal);
+        exited = { code, signal };
+        closeWait = setTimeout(forceSettle, closeGraceMs);
       });
       child.on("close", settle);
       child.stdin.on("error", () => { /* the program exited before reading: its status reports the failure */ });

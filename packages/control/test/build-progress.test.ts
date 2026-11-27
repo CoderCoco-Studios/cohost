@@ -286,26 +286,43 @@ test("stop-all, restart-all and consolidate run no command with onOutput and nev
   assert.deepEqual(heard, []);
 });
 
+/** A node script that starts a grandchild holding stdout and stderr open for `holdMs`, prints `started`, then runs `tail`. */
+const holder = (holdMs: number, tail: string) => [
+  "const { spawn } = require('node:child_process');",
+  `spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${holdMs})'], { stdio: 'inherit' });`,
+  "process.stdout.write('started\\n');",
+  tail,
+].join("\n");
+// The grandchildren hold the pipes for 15 s; every case below must settle well before that (the bound is 10 s, loose for CI).
+const HOLD_MS = 15_000;
+const BOUND_MS = 10_000;
+
 // @spec CTRL-STACK-021
-test("a streamed exec that outlives its timeout gets SIGTERM, then SIGKILL after the grace, and settles even while a grandchild holds its pipes", async () => {
-  const script = [
-    "const { spawn } = require('node:child_process');",
-    "spawn(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], { stdio: 'inherit' });", // holds stdout and stderr for 5 s
-    "process.on('SIGTERM', () => {});", // ignores the polite stop
-    "process.stdout.write('started\\n');",
-    "setInterval(() => {}, 1000);",
-  ].join("\n");
-  const exec = streamExecWith(300);
+test("a streamed exec whose program ignores SIGTERM gets SIGKILL after the grace and settles while a grandchild holds its pipes", async () => {
   const chunks: Array<[string, string]> = [];
   const t0 = Date.now();
   await assert.rejects(
-    exec(process.execPath, ["-e", script], { env: process.env, timeoutMs: 300, onOutput: (c, s) => chunks.push([c, s]) }),
-    (err: { killed?: boolean; signal?: string; stdout?: string }) => err.killed === true && err.signal === "SIGKILL" && (err.stdout ?? "").includes("started"),
+    streamExecWith(300, 200)(process.execPath, ["-e", holder(HOLD_MS, "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);")], { env: process.env, timeoutMs: 300, onOutput: (c, s) => chunks.push([c, s]) }),
+    (err: { killed?: boolean; signal?: string }) => err.killed === true && err.signal === "SIGKILL",
   );
-  assert.ok(Date.now() - t0 < 3000, `settled after ${Date.now() - t0} ms, before the grandchild let go of the pipes`);
+  assert.ok(Date.now() - t0 < BOUND_MS, `settled after ${Date.now() - t0} ms`);
   assert.deepEqual(chunks[0], ["started\n", "stdout"]);
-  // A child that honours SIGTERM ends at the timeout, without waiting for the grace.
-  const t1 = Date.now();
-  await assert.rejects(streamExecWith(60_000)(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: process.env, timeoutMs: 200, onOutput: () => {} }), (err: { killed?: boolean }) => err.killed === true);
-  assert.ok(Date.now() - t1 < 3000);
+});
+
+// @spec CTRL-STACK-021
+test("a streamed exec whose program exits on SIGTERM settles at the timeout while a grandchild holds its pipes", async () => {
+  const t0 = Date.now();
+  await assert.rejects(
+    streamExecWith(60_000, 200)(process.execPath, ["-e", holder(HOLD_MS, "setInterval(() => {}, 1000);")], { env: process.env, timeoutMs: 300, onOutput: () => {} }),
+    (err: { killed?: boolean; signal?: string }) => err.killed === true && err.signal === "SIGTERM",
+  );
+  assert.ok(Date.now() - t0 < BOUND_MS, `settled after ${Date.now() - t0} ms, without waiting for the kill grace or the grandchild`);
+});
+
+// @spec CTRL-STACK-021
+test("a streamed exec whose program exits 0 on its own resolves while a grandchild holds its pipes", async () => {
+  const t0 = Date.now();
+  const r = await streamExecWith(60_000, 200)(process.execPath, ["-e", holder(HOLD_MS, "setTimeout(() => process.exit(0), 100);")], { env: process.env, timeoutMs: 60_000, onOutput: () => {} });
+  assert.ok(Date.now() - t0 < BOUND_MS, `settled after ${Date.now() - t0} ms`);
+  assert.ok(r.stdout.includes("started"));
 });

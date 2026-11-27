@@ -51,7 +51,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "113 specs: 109 [x], 4 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): SHARED-BOOT-009 to 011 new: the boot order for a unit that waits for its credentials. Earlier: (the untrusted tool notice and the head-rotation module are built)."
+    next: "113 specs: 108 [x], 5 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): SHARED-BOOT-009 to 011 new: the boot order for a unit that waits for its credentials. Earlier: (the untrusted tool notice and the head-rotation module are built)."
     drift: null
 
   module-contract:

@@ -12,7 +12,7 @@ Orientation:
 
 - Design: LLD § Files, directory resolution and seeding; Loading pipeline; Schema key groups; Environment variables; Decisions & Alternatives.
 - Keys owned by other segments live in the config schema and are specified here (CFG-SCH-*), but the behaviour that reads them is the reader's: salience (SAL-*), affect (AFF-*), eyes (EYES-*), ears (EARS-*), mouth (MOUTH-*, see [mouth.md](mouth.md)), voice (VOICE-*), model-backends (LLM-*), connections (CONN-*).
-- Environment-only values (`CONTROL_*`, `DASHBOARD_HOST`, `VIEWERS_TOKEN`, `HEARTBEAT_INTERVAL_MS`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009); every other operator setting is a `config.yaml` key and every credential a `secrets.yaml` key (CFG-ENV-012).
+- Environment-only values (`CONTROL_*`, `DASHBOARD_HOST`, `HEARTBEAT_INTERVAL_MS`, `VOICE_PORT`) are read by their owning packages and have no schema key (CFG-ENV-008, CFG-ENV-009); every other operator setting is a `config.yaml` key and every credential a `secrets.yaml` key (CFG-ENV-012).
 
 ## References
 

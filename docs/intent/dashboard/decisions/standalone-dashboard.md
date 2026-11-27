@@ -112,8 +112,8 @@ are unchanged; a second-PC OBS source moves to port 3001. When the owner sets
 `DASHBOARD_HOST` to a non-loopback address, the full surface is reachable from
 other machines, and the dashboard then refuses to start unless control mode
 and its token are on, so every stack and lifecycle action needs
-`CONTROL_TOKEN` and every Viewers route needs `VIEWERS_TOKEN`. One more port
-and two more environment variables.
+`CONTROL_TOKEN`, as every Viewers route does. One more port
+and one more environment variable.
 
 ## Selection
 

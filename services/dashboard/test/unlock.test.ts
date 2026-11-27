@@ -141,6 +141,54 @@ test("GET /unlock consumes the nonce and sets the session cookie with HttpOnly, 
   assert.match(page.text, /CONTROL_TOKEN/);
 });
 
+// @spec DASH-UNL-004
+test("the link opened again in the browser it unlocked (a second click, a restored tab) goes on to / with no new cookie; without a valid cookie it stays the 400 page", async () => {
+  const t = await normal();
+  const n = t.links.issue();
+  const first = await call(t.port, "GET", `/unlock?n=${n}`);
+  assert.equal(first.status, 303);
+  const cookie = cookieOf(first);
+  for (const path of [`/unlock?n=${n}`, "/unlock?n=made-up", "/unlock"]) {
+    const again = await call(t.port, "GET", path, { cookie });
+    assert.equal(again.status, 303, path);
+    assert.equal(again.headers.location, "/", "no nonce in the final address");
+    assert.equal(again.headers["cache-control"], "no-store");
+    assert.equal(again.headers["referrer-policy"], "no-referrer");
+    assert.equal(again.headers["set-cookie"], undefined, "the browser keeps the session it holds");
+  }
+  const used = await call(t.port, "GET", `/unlock?n=${n}`);
+  assert.equal(used.status, 400, "a used nonce with no cookie is the plain page, as before");
+  assert.equal(used.headers["set-cookie"], undefined);
+  assert.match(used.text, /mise run dashboard:unlock/);
+  const forged = await call(t.port, "GET", `/unlock?n=${n}`, { cookie: `${SESSION_COOKIE}=forged.value` });
+  assert.equal(forged.status, 400, "a cookie that is no valid session does not count");
+  const rotated = await normal("rotated-token");
+  assert.equal((await call(rotated.port, "GET", `/unlock?n=${n}`, { cookie })).status, 400, "a session made under another token does not count");
+});
+
+// @spec DASH-UNL-003, DASH-CTRL-007
+test("after the link, a reload of / is the page with no nonce, and the page's GET /services/control reports unlocked from the cookie alone", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-unlock-ui-"));
+  writeFileSync(join(dir, "index.html"), "<!doctype html><title>cohost</title>");
+  const links = new UnlockLinks();
+  const handler = createDashboardHandler({
+    bus: new FakeBus(), log: recordingLog().log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
+    loadPersonality: () => "p", savePersonality: () => {}, services: () => [],
+    stack: { snapshot: () => ({ state: "up", docker: { ok: true }, bus: "connected", action: null, last: null, services: [] }) } as unknown as StackService,
+    uiDir: dir, docsDir: join(dir, "no-docs"), unlock: links, controlToken: TOKEN,
+  });
+  const port = await listen(guardFullSurface(handler, { loopback: true, controlEnabled: false }));
+  const got = await call(port, "GET", `/unlock?n=${links.issue()}`);
+  assert.equal(got.status, 303);
+  assert.equal(got.headers.location, "/");
+  const cookie = cookieOf(got);
+  // What the browser does on a reload, or after closing and restoring the tab: it asks for /, then the page asks the server.
+  const page = await call(port, "GET", "/", { cookie });
+  assert.equal(page.status, 200);
+  assert.match(page.text, /<title>cohost<\/title>/);
+  assert.equal(JSON.parse((await call(port, "GET", "/services/control", { cookie })).text).unlocked, true);
+});
+
 // @spec DASH-CTRL-011, DASH-UNL-005, DASH-SECRET-003, DASH-CTRL-004
 test("with the session cookie and a same-origin Origin a mutation passes; without an Origin, with a foreign one, or with neither cookie nor token it is refused", async () => {
   const t = await normal();

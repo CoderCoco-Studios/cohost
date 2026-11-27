@@ -206,7 +206,7 @@ test("the installer installs system-wide only Docker, the NVIDIA container toolk
 // @spec DEPLOY-TOOL-005
 test("mise.toml defines every task of the command surface, one dev:<service> per service but the dashboard", () => {
   const names = new Set(miseTasks().keys());
-  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:file", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", "secrets:project", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:libatomic", "doctor:glibc"]) {
+  for (const n of ["install", "build:native", "build:ts", "build:ui", "build", "typecheck", "lint:ts", "lint:rust", "lint", "test:rust", "test", "test:only", "test:file", "test:launch", "test:rust-example", "dev", "infra:up", "infra:down", "dashboard", "dashboard:ui", "cohostctl", "secrets:project", "reflect", "consolidate", "reembed", "bus:pub", "bus:tail", "bus:bench", "perf:baseline", "perf:connector", "stub:llm", "stub:tts", "hooks:schemas", "docs:build", "docs:dev", "docs:preview", "clean", "smoke", "lid-check", "cla", "doctor", "doctor:docker", "doctor:gpu", "doctor:fetch", "doctor:libatomic", "doctor:glibc"]) {
     assert.ok(names.has(n), `task ${n}`);
   }
   for (const s of devServices) assert.ok(names.has(`dev:${s}`), `dev:${s}`);
@@ -273,7 +273,7 @@ test("the task dependencies are exactly the specified graph", () => {
     "bus:pub": ["build:native", "build:ts"], "bus:tail": ["build:native", "build:ts"], "bus:bench": ["build:native", "build:ts"], "perf:connector": ["build:native", "build:ts"],
     "perf:baseline": ["build:native", "build:ts", "doctor:docker"], "hooks:schemas": ["build:ts"], cohostctl: ["build:native", "install"], dashboard: ["build:native", "build:ui"],
     "infra:up": ["doctor:docker"], "infra:down": ["doctor:docker"], smoke: ["doctor:docker"],
-    "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], doctor: [], "doctor:docker": [],
+    "test:file": ["build"], "doctor:libatomic": [], install: [], "build:native": [], "lint:rust": [], "test:rust": [], "test:only": [], "lid-check": [], cla: [], doctor: [], "doctor:docker": [],
   };
   for (const s of devServices) want[`dev:${s}`] = ["build:native", "build:ts", "secrets:project"];
   for (const [name, deps] of Object.entries(want)) assert.deepEqual([...task(name).depends].toSorted(), [...deps].toSorted(), name);

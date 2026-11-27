@@ -143,6 +143,11 @@ grep -q '^RAN round_trip against ' "$log" || { echo "test:rust-example: no 'RAN 
 description = "Check the linked-intent spec citations"
 run = "node scripts/lid-check.mjs"
 
+# @spec DEPLOY-CI-005
+[tasks.cla]
+description = "Check a pull request's CLA signatures (run by the cla workflow; needs its event and GITHUB_TOKEN)"
+run = "node scripts/cla/cla.mjs"
+
 [tasks.smoke]
 description = "Build and start a few services in Compose and wait for them to be healthy"
 depends = ["doctor:docker"]

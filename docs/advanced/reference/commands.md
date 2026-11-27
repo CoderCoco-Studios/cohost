@@ -46,6 +46,7 @@ Adding or removing a dependency is the one thing that is not a task: run `pnpm a
 | `test:launch` | `build` and `doctor:docker`, then the launch end-to-end test against Docker |
 | `test:rust-example` | The Rust bus example's round trip against Redis; fails when the round trip is skipped |
 | `lid-check` | Every `@spec` ID in code and tests exists and is defined once |
+| `cla` | The `cla` workflow's CLA signature check; it needs the workflow's event and `GITHUB_TOKEN`, so it does not run locally |
 | `smoke` | `doctor:docker`, then builds the service images and checks that a few services come up healthy in Compose |
 
 ### Run on the host

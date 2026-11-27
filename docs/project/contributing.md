@@ -25,7 +25,9 @@ possible.
 3. The check records your signature and passes. Comment `recheck` if it does not
    re-run on its own.
 
-You sign once; later pull requests from the same GitHub account pass. Commit
+You sign once; later pull requests from the same GitHub account pass, even after
+the account is renamed, because signatures are recorded by account. A commit with
+no linked account cannot be signed for, and the check's comment names it. Commit
 with an email address linked to your GitHub account, because commits are matched
 by author email. Co-authors named only in a `Co-authored-by:` trailer are not
 checked automatically, so ask each of them to sign on the pull request too.

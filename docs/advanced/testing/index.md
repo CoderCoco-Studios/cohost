@@ -82,6 +82,8 @@ Four workflows watch every pull request and every push to `main`. Each step is a
 | `compose-smoke` | `mise run smoke` builds the service images and requires `salience`, `affect` and `avatar` to reach healthy, then starts `tools` and checks from inside it that the name `redis` resolves and the name `salience` does not (`tools` is on a Redis-only network), then `mise run test:launch` runs the launch end-to-end test against a real Compose project |
 | `docs-build` | `mise run docs:build`, the documentation site and its checks (pull requests only) |
 
+On pull requests the `cla` workflow also runs `mise run cla`, which checks that every commit author has signed the [CLA](../../project/contributing.md#sign-the-cla). It runs from `main`'s own copy of the script, never the pull request's, so a change to `scripts/cla/` takes effect only after it merges; its tests run on fixtures in `packages/config/test/cla.test.ts`.
+
 ## Known problems
 
 - **Bus state persists in Redis between runs.** Services that subscribe from `latest` ignore old [events](../../start/glossary.md#event), but `mise run bus:tail -- --replay 20` shows them. Reset the stream with `docker compose exec redis redis-cli DEL cohost:events`.

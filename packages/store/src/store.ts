@@ -3,7 +3,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, r
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  ConfigSchema, ExpressionMapSchema, SECRET_PATHS, SECTION_PATHS, coerceEmptyNumbers, dataDir, findWorkspaceRoot, parseYaml, secretPathOf,
+  ConfigSchema, ExpressionMapSchema, SECRET_PATHS, SECTION_PATHS, coerceEmptyNumbers, dataDir, findWorkspaceRoot, parseYaml, placeholderIssues, secretPathOf,
   unknownKeys, type Config, type ExpressionMap,
 } from "@cohost/config";
 import { isBusy, openDb, type Db, type Row } from "./db.js";
@@ -81,6 +81,8 @@ export interface StoreOptions {
    * backup was encrypted under instead, and must not print a recovery key for a key that is then replaced.
    */
   createKey?: boolean;
+  /** The workspace root `config:project` writes `data/projections/` under; the root found from the working directory by default. */
+  workspaceRoot?: string;
 }
 
 /** A change for `write`: sections, documents and credentials to set (a value) or remove (`null`). */
@@ -225,10 +227,18 @@ export function assembleSettings(sections: Readonly<Record<string, unknown>>): D
   return tree;
 }
 
+/**
+ * Fills each top-level section the stored settings do not hold with an empty mapping, so its keys take their schema defaults:
+ * a section with no stored key is no row (STORE-DB-005), not a missing section.
+ */
+function withAllSections(tree: Doc): Doc {
+  for (const name of Object.keys(ConfigSchema.shape)) tree[name] ??= {};
+  return tree;
+}
+
 /** Every issue of an assembled tree against `ConfigSchema`, null values dropped, unknown keys included. */
 function settingsIssues(sections: Readonly<Record<string, unknown>>): StoreIssue[] {
-  const tree = coerceEmptyNumbers(assembleSettings(sections)) as Doc;
-  tree.brain ??= {};
+  const tree = withAllSections(coerceEmptyNumbers(assembleSettings(sections)) as Doc);
   const r = ConfigSchema.safeParse(tree);
   const unknown = (raw: Doc, parsed: unknown): StoreIssue[] => unknownKeys(raw, parsed).map((path) => ({ path, message: "not a setting of this build" }));
   if (r.success) return unknown(tree, r.data);
@@ -237,7 +247,7 @@ function settingsIssues(sections: Readonly<Record<string, unknown>>): StoreIssue
   // reports both kinds.
   const rest = structuredClone(tree);
   for (const i of r.error.issues) deleteIn(rest, i.path.map(String));
-  rest.brain ??= {};
+  withAllSections(rest);
   const again = ConfigSchema.safeParse(rest);
   return again.success ? [...issues, ...unknown(rest, again.data)] : issues;
 }
@@ -542,8 +552,7 @@ export class Store {
    */
   // @spec STORE-DB-005, STORE-DB-010
   config(): Config {
-    const tree = coerceEmptyNumbers(this.settingsTree()) as Doc;
-    tree.brain ??= {};
+    const tree = withAllSections(coerceEmptyNumbers(this.settingsTree()) as Doc);
     const r = ConfigSchema.safeParse(tree);
     if (!r.success) {
       const issues = r.error.issues.map((i) => ({ path: i.path.join("."), message: i.message }));
@@ -635,7 +644,7 @@ export class Store {
    * commits only when everything passes, incrementing `meta.revision` (STORE-SET-002, -003, -005, -006; STORE-DB-006). Issues
    * name paths, never a credential (STORE-SET-007).
    */
-  // @spec STORE-SET-001, STORE-SET-002, STORE-SET-003, STORE-SET-005, STORE-SET-006, STORE-SET-007, STORE-DB-006, STORE-RCV-002
+  // @spec STORE-SET-001, STORE-SET-002, STORE-SET-003, STORE-SET-005, STORE-SET-006, STORE-SET-007, STORE-DB-006, STORE-RCV-002, CFG-ENV-011
   write(change: StoreChange, opts: WriteOptions = {}): WriteResult {
     try {
       return this.immediate(() => {
@@ -654,6 +663,9 @@ export class Store {
           }
           next[path] = clean;
         }
+        // A `${NAME}` placeholder in a value the change writes is refused, never substituted (config CFG-ENV-011).
+        const written = Object.fromEntries(Object.entries(change.sections ?? {}).filter(([path, doc]) => SECTION_PATHS.includes(path) && doc !== null && doc !== undefined));
+        issues.push(...placeholderIssues(assembleSettings(written)));
         let found = settingsIssues(next);
         if (opts.only && found.length > 0 && settingsIssues(current).length > 0) found = found.filter((i) => covers(opts.only!, i.path));
         issues.push(...found);
@@ -754,6 +766,24 @@ export class Store {
     return this.write({ sections: { [section]: Object.keys(doc).length > 0 ? doc : null } }, { ...opts, only: [path] });
   }
 
+  /** Removes several settings in one write, so each default applies (STORE-RCV-002): the dashboard's recovery "reset all". */
+  resetKeys(paths: readonly string[], opts: WriteOptions = {}): WriteResult {
+    const stored = this.sections();
+    const next: Record<string, unknown> = {};
+    for (const path of paths) {
+      const section = sectionOf(path);
+      if (section === undefined) return { ok: false, issues: [{ path, message: "is not in a settings section of this build" }] };
+      if (path === section) { next[section] = null; continue; }
+      if (next[section] === null) continue;
+      const held = next[section];
+      const doc: Doc = isObj(held) ? held : isObj(stored[section]) ? structuredClone(stored[section]) : {};
+      deleteIn(doc, path.slice(section.length + 1).split("."));
+      next[section] = doc;
+    }
+    for (const [k, v] of Object.entries(next)) if (isObj(v) && Object.keys(v).length === 0) next[k] = null;
+    return this.write({ sections: next }, { ...opts, only: paths });
+  }
+
   // ---------------------------------------------------------------- the control token and generated keys
 
   /** Whether the store holds a token verifier. */
@@ -803,6 +833,33 @@ export class Store {
 
   /** The ears listener key (`keys.ears-listener`) as 64 lowercase hex, or undefined when none is stored. */
   earsListenerKey(): string | undefined { return this.keyRow("ears-listener")?.toString("utf8"); }
+
+  /**
+   * The state key of `unit` (`keys.state:<unit>`, STORE-STATE-001): 32 bytes, created at random and stored encrypted when the
+   * store holds none, so a unit keeps the key across deliveries and its encrypted state files stay readable.
+   */
+  // @spec STORE-STATE-001
+  stateKey(unit: string): Buffer {
+    const name = `state:${unit}`;
+    const existing = this.keyRow(name);
+    if (existing) return existing;
+    return this.immediate(() => {
+      const raced = this.keyRow(name);
+      if (raced) return raced;
+      const key = randomBytes(32);
+      this.putSealed("keys", name, key);
+      this.bump();
+      return key;
+    });
+  }
+
+  /** Runs `fn` inside one read transaction, so every read it makes sees one revision (STORE-PROJ-003). */
+  snapshot<T>(fn: () => T): T {
+    if (this.inSnapshot) return fn();
+    this.inSnapshot = true;
+    try { return this.db.read(fn); } finally { this.inSnapshot = false; }
+  }
+  private inSnapshot = false;
 
   // ---------------------------------------------------------------- the master key
 
@@ -1143,4 +1200,57 @@ export async function checkStore(opts: StoreOptions = {}): Promise<StoreProblem[
   } finally {
     store.close();
   }
+}
+
+/**
+ * What a read-only look at the store finds, whatever else is wrong with it: the token verifier's text, the stored `dashboard`
+ * section and the revision.
+ */
+export interface StorePeek { verifier: string | undefined; dashboard: unknown; revision: number | undefined }
+
+/**
+ * Reads the token verifier, the stored `dashboard` section and the revision through a read-only connection, running no check, creating
+ * nothing and needing no key: what the dashboard's recovery mode (its gate and its address, dashboard DASH-RCV-002, DASH-RCV-028)
+ * and `mise run dashboard:unlock` (its port, DASH-UNL-007) read. Undefined when the file is missing or cannot be read.
+ */
+export function peekStore(opts: Pick<StoreOptions, "dataDir"> = {}): StorePeek | undefined {
+  const file = storeFile(opts.dataDir ?? dataDir());
+  if (!existsSync(file)) return undefined;
+  let db: Db;
+  try { db = openDb(file, { busyTimeoutMs: BUSY_TIMEOUT_MS.dashboard, readOnly: true }); } catch { return undefined; }
+  try {
+    const v = db.get("SELECT value FROM meta WHERE key = 'token_verifier'");
+    const d = db.get("SELECT doc FROM sections WHERE path = 'dashboard'");
+    const r = db.get("SELECT value FROM meta WHERE key = 'revision'");
+    let dashboard: unknown;
+    try { dashboard = d ? JSON.parse(String(d.doc)) as unknown : undefined; } catch { dashboard = undefined; }
+    return { verifier: v ? String(v.value) : undefined, dashboard, revision: r ? Number(r.value) : undefined };
+  } catch {
+    return undefined;
+  } finally {
+    db.close();
+  }
+}
+
+/** One backup file (STORE-DB-008): its name and the UTC time its name records. */
+export interface BackupFile { name: string; time: string }
+
+/** The backups of the store under `data`, newest first (STORE-DB-008); none when the directory is missing. */
+export function listBackups(data: string = dataDir()): BackupFile[] {
+  let names: string[];
+  try { names = readdirSync(backupDir(data)).filter((n) => BACKUP_NAME.test(n)); } catch { return []; }
+  return names.toSorted().toReversed().map((name) => {
+    const m = /^cohost-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z\.db$/.exec(name)!;
+    return { name, time: `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}Z` };
+  });
+}
+
+/**
+ * Takes the day's first backup (STORE-DB-008): a backup when the store holds none named for today's UTC date. Returns the file
+ * written, or undefined when today already has one.
+ */
+export async function dailyBackup(store: Store, now: Date = new Date()): Promise<string | undefined> {
+  const day = now.toISOString().slice(0, 10);
+  if (listBackups(store.dataDir).some((b) => b.time.startsWith(day))) return undefined;
+  return store.backup();
 }

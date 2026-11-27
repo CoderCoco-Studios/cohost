@@ -1,5 +1,5 @@
 /**
- * Entry point of the compose `models` service: loads the config (an invalid `config.yaml` stops here with the loader's message
+ * Entry point of the compose `models` service: loads its projection (an invalid one stops here with the loader's message
  * naming the keys, and nothing is pulled), waits for Ollama, then pulls `ollamaModels` one after another, the required names
  * first. A pull fails on a request error, an HTTP error or an `"error"` line in the response (Ollama reports an error that begins
  * after the response started as a 200 holding such a line). Every model is tried; the exit status is non-zero only when a

@@ -1,6 +1,7 @@
 import type { TokenKind } from "../../state/types";
 
-export const CONTROL_FIND = "grep ^CONTROL_TOKEN= .env";
+/** Sets a new control token and prints it once (settings-store STORE-TOK-001). */
+export const CONTROL_NEW = "mise run config:token";
 
 export const ENV_NAME: Record<TokenKind, string> = { control: "CONTROL_TOKEN" };
 export const TOKEN_LABEL: Record<TokenKind, string> = { control: "Control token" };

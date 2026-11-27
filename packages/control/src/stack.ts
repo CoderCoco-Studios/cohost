@@ -1,12 +1,10 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES, loadConfig } from "@cohost/config";
+import { findWorkspaceRoot, ISOLATION_ENV, ISOLATION_OVERRIDES } from "@cohost/config";
 import { resolveDockerBin, dockerEnv } from "./docker.js";
 import type { ServiceController } from "./controller.js";
 import { SERVICE_MANIFEST, type ServiceDef } from "./manifest.js";
-import { projectManifestSecrets } from "./secrets.js";
 import { ensureLogsDir, stderrWarn } from "./logs-dir.js";
-import { ComposeRuntime, defaultExec, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
+import { ComposeRuntime, defaultExec, defaultProvisioner, execDetail, type ExecFile, type RuntimeResult } from "./runtime.js";
+import type { Provisioner } from "./provision.js";
 
 /** One container of the Compose project, as `docker compose ps` reports it. */
 export interface ContainerStatus {
@@ -27,9 +25,6 @@ export interface StackStatus {
   docker: { ok: boolean; detail?: string };
   services: ContainerStatus[];
 }
-
-/** What Launch reads for the Pocket token file: `voice.pocket.hf_token` and `voice.engine`. */
-export interface PocketConfig { token: string; engine: string }
 
 export type StackActionKind = "launch" | "rebuild" | "stop" | "restart" | "consolidate";
 export type StackState = "docker-unavailable" | "stopping" | "starting" | "down" | "up" | "degraded";
@@ -56,8 +51,8 @@ export interface StackControllerOptions {
   onPath?: (name: string, env: NodeJS.ProcessEnv) => boolean;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
-  /** Reads the Pocket token and the selected voice engine for the token file (CTRL-STACK-019). Defaults to the config loader. */
-  readPocketConfig?: () => PocketConfig;
+  /** What runs around Launch and Rebuild: the projections and the delivery; the settings store's by default, shared with the runtime. */
+  provision?: Provisioner;
   /** Where a warning goes (the `data/logs` directory could not be created); standard error by default. */
   warn?: (msg: string) => void;
 }
@@ -97,7 +92,6 @@ function isolationOf(envJson: string): Record<string, string> | undefined {
   return out;
 }
 
-const firstLine = (err: unknown): string => (err instanceof Error ? err.message : String(err)).split("\n")[0]!.slice(0, 300);
 const isLongRunning = (c: ContainerStatus): boolean => !ONE_SHOTS.includes(c.service);
 const isReady = (c: ContainerStatus): boolean => c.status === "running" && (c.health === undefined || c.health === "healthy");
 const describe = (c: ContainerStatus): string => `${c.service} (${c.status}${c.health ? `, ${c.health}` : ""})`;
@@ -148,7 +142,7 @@ export class StackController {
   private sleep: (ms: number) => Promise<void>;
   private now: () => number;
   private runtime: ComposeRuntime;
-  private readPocketConfig: () => PocketConfig;
+  private provisioner: Provisioner | undefined;
 
   constructor(private o: StackControllerOptions = {}) {
     this.exec = o.exec ?? defaultExec;
@@ -157,11 +151,11 @@ export class StackController {
     this.manifest = o.manifest ?? SERVICE_MANIFEST;
     this.sleep = o.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.now = o.now ?? Date.now;
-    this.readPocketConfig = o.readPocketConfig ?? (() => {
-      const voice = loadConfig(true).voice;
-      return { token: voice.pocket.hf_token, engine: voice.engine };
+    this.provisioner = o.provision;
+    this.runtime = new ComposeRuntime({
+      exec: this.exec, manifest: this.manifest, cwd: this.cwd, env: this.env, ...(o.onPath ? { onPath: o.onPath } : {}), ...(o.warn ? { warn: o.warn } : {}),
+      ...(o.provision ? { provision: o.provision } : {}),
     });
-    this.runtime = new ComposeRuntime({ exec: this.exec, manifest: this.manifest, cwd: this.cwd, env: this.env, ...(o.onPath ? { onPath: o.onPath } : {}), ...(o.warn ? { warn: o.warn } : {}) });
   }
 
   private phase(kind: StackActionKind, phase: string): void {
@@ -190,12 +184,6 @@ export class StackController {
     } catch (err) {
       return { docker: { ok: false, detail: `cannot read docker compose ps output: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500) }, services: [] };
     }
-  }
-
-  /** Appends a launch warning (the Pocket token could not be read) to a successful result's detail. */
-  private withWarning(res: StackResult, warning: string | undefined): StackResult {
-    if (!warning) return res;
-    return { ...res, detail: [res.detail, warning].filter(Boolean).join("; ") };
   }
 
   /** Appends `<service> exited <code>` for each one-shot that exited non-zero. */
@@ -253,61 +241,26 @@ export class StackController {
   // @spec CTRL-STACK-002, CTRL-STACK-003, CTRL-STACK-004, CTRL-STACK-005, CTRL-STACK-018
   launch(): Promise<StackResult> { return this.bringUp("launch"); }
 
-  /**
-   * Writes the one secret Launch hands a container by file: the Pocket token to `data/tts-pocket-secret/hf_token` under the
-   * workspace root (`cwd`, where Compose resolves `./data`). The directory is always created; the file is rewritten on every
-   * launch with mode 0600, and removed when the token is blank (whitespace included) or cannot be read. Nothing else is written.
-   * When the Pocket engine is selected (`voice.engine` pocket, whose profile the owner enables) and the token cannot be read or
-   * written, Launch fails before `up`. Otherwise the problem is returned as a warning and Launch proceeds without a token.
-   */
-  // @spec CTRL-STACK-019
-  private writePocketSecret(): { ok: true; warning?: string } | { ok: false; detail: string } {
-    let token = "";
-    let engine = "";
-    let problem: string | undefined;
-    try {
-      const cfg = this.readPocketConfig();
-      token = cfg.token.trim();
-      engine = cfg.engine;
-    } catch (err) {
-      problem = `cannot read voice.pocket.hf_token: ${firstLine(err)}`;
-    }
-    const enabled = problem === undefined && engine === "pocket";
-    const dir = join(this.cwd, "data", "tts-pocket-secret");
-    const file = join(dir, "hf_token");
-    try {
-      mkdirSync(dir, { recursive: true });
-      if (problem !== undefined || token === "") {
-        rmSync(file, { force: true });
-      } else {
-        writeFileSync(file, token, { mode: 0o600 });
-        chmodSync(file, 0o600);
-      }
-    } catch (err) {
-      const msg = `cannot write the tts-pocket token file: ${firstLine(err)}`;
-      if (enabled) return { ok: false, detail: msg };
-      return { ok: true, warning: msg };
-    }
-    return problem !== undefined ? { ok: true, warning: problem } : { ok: true };
-  }
-
-  // @spec CTRL-RUNTIME-016
+  // @spec CTRL-RUNTIME-016, CTRL-RUNTIME-014, CTRL-RUNTIME-018
   private async bringUp(kind: "launch" | "rebuild"): Promise<StackResult> {
     this.phase(kind, "compose-build");
-    const projected = await projectManifestSecrets(this.cwd, this.manifest, this.env); // CTRL-RUNTIME-014, CTRL-RUNTIME-017
-    if (projected) return { ok: false, detail: projected.detail };
-    const secret = this.writePocketSecret();
-    if (!secret.ok) return { ok: false, detail: secret.detail };
+    const docker = resolveDockerBin(this.env, this.o.onPath);
+    if (!docker.ok) return { ok: false, detail: docker.detail };
+    this.provisioner ??= defaultProvisioner(this.exec, docker.bin, this.env, this.cwd, this.manifest);
+    const before = await this.provisioner.before();
+    if (!before.ok) return { ok: false, detail: before.detail };
     ensureLogsDir(this.cwd, this.o.warn ?? stderrWarn); // CTRL-RUNTIME-016
     const up = await this.compose(["up", "-d", "--build", "--remove-orphans"], LAUNCH_TIMEOUT_MS);
     if (!up.ok) return { ok: false, detail: up.detail };
+    const delivered = await before.after();
+    if (!delivered.ok) return { ok: false, detail: delivered.detail ?? "a delivery failed" };
     this.phase(kind, "waiting");
     const started = this.now();
     for (;;) {
       const st = await this.status();
       if (!st.docker.ok) return { ok: false, detail: `docker unavailable while waiting: ${st.docker.detail ?? "unknown error"}` };
       const notReady = st.services.filter((c) => isLongRunning(c) && !isReady(c));
-      if (notReady.length === 0) return this.withWarning(this.withOneShotWarnings({ ok: true, services: st.services }, st.services), secret.warning);
+      if (notReady.length === 0) return this.withOneShotWarnings({ ok: true, services: st.services }, st.services);
       if (this.now() - started >= READY_TIMEOUT_MS) {
         const detail = `not ready after ${READY_TIMEOUT_MS / 1000}s: ${notReady.map(describe).join(", ")}`;
         return this.withOneShotWarnings({ ok: false, detail, services: st.services }, st.services);

@@ -22,12 +22,17 @@ export interface AvatarParams {
 
 export interface DriverContext {
   log: Logger;
-  /** canonical emotion -> app-specific expression name (from expressions.yaml) */
+  /** canonical emotion -> app-specific expression name (from the `expressions` document) */
   expressions: Record<string, string>;
   /** canonical gesture -> app-specific name */
   gestures: Record<string, string>;
-  /** Directory the driver may persist small state in (auth tokens etc.). */
+  /** Directory the driver may persist small state in (auth tokens etc.): `<dataDir()>/avatar`. */
   stateDir: string;
+  /**
+   * The unit's state key (settings-store STORE-STATE-001): a credential the driver persists is encrypted under it
+   * (STORE-STATE-002). Absent when the unit was started without one; nothing is persisted then.
+   */
+  stateKey?: Buffer;
   /** The bus client's avatar-frame writer (AVATAR-BRW-002). Every driver receives it; only the browser driver writes frames. */
   frames: Pick<Bus, "publishAvatarFrame">;
 }

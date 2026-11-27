@@ -141,11 +141,15 @@ export function offLanHost(host: string, lan: readonly string[]): boolean {
 /**
  * Every destination the configured engines send private data to (CFG-EGR-001 to CFG-EGR-013): voice text, ears audio, eyes
  * frames and cortex text. A stub engine, the mock chat provider and a blank server value give no entry. A hosted provider
- * (anthropic, bedrock) has no host, only its name, and is off the LAN.
+ * (anthropic, bedrock) has no host, only its name, and is off the LAN. A unit's configuration holds only the sections its
+ * projection declares (CFG-LOAD-001): a destination whose section the configuration does not hold is left out, so each unit
+ * learns its own destinations without reading another unit's settings.
  */
 // @spec CFG-EGR-001, CFG-EGR-002, CFG-EGR-003, CFG-EGR-004, CFG-EGR-005, CFG-EGR-006, CFG-EGR-007, CFG-EGR-013, CFG-EGR-014, CFG-EGR-015, CFG-EGR-016
 export function egressDestinations(config: Config): EgressEntry[] {
-  const lan = config.network?.lan ?? [];
+  /** Whether the configuration holds `section`: reading one a unit's projection lacks throws. */
+  const holds = (section: () => unknown): boolean => { try { section(); return true; } catch { return false; } };
+  const lan = (holds(() => config.network) ? config.network?.lan : undefined) ?? [];
   const out: EgressEntry[] = [];
   const add = (service: EgressEntry["service"], data: EgressEntry["data"], engine: string, url: string | undefined) => {
     if (url === undefined || url === "") return;
@@ -157,40 +161,42 @@ export function egressDestinations(config: Config): EgressEntry[] {
     out.push({ service, data, engine: provider, hosted: provider, offLan: true });
 
   // voice: text to the speech server of the selected engine
-  const v = config.voice;
-  if (v.engine === "kokoro") add("voice", "text", "kokoro", urls.tts());
+  const v = holds(() => config.voice) ? config.voice : undefined;
+  if (!v) { /* not this unit's section */ } else if (v.engine === "kokoro") add("voice", "text", "kokoro", urls.tts());
   else if (v.engine === "openai") add("voice", "text", "openai", v.openai.base_url);
   else if (v.engine === "pocket") add("voice", "text", "pocket", v.pocket.url);
 
   // ears: audio to the selected engine, and to the fallback while the selected engine is a streaming one
-  const e = config.ears;
+  const e = holds(() => config.ears) ? config.ears : undefined;
   const sttUrl = (engine: string): string | undefined => {
+    if (!e) return undefined;
     if (engine === "speaches") return urls.stt();
     if (engine === "openai") return e.openai.base_url;
     if (engine === "nemotron") return e.nemotron.url;
     if (engine === "kyutai") return e.kyutai.url;
     return undefined;
   };
-  add("ears", "audio", e.stt_engine, sttUrl(e.stt_engine));
-  if ((e.stt_engine === "nemotron" || e.stt_engine === "kyutai") && e.stt_fallback_engine !== "none") {
+  if (e) add("ears", "audio", e.stt_engine, sttUrl(e.stt_engine));
+  if (e && (e.stt_engine === "nemotron" || e.stt_engine === "kyutai") && e.stt_fallback_engine !== "none") {
     add("ears", "audio", e.stt_fallback_engine, sttUrl(e.stt_fallback_engine));
   }
 
   // eyes: frames to the vision provider, whether or not vision is enabled
-  const p = config.vision.provider;
+  const hasLlm = holds(() => config.llm);
+  const p = holds(() => config.vision) ? config.vision.provider : undefined;
   if (p === "ollama") add("eyes", "frames", "ollama", urls.ollama());
-  else if (p === "openai") add("eyes", "frames", "openai", config.llm.openai.base_url);
+  else if (p === "openai" && hasLlm) add("eyes", "frames", "openai", config.llm.openai.base_url);
   else if (p === "anthropic" || p === "bedrock") hosted("eyes", "frames", p);
 
   // cortex: text to the chat provider
-  const l = config.llm.provider;
+  const l = hasLlm ? config.llm.provider : undefined;
   if (l === "ollama") add("cortex", "text", "ollama", urls.ollama());
   else if (l === "openai") add("cortex", "text", "openai", config.llm.openai.base_url);
   else if (l === "anthropic" || l === "bedrock") hosted("cortex", "text", l);
 
   // tools: the prompt and the tool arguments to each MCP server, whether or not any of its tools is enabled (CFG-EGR-014); mock
   // mode calls no server (CFG-EGR-016), and `stream_info` calls none either
-  if (config.tools.mode === "live") {
+  if (holds(() => config.tools) && config.tools.mode === "live") {
     for (const [name, server] of Object.entries(config.tools.servers)) {
       const host = hostOf(server.url);
       out.push({

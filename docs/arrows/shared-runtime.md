@@ -4,9 +4,9 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 
 ## Status
 
-**#372 settings-store:** 113 specs: 109 `[x]`, 4 `[ ]`, 0 `[D]`. Built and not yet used by `runService`: `receiveCredentials` and `checkCredentialsMessage` (`credentials.ts`, SHARED-BOOT-010) and the state-file helpers `writeStateFile` and `readStateFile` (`state.ts`, settings-store STORE-STATE-002). Open: SHARED-BOOT-002, 008, 009 and 011, the boot order for a unit that waits for its credentials, which the cut-over wires into `runService` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store:** 113 specs: 113 `[x]`, 0 `[ ]`, 0 `[D]`. Built and not yet used by `runService`: `receiveCredentials` and `checkCredentialsMessage` (`credentials.ts`, SHARED-BOOT-010) and the state-file helpers `writeStateFile` and `readStateFile` (`state.ts`, settings-store STORE-STATE-002). Open: SHARED-BOOT-002, 008, 009 and 011, the boot order for a unit that waits for its credentials, which the cut-over wires into `runService` ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
-**AUDITED** for the specs marked `[x]`. Spec file: 110 specs, 110 `[x]`, 0 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `parseWav` / `wavWrap` / `resample`, (at the `discord-voice` subpath) `createDiscordVoiceSession`, (at the `untrusted` subpath) the untrusted text guard's `boundText`, `quoteUntrusted`, `speakerLabel`, `untrustedNotice`, `normalizeKey`, `createOnceCounter` and `untrustedToolNotice`, and (at the package root) `parseVideoValue`. Every service starts through `runService`; salience, cortex, affect and mouth read `control` through `controlFor`; eyes, ears and chat take injection through the shared handler; the Discord connector holds its voice connection through the session.
+**AUDITED** for the specs marked `[x]`. Spec file: 113 specs, 113 `[x]`, 0 `[ ]`, 0 `[D]`. `@cohost/shared` holds the bootstrap (`runService`, which for a unit that gets a credentials message waits for it before loading its projection, SHARED-BOOT-009 to -011, and for a caller that supplies its own loader waits for none), lifecycle (`onShutdown`, `beforeShutdown`, `startHeartbeat`, `tracked`), `retryWithBackoff` and `singleFlight`, `startIdle`, `controlFor`, the inject handler and `subscribeInject`, `receiveCredentials` and the state-file helpers, `parseWav` / `wavWrap` / `resample`, (at the `discord-voice` subpath) `createDiscordVoiceSession`, (at the `untrusted` subpath) the untrusted text guard, and (at the package root) `parseVideoValue`.
 
 ## Spec Coverage
 
@@ -25,7 +25,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 | Video value | SHARED-VID-001 to SHARED-VID-002 | 2 | 0 | 0 | 2 |
 | Head rotation | SHARED-ROT-001 to SHARED-ROT-003 | 3 | 0 | 0 | 3 |
 
-**Summary:** 110 of 110 specs `[x]`; 0 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
+**Summary:** 113 of 113 specs `[x]`; 0 `[ ]`; 0 `[D]`. `node scripts/lid-check.mjs`: 0 problems.
 
 ## References
 
@@ -36,7 +36,7 @@ The `@cohost/shared` package as a segment: the one implementation of each runtim
 - docs/intent/shared-runtime/shared-runtime-design.md
 
 ### EARS
-- docs/intent/shared-runtime/shared-runtime-specs.md (110 specs: 110 `[x]`, 0 `[ ]`, 0 `[D]`)
+- docs/intent/shared-runtime/shared-runtime-specs.md (113 specs: 113 `[x]`, 0 `[ ]`, 0 `[D]`)
 
 ### Tests (files carrying `@spec SHARED-` annotations)
 - packages/shared/test/: audio, boot, boundary, control-routing, control, discord-voice, idle, inject-handler, lifecycle, retry, shutdown, untrusted, wav (`*.test.ts`)

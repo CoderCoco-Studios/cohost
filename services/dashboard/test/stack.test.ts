@@ -5,6 +5,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import type { Runtime, StackResult, StackStatus } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
+import { UNUSED_STORE, gateFor } from "./control-fixture.js";
 import { StackService, type StackOps, type StackSnapshot } from "../src/stack.js";
 
 const up = (extra: StackStatus["services"] = []): StackStatus => ({
@@ -242,7 +243,8 @@ test("onChange fires when the state, a container, the action, last or the bus ch
 // ---------- the routes
 
 const TOKEN = "s3cret-control-token-for-stack-000001";
-const ON = { CONTROL_TOKEN: TOKEN };
+/** The environment of a run: no variable switches the stack routes off (DASH-CTRL-001); the gate is the test's. */
+const ON: NodeJS.ProcessEnv = {};
 
 class CtlBus extends FakeBus { async resetGroup() {} }
 
@@ -257,7 +259,7 @@ async function boot(env: NodeJS.ProcessEnv, statusAtBoot: StackStatus | null = u
     async stop(id) { lifecycle.push(`stop ${id}`); await lifeGate; return { ok: true }; },
     async restart(id) { lifecycle.push(`restart ${id}`); await lifeGate; return { ok: true }; },
   };
-  const setup = setupControl(env, bus, rec.log, rt);
+  const setup = setupControl(env, bus, rec.log, gateFor(TOKEN), rt);
   const svc = new StackService({ log: rec.log, bus: () => "connected", pid: 4242 });
   const f = fakeOps(statusAtBoot ?? none);
   // statusAtBoot === null: nothing has been probed yet
@@ -265,7 +267,7 @@ async function boot(env: NodeJS.ProcessEnv, statusAtBoot: StackStatus | null = u
   if (statusAtBoot) await svc.probe();
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], control: setup.control, stack: svc,
+    store: UNUSED_STORE, services: () => [], control: setup.control, stack: svc,
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());

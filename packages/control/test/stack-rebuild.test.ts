@@ -1,7 +1,7 @@
 import { WS } from "./workspace.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { StackController, type ExecFile } from "../src/index.js";
+import { StackController, type ExecFile, NO_PROVISION } from "../src/index.js";
 
 type Call = { args: string[]; timeoutMs?: number };
 
@@ -30,8 +30,8 @@ function harness(o: { psJson?: string; psQ?: string | Error; inspect?: string | 
     if (args[1] === "up" && o.upFail) throw Object.assign(new Error("exit 1"), { stderr: o.upFail });
     return { stdout: "", stderr: "" };
   };
-  const stack = new StackController({
-    exec, cwd: WS, env: {}, onPath: (n) => n === "docker", readPocketConfig: () => ({ token: "", engine: "kokoro" }),
+  const stack = new StackController({ provision: NO_PROVISION,
+    exec, cwd: WS, env: {}, onPath: (n) => n === "docker",
     onPhase: (k, p) => phases.push([k, p]), now: () => t, sleep: async (ms) => { t += ms; },
   });
   return { stack, calls, phases };

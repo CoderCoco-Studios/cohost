@@ -15,9 +15,9 @@ const str = (def: string) => z.preprocess((v) => (v === "" ? undefined : v), z.s
 
 /**
  * Dotted paths (from the config root) of the credentials (CFG-SEC-003): the sixteen wildcard-free keys and
- * `tools.servers.*.token`, where one `*` segment matches exactly one key of the map `config.yaml` holds there (CFG-SEC-016).
- * They live in `secrets.yaml` (the loader merges them there and ignores any value `config.yaml` holds at one), the settings
- * editor never shows or writes them, and a section's `secrets` list is derived from this one list.
+ * `tools.servers.*.token`, where one `*` segment matches exactly one key of the stored map there (CFG-SEC-016). They are
+ * kept encrypted in the settings store and reach a unit in its credentials message (the loader merges them at these paths), the
+ * settings editor never shows or writes them, and a section's `secrets` list is derived from this one list.
  */
 // @spec CFG-SEC-003, CFG-SEC-016, MOD-CFG-002
 export const SECRET_PATHS: readonly string[] = [
@@ -160,7 +160,7 @@ const ToolServerSchema = z.object({
   url: z.string().refine(isServerUrl, "must be an http or https URL with no user name or password"),
   /** A blank header means `Authorization` (TOOL-MCP-005). */
   header: z.string().regex(HTTP_HEADER, "must be a valid HTTP header name, or blank for Authorization").default(""),
-  /** The credential, a secret (CFG-SEC-016): merged from `secrets.yaml` at `tools.servers.<name>.token`. */
+  /** The credential, a secret (CFG-SEC-016): merged delivered from the settings store at `tools.servers.<name>.token`. */
   token: z.string().default(""),
   /** True forces the server off the LAN whatever its host (CFG-EGR-015). */
   external: z.boolean().default(false),
@@ -276,7 +276,7 @@ export const ConfigSchema = z.object({
     }).prefault({}),
     /** Shared by provider=anthropic and provider=bedrock. */
     claude: z.object({
-      /** Claude API key (a secret, from `secrets.yaml`). */
+      /** Claude API key (a secret, delivered from the settings store). */
       api_key: z.string().default(""),
       /** Thinking depth. "low" is right for one-line chat replies. */
       effort: z.preprocess((v) => v || "low", z.enum(["low", "medium", "high", "xhigh", "max"])),
@@ -288,7 +288,7 @@ export const ConfigSchema = z.object({
     bedrock: z.object({
       /** AWS region of the Bedrock endpoint; all three of region, access key id and secret access key are needed. */
       region: z.string().default(""),
-      /** Secrets, from `secrets.yaml`. A session token is not supported. */
+      /** Secrets, delivered from the settings store. A session token is not supported. */
       access_key_id: z.string().default(""),
       secret_access_key: z.string().default(""),
     }).prefault({}),
@@ -334,7 +334,7 @@ export const ConfigSchema = z.object({
     // @spec CFG-SCH-054
     twitch: z.object({
       channel: z.string().default(""),
-      /** Credentials (secrets, from `secrets.yaml`); the refresh token is required whenever the access token is set. */
+      /** Credentials (secrets, delivered from the settings store); the refresh token is required whenever the access token is set. */
       client_id: z.string().default(""),
       client_secret: z.string().default(""),
       access_token: z.string().default(""),
@@ -344,7 +344,7 @@ export const ConfigSchema = z.object({
     youtube: z.object({
       /** The video (or live stream) whose chat is read: any string; a value that names no video is a source gap, not a load failure. */
       video: z.string().default(""),
-      /** Credential (secret, from `secrets.yaml`, CFG-SEC-003). */
+      /** Credential (secret, delivered from the settings store, CFG-SEC-003). */
       api_key: z.string().default(""),
       /** `stream` reads the live chat stream; `poll` asks for new messages on an interval. Blank is `stream`. */
       transport: z.preprocess((v) => v || "stream", z.enum(["stream", "poll"])),
@@ -573,14 +573,14 @@ export const ConfigSchema = z.object({
       /** Empty or an http(s) URL; trailing slashes are dropped (CFG-SCH-060). */
       base_url: optionalUrl("must be empty or an http or https URL").transform((u) => u.replace(/\/+$/, "")).default(""), // @spec CFG-SCH-059, CFG-SCH-060
       model: z.string().default(""), // @spec CFG-SCH-059
-      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      /** A secret, delivered from the settings store (CFG-SEC-003). */
       api_key: z.string().default(""), // @spec CFG-SCH-059
     }).prefault({}),
     /** The Pocket TTS server (`engine` pocket). */
     pocket: z.object({
       /** Empty (a configuration gap, CFG-SCH-062) or an http(s) URL. */
       url: optionalUrl("must be empty or an http or https URL").default("http://tts-pocket:8000"), // @spec CFG-SCH-061
-      /** A secret, from `secrets.yaml`: only an owner who has accepted the gated Pocket TTS weights needs it (CFG-SEC-003). */
+      /** A secret, delivered from the settings store: only an owner who has accepted the gated Pocket TTS weights needs it (CFG-SEC-003). */
       hf_token: z.string().default(""), // @spec CFG-SCH-061
     }).prefault({}),
   }).transform((v, ctx) => ({ ...v, voice: resolveVoice(v.engine, v.voice, ctx) })),
@@ -671,19 +671,19 @@ export const ConfigSchema = z.object({
     openai: z.object({
       /** Empty or an http(s) URL; trailing slashes are dropped. */
       base_url: optionalUrl("must be empty or an http or https URL").transform((u) => u.replace(/\/+$/, "")).default(""), // @spec CFG-SCH-065
-      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      /** A secret, delivered from the settings store (CFG-SEC-003). */
       api_key: z.string().default(""), // @spec CFG-SCH-065
     }).prefault({}),
     /** The NVIDIA Nemotron speech-to-text server. */
     nemotron: z.object({
       url: optionalUrl("must be empty or an http or https URL").default("http://stt-nemotron:8080"), // @spec CFG-SCH-066
-      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      /** A secret, delivered from the settings store (CFG-SEC-003). */
       api_key: z.string().default(""), // @spec CFG-SCH-066
     }).prefault({}),
     /** The Kyutai speech-to-text server, with its end-of-turn detection. */
     kyutai: z.object({
       url: optionalUrl("must be empty or an http or https URL").default("http://stt-kyutai:8080"), // @spec CFG-SCH-067
-      /** A secret, from `secrets.yaml` (CFG-SEC-003). */
+      /** A secret, delivered from the settings store (CFG-SEC-003). */
       api_key: z.string().default(""), // @spec CFG-SCH-067
       /** Whether the server's end-of-turn detection closes a sentence (`on`) or the silence gap does (`off`). */
       end_of_turn: z.preprocess((v) => v || "off", z.enum(["on", "off"])), // @spec CFG-SCH-068
@@ -754,7 +754,7 @@ export const ConfigSchema = z.object({
   }).prefault({}),
   /**
    * External connectors that attach to the bus (service `connector-discord`, unit `discord`). The whole section is optional so a
-   * config.yaml written before connectors existed still loads. The Discord connector reads the guild and voice channel.
+   * settings tree that holds no connector still loads. The Discord connector reads the guild and voice channel.
    */
   // @spec CFG-SCH-032
   connections: z.object({
@@ -763,7 +763,7 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(true),
       guild_id: DISCORD_ID,
       voice_channel_id: DISCORD_ID,
-      /** The bot token (a secret, from `secrets.yaml`). */
+      /** The bot token (a secret, delivered from the settings store). */
       token: z.string().default(""),
     }).prefault({}),
   }).prefault({}),

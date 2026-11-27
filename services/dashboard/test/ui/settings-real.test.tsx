@@ -19,9 +19,9 @@ function hasName(el: HTMLElement): boolean {
   return !!el.closest("fieldset")?.querySelector(":scope > legend");
 }
 
-/** `GET /config/<section>` for a default config file: every key at its schema default. */
+/** `GET /config/<section>` for a store that holds no setting: every key at its schema default. */
 function read(path: string) {
-  return { section: path, etag: "e", ...readSection("", path, ["llm.openai.api_key"]) };
+  return { section: path, etag: "1", ...readSection({}, path, ["llm.openai.api_key"]) };
 }
 
 // @spec DASH-SET-004, DASH-SET-003, DASH-A11Y-003

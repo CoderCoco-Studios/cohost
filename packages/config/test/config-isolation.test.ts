@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { loadConfig, loadDotEnv, earsSources, parseConfigText, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, isolationOverriddenKeys } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
+import { loadDotEnv, earsSources, parseConfigText, ISOLATION_OVERRIDES, ISOLATION_ENV, encodeIsolation, isolationOverriddenKeys, type Config } from "../src/index.js";
+import { MINIMAL_YAML, isolateEnv, sandbox, loadSettings, exampleYaml, captureWarnings, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
@@ -16,10 +16,10 @@ const MAP = {
 } as const;
 
 function loadShipped(isolation?: Record<string, string>) {
-  shippedSandbox();
   if (isolation) process.env.COHOST_ISOLATION = JSON.stringify(isolation);
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  else delete process.env.COHOST_ISOLATION;
+  let cfg!: Config;
+  const warnings = captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
   return { cfg, warnings };
 }
 
@@ -60,7 +60,7 @@ test("the shipped example writes each of the fourteen override keys as a literal
 });
 
 // @spec CFG-ISO-005
-test("with no .env, no secrets.yaml and no override the shipped example loads: literal model names, avatar.driver null, default avatar ports", () => {
+test("with no .env, no credentials and no override the shipped example loads: literal model names, avatar.driver null, default avatar ports", () => {
   const { cfg, warnings } = loadShipped();
   assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
   assert.equal(cfg.llm.model, "qwen2.5:7b-instruct-q4_K_M");
@@ -74,10 +74,8 @@ test("with no .env, no secrets.yaml and no override the shipped example loads: l
 // @spec CFG-ISO-005
 test("an unknown avatar.driver still fails the load naming avatar.driver, and a blank one means null", () => {
   const withDriver = (v: string) => MINIMAL_YAML.replace("avatar: {", `avatar: { driver: ${v},`);
-  sandbox({ "config.yaml": withDriver("bogus") });
-  assert.throws(() => loadConfig(true), (e: Error) => /avatar\.driver:/.test(e.message));
-  sandbox({ "config.yaml": withDriver("''") });
-  assert.equal(loadConfig(true).avatar.driver, "null");
+  assert.throws(() => loadSettings(withDriver("bogus")), (e: Error) => /avatar\.driver:/.test(e.message));
+  assert.equal(loadSettings(withDriver("''")).avatar.driver, "null");
 });
 
 // @spec CFG-ISO-007
@@ -107,10 +105,9 @@ test("COHOST_ISOLATION sets each entry at its key path, wins over the file, pars
 });
 
 // @spec CFG-ISO-007
-test("an override applies after secrets.yaml and the file, and creates a section the file leaves out", () => {
-  sandbox({ "config.yaml": MINIMAL_YAML.replace("llm: { model: m, embed_model: e }", "llm: { provider: anthropic, model: m, embed_model: e }") });
+test("an override applies over the stored settings, and creates a section the settings leave out", () => {
   process.env.COHOST_ISOLATION = JSON.stringify({ LLM_PROVIDER: "mock", MOUTH_DRYRUN_ENABLED: "true", AVATAR_DRIVER: "vmc" });
-  const cfg = loadConfig(true);
+  const cfg = loadSettings(MINIMAL_YAML.replace("llm: { model: m, embed_model: e }", "llm: { provider: anthropic, model: m, embed_model: e }"));
   assert.equal(cfg.llm.provider, "mock");
   assert.equal(cfg.mouth.outputs.dryrun.enabled, true);
   assert.equal(cfg.avatar.driver, "vmc");
@@ -130,11 +127,10 @@ test("encodeIsolation writes the JSON object loadConfig reads, and nothing for a
   const v = encodeIsolation({ EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });
   assert.deepEqual(JSON.parse(v), { EARS_SOURCES: "[]", EARS_STT_ENGINE: "stub" });
   assert.throws(() => encodeIsolation({ NOT_AN_OVERRIDE: "x" }), /NOT_AN_OVERRIDE/);
-  shippedSandbox();
   process.env.COHOST_ISOLATION = v;
-  captureWarnings(() => { assert.deepEqual(earsSources(loadConfig(true).ears), []); });
+  captureWarnings(() => { assert.deepEqual(earsSources(loadSettings(exampleYaml()).ears), []); });
   process.env.COHOST_ISOLATION = "";
-  captureWarnings(() => { assert.deepEqual(earsSources(loadConfig(true).ears), ["discord"], "empty means no override"); });
+  captureWarnings(() => { assert.deepEqual(earsSources(loadSettings(exampleYaml()).ears), ["discord"], "empty means no override"); });
 });
 
 // @spec CFG-ISO-007
@@ -160,10 +156,11 @@ test("loadDotEnv never sets COHOST_ISOLATION, so only the process environment ca
 // @spec CFG-ISO-009
 test("variables and .env lines named like an override have no effect on the loaded config", () => {
   const lines = Object.keys(MAP).map((n) => `${n}=bogus-value`).join("\n");
-  shippedSandbox({ ".env": `${lines}\n` });
+  const dir = sandbox({ ".env": `${lines}\n` });
+  loadDotEnv(join(dir, "..", ".env"));
   for (const n of Object.keys(MAP)) process.env[n] = "bogus-value";
-  let cfg!: ReturnType<typeof loadConfig>;
-  captureWarnings(() => { cfg = loadConfig(true); });
+  let cfg!: Config;
+  captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
   assert.equal(cfg.llm.provider, "ollama");
   assert.equal(cfg.avatar.driver, "null");
   assert.deepEqual(earsSources(cfg.ears), ["discord"]);
@@ -174,9 +171,8 @@ test("variables and .env lines named like an override have no effect on the load
 // @spec CFG-ISO-010
 test("a COHOST_ISOLATION that is not a JSON object of strings, or names an unknown override, fails the load naming COHOST_ISOLATION and the unknown name", () => {
   const fails = (value: string): string => {
-    shippedSandbox();
     process.env.COHOST_ISOLATION = value;
-    try { loadConfig(true); } catch (e) { return (e as Error).message; }
+    try { loadSettings(exampleYaml()); } catch (e) { return (e as Error).message; }
     return assert.fail(`expected a failure for ${value}`);
   };
   for (const bad of ["{not json", "[\"AVATAR_DRIVER\"]", "\"AVATAR_DRIVER\"", "42", JSON.stringify({ AVATAR_DRIVER: 1 }), JSON.stringify({ VISION_ENABLED: true }), JSON.stringify({ AVATAR_DRIVER: null })]) {
@@ -189,9 +185,8 @@ test("a COHOST_ISOLATION that is not a JSON object of strings, or names an unkno
 
 // @spec CFG-ISO-007
 test("a value an override gives that fails the schema fails the load and names the key and the override", () => {
-  shippedSandbox();
   process.env.COHOST_ISOLATION = JSON.stringify({ AVATAR_DRIVER: "bogus" });
-  assert.throws(() => loadConfig(true), (e: Error) => /avatar\.driver:/.test(e.message) && /COHOST_ISOLATION/.test(e.message));
+  assert.throws(() => loadSettings(exampleYaml()), (e: Error) => /avatar\.driver:/.test(e.message) && /COHOST_ISOLATION/.test(e.message));
 });
 
 // @spec CFG-ISO-007, CFG-ISO-006
@@ -206,14 +201,12 @@ test("COHOST_ISOLATION CHAT_SOURCES parses as a YAML flow value into chat.source
 
 // @spec CFG-ISO-003, CFG-ISO-007
 test("an isolation override naming an unknown chat source fails the load naming chat.sources", () => {
-  shippedSandbox();
   process.env.COHOST_ISOLATION = JSON.stringify({ CHAT_SOURCES: "[irc]" });
-  assert.throws(() => loadConfig(true), /chat\.sources/);
+  assert.throws(() => loadSettings(exampleYaml()), /chat\.sources/);
 });
 
 // @spec CFG-ISO-007
 test("the settings editor's validation of an edited file applies no CHAT_SOURCES override", () => {
-  shippedSandbox();
   process.env.COHOST_ISOLATION = JSON.stringify({ CHAT_SOURCES: "[fake]" });
   const r = parseConfigText(readFileSync(join(repo, "config", "config.example.yaml"), "utf8"));
   assert.ok(r.ok);

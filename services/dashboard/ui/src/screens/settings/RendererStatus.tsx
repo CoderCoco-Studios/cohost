@@ -112,7 +112,7 @@ export function RendererStatus({ st }: { st: SectionState }) {
       </output>
       {read.kind === "ready" && differs(st, read.status) ? (
         <p className="note note-warn small">
-          {`config.yaml holds ${describe(savedFraming(st))} but the renderer shows ${describeApplied(read.status.applied)}; restart the dashboard to apply the file.`}
+          {`The saved settings hold ${describe(savedFraming(st))} but the renderer shows ${describeApplied(read.status.applied)}; restarting the dashboard applies them.`}
         </p>
       ) : null}
       {notices ? <p className="small"><a href={`/assets/${notices}`}>Third-party notices</a></p> : null}

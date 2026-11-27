@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -202,28 +202,64 @@ test("tts-pocket's entrypoint is docker/tts-pocket/entrypoint.sh, mounted read-o
   assert.ok(existsSync(root("docker/tts-pocket/entrypoint.sh")));
 });
 
-const SECRET = "/run/cohost-secret/hf_token";
-/** Runs the entrypoint with the secret path redirected to `dir`, handing off to the command given. */
-function runEntry(secretDir: string, ...cmd: string[]) {
-  const text = read("docker/tts-pocket/entrypoint.sh").replaceAll(SECRET, join(secretDir, "hf_token"));
-  const script = join(secretDir, "entrypoint.sh");
+const TOKEN = "/run/cohost/hf_token";
+
+// @spec DEPLOY-ENG-014
+test("the entrypoint waits with no timeout for /run/cohost/hf_token, reads it, deletes it, exports a non-empty value as HF_TOKEN and execs the command", () => {
+  const script = code(read("docker/tts-pocket/entrypoint.sh"));
+  assert.match(script, /^TOKEN_FILE=\/run\/cohost\/hf_token$/m, "the token file is /run/cohost/hf_token");
+  assert.match(script, /while \[ ! -f "\$TOKEN_FILE" \]; do sleep \d+; done/, "it waits for the file");
+  assert.doesNotMatch(script, /\btimeout\b|\s-(gt|ge|lt|le)\s|\$\(\(/, "no timeout, counter or deadline bounds the wait");
+  const readAt = script.indexOf('HF_TOKEN="$(cat "$TOKEN_FILE")"');
+  const rmAt = script.indexOf('rm -f "$TOKEN_FILE"');
+  const exportAt = script.indexOf('if [ -n "$HF_TOKEN" ]; then export HF_TOKEN; else unset HF_TOKEN; fi');
+  assert.ok(readAt >= 0, "it reads the file's content");
+  assert.ok(rmAt > readAt, "it deletes the file after reading it");
+  assert.ok(exportAt >= 0, "HF_TOKEN is exported only when not empty, and unset otherwise");
+  assert.equal(script.trimEnd().split("\n").at(-1), 'exec "$@"', "it ends by replacing the shell with the command, unchanged");
+  const trapAt = script.indexOf("trap 'exit 143' TERM INT");
+  assert.ok(trapAt >= 0 && trapAt < script.indexOf("while"), "a stop while it waits ends it with 143, before the wait starts");
+});
+
+// @spec DEPLOY-ENG-014
+test("a SIGTERM while the entrypoint waits for the token ends it with status 143", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-entry-"));
+  try {
+    const script = join(dir, "entrypoint.sh");
+    writeFileSync(script, read("docker/tts-pocket/entrypoint.sh").replaceAll(TOKEN, join(dir, "hf_token")));
+    const child = spawn("sh", [script, "true"], { env: { PATH: process.env.PATH ?? "" }, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 300));
+    child.kill("SIGTERM");
+    const status = await new Promise<number | null>((resolve) => child.once("exit", (code) => resolve(code)));
+    assert.equal(status, 143);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** Runs the entrypoint with the token path redirected into `dir` (the file already written, so the wait ends at once). */
+function runEntry(dir: string, ...cmd: string[]) {
+  const text = read("docker/tts-pocket/entrypoint.sh").replaceAll(TOKEN, join(dir, "hf_token"));
+  const script = join(dir, "entrypoint.sh");
   writeFileSync(script, text);
-  return spawnSync("sh", [script, ...cmd], { encoding: "utf8", env: { PATH: process.env.PATH ?? "" } });
+  return spawnSync("sh", [script, ...cmd], { encoding: "utf8", env: { PATH: process.env.PATH ?? "" }, timeout: 10_000 });
 }
 
 // @spec DEPLOY-ENG-014
-test("the entrypoint exports the token file's content as HF_TOKEN for the command it runs, and runs it unchanged when the file is absent", () => {
-  assert.ok(read("docker/tts-pocket/entrypoint.sh").includes(SECRET), "it reads /run/cohost-secret/hf_token");
+test("with the token file present, the entrypoint passes a non-empty token as HF_TOKEN, leaves it unset for an empty file, deletes the file and execs the command", () => {
   const dir = mkdtempSync(join(tmpdir(), "cohost-entry-"));
   try {
     const probe = ["sh", "-c", 'printf "%s|%s" "${HF_TOKEN-unset}" "$1"', "sh", "arg-kept"];
-    const absent = runEntry(dir, ...probe);
-    assert.equal(absent.status, 0, absent.stderr);
-    assert.equal(absent.stdout, "unset|arg-kept", "no file: HF_TOKEN stays unset and the command runs with its arguments");
     writeFileSync(join(dir, "hf_token"), "hf_secret_value\n");
     const present = runEntry(dir, ...probe);
     assert.equal(present.status, 0, present.stderr);
     assert.equal(present.stdout, "hf_secret_value|arg-kept", "the file's content, without its trailing newline");
+    assert.ok(!existsSync(join(dir, "hf_token")), "the file is deleted");
+    writeFileSync(join(dir, "hf_token"), "");
+    const empty = runEntry(dir, ...probe);
+    assert.equal(empty.status, 0, empty.stderr);
+    assert.equal(empty.stdout, "unset|arg-kept", "an empty file: HF_TOKEN stays unset and the command runs with its arguments");
+    writeFileSync(join(dir, "hf_token"), "");
     assert.equal(runEntry(dir, "sh", "-c", "exit 7").status, 7, "the command is exec'd, so its exit status is the container's");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -240,7 +276,7 @@ test("no Compose file or Dockerfile carries the Pocket token as an environment e
       const args = Array.isArray(b) ? b.map((a) => a.split("=")[0]!) : Object.keys(b ?? {});
       for (const k of args) assert.doesNotMatch(k, /^HF_|HUGGING|TOKEN/i, `${f} ${name} passes build arg ${k}`);
     }
-    assert.doesNotMatch(code(read(f)).replace(/\/run\/cohost-secret\/hf_token/g, ""), /hf_token|HF_TOKEN/, `${f} names the token nowhere but a mount`);
+    assert.doesNotMatch(code(read(f)), /hf_token|HF_TOKEN/, `${f} names the token nowhere`);
   }
   for (const f of dockerfiles()) assert.doesNotMatch(code(read(f)), /HF_TOKEN|hf_token|HUGGING_?FACE_HUB_TOKEN/i, f);
 });
@@ -284,10 +320,13 @@ test("the GPU overlay's tts defaults to Kokoro-FastAPI v0.10.0-cu128 with a date
   assert.ok(read(".env.example").split("\n").some((l) => /^#\s*KOKORO_IMAGE=ghcr\.io\/remsky\/kokoro-fastapi-gpu:v0\.10\.0-cu126$/.test(l)), "a commented KOKORO_IMAGE line naming v0.10.0-cu126");
 });
 
-// @spec DEPLOY-ENG-019
-test("tts-pocket mounts no ./config; its only secret-bearing mount is data/tts-pocket-secret, read-only at /run/cohost-secret", () => {
+// @spec DEPLOY-ENG-019, DEPLOY-COMPOSE-033, DEPLOY-COMPOSE-034
+test("tts-pocket mounts no projection and nothing under ./data (only its cache and the read-only entrypoint), and has the /run/cohost tmpfs and no core file", () => {
   const vols = POCKET.volumes!;
-  for (const v of vols) assert.doesNotMatch(v, /(^|:)\.\/config\b|\/app\/config|secrets\.yaml/, `mount ${v}`);
-  assert.deepEqual(vols.filter((v) => /^\.\/data\b|secret/.test(v)), ["./data/tts-pocket-secret:/run/cohost-secret:ro"]);
-  for (const v of vols) assert.match(v, /^(tts-pocket-cache:|\.\/docker\/tts-pocket\/entrypoint\.sh:|\.\/data\/tts-pocket-secret:)/, `unexpected mount ${v}`);
+  for (const v of vols) assert.equal(typeof v, "string", "no long-syntax mount: no projection bind");
+  for (const v of vols) assert.doesNotMatch(v, /(^|:)\.\/config\b|\/app\/config|projections|^\.\/data\b|\/run\/cohost/, `mount ${v}`);
+  assert.deepEqual(vols.toSorted(), ["./docker/tts-pocket/entrypoint.sh:/cohost/entrypoint.sh:ro", "tts-pocket-cache:/root/.cache"]);
+  const pocket = POCKET as Svc & { tmpfs?: string[]; ulimits?: { core?: unknown } };
+  assert.deepEqual(pocket.tmpfs, ["/run/cohost:mode=0700,size=1m"], "the token arrives in RAM");
+  assert.equal(pocket.ulimits?.core, 0);
 });

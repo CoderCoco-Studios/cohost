@@ -1,42 +1,43 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { createDashboardHandler } from "../src/routes.js";
 import { testControl } from "./control-fixture.js";
 import { lanHandler } from "../src/host.js";
 import type { StackService } from "../src/stack.js";
-import { configDir, configText } from "./config-fixture.js";
+import { rawSection, storedSection, testStore, type Edits } from "./store-fixture.js";
 
 interface Entry { service: string; data: string; engine: string; host?: string; hosted?: string; offLan: boolean }
 
-async function boot(dir: string) {
-  process.env["CONFIG_DIR"] = dir;
-  process.env["COHOST_ENV_FILE"] = join(dir, "no.env");
-  after(() => { delete process.env["CONFIG_DIR"]; delete process.env["COHOST_ENV_FILE"]; });
+async function boot(edits: Edits = {}, secrets: Record<string, string> = {}) {
+  const t = await testStore({ edits, token: false });
+  after(() => t.close());
+  if (Object.keys(secrets).length) {
+    const w = t.store.write({ secrets });
+    assert.equal(w.ok, true, JSON.stringify(w));
+  }
   const handler = createDashboardHandler({
     bus: new FakeBus(), log: recordingLog().log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services: () => [], stack: {} as unknown as StackService, control: testControl(),
+    store: t.store, services: () => [], stack: {} as unknown as StackService, control: testControl(),
   });
   const full = http.createServer(handler);
   const lan = http.createServer(lanHandler(handler));
   await Promise.all([full, lan].map((s) => new Promise<void>((r) => s.listen(0, "127.0.0.1", r))));
   after(() => { full.close(); lan.close(); });
   const at = (s: http.Server) => `http://127.0.0.1:${(s.address() as { port: number }).port}`;
-  return { get: (p = "/egress") => fetch(at(full) + p), lanGet: (p = "/egress") => fetch(at(lan) + p), dir };
+  return { get: (p = "/egress") => fetch(at(full) + p), lanGet: (p = "/egress") => fetch(at(lan) + p), ...t };
 }
 
-const MIXED = configText({
+const MIXED: Edits = {
   network: { lan: ["corp.example.com"] },
   voice: { engine: "openai", "openai.base_url": "https://api.example.com/v1" },
   llm: { provider: "anthropic" },
-});
+};
 
 // @spec DASH-EGR-001
-test("GET /egress answers {destinations} from egressDestinations over the loaded config, ungated, with network.lan applied", async () => {
-  const t = await boot(configDir(MIXED));
+test("GET /egress answers {destinations} from egressDestinations over the stored settings, ungated, with network.lan applied", async () => {
+  const t = await boot(MIXED);
   const r = await t.get();
   assert.equal(r.status, 200);
   const { destinations } = (await r.json()) as { destinations: Entry[] };
@@ -50,11 +51,11 @@ test("GET /egress answers {destinations} from egressDestinations over the loaded
 
 // @spec DASH-EGR-001
 test("a host named in network.lan, and a bare Compose service name, read as the LAN", async () => {
-  const t = await boot(configDir(configText({
+  const t = await boot({
     network: { lan: ["corp.example.com"] },
     voice: { engine: "pocket", "pocket.url": "http://corp.example.com:8000" },
     ears: { stt_engine: "openai", "openai.base_url": "http://stt-box:9000/v1" },
-  })));
+  });
   const { destinations } = (await (await t.get()).json()) as { destinations: Entry[] };
   assert.equal(destinations.find((d) => d.service === "voice")!.offLan, false);
   const ears = destinations.find((d) => d.service === "ears")!;
@@ -63,28 +64,27 @@ test("a host named in network.lan, and a bare Compose service name, read as the 
 });
 
 // @spec DASH-EGR-001
-test("the answer follows the saved file: it is read afresh on every request, not held from the first", async () => {
-  const dir = configDir(configText({ voice: { engine: "openai", "openai.base_url": "https://one.example.com/v1" } }));
-  const t = await boot(dir);
+test("the answer follows the store: it is read afresh on every request, not held from the first", async () => {
+  const t = await boot({ voice: { engine: "openai", "openai.base_url": "https://one.example.com/v1" } });
   const host = async () => ((await (await t.get()).json()) as { destinations: Entry[] }).destinations.find((d) => d.service === "voice")!.host;
   assert.equal(await host(), "one.example.com");
-  writeFileSync(join(dir, "config.yaml"), configText({ voice: { engine: "openai", "openai.base_url": "https://two.example.com/v1" } }));
+  assert.equal(t.store.setKey("voice.openai.base_url", "https://two.example.com/v1").ok, true);
   assert.equal(await host(), "two.example.com");
 });
 
 // @spec DASH-EGR-002
 test("GET /egress is not served on the LAN listener: 404", async () => {
-  const t = await boot(configDir(MIXED));
+  const t = await boot(MIXED);
   assert.equal((await t.get()).status, 200);
   assert.equal((await t.lanGet()).status, 404);
 });
 
 // @spec DASH-EGR-003
-test("no answer carries a secret value: not a key in secrets.yaml, not credentials inside a configured URL", async () => {
-  const t = await boot(configDir(
-    configText({ voice: { engine: "openai", "openai.base_url": "https://user:pw-URL-SECRET@api.example.com/v1" } }),
-    `voice:\n  openai:\n    api_key: sk-SECRET-KEY-123\nllm:\n  claude:\n    api_key: sk-SECRET-CLAUDE\n`,
-  ));
+test("no answer carries a secret value: not a stored credential, not credentials inside a configured URL", async () => {
+  const t = await boot(
+    { voice: { engine: "openai", "openai.base_url": "https://user:pw-URL-SECRET@api.example.com/v1" } },
+    { "voice.openai.api_key": "sk-SECRET-KEY-123", "llm.claude.api_key": "sk-SECRET-CLAUDE" },
+  );
   const r = await t.get();
   assert.equal(r.status, 200);
   const text = await r.text();
@@ -92,15 +92,16 @@ test("no answer carries a secret value: not a key in secrets.yaml, not credentia
 });
 
 // @spec DASH-EGR-004
-test("a config that fails to load answers 500 {ok: false, detail} naming the loader's error, no-store, and the next request re-reads", async () => {
-  const dir = configDir(configText().replace('engine: "kokoro"', 'engine: "nonsense"'));
-  const t = await boot(dir);
+test("stored settings that fail the schema answer 500 {ok: false, detail} naming the store's error, no-store, and the next request re-reads", async () => {
+  const t = await boot(MIXED);
+  const voice = storedSection(t.store, "voice");
+  rawSection(t.opts.dataDir!, "voice", { ...voice, engine: "nonsense" });
   const r = await t.get();
   assert.equal(r.status, 500);
   assert.equal(r.headers.get("cache-control"), "no-store");
   const body = (await r.json()) as { ok: boolean; detail: string };
   assert.equal(body.ok, false);
   assert.match(body.detail, /voice\.engine/);
-  writeFileSync(join(dir, "config.yaml"), MIXED);
+  rawSection(t.opts.dataDir!, "voice", voice);
   assert.equal((await t.get()).status, 200, "a failure is never cached");
 });

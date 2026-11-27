@@ -4,13 +4,15 @@ services/dashboard/dist-ui/
 *.tsbuildinfo
 .env
 data/
-secrets/
 *.log
 .DS_Store
-config/config.yaml
-config/personality.md
-config/expressions.yaml
-# VTube Studio plugin token written by the avatar driver
+
+# The plaintext settings and credential files of before the settings store (DEPLOY-REPO-007): an owner's checkout may still
+# hold them until they are imported and deleted, and none may be committed. The committed examples stay tracked.
+secrets/
+config/*.yaml
+config/*.md
+!config/*.example.*
 config/.vts-token
 
 # VitePress

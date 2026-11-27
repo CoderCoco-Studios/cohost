@@ -2,7 +2,7 @@ import "./helpers/dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { GROUPS, SECTION_PATHS, applySection, etagOf, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets } from "@cohost/config";
+import { GROUPS, SECTION_PATHS, applySection, parseYaml, readSection, sectionJsonSchema, sectionPresentation, sectionSecrets } from "@cohost/config";
 import { screen, userEvent, within } from "./helpers/render";
 import { boot, settle } from "./settings-helpers";
 
@@ -16,18 +16,35 @@ const SECTION = "brain.salience";
 const KEY = "module.llm.provider";
 const voiceRows = () => document.querySelector<HTMLElement>('[data-key="lang_code"][data-section="voice"]')!;
 
-/** A config.yaml in memory behind the real editor: what `handleConfig` does for GET and PUT of one section. */
+type Tree = Record<string, unknown>;
+
+/** `tree` with the section document at the dotted `path` replaced by `doc` (removed when `doc` is null), as the store writes it. */
+function withSection(tree: Tree, path: string, doc: unknown): Tree {
+  const next = structuredClone(tree);
+  const segs = path.split(".");
+  let node = next;
+  for (const s of segs.slice(0, -1)) node = (node[s] ??= {}) as Tree;
+  if (doc === null || doc === undefined) delete node[segs.at(-1)!];
+  else node[segs.at(-1)!] = doc;
+  return next;
+}
+
+/**
+ * The stored settings in memory behind the real editor, seeded from the committed example: what `handleConfig` does for GET and
+ * PUT of one section over the settings store, the revision as the etag.
+ */
 function realFile(SECTION: string) {
-  const f = { text: readFileSync(new URL("../../../../config/config.example.yaml", import.meta.url), "utf8"), puts: [] as string[] };
-  const get = () => ({ json: { section: SECTION, etag: etagOf(f.text), ...readSection(f.text, SECTION, []) } });
+  const f = { tree: parseYaml(readFileSync(new URL("../../../../config/config.example.yaml", import.meta.url), "utf8")) as Tree, revision: 1, puts: [] as string[] };
+  const get = () => ({ json: { section: SECTION, etag: String(f.revision), ...readSection(f.tree, SECTION, []) } });
   const put = (call: { body?: string }) => {
-    const { etag, values } = JSON.parse(call.body ?? "{}") as { etag: string; values: Record<string, unknown> };
+    const { etag, values, remove } = JSON.parse(call.body ?? "{}") as { etag: string; values: Record<string, unknown>; remove?: string[] };
     f.puts.push(call.body ?? "");
-    if (etag !== etagOf(f.text)) return { status: 409, json: { ok: false, etag: etagOf(f.text) } };
-    const r = applySection(f.text, SECTION, values, []);
+    if (etag !== String(f.revision)) return { status: 409, json: { ok: false, etag: String(f.revision) } };
+    const r = applySection(f.tree, SECTION, values, remove ?? []);
     if (!r.ok) return { status: 400, json: { ok: false, issues: r.issues } };
-    f.text = r.text;
-    return { status: 200, json: { ok: true, etag: etagOf(f.text), restart: [], warnings: r.warnings } };
+    f.tree = withSection(f.tree, SECTION, r.doc);
+    f.revision++;
+    return { status: 200, json: { ok: true, etag: String(f.revision), restart: [], warnings: r.warnings } };
   };
   return { f, get, put };
 }
@@ -47,14 +64,14 @@ test("Not set on an optional enum saves through the real editor and the key read
   await user.click(saveBar().getByRole("button", { name: "Save" }));
   await settle();
   assert.deepEqual(screen.queryAllByRole("alert").map((a) => a.textContent), [], "setting a provider saved");
-  assert.equal(readSection(f.text, SECTION, []).keys[KEY]?.value, "ollama");
+  assert.equal(readSection(f.tree, SECTION, []).keys[KEY]?.value, "ollama");
   await user.click(within(provider()).getByRole("radio", { name: "Not set" }));
   await user.click(saveBar().getByRole("button", { name: "Save" }));
   await settle();
   const alert = screen.queryByRole("alert");
   assert.ok(alert === null, `Not set was refused: ${alert?.textContent}`);
-  const held = readSection(f.text, SECTION, []).keys[KEY]!;
-  assert.equal(held.value, undefined, "the file no longer holds a provider for this key");
+  const held = readSection(f.tree, SECTION, []).keys[KEY]!;
+  assert.equal(held.value, undefined, "the store no longer holds a provider for this key");
   assert.ok((within(provider()).getByRole("radio", { name: "Not set" }) as HTMLInputElement).checked, "the screen shows Not set");
   assert.ok(screen.getByText("0 edits in this section"));
 });
@@ -72,12 +89,12 @@ test("an optional enum with many choices (a select) offers Not set too, shows it
   await user.click(saveBar().getByRole("button", { name: "Save" }));
   await settle();
   assert.deepEqual(screen.queryAllByRole("alert").map((a) => a.textContent), []);
-  assert.equal(readSection(f.text, "voice", []).keys.lang_code?.value, "a");
+  assert.equal(readSection(f.tree, "voice", []).keys.lang_code?.value, "a");
   await user.selectOptions(select(), "");
   await user.click(saveBar().getByRole("button", { name: "Save" }));
   await settle();
   assert.deepEqual(screen.queryAllByRole("alert").map((a) => a.textContent), [], "Not set was accepted");
-  assert.equal(readSection(f.text, "voice", []).keys.lang_code?.value, undefined);
+  assert.equal(readSection(f.tree, "voice", []).keys.lang_code?.value, undefined);
   assert.equal(select().selectedOptions[0]?.textContent, "Not set");
 });
 
@@ -96,7 +113,7 @@ test("a Not set save whose answer was lost after it landed is confirmed by the r
   b.app.fetch.on("PUT /config/voice", async (call) => { put(call); throw new TypeError("network error"); });
   await user.click(saveBar().getByRole("button", { name: "Save" }));
   await settle();
-  assert.equal(readSection(f.text, "voice", []).keys.lang_code?.value, undefined, "the write landed");
+  assert.equal(readSection(f.tree, "voice", []).keys.lang_code?.value, undefined, "the write landed");
   assert.deepEqual(screen.queryAllByRole("alert").map((a) => a.textContent), [], "the lost answer was confirmed, not reported as unknown");
   assert.ok(screen.getByText("Saved."));
 });

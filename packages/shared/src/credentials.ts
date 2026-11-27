@@ -28,7 +28,7 @@ export interface ReceivedCredentials {
 }
 
 /** A replacement for `receiveCredentials`, for a test that runs a service with no delivery. */
-export type CredentialsReceiver = (unit: string) => Promise<ReceivedCredentials>;
+export type CredentialsReceiver = (unit: string, opts?: Pick<ReceiveOptions, "signal" | "log">) => Promise<ReceivedCredentials>;
 
 export interface ReceiveOptions {
   /** The environment to read `COHOST_CREDENTIALS_FD` from (default `process.env`). */

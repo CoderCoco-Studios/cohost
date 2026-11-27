@@ -1,4 +1,5 @@
-import { useEffect, useId } from "react";
+import { useEffect, useId, useState } from "react";
+import { Button } from "../../components/Button";
 import { PageHeading } from "../../components/PageHeading";
 import { ErrorState, LoadingState } from "../../components/StateBlocks";
 import { FieldControl, isEmbedded, isLabelable, type Wiring } from "./controls";
@@ -105,13 +106,27 @@ function Group({ title, section, keys, st, picks, egress, liveNote }: { title: s
   );
 }
 
-/** The keys `config.yaml` holds that the schema does not define, for every section of the page (DASH-SET-033). */
-function UnknownKeys({ paths }: { paths: string[] }) {
+/**
+ * The stored keys the schema does not define, for every section of the page, with Remove, which deletes them from the settings
+ * store (DASH-SET-033).
+ */
+function UnknownKeys({ paths, onRemove }: { paths: string[]; onRemove: () => Promise<{ ok: true } | { ok: false; detail: string }> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (paths.length === 0) return null;
+  const one = paths.length === 1;
+  const remove = async (): Promise<void> => {
+    setBusy(true);
+    const r = await onRemove();
+    setBusy(false);
+    setError(r.ok ? null : r.detail);
+  };
   return (
     <div className="note note-warn small" role="note" aria-label="Unrecognised keys">
-      <p>{`config.yaml holds ${paths.length === 1 ? "a key that is" : "keys that are"} not recognised and ${paths.length === 1 ? "is" : "are"} ignored (a misspelt name is the usual cause). A save leaves ${paths.length === 1 ? "it" : "them"} as ${paths.length === 1 ? "it is" : "they are"}. To remove ${paths.length === 1 ? "it" : "them"}, edit config.yaml.`}</p>
+      <p>{`The saved settings hold ${one ? "a key that is" : "keys that are"} not recognised and ${one ? "is" : "are"} ignored (a setting this build no longer has is the usual cause). A save leaves ${one ? "it" : "them"} as ${one ? "it is" : "they are"}.`}</p>
       <ul className="plain mono">{paths.map((p) => <li key={p}>{p}</li>)}</ul>
+      <div className="row"><Button busy={busy} disabled={busy} onClick={() => void remove()}>Remove</Button></div>
+      {error ? <p role="alert">{error}</p> : null}
     </div>
   );
 }
@@ -143,7 +158,7 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
         <PageHeading>{primary.title}</PageHeading>
         {primary.about ? <p className="muted">{primary.about}</p> : null}
         <p className="small muted">
-          {`config.yaml · `}<code className="mono">{primary.path}</code>{` · ${count} ${count === 1 ? "setting" : "settings"} · `}
+          {`settings · `}<code className="mono">{primary.path}</code>{` · ${count} ${count === 1 ? "setting" : "settings"} · `}
           {primary.services.length > 0 ? `read by ${primary.services.join(", ")}` : "read by the dashboard itself"}
           {primary.live ? ` · ${LIVE_LINE}` : primary.services.length > 0 ? " · changes apply when they restart" : " · applies at its next start"}
         </p>
@@ -153,7 +168,7 @@ export function SectionPage({ primary, members }: { primary: SectionModel; membe
           : !loaded ? <LoadingState label="Loading settings…" />
           : (
             <>
-              <UnknownKeys paths={members.flatMap((m) => sections[m.path]?.unknown ?? [])} />
+              <UnknownKeys paths={members.flatMap((m) => sections[m.path]?.unknown ?? [])} onRemove={() => settings.removeUnknown(members.map((m) => m.path))} />
               {keyGroups(full).map((g) => <Group key={g.id || "general"} title={g.title} section={full} keys={g.keys} st={sections[primary.path]!} picks={picks} egress={egress} />)}
               {members.slice(1).map((m) => { const mm = keysOf(m, sections[m.path]); return <Group key={m.path} title={m.title} section={mm} keys={mm.keys} st={sections[m.path]!} picks={picks} egress={egress} liveNote />; })}
             </>

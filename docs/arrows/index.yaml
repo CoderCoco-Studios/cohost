@@ -51,7 +51,7 @@ arrows:
     blocks: [chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard, module-contract, connections]
     blockedBy: [config, event-bus]
     detail: shared-runtime.md
-    next: "113 specs: 109 [x], 4 [ ], 0 [D]. #372 step 2 built receiveCredentials (SHARED-BOOT-010) and the state-file helpers, unused by runService. Open: SHARED-BOOT-002, 008, 009, 011, the boot order for a unit that waits for its credentials (step 3a). Earlier: (the untrusted tool notice and the head-rotation module are built)."
+    next: "113 specs: 113 [x], 0 [ ], 0 [D]. #372: runService waits for a unit's credentials message before loading its projection (SHARED-BOOT-009 to -011); a caller that supplies its own loader (the tests, the dashboard) waits for none, and no unit's entry passes one (a test fails otherwise)."
     drift: null
 
   module-contract:
@@ -63,7 +63,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, dashboard, shared-runtime]
     detail: module-contract.md
-    next: "65 specs: 50 [x], 15 [ ], 0 [D]. #372: the manifest's documents and stateKey are built (MOD-MAN-016, -017; the settings declarations live in UNIT_SETTINGS in @cohost/config). Open: the settings routes over the store (MOD-CFG-003..017), the seed (MOD-MAN-011), the per-unit boot test against a projection (MOD-MAN-018, needs the cut-over). Earlier: (MOD-CFG-007, MOD-PAUSE-001 and MOD-TEST-001, rewritten for #370: no sensitive-key tier, no control-off state; MOD-TEST-007 and -008: the live-stack tools run, which needs Docker; owner hands-on check). Every application unit declares logging (MOD-MAN-002, #349) is built. The manifest secrets lists (MOD-MAN-015) and eyes declaring llm (MOD-MAN-002) are built, #318."
+    next: "65 specs: 63 [x], 2 [ ], 0 [D]. #372 built: the settings routes over the store (MOD-CFG-003 to -017), the seed check (MOD-MAN-011), the per-unit boot tests against a projection of the declared sections (MOD-MAN-018). Open: MOD-TEST-007 and -008, the live-stack tools run, which needs Docker (owner hands-on check)."
     drift: null
 
 
@@ -76,7 +76,7 @@ arrows:
     blocks: [event-bus, model-backends, region-hooks, working-memory, control-plane, chat, eyes, ears, mouth, salience, affect, memory, cortex, voice, avatar, dashboard]
     blockedBy: []
     detail: config.md
-    next: "268 specs: 218 [x], 50 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): CFG-LOAD, CFG-SEC, CFG-USR, CFG-LOG-002/003, CFG-ISO-005/007, CFG-ENV and CFG-RCV-001 rewritten for the projection loader and delivered credentials; the YAML and secrets-file lines (CFG-DIR-003..005, CFG-SEC-001, 004..009, 011..015, 018, 019, CFG-RCV-002..006, CFG-USR-013, 016) retired, still open while the code has them; CFG-SEC-021 new. Earlier: CFG-ENV-008, -012, CFG-SEC-003, CFG-SCH-030, -039 and CFG-USR-012 rewritten and CFG-SEC-020 added for #370 (ears.http.token and CONTROL_ENABLED retired; ears gets a derived verifier, never CONTROL_TOKEN). The structured ConfigError, checkConfig and the recovery editor (CFG-RCV-001 to 006, #360) are built. The logging design (#349) is built: CFG-LOG-002..025, CFG-SCH-113/114, CFG-USR-022, CFG-PRES-021, CFG-URL-004 and CFG-ENV-012 (LOG_LEVEL out, NO_COLOR in). secrets/secrets.yaml, projectSecrets and COHOST_SECRETS_FILE (CFG-SEC-001, CFG-SEC-019, CFG-ENV-012) are built, #318. The early-reply settings CFG-SCH-102 to 112 are built (#221)."
+    next: "268 specs: 266 [x], 2 [ ], 0 [D]. #372 built: the projection loader with delivered credentials (CFG-LOAD, CFG-SEC), the placeholder refusal of every store write (CFG-ENV-011), the settings editor over the stored tree; the YAML and secrets-file readers are gone and their lines retired. Open: CFG-SCH-054 and CFG-RCV-001's store-write clause."
     drift: null
 
   event-bus:
@@ -136,7 +136,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: chat.md
-    next: "161 specs: 154 [x], 7 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): CHAT-TW-011 encrypts the refreshed token under the unit state key. Earlier: (the Twitch removals CHAT-TW-014 to 017 held for the live check on #330; CHAT-HEALTH-011 needs a live check of the YouTube reader). The YouTube reader (CHAT-YT-*, CHAT-FORGET-002 to 005, CHAT-FILT-013) is built (#179)."
+    next: "161 specs: 156 [x], 5 [ ], 0 [D]. #372 built: CHAT-TW-011 keeps the refreshed token encrypted under the unit state key. Open: the Twitch removals CHAT-TW-014 to 017 held for the live check on #330; CHAT-HEALTH-011 needs a live check of the YouTube reader."
     drift: null
 
   eyes:
@@ -160,7 +160,7 @@ arrows:
     blocks: [ears, mouth]
     blockedBy: [config, event-bus, shared-runtime, control-plane]
     detail: connections.md
-    next: "58 specs: 53 [x], 4 [ ], 1 [D]. #372 settings-store design (docs only, unbuilt): CONN-DISC-001 takes the bot token from the delivery. Earlier: Open: the desktop capture helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 018, 019, 022 in ears). The Redis registration test runs in CI; CONN-DESK-001 and 004 flip once it is green."
+    next: "58 specs: 54 [x], 3 [ ], 1 [D]. #372 built: CONN-DISC-001 takes the bot token from the delivery. Open: the desktop capture helper (CONN-DESK-001, 004, 005; EARS-SRC-014, 018, 019, 022 in ears). The Redis registration test runs in CI; CONN-DESK-001 and 004 flip once it is green."
     drift: null
 
   ears:
@@ -172,7 +172,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: ears.md
-    next: "195 specs: 187 [x], 6 [ ], 2 [D]. #372 settings-store design (docs only, unbuilt): EARS-ENG-008 and EARS-SRC-013 take credentials from the delivery. Earlier: EARS-SRC-013, -015, -021 and EARS-EX-002 rewritten for #370 (the audio listener requires the CONTROL_TOKEN bearer, on loopback too, checked against a delivered verifier; the helper refuses a remote URL without --allow-remote); EARS-SRC-023 is [x]: the desktop helper's Linux back end uses the pure-Rust pulseaudio client, with no system library (#344) (the echo gate EARS-ECHO-001 to 009 is [x], including the audible-sink rule of EARS-ECHO-002; the early-reply specs EARS-EARLY-001 to 026, EARS-HEAR-012 and EARS-PART-009 are [x]). Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters (EARS-NEM, EARS-KYU) are built; their live run against the servers (#190) is manual."
+    next: "195 specs: 189 [x], 4 [ ], 2 [D]. #372 built: EARS-ENG-008 and EARS-SRC-013 take credentials and the listener key from the delivery. Open: the desktop capture helper's hardware-only parts (EARS-SRC-014, 018, 019, 022). The Nemotron and Kyutai adapters are built; their live run against the servers (#190) is manual."
     drift: null
 
   salience:
@@ -208,7 +208,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, model-backends, region-hooks]
     detail: memory.md
-    next: "178 specs: 177 [x], 1 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): MEM-REFLECT-007 writes the personality outbox. Earlier: (MEM-START-007, the one-shots logging a config failure and exiting 1, is built, #349); MEM-REEMBED-001 and MEM-CONSOL-012 run through the mise tasks (#344). YouTube viewer retention is an owner decision in the LLD."
+    next: "178 specs: 178 [x], 0 [ ], 0 [D]. #372 built: MEM-REFLECT-007 writes the personality outbox, which the unit runner and the dashboard's start apply. YouTube viewer retention is an owner decision in the LLD."
     drift: null
 
   cortex:
@@ -256,7 +256,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, connections]
     detail: mouth.md
-    next: "101 specs: 99 [x], 1 [ ], 1 [D]. #372 settings-store design (docs only, unbuilt): MOUTH-LIVE-005 reworded."
+    next: "101 specs: 100 [x], 0 [ ], 1 [D]. #372 built: MOUTH-LIVE-005 (credentials from the delivery)."
     drift: null
 
   avatar:
@@ -268,7 +268,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus]
     detail: avatar.md
-    next: "91 specs: 85 [x], 6 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): AVATAR-DRV-006 and AVATAR-VTS-003: state directory data/avatar, the VTube Studio token encrypted under the unit state key. Earlier: (the gap is AVATAR-VTS-018, the VTube Studio parameter signs, a manual check against a real Live2D model)."
+    next: "91 specs: 90 [x], 1 [ ], 0 [D]. #372 built: AVATAR-DRV-006 and AVATAR-VTS-003 (state directory data/avatar, the VTube Studio token encrypted under the unit state key). Open: AVATAR-VTS-018, the VTube Studio parameter signs, a manual check against a real Live2D model."
     drift: null
 
   dashboard:
@@ -280,7 +280,7 @@ arrows:
     blocks: []
     blockedBy: [config, event-bus, control-plane, tools]
     detail: dashboard.md
-    next: "465 specs: 395 [x], 70 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): the token check against the store's verifier, the store's session key, the unlock task, personality and secret writes to the store, recovery rewritten for three causes (DASH-RCV-024..027 new; the raw editor, placeholder fallback and secret-path rows retired). Earlier: 35 one-lock specs rewritten for #370 (CONTROL_TOKEN always required, one gate, no CONTROL_ENABLED): 24 built by #375; the rest open for #372 (DASH-CTRL-002, -011, DASH-RCV-002, -003, -007, -009, -010, -013, -022, DASH-ACC-010; DASH-RCV-018 retired). Open besides: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037). DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 run through the mise tasks (#344). The avatar settings DASH-AVS-001 to 011 (#219) and DASH-SET-002, DASH-SET-018 and DASH-UI-054 are implemented. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor and the config-free Stop are DASH-RCV-016 to 021, the token check and the fallback route DASH-RCV-022 and 023) is built. The unlock link (DASH-UNL-001 to 008, DASH-CTRL-011, #366) is built."
+    next: "465 specs: 454 [x], 11 [ ], 0 [D]. #372 built: the dashboard over the settings store (the gate on the store's verifier and session key, the settings, personality and secret routes, recovery for four causes, the recovery-key banner, the outbox and backup at start, re-delivery to waiting units). Open: the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037)."
     drift: null
 
   control-plane:
@@ -292,7 +292,7 @@ arrows:
     blocks: [dashboard]
     blockedBy: [config, event-bus]
     detail: control-plane.md
-    next: "120 specs: 103 [x], 15 [ ], 2 [D]. #372 settings-store design (docs only, unbuilt): projection before and delivery after every start (CTRL-RUNTIME-014, new -018), the listener key from the store (-017), configRefusal over checkStore (CTRL-GATE-001/002), CTRL-CONFIG-001 reads no token; CTRL-RUNTIME-015 retired. Earlier: (CTRL-CONFIG-001, -002 rewritten for #370: CONTROL_TOKEN always required, CONTROL_ENABLED retired; CTRL-RUNTIME-017 new: the projection derives the ears listener verifier; the config gate CTRL-GATE-001, -002 and CTRL-CLI-018 are built, #360, #362; CTRL-RUNTIME-016, data/logs created before Compose, is built, #349; CTRL-LAT-009, -010 deferred; CTRL-LAT-030, -031 run through the `perf:baseline` task of deployment #344). The secrets projection before compose actions and its entry (CTRL-RUNTIME-014, -015) are built, #318. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
+    next: "120 specs: 118 [x], 0 [ ], 2 [D]. #372 built: projection and delivery around every start (with re-delivery to a container Docker restarted, and no start when the containers cannot be listed), cohostctl deliver, the unit runner, the config gate over checkStore, the listener key from the store, bearerOk over the store's verifier, the healthcheck reporting a waiting unit unhealthy. CTRL-LAT-009, -010 deferred. The status stays MAPPED until an audit pass re-verifies the specs against the code (the last one ran at cb06bf3)."
     drift: null
 
   deployment:
@@ -304,7 +304,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "176 specs: 125 [x], 51 [ ], 0 [D]. #376 (built): DEPLOY-CI-005 and DEPLOY-CI-013..017, the in-repo CLA script scripts/cla/cla.mjs (replaces the archived CLA Assistant Lite action; same cla-signatures record). #372 settings-store design (docs only, unbuilt): projection mounts, the /run/cohost tmpfs (DEPLOY-COMPOSE-033), the installer's config:token, dev tasks through the unit runner; DEPLOY-SECRET-001..009, 012 and DEPLOY-COMPOSE-032 retired; DEPLOY-SECRET-013 new. Earlier: DEPLOY-INST-013, DEPLOY-HOST-002 and DEPLOY-TOOL-014 (dev tasks read their unit projection) rewritten and DEPLOY-SECRET-012, DEPLOY-COMPOSE-032 added for #370 (a token on every installer run, no CONTROL_ENABLED, the ears verifier delivered, CONTROL_TOKEN pinned empty in containers). TypeScript linting is built (#346: oxlint type-aware, `.oxlintrc.json`, DEPLOY-LINT-001..010; noImplicitReturns, #354; ES2024 and toSorted/toReversed, #355; React rules for the dashboard UI, #352; `typecheck` checks the tests, DEPLOY-TOOL-023, #353). The logging design (#349) is built: the ./data/logs mount, COHOST_DATA_DIR pin and bounded Docker log driver (DEPLOY-COMPOSE-002, -003, -018, -020, -022, -023, -028 to -031), the installer creating data/logs (DEPLOY-INST-017), the test tasks on temporary directories (DEPLOY-TOOL-022). Per-project toolchains, Zig as the linker and the mise command surface are built (#344: mise.toml, mise.lock, the Zig wrappers, the verified mise fetch, doctor, installer, Dockerfile and workflows). No workflow installs a system package (DEPLOY-CI-001, -012 [x]). Open: DEPLOY-ENG-018 and -020 and DEPLOY-NET-006, manual checks on a Docker host. The tools network (DEPLOY-NET-001 to -004 and the network clause of DEPLOY-COMPOSE-026) is built, #319. Secret scoping (DEPLOY-SECRET-001..011 and the amended compose, image, installer and repo specs) is built, #318."
+    next: "177 specs: 170 [x], 7 [ ], 0 [D]. #372 built: projection mounts, the /run/cohost tmpfs and ulimits, the installer's config:token, dev tasks through the unit runner, the legacy plaintext files kept out of git and the build context (DEPLOY-REPO-007), the test tasks on temporary key and data paths. Open: the docs lines DEPLOY-README-* and DEPLOY-HOST-003 (step 4 of #372), and the manual Docker-host checks DEPLOY-ENG-018, -020 and DEPLOY-NET-006."
     drift: null
 
   docs-site:
@@ -328,7 +328,7 @@ arrows:
     blocks: [control-plane, dashboard, deployment, module-contract, shared-runtime, memory, chat, avatar]
     blockedBy: [config]
     detail: settings-store.md
-    next: "68 specs: 36 [x], 32 [ ], 0 [D]. #372 steps 1 and 2 built, inert: the @cohost/store package and the config:* tasks (config:set names the units, STORE-TASK-002); the projection loader (loadProjection), the credentials receiver, the state-file helpers, the outbox writer and its applier, the manifest's documents and stateKey. Nothing uses them yet. Next: the step 3 cut-over (projections, delivery, config:project, deliver, the boot order, the wiring of the loader, the outbox and the state files)."
+    next: "68 specs: 67 [x], 1 [ ], 0 [D]. #372 steps 1 to 3 built: the package and its config:* tasks, the projections and the delivery, the unit runner, the boot order, the state files, the outbox, and the dashboard's cut-over. Open: STORE-DB-007 (no migration until schema version 2). Next: step 4, the docs."
     drift: null
 
 

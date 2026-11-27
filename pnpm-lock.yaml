@@ -239,6 +239,9 @@ importers:
       '@cohost/config':
         specifier: workspace:*
         version: link:../config
+      '@cohost/store':
+        specifier: workspace:*
+        version: link:../store
     devDependencies:
       yaml:
         specifier: ^2.9.1
@@ -465,6 +468,9 @@ importers:
       '@cohost/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@cohost/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       ws:
         specifier: ^8.23.0
         version: 8.23.0

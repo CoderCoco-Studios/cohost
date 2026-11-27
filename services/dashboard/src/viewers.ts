@@ -1,7 +1,7 @@
 import type http from "node:http";
 import { randomUUID } from "node:crypto";
 import type { BusEvent, EventInput, Publisher } from "@cohost/bus";
-import { authorized } from "./access.js";
+import { authorized, type Gate } from "./access.js";
 import { BodyTooLarge, readText } from "./body.js";
 
 /** How long a `/viewers` route waits for memory's `memory.viewers.reply`. */
@@ -44,8 +44,8 @@ export class ViewersClient {
 
 export interface ViewersDeps {
   client: ViewersClient;
-  /** `CONTROL_TOKEN`, the one lock: every `/viewers` route, the reads included, passes its gate (DASH-CTRL-011). */
-  token: string;
+  /** The one lock: every `/viewers` route, the reads included, passes its gate (DASH-CTRL-011). */
+  gate: Gate;
 }
 
 function send(res: http.ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
@@ -67,9 +67,11 @@ const nonBlank = (x: unknown): x is string => typeof x === "string" && x.trim() 
 export async function handleViewers(d: ViewersDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (url.pathname !== "/viewers" && !url.pathname.startsWith("/viewers/")) return false;
   // The one gate of every control-token route: the bearer token or this browser's session cookie (DASH-CTRL-011).
-  if (!authorized(d.token, req)) {
+  const verdict = await authorized(d.gate, req);
+  if (verdict !== "ok") {
     req.resume();
-    send(res, 401, "unauthorized", { "www-authenticate": "Bearer" });
+    if (verdict === "busy") send(res, 429, "too many token checks are waiting; try again in a second", { "retry-after": "1" });
+    else send(res, 401, "unauthorized", { "www-authenticate": "Bearer" });
     return true;
   }
 

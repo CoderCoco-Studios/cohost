@@ -86,9 +86,9 @@ test("each row shows the label, the key path, its help, a note with range and de
   assert.equal(text(r.querySelector("code")), "demo.temperature");
   assert.ok(within(r).getByText("How adventurous."));
   assert.ok(within(r).getByText("Range 0 to 2. Default 0.7."));
-  assert.equal(text(r.querySelector(".srow-s")), "config.yaml");
+  assert.equal(text(r.querySelector(".srow-s")), "saved");
   assert.equal(text(row("provider").querySelector(".srow-s")), "default");
-  assert.match(text(row("provider")), /Not in config\.yaml yet\. Saving a change adds it\./);
+  assert.match(text(row("provider")), /Not saved yet: the default applies\. Saving a change stores it\./);
   assert.equal(text(row("api_key").querySelector(".srow-s")), "secret");
   const input = within(r).getByRole("spinbutton", { name: "Temperature value" });
   assert.match(input.getAttribute("aria-describedby") ?? "", /\S/);
@@ -426,13 +426,13 @@ test("a 400 attaches each issue to the field with that path and keeps an issue w
 });
 
 // @spec DASH-SET-011
-test("a 409 keeps the edits, says config.yaml changed and offers Reload, which re-reads the section and drops them", async () => {
+test("a 409 keeps the edits, says the settings changed and offers Reload, which re-reads the section and drops them", async () => {
   const b = await open("demo", { routes: { "PUT /config/demo": { status: 409, json: { ok: false, etag: "e9" } } } });
   const user = userEvent.setup();
   await user.type(within(row("name")).getByRole("textbox", { name: "Name" }), "z");
   await user.click(bar("Save"));
   await settle();
-  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/);
+  assert.match(text(screen.getByRole("alert")), /the settings changed since/);
   assert.equal((within(row("name")).getByRole("textbox", { name: "Name" }) as HTMLInputElement).value, "Cocoz", "nothing discarded yet");
   const before = b.app.fetch.callsTo("GET /config/demo").length;
   await user.click(bar("Reload"));
@@ -706,7 +706,7 @@ test("saving two sections that hold edits on separate pages' worth of state uses
   b.file.etag = "other";
   await user.click(bar("Save"));
   await settle();
-  assert.match(text(screen.getByRole("alert")), /config\.yaml changed since/);
+  assert.match(text(screen.getByRole("alert")), /the settings changed since/);
   assert.ok(screen.getByText("2 edits in this section"), "nothing discarded");
   assert.equal(b.app.fetch.callsTo("PUT /config/extra").length, 0, "the save stopped at the first 409");
 });
@@ -768,7 +768,7 @@ test("when a later section of a save is refused for the token or the network, th
 });
 
 // @spec DASH-SET-033
-test("a key in config.yaml that the schema does not define is listed in a notice saying it is not recognised, ignored, left as it is by a save and removed by editing config.yaml", async () => {
+test("a stored key that the schema does not define is listed in a notice saying it is not recognised, ignored, left as it is by a save, with Remove", async () => {
   const fx = await import("./settings-fixture");
   await open("demo", { routes: {
     "GET /config/demo": { json: { ...fx.demoRead, unknown: ["demo.moode", "demo.nested.typo"] } },
@@ -779,8 +779,43 @@ test("a key in config.yaml that the schema does not define is listed in a notice
   assert.match(text(notice), /demo\.nested\.typo/);
   assert.match(text(notice), /not recognised/);
   assert.match(text(notice), /ignored/);
-  assert.match(text(notice), /edit(ing)? config\.yaml/);
+  assert.doesNotMatch(text(notice), /config\.yaml/);
   assert.match(text(notice), /a save leaves them as they are/i);
+  assert.ok(within(notice).getByRole("button", { name: "Remove" }));
+});
+
+// @spec DASH-SET-033, MOD-CFG-009
+test("Remove sends PUT with the section's unknown keys in remove and no values, with the token, then re-reads the section and the notice goes", async () => {
+  const fx = await import("./settings-fixture");
+  const b = await open("demo", { routes: {
+    "GET /config/demo": { json: { ...fx.demoRead, unknown: ["demo.moode", "demo.nested.typo"] } },
+    "GET /config/extra": { json: { ...fx.extraRead, unknown: ["extra.old"] } },
+    "PUT /config/demo": { json: { ok: true, etag: "e2", restart: [], warnings: [] } },
+    "PUT /config/extra": { json: { ok: true, etag: "e3", restart: [], warnings: [] } },
+  } });
+  b.app.rt.access.setToken("control", "tok", "tab");
+  b.app.fetch.on("GET /config/demo", { json: { ...fx.demoRead, etag: "e3", unknown: [] } });
+  b.app.fetch.on("GET /config/extra", { json: { ...fx.extraRead, etag: "e3", unknown: [] } });
+  await userEvent.setup().click(within(screen.getByRole("note", { name: "Unrecognised keys" })).getByRole("button", { name: "Remove" }));
+  await settle();
+  assert.deepEqual(body(b.app.fetch.callsTo("PUT /config/demo")[0]!), { etag: "e1", values: {}, remove: ["demo.moode", "demo.nested.typo"] });
+  assert.equal(b.app.fetch.callsTo("PUT /config/demo")[0]!.headers.authorization, "Bearer tok");
+  assert.equal(body(b.app.fetch.callsTo("PUT /config/extra")[0]!).remove[0], "extra.old");
+  assert.equal(screen.queryByRole("note", { name: "Unrecognised keys" }), null);
+});
+
+// @spec DASH-SET-033
+test("a refused Remove shows its detail in the notice and keeps it", async () => {
+  const fx = await import("./settings-fixture");
+  await open("demo", { routes: {
+    "GET /config/demo": { json: { ...fx.demoRead, unknown: ["demo.moode"] } },
+    "GET /config/extra": { json: { ...fx.extraRead, unknown: [] } },
+    "PUT /config/demo": { status: 500, json: { ok: false, detail: "the settings store is busy" } },
+  } });
+  const notice = screen.getByRole("note", { name: "Unrecognised keys" });
+  await userEvent.setup().click(within(notice).getByRole("button", { name: "Remove" }));
+  await settle();
+  assert.match(text(within(screen.getByRole("note", { name: "Unrecognised keys" })).getByRole("alert")), /busy/);
 });
 
 // @spec DASH-SET-033
@@ -864,7 +899,7 @@ test("a section the schema marks live says a save applies at once, open pages in
     assert.match(header, /restarts nothing/i);
     assert.doesNotMatch(header, /changes apply when they restart/);
     assert.doesNotMatch(header, /applies at its next start/);
-    assert.match(header, /config\.yaml · plain · \d+ settings?/, "the path and the count stay");
+    assert.match(header, /settings · plain · \d+ settings?/, "the path and the count stay");
     b.unmount();
   }
 });

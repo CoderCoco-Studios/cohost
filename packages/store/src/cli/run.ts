@@ -2,18 +2,19 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { parseYaml, secretPathOf, stringifyYaml, unitsReadingSection, writeFileAtomic } from "@cohost/config";
-import { exportStore, importPlan, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
+import { findWorkspaceRoot, parseYaml, secretPathOf, setLoggingSource, stringifyYaml, unitsReadingSection, writeFileAtomic } from "@cohost/config";
+import { exportStore, importToStore, MIN_PASSPHRASE_LENGTH, openSecrets, readExport, readParts, type ImportParts, type ImportPlan } from "../codec.js";
 import { StoreError, type StoreIssue } from "../errors.js";
 import { storeFile } from "../paths.js";
-import { checkStore, moveDamagedAside, openStore, restoreBackup, sectionOf, type Store, type StoreOptions, type WriteResult } from "../store.js";
+import { checkStore, openStore, restoreBackup, sectionOf, type Store, type StoreOptions, type WriteResult } from "../store.js";
 import { generateToken, MIN_TOKEN_LENGTH } from "../token.js";
+import { writeProjections } from "../project.js";
 import type { NoticeOut } from "../keys.js";
 import type { CliIo } from "./io.js";
 
 /** The commands of the `config:*` tasks (STORE-TASK-001), each `mise run config:<command> -- <arguments>`. */
 export const COMMANDS = [
-  "get", "set", "reset", "secret", "personality", "token", "key", "reset-credentials", "export", "import", "backup", "restore", "check",
+  "get", "set", "reset", "secret", "personality", "token", "key", "reset-credentials", "export", "import", "backup", "restore", "check", "project",
 ] as const;
 
 const USAGE = `usage: node packages/store/dist/cli/index.js <command> [arguments]
@@ -22,7 +23,8 @@ const USAGE = `usage: node packages/store/dist/cli/index.js <command> [arguments
   reset <path>                remove one setting so its default applies
   secret <path> [--clear]     set a credential read without echo (or from standard input), or clear it
   personality [--edit]        print the personality, or edit it in $EDITOR
-  token [--stdin]             set the control token (generated, or read from standard input)
+  token [--stdin] [--if-unset]  set the control token (generated, or read from standard input); --if-unset changes nothing
+                              when a token is already set
   key --show | --restore | --rotate | --confirm
   reset-credentials           delete every credential and generated key after a typed confirmation
   export [file] [--secrets]   write the settings (and, encrypted with a passphrase, the credentials) as YAML
@@ -30,6 +32,7 @@ const USAGE = `usage: node packages/store/dist/cli/index.js <command> [arguments
   backup                      take a backup of the store
   restore <file>              restore a backup into the store
   check                       list every problem that stops the store's use
+  project                     write every unit's projection (no credentials) under data/projections/
 `;
 
 class Usage extends Error {}
@@ -89,6 +92,7 @@ export async function runCli(argv: readonly string[], io: CliIo, opts: StoreOpti
       case "backup": return await withStore(base, async (s) => { io.out(`backup written: ${await s.backup()}\n`); return 0; });
       case "restore": return await restore(args, io, base);
       case "check": return await check(io, base);
+      case "project": return await withStore(base, (s) => project(s, io, base.workspaceRoot));
       default: throw new Usage(command === undefined ? "no command given" : `unknown command: ${command}`);
     }
   } catch (e) {
@@ -98,9 +102,29 @@ export async function runCli(argv: readonly string[], io: CliIo, opts: StoreOpti
   }
 }
 
+/**
+ * Opens the store for one task, registering its stored `logging` section as the process's logging source before anything
+ * logs (settings-store STORE-PKG-003).
+ */
+// @spec STORE-PKG-003
 async function withStore(opts: StoreOptions, fn: (s: Store) => number | Promise<number>): Promise<number> {
   const s = await openStore(opts);
+  setLoggingSource(() => s.sections().logging);
   try { return await fn(s); } finally { s.close(); }
+}
+
+/** `config:project` (STORE-PROJ-004): every unit's projection and the `models` projection, under the workspace root. */
+// @spec STORE-PROJ-004
+function project(s: Store, io: CliIo, workspaceRoot?: string): number {
+  const root = workspaceRoot ?? findWorkspaceRoot() ?? process.cwd();
+  try {
+    writeProjections(s, root);
+  } catch (e) {
+    io.err(`the projections were not written: ${(e as Error).message}\n`);
+    return 1;
+  }
+  io.out(`projections written under ${root}/data/projections (revision ${s.revision()})\n`);
+  return 0;
 }
 
 const one = (args: readonly string[], what: string): string => {
@@ -193,8 +217,13 @@ async function personality(s: Store, args: readonly string[], io: CliIo): Promis
 // @spec STORE-TOK-001
 async function token(s: Store, args: readonly string[], io: CliIo): Promise<number> {
   const { flags } = parseArgs(args);
+  if (flags.has("if-unset") && s.hasVerifier()) {
+    io.out("a control token is already set; nothing was changed (mise run config:token sets a new one)\n");
+    return 0;
+  }
   if (flags.has("stdin")) {
-    const t = (await io.readStdin()).trim();
+    // On a terminal the token is asked for without echo; piped in (from a password manager's runner, from .env through sed) it is read to the end.
+    const t = (io.stdinIsTTY ? await io.askHidden("control token: ") : await io.readStdin()).trim();
     if (t.length < MIN_TOKEN_LENGTH) throw new StoreError("usage", `the token read from standard input is shorter than ${MIN_TOKEN_LENGTH} characters; nothing was changed`);
     s.setToken(t);
     io.out("the control token is set; every browser session has ended\n");
@@ -300,30 +329,19 @@ async function importCmd(args: readonly string[], io: CliIo, opts: StoreOptions,
   if (issues.length > 0) { io.err(`nothing was imported:\n${issueLines(issues)}`); return 1; }
 
   // A damaged store is never written: it is moved aside and a new, unseeded store takes the import (STORE-TASK-006).
-  let s: Store;
-  try {
-    s = await openStore(opts);
-  } catch (e) {
-    if (!(e instanceof StoreError) || e.kind !== "damaged" || dryRun) throw e;
-    io.err(`${e.message}\nmoved it aside as ${moveDamagedAside(opts.dataDir)}\n`);
-    s = await openStore({ ...opts, seed: false });
-  }
-  try {
-    const { result, summary } = await importPlan(s, plan, { dryRun });
-    const failed = writeFailure(result);
-    if (failed) { io.err(failed.replace("nothing was changed", "nothing was imported")); return 1; }
-    const list = (label: string, xs: readonly string[]): string => (xs.length > 0 ? `${label}: ${xs.join(", ")}\n` : "");
-    io.out(
-      (dryRun ? "dry run, nothing written. The import would change:\n" : "imported:\n") +
-      list("  added", summary.added) + list("  changed", summary.changed) + list("  removed", summary.removed) +
-      list("  credentials set", summary.secretsSet) + list("  credentials removed", summary.secretsRemoved) +
-      plan.notes.map((n) => `  note: ${n}\n`).join(""),
-    );
-    if (!dryRun && flags.has("secrets")) io.out(`delete ${resolve(flags.get("secrets") as string)} now: its credentials are in the store, encrypted\n`);
-    return 0;
-  } finally {
-    s.close();
-  }
+  const { result, summary, moved, damaged } = await importToStore(plan, opts, { dryRun });
+  if (moved) io.err(`${damaged}\nmoved it aside as ${moved}\n`);
+  const failed = writeFailure(result);
+  if (failed) { io.err(failed.replace("nothing was changed", "nothing was imported")); return 1; }
+  const list = (label: string, xs: readonly string[]): string => (xs.length > 0 ? `${label}: ${xs.join(", ")}\n` : "");
+  io.out(
+    (dryRun ? "dry run, nothing written. The import would change:\n" : "imported:\n") +
+    list("  added", summary.added) + list("  changed", summary.changed) + list("  removed", summary.removed) +
+    list("  credentials set", summary.secretsSet) + list("  credentials removed", summary.secretsRemoved) +
+    plan.notes.map((n) => `  note: ${n}\n`).join(""),
+  );
+  if (!dryRun && flags.has("secrets")) io.out(`delete ${resolve(flags.get("secrets") as string)} now: its credentials are in the store, encrypted\n`);
+  return 0;
 }
 
 // @spec STORE-TASK-005, STORE-TASK-006

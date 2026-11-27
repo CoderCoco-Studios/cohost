@@ -268,14 +268,14 @@ export function noteFor(key: KeyModel, info: KeyRead | undefined): string {
   }
   const d = fmtDefault(s.default);
   if (d !== undefined) parts.push(`Default ${d}.`);
-  if (info && !key.secret && info.source === "default") parts.push("Not in config.yaml yet. Saving a change adds it.");
+  if (info && !key.secret && info.source === "default") parts.push("Not saved yet: the default applies. Saving a change stores it.");
   return parts.join(" ");
 }
 
-/** The source column: `secret`, `default` for a key absent from the file, `config.yaml` for every other key (DASH-SET-004). */
+/** The source column: `secret`, `default` for a key the store does not hold, `saved` for every other key (DASH-SET-004). */
 export function sourceLabel(info: KeyRead | undefined): string {
   if (info?.secret) return "secret";
-  return info?.source === "default" ? "default" : "config.yaml";
+  return info?.source === "default" ? "default" : "saved";
 }
 
 /**

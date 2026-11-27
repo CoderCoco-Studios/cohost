@@ -8,7 +8,8 @@
   "types": "dist/index.d.ts",
   "dependencies": {
     "@cohost/bus": "workspace:*",
-    "@cohost/config": "workspace:*"
+    "@cohost/config": "workspace:*",
+    "@cohost/store": "workspace:*"
   },
   "bin": {
     "cohostctl": "dist/cli.js"

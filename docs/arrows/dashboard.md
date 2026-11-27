@@ -6,7 +6,7 @@ The operator's web UI and HTTP/WebSocket API: the React UI (live feed, controls,
 
 **#372 settings-store design (docs only, not built):** 465 specs: 395 `[x]`, 70 `[ ]`, 0 `[D]`; the token check against the store's verifier, the store's session key, personality and secret writes to the store, recovery for three causes ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
-**MAPPED.** 465 specs: 395 implemented, 70 gaps, 0 deferred. One lock (#370): the dashboard needs `CONTROL_TOKEN` on every run and passes every mutation through one gate. Built by #375: DASH-CTRL-001, -004, -007, -008, DASH-SVC-001, DASH-STACK-002, -008, DASH-INJ-011, DASH-UI-008, -017, DASH-RCV-019, -021, DASH-VIEWERS-007, -016, DASH-SECRET-003, DASH-ACC-004, -008, DASH-UNL-004, -006, DASH-SET-008, -028, DASH-TOOL-002, DASH-MDL-016 and DASH-DOCS-016 (24). The rest, rewritten again by the #372 settings-store design, are open for #372: DASH-CTRL-002, -011, DASH-RCV-002, -003, -007, -009, -010, -013, -022 and DASH-ACC-010 (10); DASH-RCV-018 is retired by it. Retired: DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004, DASH-ACC-009. The unlock link and its session cookie (DASH-UNL-001 to 008, DASH-CTRL-011, #366) are built in `services/dashboard/src/access.ts` and `unlock-link.ts` (`mise run dashboard:unlock`), tested by `test/unlock.test.ts` and `test/recovery-start.test.ts`. Config recovery mode (DASH-RCV-001 to 023, #360, #362, #366: the raw editor of a file that is not valid YAML and the config-free Stop are DASH-RCV-016 to 021, the Access dialog's token check DASH-RCV-022 and the fallback route DASH-RCV-023) is built in `services/dashboard/src/recovery.ts` and `ui/src/app/RecoveryScreen.tsx`, tested by `test/recovery.test.ts`, `test/recovery-raw.test.ts`, `test/recovery-start.test.ts` (the built dashboard on a `${VAR}`-era config) and `test/ui/recovery.test.tsx`. The gaps are the renderer page specs that need a real browser or a GPU (DASH-AVP-006, -007, -008, -016, -017, -018, -019, -025, -031, -034, -037, owned by #218 for the manual check). The renderer page (DASH-AVP-003 to 040) was built under issue #218 in `services/dashboard/ui/src/avatar/`. The avatar relay (DASH-AVR-001 to 021 and 030 to 035, with the `/avatar` page and `GET /avatar/renderer`, DASH-AVP-001 and 002, and the relay's share of DASH-HOST-002, DASH-CTRL-005, DASH-HTTP-010 and DASH-HTTP-016) was built under issue #217. The API, feed, stack, injection, upload, host, docs-serving and health specs (HTTP, SINK, FEED, SVC, ROUTE, INJ, UPL, STACK, HEALTH, DOCS) were audited on 2026-11-14; the React UI specs (DASH-UI, DASH-VIEWERS-010 to 023, DASH-ACC, DASH-NAV, DASH-THEME, DASH-A11Y, DASH-SET, DASH-BUILD), the secret write and pick lists (DASH-SECRET, DASH-OPT) and the route and allow-list edits they needed (DASH-HTTP-001, DASH-CTRL-001, DASH-CTRL-005, DASH-HOST-002, DASH-HOST-008 to DASH-HOST-010) are implemented and tested under `services/dashboard/test/ui/` and `services/dashboard/test/`, and were not covered by the 2026-11-14 audit. DASH-DOCS-013, 014, 015 and 016 are docs-page content with no test: the docs build (`mise run docs:build`) checks the pages' links and facts, and the statements were read against the code. Specs with no test annotation are listed under Coverage notes. An audit pass is the next step: the specs are written and implemented, not yet audited against the code; the status moves to AUDITED when it has run.
+**MAPPED.** 465 specs: 454 implemented, 11 gaps, 0 deferred. The dashboard runs over the settings store (#372): its entry opens the store, registers its `logging` section and refuses a `CONTROL_TOKEN` in `.env` or the environment and a store with no token verifier (DASH-CTRL-002); the one gate checks a bearer against the store's verifier and a session cookie against the store's session key (DASH-CTRL-011, DASH-UNL-005); the settings, personality and secret routes read and write the store (MOD-CFG-*, DASH-HTTP-005, -006, DASH-SECRET-*); config recovery mode covers a damaged store, a newer store, a missing key and stored settings that fail the schema, with backups, an import, the recovery key and the discard of credentials (DASH-RCV-001 to -029; the raw editor, the placeholder fallback and the secret-path rows are retired); a banner asks the owner to confirm a new recovery key (DASH-RCV-029). The 11 gaps are the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037).
 
 **Egress marks.** `GET /egress` answers the engine and chat-model destinations of the saved config (DASH-EGR-001 to 004), the Services screen marks the rows that leave the LAN and the Settings screen repeats the note beside the engine keys (DASH-UI-037, DASH-SET-034); `GET /options/voices` is a Kokoro list only (DASH-OPT-001, DASH-OPT-005).
 
@@ -26,7 +26,7 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (465 specs, prefix `DASH`: 395 `[x]`, 70 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (465 specs, prefix `DASH`: 454 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
@@ -70,7 +70,7 @@ Orientation:
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 7 | 0 | 0 |
 | WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 12 | 0 | 0 |
-| Control gating | DASH-CTRL-001 to DASH-CTRL-011 (006 retired) | 8 | 0 | 2 |
+| Control gating | DASH-CTRL-001 to DASH-CTRL-011 (006 retired) | 10 | 0 | 0 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
 | Test-input injection | DASH-INJ-001 to DASH-INJ-012 | 12 | 0 | 0 |
@@ -85,7 +85,7 @@ Orientation:
 | Secret write | DASH-SECRET-001 to DASH-SECRET-015 | 15 | 0 | 0 |
 | Pick lists | DASH-OPT-001 to DASH-OPT-005 | 5 | 0 | 0 |
 | Egress marks | DASH-EGR-001 to DASH-EGR-004 | 4 | 0 | 0 |
-| Access dialog | DASH-ACC-001 to DASH-ACC-012 | 11 | 0 | 1 |
+| Access dialog | DASH-ACC-001 to DASH-ACC-012 | 12 | 0 | 0 |
 | Unlock link | DASH-UNL-001 to DASH-UNL-008 | 8 | 0 | 0 |
 | Navigation and shortcuts | DASH-NAV-001 to DASH-NAV-004 | 4 | 0 | 0 |
 | Theme | DASH-THEME-001 to DASH-THEME-006 | 6 | 0 | 0 |
@@ -97,7 +97,7 @@ Orientation:
 | Avatar renderer: model files | DASH-MDL-001 to DASH-MDL-037 | 37 | 0 | 0 |
 | Avatar renderer: the page | DASH-AVP-001 to DASH-AVP-040 | 29 | 0 | 11 |
 | Avatar renderer: settings and visibility | DASH-AVS-001 to DASH-AVS-011 | 11 | 0 | 0 |
-| Config recovery mode | DASH-RCV-001 to DASH-RCV-023 | 15 | 0 | 8 |
+| Config recovery mode | DASH-RCV-001 to DASH-RCV-023 | 23 | 0 | 0 |
 
 
 

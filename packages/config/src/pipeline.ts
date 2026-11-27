@@ -118,12 +118,16 @@ export function applyIsolation(tree: Record<string, unknown>, overrides: Isolati
 
 const PLACEHOLDER = /\$\{([A-Z0-9_]+)(?::-([^}]*))?\}/g;
 
-/** One issue per `${NAME}` or `${NAME:-default}` placeholder in a string value, at the key's dotted path (an array entry as `path[index]`). */
-function placeholderIssues(raw: unknown, path = ""): ConfigIssue[] {
+/**
+ * One issue per `${NAME}` or `${NAME:-default}` placeholder in a string value, at the key's dotted path (an array entry as
+ * `path[index]`): no placeholder is ever substituted, so every settings write refuses one (CFG-ENV-011).
+ */
+// @spec CFG-ENV-011
+export function placeholderIssues(raw: unknown, path = ""): ConfigIssue[] {
   if (typeof raw === "string") {
     return [...raw.matchAll(PLACEHOLDER)].map((m) => ({
       path,
-      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "write the credential in secrets.yaml" : "write the value as a literal in config.yaml"} (\${...} is not supported in config.yaml and no environment variable is substituted; there is no escape, so to keep this text literal write the name in lower-case or reword it)`,
+      message: `uses the placeholder \${${m[1]}}; ${SECRET_PATHS.includes(path) ? "set the credential through its masked field on the Settings screen or with mise run config:secret" : "write the value as a literal"} (\${...} is not supported in the settings and no environment variable is substituted; there is no escape, so to keep this text literal write the name in lower-case or reword it)`,
     }));
   }
   if (Array.isArray(raw)) return raw.flatMap((v, i) => placeholderIssues(v, `${path}[${i}]`));
@@ -161,7 +165,7 @@ export function unknownKeys(raw: unknown, parsed: unknown, path = ""): string[] 
 
 export interface ConfigIssue { path: string; message: string }
 
-/** Credentials by secret path (CFG-SEC-003), each a non-empty string, as `secrets.yaml` holds them. */
+/** Credentials by secret path (CFG-SEC-003), each a non-empty string, as a credentials message delivers them. */
 export type SecretValues = Readonly<Record<string, string>>;
 
 export type ParsedConfigText =
@@ -169,12 +173,12 @@ export type ParsedConfigText =
   | { ok: false; kind: "syntax" | "placeholder" | "schema"; issues: ConfigIssue[]; raw: unknown; ignoredSecrets: string[]; unmergedSecrets: [] };
 
 /**
- * The loader's pipeline on a text: YAML parse, the placeholder check, null dropping, the discarding of any value `config.yaml`
- * holds at a secret path, `ConfigSchema` validation, the merge of `secrets` and the isolation `overrides`. `loadConfig` and the
- * settings editor both run it, so they accept exactly the same files; the editor passes no overrides.
+ * The pipeline on a YAML settings text (the seed example the contract tests check, settings-store STORE-IO-005): YAML parse,
+ * the placeholder check, null dropping, the discarding of any value the text holds at a secret path, `ConfigSchema` validation,
+ * the merge of `secrets` and the isolation `overrides`.
  *
- * `raw` is the file's tree with the secret paths removed, and `ignoredSecrets` lists the secret paths the file held a value at.
- * Secrets are merged into the config after validation, so a credential can never supply a section the file lacks (CFG-SEC-002).
+ * `raw` is the text's tree with the secret paths removed, and `ignoredSecrets` lists the secret paths the text held a value at.
+ * Secrets are merged after validation, so a credential can never supply a section the text lacks (CFG-SEC-002).
  */
 // @spec CFG-LOAD-001, CFG-LOAD-007, CFG-ENV-011, CFG-SEC-002, CFG-SEC-004, CFG-SEC-011, CFG-SEC-016, CFG-SEC-017, CFG-ISO-007, MOD-CFG-012
 export function parseConfigText(text: string, secrets: SecretValues = {}, overrides: IsolationOverrides = {}): ParsedConfigText {

@@ -6,7 +6,7 @@ import type { Scope } from "../../state/access";
 import type { TokenKind } from "../../state/types";
 import { checkToken } from "./check";
 import { CopyCommand } from "./CopyCommand";
-import { CONTROL_FIND, ENV_NAME, TOKEN_LABEL, UNLOCKS } from "./text";
+import { CONTROL_NEW, ENV_NAME, TOKEN_LABEL, UNLOCKS } from "./text";
 
 export interface TokenFormProps {
   kind: TokenKind;
@@ -21,11 +21,11 @@ export interface TokenFormProps {
 
 type Result = { kind: "rejected" } | { kind: "failed"; message: string } | { kind: "memory" } | null;
 
-function Checks({ kind }: { kind: TokenKind }) {
+function Checks() {
   return (
     <ul className="checks">
-      <li>Copy the whole value after <code>{ENV_NAME[kind]}=</code>, with no spaces or quotes.</li>
-      <li>If <code>.env</code> changed after the dashboard started, restart the dashboard.</li>
+      <li>Copy the whole value from your password manager, with no spaces or quotes.</li>
+      <li>A token set with <code>mise run config:token</code> after the one you copied replaces it: use the newest.</li>
     </ul>
   );
 }
@@ -81,11 +81,11 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
       {rejected ? (
         <Banner tone="warn" title="The saved token was rejected">
           The dashboard no longer accepts the {label.toLowerCase()} this page held, so it was forgotten. Enter it again.
-          <Checks kind={kind} />
+          <Checks />
         </Banner>
       ) : null}
       <p className="help">{UNLOCKS[kind]}</p>
-      <p className="help">The value of <code>{env}</code> in the <code>.env</code> file on the machine that runs cohost.</p>
+      <p className="help">The <code>{env}</code> you keep in your password manager. Set a new one with <code>mise run config:token</code> on the machine that runs cohost.</p>
       <p className="help">Or open the unlock link printed in the terminal running <code>mise run dashboard</code> (a fresh one: <code>mise run dashboard:unlock</code>): it unlocks this browser without the token.</p>
 
       <div>
@@ -111,7 +111,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
         {result?.kind === "rejected" ? (
           <Banner tone="bad">
             The dashboard rejected this token. Nothing was changed.
-            <Checks kind={kind} />
+            <Checks />
           </Banner>
         ) : null}
         {result?.kind === "failed" ? <Banner tone="bad">The token could not be checked: {result.message}. Nothing was changed.</Banner> : null}
@@ -124,16 +124,17 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
 
       <details open={!!action || undefined} className="find">
         <summary>Where do I find it?</summary>
-        <p className="help">The installer generated it. In the cohost folder, run this command and paste the value after the equals sign.</p>
-        <CopyCommand text={CONTROL_FIND} />
+        <p className="help">The installer printed it once and asked you to keep it in your password manager. If it is lost, set a new one: in the cohost folder, run this command and keep what it prints.</p>
+        <CopyCommand text={CONTROL_NEW} />
       </details>
 
       <details className="where">
         <summary>Where these are set</summary>
         <p className="help">
-          <code>CONTROL_TOKEN</code>, <code>CONTROL_ADVANCED</code> and <code>DASHBOARD_HOST</code> are set in <code>.env</code>, in the cohost folder.
-          The dashboard reads them once when the dashboard starts, so a change takes effect only after it restarts.
-          This dialog never sets them: it only checks a token you paste and remembers it for this page.
+          <code>CONTROL_ADVANCED</code> and <code>DASHBOARD_HOST</code> are set in <code>.env</code>, in the cohost folder. The dashboard
+          reads them once when it starts, so a change takes effect only after it restarts. The token is set with
+          <code> mise run config:token</code> and takes effect at once; it ends every unlocked browser session.
+          This dialog never sets anything: it only checks a token you paste and remembers it for this page.
         </p>
       </details>
 

@@ -1,5 +1,5 @@
 import http from "node:http";
-import { authorized } from "./access.js";
+import { authorized, type Gate } from "./access.js";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { AppliedView } from "./applied.js";
@@ -17,8 +17,8 @@ export interface ModelRoutes {
   applied: AppliedView;
   /** `dashboard.models.max_bytes`. */
   maxBytes: number;
-  /** `CONTROL_TOKEN`: every mutating model route passes the gate of DASH-CTRL-011 (DASH-MDL-016). */
-  token: string;
+  /** The one lock: every mutating model route passes the gate of DASH-CTRL-011 (DASH-MDL-016). */
+  gate: Gate;
   /** The one upload slot: an upload runs at a time (DASH-MDL-017). */
   slot: { busy: boolean };
   idleMs?: number;
@@ -109,7 +109,11 @@ async function serveNamed(m: ModelRoutes, req: http.IncomingMessage, res: http.S
   return serveFile(req, res, s);
 }
 
-const unauthorizedIfNeeded = (m: ModelRoutes, req: http.IncomingMessage): boolean => !authorized(m.token, req);
+/** The gate's verdict on a mutating model route: passed, or the refusal to answer (401, or 429 while too many token checks wait). */
+const gateRefusal = async (m: ModelRoutes, req: http.IncomingMessage): Promise<"bad" | "busy" | undefined> => {
+  const r = await authorized(m.gate, req);
+  return r === "ok" ? undefined : r;
+};
 
 /**
  * Answers a request and closes its connection, writing the answer to the socket as it is (`connection: close`) and ending the
@@ -139,7 +143,9 @@ const refuse = (req: http.IncomingMessage, status: number, value: object, header
   stopped(req, status, value, { drain: false, ...(headers ? { headers } : {}) });
 
 /** The 401 of a gated route, answered before the body. */
-const unauthorized = (req: http.IncomingMessage): void => refuse(req, 401, { ok: false, detail: "the control token is missing or wrong" }, { "www-authenticate": "Bearer" });
+const unauthorized = (req: http.IncomingMessage, why: "bad" | "busy"): void => why === "busy"
+  ? refuse(req, 429, { ok: false, detail: "too many token checks are waiting; try again in a second" }, { "retry-after": "1" })
+  : refuse(req, 401, { ok: false, detail: "the control token is missing or wrong" }, { "www-authenticate": "Bearer" });
 
 /** Answers a failed write or an upload that could not start: `507` for a full disk, `500` otherwise, with the error code only (DASH-MDL-029). */
 function failure(req: http.IncomingMessage, err: unknown): void {
@@ -254,7 +260,8 @@ async function commitUpload(m: ModelRoutes, tmp: string, name: string, replace: 
 /** `POST /avatar/models?name=`: checks, streamed write, head checks, length check and commit (DASH-MDL-015 to DASH-MDL-032). */
 // @spec DASH-MDL-015, DASH-MDL-016, DASH-MDL-017, DASH-MDL-018, DASH-MDL-019, DASH-MDL-020, DASH-MDL-029, DASH-HTTP-015
 async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<void> {
-  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
+  const refused = await gateRefusal(m, req);
+  if (refused) return unauthorized(req, refused);
   const cl = req.headers["content-length"];
   const declared = cl === undefined ? undefined : Number(cl);
   if (declared !== undefined && (!Number.isSafeInteger(declared) || declared < 0)) return refuse(req, 400, { ok: false, detail: "Content-Length is not a byte count" });
@@ -310,7 +317,8 @@ async function upload(m: ModelRoutes, req: http.IncomingMessage, res: http.Serve
 /** `DELETE /avatar/models/<name>`: the name, then the applied model, under the lock (DASH-MDL-033 to DASH-MDL-036). */
 // @spec DASH-MDL-033, DASH-MDL-034, DASH-MDL-035, DASH-MDL-036, DASH-AVR-028
 async function remove(m: ModelRoutes, req: http.IncomingMessage, res: http.ServerResponse, raw: string): Promise<void> {
-  if (unauthorizedIfNeeded(m, req)) return unauthorized(req);
+  const refused = await gateRefusal(m, req);
+  if (refused) return unauthorized(req, refused);
   const name = decodeName(raw);
   if (name === undefined) return notFound(res, "no stored model has that name");
   await m.applied.lock.run(async () => {

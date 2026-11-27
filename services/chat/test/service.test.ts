@@ -11,6 +11,10 @@ import { runService } from "@cohost/shared";
 import { chatService, type ChatClientLike, type ChatServiceDeps } from "../src/service.js";
 import type { TwitchUserInfo } from "../src/twitch.js";
 import { loadStoredToken, saveStoredToken } from "../src/token-store.js";
+import { readStateFile } from "@cohost/shared";
+
+/** The chat unit's state key, as its credentials message carries it (settings-store STORE-STATE-001). */
+const KEY = Buffer.alloc(32, 3);
 
 /** A bus that also answers the inject subscription calls (FakeBus only records). */
 class SvcBus extends FakeBus {
@@ -66,7 +70,7 @@ function rig(over: Record<string, unknown> = {}, deps: Partial<ChatServiceDeps> 
   });
   const cfg = testConfig(over);
   const start = () => runService({
-    service: "chat", health: () => svc.health(cfg), main: async (ctx) => { heartbeat = ctx.heartbeat; await svc.main(ctx); },
+    service: "chat", health: () => svc.health(cfg), main: async (ctx) => { heartbeat = ctx.heartbeat; await svc.main({ ...ctx, stateKey: KEY }); },
     loadConfig: () => cfg, createBus: () => bus as never, log: rec.log,
     onShutdown: (fn) => { shutdown = fn; }, exit: (c) => { exits.push(c); },
   });
@@ -144,20 +148,21 @@ test("twitch shutdown quits the client; fake source builds no client", async () 
   } finally { await f.stop(); }
 });
 
-/** Config override carrying Twitch credentials, as `secrets.yaml` would supply them (the channel stays the test default). */
+/** Config override carrying Twitch credentials, as the delivered credentials would supply them (the channel stays the test default). */
 const tw = (c: Record<string, string>) => ({ chat: { twitch: c } });
 const creds = { client_id: "id", client_secret: "sec", access_token: "secA", refresh_token: "secR" };
 const refreshed = { accessToken: "newA", refreshToken: "newR", expiresIn: 14000, obtainmentTimestamp: 1234, scope: ["chat:read"] };
 
-// @spec CHAT-TW-003, CHAT-TW-011
-test("a refreshed token is logged with expiresIn and persisted atomically, owner-only", async () => {
+// @spec CHAT-TW-003, CHAT-TW-011, STORE-STATE-002
+test("a refreshed token is logged with expiresIn and persisted atomically, owner-only, encrypted under the state key", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
-  const tokenPath = join(dir, "chat", "twitch-token.json");
+  const tokenPath = join(dir, "chat", "twitch-token.enc");
   const r = rig(tw(creds), { tokenPath });
   try {
     await r.start();
     r.auths[0]!.refresh!("uid", refreshed);
-    const saved = JSON.parse(readFileSync(tokenPath, "utf8"));
+    assert.doesNotMatch(readFileSync(tokenPath, "utf8"), /newA|newR|secR/, "no token in plaintext");
+    const saved = JSON.parse(readStateFile(tokenPath, "chat", KEY)!);
     assert.deepEqual(saved, { ...refreshed, startingRefreshToken: "secR" });
     assert.equal(statSync(tokenPath).mode & 0o777, 0o600);
     assert.ok(r.rec.lines.some((l) => l.msg === "twitch token refreshed" && (l.obj as { expiresIn: number }).expiresIn === 14000));
@@ -169,7 +174,7 @@ test("a refreshed token is logged with expiresIn and persisted atomically, owner
 test("a failed token write is logged and ignored", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
   writeFileSync(join(dir, "chat"), "a file where the directory should be");
-  const r = rig(tw(creds), { tokenPath: join(dir, "chat", "twitch-token.json") });
+  const r = rig(tw(creds), { tokenPath: join(dir, "chat", "twitch-token.enc") });
   try {
     await r.start();
     r.auths[0]!.refresh!("uid", refreshed);
@@ -179,11 +184,11 @@ test("a failed token write is logged and ignored", async () => {
 });
 
 // @spec CHAT-TW-012
-test("a stored token is preferred over secrets.yaml; a superseded, malformed or missing file falls back to secrets.yaml", async () => {
+test("a stored token is preferred over the delivered pair; a superseded, undecryptable or missing file falls back to the pair", async () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
-  const tokenPath = join(dir, "chat", "twitch-token.json");
+  const tokenPath = join(dir, "chat", "twitch-token.enc");
   try {
-    saveStoredToken(tokenPath, refreshed, "secR");
+    saveStoredToken(tokenPath, refreshed, "secR", KEY);
     const withStore = rig(tw(creds), { tokenPath });
     await withStore.start();
     assert.equal(withStore.auths[0]!.added[0]!.token.accessToken, "newA");
@@ -211,18 +216,21 @@ test("a stored token is preferred over secrets.yaml; a superseded, malformed or 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-// @spec CHAT-TW-012, CHAT-TW-011
-test("the token store round-trips and rejects a file of the wrong shape", () => {
+// @spec CHAT-TW-012, CHAT-TW-011, STORE-STATE-002
+test("the token store round-trips under the state key and rejects a file of the wrong shape, another key or no key", () => {
   const dir = mkdtempSync(join(tmpdir(), "chat-token-"));
-  const file = join(dir, "chat", "twitch-token.json");
+  const file = join(dir, "chat", "twitch-token.enc");
   try {
-    assert.equal(loadStoredToken(file, "secR"), undefined);
-    saveStoredToken(file, refreshed, "secR");
-    assert.deepEqual(loadStoredToken(file, "secR"), refreshed);
-    assert.equal(loadStoredToken(file, "other"), undefined);
+    assert.equal(loadStoredToken(file, "secR", KEY), undefined);
+    saveStoredToken(file, refreshed, "secR", KEY);
+    assert.deepEqual(loadStoredToken(file, "secR", KEY), refreshed);
+    assert.equal(loadStoredToken(file, "other", KEY), undefined);
+    assert.equal(loadStoredToken(file, "secR", Buffer.alloc(32, 4)), undefined, "another key: absent");
+    assert.equal(loadStoredToken(file, "secR", undefined), undefined, "no key: absent");
+    assert.throws(() => saveStoredToken(file, refreshed, "secR", undefined), /no state key/);
     mkdirSync(join(dir, "chat"), { recursive: true });
     writeFileSync(file, JSON.stringify({ accessToken: 5 }));
-    assert.equal(loadStoredToken(file, "secR"), undefined);
+    assert.equal(loadStoredToken(file, "secR", KEY), undefined);
     assert.equal(existsSync(file + ".tmp"), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

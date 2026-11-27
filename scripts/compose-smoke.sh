@@ -9,18 +9,31 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 SERVICES=("$@"); [ ${#SERVICES[@]} -gt 0 ] || SERVICES=(salience affect avatar)
 [ -f .env ] || cp .env.example .env
-cleanup() { docker compose down -v >/dev/null 2>&1 || true; }
-trap cleanup EXIT
 
-# The run uses no credential and the workspace is not built (so the projection itself is not available): give every
-# ./secrets/units/<name> directory the Compose file mounts an empty projection, mode 0700, and leave an existing file alone.
-# The directories are read from docker-compose.yml, because a mount whose source is missing fails `up`.  @spec DEPLOY-SECRET-011
-for name in $(grep -o '\./secrets/units/[A-Za-z0-9_-]*' docker-compose.yml | sed 's#.*/##' | sort -u); do
-  mkdir -p -m 700 "secrets/units/$name"
-  [ -e "secrets/units/$name/secrets.yaml" ] || (umask 077 && echo '{}' > "secrets/units/$name/secrets.yaml")
-done
+# The run uses no credential: a temporary settings store seeded from the committed examples, with its master key beside it,
+# gives every unit its projection under ./data/projections/ (the directories the Compose file mounts), so `up` finds them.
+# @spec DEPLOY-SECRET-011
+store=$(mktemp -d)
+cleanup() { docker compose down -v >/dev/null 2>&1 || true; rm -rf "$store"; }
+trap cleanup EXIT
+COHOST_DATA_DIR="$store/data" COHOST_KEY_FILE="$store/master.key" mise run config:project >/dev/null
+
+# deliver <service>...: every waiting service gets an empty credentials message for its own unit through `docker exec -i`
+# into its /run/cohost tmpfs, as the control plane delivers one (settings-store STORE-DLV-003); a unit that declares no
+# credential and no state key gets none and does not wait.
+deliver() {
+  local s id
+  for s in "$@"; do
+    case "$s" in mouth|redis) continue ;; esac
+    id=$(docker compose ps -q "$s")
+    [ -n "$id" ] || continue
+    printf '{"format":1,"unit":"%s","revision":0,"credentials":{}}' "$s" |
+      docker exec -i "$id" sh -c 'umask 077 && cat > /run/cohost/.credentials.json.tmp && mv /run/cohost/.credentials.json.tmp /run/cohost/credentials.json'
+  done
+}
 
 docker compose up -d --build redis "${SERVICES[@]}"
+deliver "${SERVICES[@]}"
 deadline=$((SECONDS + ${SMOKE_WAIT:-60}))   # one budget for all services; a healthy stack passes in about 15 s
 
 fail=0
@@ -44,6 +57,7 @@ for s in "${SERVICES[@]}"; do wait_healthy "$s" || fail=1; done
 # name resolves and that another service's name does not: tools shares a network with redis alone.
 if [ $fail -eq 0 ]; then
   docker compose up -d --build tools
+  deliver tools
   if wait_healthy tools; then
     lookup='const dns = require("node:dns"); dns.lookup(process.argv[1], (err) => process.exit(err ? 1 : 0));'
     if docker compose exec -T tools node -e "$lookup" redis; then echo "ok   tools resolves redis"; else echo "FAIL tools cannot resolve redis"; fail=1; fi

@@ -6,7 +6,7 @@ import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
-import { AUTH, ON, TOKEN } from "./control-fixture.js";
+import { AUTH, TEST_GATE, TOKEN, UNUSED_STORE } from "./control-fixture.js";
 
 // Test injection at the bus level (POST /inject/event) and the not-running refusal every injection route shares
 // (module-contract MOD-TEST-002 to MOD-TEST-006).
@@ -17,11 +17,11 @@ const health = (state: HealthState): ServiceHealth[] => ids.map((service) => ({ 
 async function boot(env: NodeJS.ProcessEnv = {}, states: Record<string, HealthState> = {}) {
   const bus = new (class extends FakeBus { async resetGroup() {} })();
   const rec = recordingLog();
-  const setup = setupControl({ ...ON, ...env }, bus, rec.log);
+  const setup = setupControl(env, bus, rec.log, TEST_GATE);
   const services = () => health("up").map((s) => (states[s.service] ? { ...s, state: states[s.service]! } : s));
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services,
+    store: UNUSED_STORE, services,
     control: setup.control,
     uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },
     stack: new StackService({ log: rec.log, bus: () => "connected" }),

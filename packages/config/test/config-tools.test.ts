@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { ConfigSchema, loadConfig } from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, shippedSandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
+import { ConfigSchema, type Config } from "../src/index.js";
+import { MINIMAL_YAML, isolateEnv, loadSettings, exampleYaml, captureWarnings, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
@@ -103,9 +103,8 @@ test("a tools.servers url with userinfo fails naming tools.servers.<name>.url an
 test("a credential-like query parameter loads with one warning naming the server and parameter, never the value", () => {
   const names = ["key", "token", "api_key", "apikey", "secret", "auth", "password", "access_token"];
   for (const n of names) {
-    sandbox({ "config.yaml": `${MINIMAL_YAML}tools:\n  servers:\n    search:\n      url: "http://h:1/mcp?${n}=s3cr3t-value&x=1"\n` });
-    let cfg!: ReturnType<typeof loadConfig>;
-    const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+    let cfg!: Config;
+    const warnings = captureWarnings(() => { cfg = loadSettings(`${MINIMAL_YAML}tools:\n  servers:\n    search:\n      url: "http://h:1/mcp?${n}=s3cr3t-value&x=1"\n`); });
     const mine = warnings.filter((w) => /search/.test(w) && w.includes(n));
     assert.equal(mine.length, 1, `${n}: ${JSON.stringify(warnings)}`);
     assert.doesNotMatch(warnings.join("\n"), /s3cr3t-value/);
@@ -115,8 +114,7 @@ test("a credential-like query parameter loads with one warning naming the server
 
 // @spec CFG-SCH-086
 test("a query with no credential-like parameter warns about nothing, and a server with one warns once", () => {
-  sandbox({ "config.yaml": `${MINIMAL_YAML}tools:\n  servers:\n    plain:\n      url: "http://h:1/mcp?region=eu&limit=5"\n    keyed:\n      url: "http://h:1/mcp?apikey=zzz"\n` });
-  const warnings = captureWarnings(() => { loadConfig(true); });
+  const warnings = captureWarnings(() => { loadSettings(`${MINIMAL_YAML}tools:\n  servers:\n    plain:\n      url: "http://h:1/mcp?region=eu&limit=5"\n    keyed:\n      url: "http://h:1/mcp?apikey=zzz"\n`); });
   assert.equal(warnings.filter((w) => /plain/.test(w)).length, 0);
   assert.equal(warnings.filter((w) => /keyed/.test(w) && /apikey/.test(w)).length, 1);
   assert.doesNotMatch(warnings.join("\n"), /zzz/);
@@ -220,10 +218,9 @@ test("the shipped config.example.yaml writes the tools section as literals and l
   const block = lines.slice(start + 1, end < 0 ? undefined : end).filter((l) => /^\s+[a-z_]+:\s*\S/.test(l) && !/^\s+-/.test(l));
   assert.ok(block.length >= 8);
   for (const l of block) assert.match(l, /#/, `comment on: ${l.trim()}`);
-  shippedSandbox();
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
-  assert.deepEqual(warnings.filter((w) => !/created .* from/.test(w)), []);
+  let cfg!: Config;
+  const warnings = captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
+  assert.deepEqual(warnings, []);
   assert.equal(cfg.tools.mode, "live");
   assert.deepEqual(cfg.tools.servers, {});
   assert.deepEqual(cfg.tools.reply.filler_lines, FILLERS);

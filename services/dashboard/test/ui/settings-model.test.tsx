@@ -95,14 +95,14 @@ test("keys group by path prefix in first-seen order, titled from the prefix word
 });
 
 // @spec DASH-SET-004
-test("a note gives the range and the default, the source column names secret, default or config.yaml", () => {
+test("a note gives the range and the default, the source column names secret, default or saved", () => {
   assert.equal(noteFor(key("temperature"), demoRead.keys.temperature!), "Range 0 to 2. Default 0.7.");
-  assert.equal(noteFor(key("timeout_ms"), demoRead.keys.timeout_ms!), "At least 0. Default 5000. Not in config.yaml yet. Saving a change adds it.");
+  assert.equal(noteFor(key("timeout_ms"), demoRead.keys.timeout_ms!), "At least 0. Default 5000. Not saved yet: the default applies. Saving a change stores it.");
   assert.equal(noteFor(key("enabled"), demoRead.keys.enabled!), "Default On.");
   assert.equal(noteFor(key("name"), demoRead.keys.name!), "Default \"Coco\".");
   assert.equal(sourceLabel(demoRead.keys.api_key!), "secret");
   assert.equal(sourceLabel(demoRead.keys.provider!), "default");
-  assert.equal(sourceLabel(demoRead.keys.mode!), "config.yaml");
+  assert.equal(sourceLabel(demoRead.keys.mode!), "saved");
   assert.equal(sourceLabel(plainRead.keys.speak_rate_ms!), "default");
 });
 

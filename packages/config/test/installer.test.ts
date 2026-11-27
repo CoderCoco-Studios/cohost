@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync, chmodSync, statSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { repo, MINIMAL_YAML } from "./helpers/config-sandbox.js";
+import { repo } from "./helpers/config-sandbox.js";
 
-// Behavioural checks of the installer's .env helpers. The functions between the `begin`/`end`
-// markers in scripts/install.sh are extracted and run in bash against a temp .env; the rest of the
-// installer (docker, apt) is not run.
+// Behavioural checks of the installer's helpers. The functions between the `begin`/`end` markers in scripts/install.sh are
+// extracted and run in bash against a temp directory, with `$MISE` a stub where a block runs mise; the rest of the installer
+// (docker, apt) is not run.
 
 const installPath = fileURLToPath(new URL("../../../scripts/install.sh", import.meta.url));
 const src = readFileSync(installPath, "utf8");
@@ -18,120 +18,113 @@ const block = (name: string) => {
   assert.ok(m, `install.sh has a ${name} block`);
   return m![1]!;
 };
-const run = (name: string, call: string, env: string, shellEnv: Record<string, string> = {}) => {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-inst-"));
-  writeFileSync(join(dir, ".env"), env);
-  const stdout = execFileSync("bash", ["-c", `set -euo pipefail\ncd "${dir}"\nlog(){ echo "LOG $*"; }\nwarn(){ echo "WARN $*"; }\n${block(name)}\n${call}`], {
-    encoding: "utf8",
-    env: { PATH: process.env.PATH!, ...shellEnv },
-  });
-  return { stdout, env: readFileSync(join(dir, ".env"), "utf8"), dir };
-};
-const tokenOf = (env: string) => env.match(/^CONTROL_TOKEN=(.*)$/m)?.[1];
 
-// @spec DEPLOY-INST-013
-test("an empty CONTROL_TOKEN (nothing, spaces, inline comment) gets a fresh 48-hex secret that is never printed", () => {
-  for (const empty of ["CONTROL_TOKEN=", "CONTROL_TOKEN=   ", "CONTROL_TOKEN= # fill me", "CONTROL_TOKEN=#c"]) {
-    const { stdout, env } = run("control-token", "fill_control_token", `A=1\n${empty}\nB=2\n`);
-    const t = tokenOf(env)!;
-    assert.match(t, /^[0-9a-f]{48}$/, empty);
-    assert.ok(!stdout.includes(t), "token not printed");
-    assert.match(env, /^A=1\n/);
-    assert.match(env, /\nB=2\n$/);
-  }
-});
-
-// @spec DEPLOY-INST-013
-test("two runs generate different tokens; a non-empty token of 32 characters or more is untouched with no warning", () => {
-  const a = tokenOf(run("control-token", "fill_control_token", "CONTROL_TOKEN=\n").env);
-  const b = tokenOf(run("control-token", "fill_control_token", "CONTROL_TOKEN=\n").env);
-  assert.notEqual(a, b);
-  const long = "x".repeat(32);
-  const kept = run("control-token", "fill_control_token", `CONTROL_TOKEN=${long}\n`);
-  assert.equal(kept.env, `CONTROL_TOKEN=${long}\n`);
-  assert.doesNotMatch(kept.stdout, /WARN/);
-});
-
-// @spec DEPLOY-INST-013
-test("a .env with no CONTROL_TOKEN line gets one appended with a fresh 48-hex secret, never printed, the other lines kept", () => {
-  for (const env of ["A=1\n", "A=1", ""]) {
-    const r = run("control-token", "fill_control_token", env);
-    const t = tokenOf(r.env)!;
-    assert.match(t, /^[0-9a-f]{48}$/, JSON.stringify(env));
-    assert.ok(!r.stdout.includes(t), "token not printed");
-    if (env !== "") assert.match(r.env, /^A=1\nCONTROL_TOKEN=[0-9a-f]{48}\n$/);
-  }
-});
-
-// @spec DEPLOY-INST-013
-test("a hand-set CONTROL_TOKEN shorter than 32 characters after trimming is left untouched with a warning naming the variable, not its value", () => {
-  for (const env of ["CONTROL_TOKEN=mine\n", "CONTROL_TOKEN=  short-one  # note\n", `CONTROL_TOKEN="${"y".repeat(31)}"\n`]) {
-    const r = run("control-token", "fill_control_token", env);
-    assert.equal(r.env, env, "never changed");
-    const warning = r.stdout.split("\n").find((l) => l.startsWith("WARN")) ?? "";
-    assert.match(warning, /CONTROL_TOKEN/);
-    assert.match(warning, /32 characters/);
-    assert.match(warning, /openssl rand -hex 24/);
-    for (const v of ["mine", "short-one", "y".repeat(31)]) assert.ok(!warning.includes(v), "the value is never printed");
-  }
-});
-
-/** Runs one block of install.sh in bash from `cwd` with `ROOT` set, `log`/`warn` printing, and `env`; returns the exit status and both streams. */
+/** Runs one block of install.sh in bash from `cwd` with `ROOT` set, `log`/`warn`/`die` printing, and `env`; returns the exit status and both streams. */
 const runBlock = (name: string, call: string, o: { cwd: string; root?: string; env?: Record<string, string>; path?: string }) => {
-  const r = spawnSync("/bin/bash", ["-c", `set -euo pipefail\nROOT="${o.root ?? o.cwd}"\ncd "${o.cwd}"\nlog(){ echo "LOG $*"; }\nwarn(){ echo "WARN $*" >&2; }\n${block(name)}\n${call}`], {
+  const r = spawnSync("/bin/bash", ["-c", `set -euo pipefail\nROOT="${o.root ?? o.cwd}"\ncd "${o.cwd}"\nlog(){ echo "LOG $*"; }\nwarn(){ echo "WARN $*" >&2; }\ndie(){ echo "DIE $*" >&2; exit 1; }\n${block(name)}\n${call}`], {
     encoding: "utf8", env: { PATH: o.path ?? process.env.PATH!, HOME: process.env.HOME ?? "/", ...o.env },
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 };
 
+/** A stub `mise` in a directory of its own: it appends `<cwd> <args>` to its calls file, then runs `body`. */
+const stubMise = (body: string): { mise: string; calls: () => string } => {
+  const bin = mkdtempSync(join(tmpdir(), "cohost-mise-"));
+  const mise = join(bin, "mise");
+  const calls = join(bin, "calls");
+  writeFileSync(mise, `#!/bin/sh\necho "$(pwd) $*" >> "${calls}"\n${body}\n`);
+  chmodSync(mise, 0o755);
+  return { mise, calls: () => (existsSync(calls) ? readFileSync(calls, "utf8") : "") };
+};
+
+/** Runs warn_env_token against a .env of the given text (none when undefined); returns the run and the .env afterwards. */
+const warnToken = (env: string | undefined) => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-inst-"));
+  if (env !== undefined) writeFileSync(join(dir, ".env"), env);
+  const r = runBlock("control-token", "warn_env_token", { cwd: dir });
+  return { ...r, env: existsSync(join(dir, ".env")) ? readFileSync(join(dir, ".env"), "utf8") : undefined };
+};
+
+// @spec DEPLOY-INST-013
+test("a .env with an empty, commented-out or absent CONTROL_TOKEN gives no warning and is left unchanged", () => {
+  for (const env of ["CONTROL_TOKEN=\n", "A=1\nCONTROL_TOKEN=   \nB=2\n", "CONTROL_TOKEN= # fill me\n", 'CONTROL_TOKEN=""\n', "CONTROL_TOKEN=''\n", "# CONTROL_TOKEN=abc\n", "A=1\n", "", undefined]) {
+    const r = warnToken(env);
+    assert.equal(r.status, 0, `${JSON.stringify(env)}: ${r.stderr}`);
+    assert.doesNotMatch(r.stdout + r.stderr, /WARN|DIE/, JSON.stringify(env));
+    assert.equal(r.env, env, `${JSON.stringify(env)}: .env unchanged`);
+  }
+});
+
+// @spec DEPLOY-INST-013
+test("a non-empty CONTROL_TOKEN in .env is reported by its line number, never its value, and .env is left unchanged", () => {
+  const cases: [string, number, string][] = [
+    ["CONTROL_TOKEN=mine-secret-value\n", 1, "mine-secret-value"],
+    ["A=1\n# a comment\nCONTROL_TOKEN=  spaced-secret  # note\nB=2\n", 3, "spaced-secret"],
+    ['A=1\nexport CONTROL_TOKEN="quoted-secret"\n', 2, "quoted-secret"],
+  ];
+  for (const [env, line, value] of cases) {
+    const r = warnToken(env);
+    assert.equal(r.status, 0, `the installer carries on: ${r.stderr}`);
+    const warning = r.stderr.split("\n").find((l) => l.startsWith("WARN")) ?? "";
+    assert.match(warning, /CONTROL_TOKEN/, value);
+    assert.match(warning, new RegExp(`\\bline ${line}\\b`), value);
+    assert.match(warning, /mise run config:token -- --stdin/, "the way to keep the same token");
+    assert.ok(!(r.stdout + r.stderr).includes(value), `${value}: the value is never printed`);
+    assert.equal(r.env, env, "never changed");
+  }
+});
+
+// @spec DEPLOY-INST-013
+test("set_control_token runs mise run config:token -- --if-unset, its output reaching the terminal unchanged and nothing written", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cohost-inst-"));
+  writeFileSync(join(dir, ".env"), "A=1\n");
+  const ok = stubMise('echo "control token: tok-123 (shown once)"');
+  const r = runBlock("control-token", "set_control_token", { cwd: dir, env: { MISE: ok.mise } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(ok.calls().trim(), `${dir} run config:token -- --if-unset`);
+  assert.match(r.stdout, /^control token: tok-123 \(shown once\)$/m, "the task's output is not captured or rewritten");
+  assert.deepEqual(readdirSync(dir), [".env"], "no file written");
+  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "A=1\n", ".env never written");
+
+  const failing = stubMise("echo 'store locked' >&2; exit 4");
+  const bad = runBlock("control-token", "set_control_token", { cwd: dir, env: { MISE: failing.mise } });
+  assert.notEqual(bad.status, 0, "a failing token task stops the installer");
+  assert.match(bad.stderr, /^DIE mise run config:token failed/m);
+});
+
 /** A directory shaped like a fresh checkout: the example files and nothing else. */
 const checkout = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "cohost-seed-"));
   mkdirSync(join(dir, "config"));
-  writeFileSync(join(dir, ".env.example"), "CONTROL_TOKEN=\n");
+  writeFileSync(join(dir, ".env.example"), "COMPOSE_FILE=docker-compose.yml\n");
   for (const f of ["config.example.yaml", "secrets.example.yaml", "personality.example.md", "expressions.example.yaml"]) writeFileSync(join(dir, "config", f), `# ${f}\n`);
   return dir;
 };
-const mode = (file: string): number => statSync(file).mode & 0o777;
 
 // @spec DEPLOY-INST-005
-test("a missing .env or config file is copied from its example, secrets/secrets.yaml with mode 0600 in a 0700 directory, and an existing file is never overwritten", () => {
+test("a missing .env is copied from .env.example, and no settings, personality, expressions or credentials file is created", () => {
   const dir = checkout();
-  const secrets = join(dir, "secrets", "secrets.yaml");
   const first = runBlock("seed-files", "seed_files", { cwd: dir });
   assert.equal(first.status, 0, first.stderr);
-  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "CONTROL_TOKEN=\n");
-  for (const [f, ex] of [["config.yaml", "config.example.yaml"], ["personality.md", "personality.example.md"], ["expressions.yaml", "expressions.example.yaml"]] as const) {
-    assert.equal(readFileSync(join(dir, "config", f), "utf8"), `# ${ex}\n`, f);
-  }
-  assert.equal(readFileSync(secrets, "utf8"), "# secrets.example.yaml\n", "copied from config/secrets.example.yaml");
-  assert.equal(mode(secrets), 0o600);
-  assert.equal(mode(join(dir, "secrets")), 0o700);
-  assert.equal(existsSync(join(dir, "config", "secrets.yaml")), false, "the credentials file is not seeded into ./config");
+  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "COMPOSE_FILE=docker-compose.yml\n");
+  for (const f of ["config.yaml", "personality.md", "expressions.yaml", "secrets.yaml"]) assert.equal(existsSync(join(dir, "config", f)), false, `config/${f} is not created`);
+  assert.equal(existsSync(join(dir, "secrets")), false, "no credentials directory");
+  assert.deepEqual(readdirSync(dir).toSorted(), [".env", ".env.example", "config", "data"], "only .env and data/ are new");
+  assert.deepEqual(readdirSync(join(dir, "data")), ["logs"]);
   assert.doesNotMatch(first.stdout, /Twitch|Discord|OBS/, "no instruction to fill operator values into .env");
-
-  // the operator's edits survive a second run, and a loose-mode secrets file is not touched (it is not ours to rewrite)
-  writeFileSync(join(dir, ".env"), "MINE=1\n");
-  writeFileSync(join(dir, "config", "config.yaml"), "mine: 1\n");
-  writeFileSync(secrets, "mine: 2\n");
-  chmodSync(secrets, 0o640);
-  assert.equal(runBlock("seed-files", "seed_files", { cwd: dir }).status, 0);
-  assert.equal(readFileSync(join(dir, ".env"), "utf8"), "MINE=1\n");
-  assert.equal(readFileSync(join(dir, "config", "config.yaml"), "utf8"), "mine: 1\n");
-  assert.equal(readFileSync(secrets, "utf8"), "mine: 2\n");
-  assert.equal(mode(secrets), 0o640);
 });
 
 // @spec DEPLOY-INST-005
-test("only the missing files are seeded, and an existing secrets directory keeps its mode", () => {
+test("an existing .env is never overwritten, even an empty one", () => {
   const dir = checkout();
-  writeFileSync(join(dir, "config", "config.yaml"), "mine: 1\n");
-  mkdirSync(join(dir, "secrets"), { mode: 0o750 });
-  runBlock("seed-files", "seed_files", { cwd: dir });
-  assert.equal(readFileSync(join(dir, "config", "config.yaml"), "utf8"), "mine: 1\n");
-  assert.ok(existsSync(join(dir, "secrets", "secrets.yaml")));
-  assert.equal(mode(join(dir, "secrets", "secrets.yaml")), 0o600);
-  assert.equal(mode(join(dir, "secrets")), 0o750, "an existing directory is not re-moded");
+  for (const text of ["MINE=1\n", ""]) {
+    writeFileSync(join(dir, ".env"), text);
+    const r = runBlock("seed-files", "seed_files", { cwd: dir });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(readFileSync(join(dir, ".env"), "utf8"), text);
+  }
+  const code = block("seed-files").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  assert.doesNotMatch(code, /config\.yaml|personality|expressions|secrets/, "the block names no settings or credentials file");
 });
 
 // @spec DEPLOY-INST-017
@@ -149,41 +142,45 @@ test("seeding creates data/logs as the user running it, without sudo, and leaves
   assert.doesNotMatch(block, /sudo/);
 });
 
-/** The repository's own loader reads `dashboard.port` from a config directory of the given text, run as the installer runs it. */
-const nextSteps = (configYaml: string | undefined, extraEnv: Record<string, string> = {}) => {
+const PORT_QUERY = "run -q config:get -- dashboard.port";
+/** print_next_steps with a stub mise whose `run -q config:get -- dashboard.port` runs `answer`; ROOT is a temp checkout. */
+const nextSteps = (answer = "echo 3000", extraEnv: Record<string, string> = {}) => {
   const root = mkdtempSync(join(tmpdir(), "cohost-next-"));
-  const cfg = join(root, "config");
-  mkdirSync(cfg);
-  if (configYaml !== undefined) writeFileSync(join(cfg, "config.yaml"), configYaml);
-  return runBlock("next-steps", "print_next_steps", { cwd: root, root: repo, env: { CONFIG_DIR: cfg, COHOST_ENV_FILE: join(root, ".env"), ...extraEnv } });
+  const stub = stubMise(`if [ "$*" = "${PORT_QUERY}" ]; then ${answer}; else exit 3; fi`);
+  const cwd = mkdtempSync(join(tmpdir(), "cohost-cwd-"));
+  return { ...runBlock("next-steps", "print_next_steps", { cwd, root, env: { MISE: stub.mise, ...extraEnv } }), root, calls: stub.calls() };
 };
 
 // @spec DEPLOY-INST-008
-test("next steps say open a new shell and mise run dashboard, build the URL from the dashboard.port the config loader returns, and have no compose up step", () => {
-  assert.ok(existsSync(join(repo, "packages", "config", "dist", "index.js")), "run `mise run build` first");
-  const out = nextSteps(MINIMAL_YAML.replace("dashboard: {}", "dashboard: { port: 3100, lan_port: 3101 }"));
+test("next steps say open a new shell and mise run dashboard, build the URL from the port mise run config:get prints, and have no compose up step", () => {
+  const out = nextSteps("echo 3100");
   assert.equal(out.status, 0, out.stderr);
+  assert.equal(out.calls.trim(), `${out.root} ${PORT_QUERY}`, "the store's own task, run from the checkout");
   assert.match(out.stdout, /http:\/\/localhost:3100\b/);
-  assert.equal(nextSteps(MINIMAL_YAML).stdout.match(/http:\/\/localhost:(\d+)/)?.[1], "3000", "the schema default");
   const o = out.stdout;
   assert.match(o, /mise run dashboard/);
   assert.match(o, /new shell/i, "a new shell, so the mise activate line applies");
   assert.ok(o.indexOf("new shell") < o.indexOf("mise run dashboard"));
+  assert.match(o, /recovery key/);
+  assert.match(o, /password manager/);
+  assert.match(o, /unlock link/);
+  assert.match(o, /enter the control token/);
+  assert.match(o, /Settings screen/);
   assert.match(o, /Launch/);
   assert.match(o, /startup log/);
   assert.match(o, /DASHBOARD_HOST/, "the startup log's URL differs when DASHBOARD_HOST is set");
   assert.doesNotMatch(o, /^\s*\d\. docker compose up -d\b/m);
   assert.match(o, /docker compose --profile eyes --profile ears --profile mouth --profile discord up -d/, "the optional profiles step names eyes, ears, mouth and discord");
   assert.match(o, /connections\.discord\.token/, "it names the one Discord bot");
-  assert.match(o, /secrets\/secrets\.yaml/, "the credentials file is named by its new path");
-  assert.doesNotMatch(o, /config\/secrets\.yaml/, "no step names the retired ./config location");
+  assert.match(o, /mise run config:secret/, "set on the Settings screen or with mise run config:secret");
   assert.match(o, /Discord connector/);
+  assert.doesNotMatch(o, /secrets\.yaml|config\.yaml/, "no settings or credentials file is named");
   assert.doesNotMatch(o, /DISCORD_TOKEN|DASHBOARD_PORT|edit \.env/i, "no retired variable");
 });
 
 // @spec DEPLOY-INST-008
 test("next steps name the engine profiles pocket, nemotron and kyutai, the engine key each is selected by, and the first-build warning", () => {
-  const o = nextSteps(MINIMAL_YAML).stdout;
+  const o = nextSteps().stdout;
   const at = o.search(/\bpocket\b/);
   assert.ok(at >= 0, "the engine profiles step exists");
   const step = o.slice(at - 200 > 0 ? at - 200 : 0);
@@ -197,20 +194,25 @@ test("next steps name the engine profiles pocket, nemotron and kyutai, the engin
 });
 
 // @spec DEPLOY-INST-008
-test("next steps warn that a hand-run docker compose up skips the secrets projection and name the command that refreshes it", () => {
-  const o = nextSteps(MINIMAL_YAML).stdout;
+test("next steps say a hand-run docker compose up starts services that wait for their credentials until the dashboard or mise run deliver delivers them", () => {
+  const o = nextSteps().stdout;
   const at = o.indexOf("--profile eyes");
   assert.ok(at >= 0);
   const step = o.slice(at, o.indexOf("5. optional speech engines"));
-  assert.match(step, /mise run secrets:project/, "the step names the projection command");
-  assert.match(step, /skips|does not (run|refresh)|not refresh/i, "and says that a hand-run compose up does not run it");
+  assert.match(step, /hand-run docker compose up/);
+  assert.match(step, /wait for their credentials/);
+  assert.match(step, /dashboard delivers them/);
+  assert.match(step, /mise run deliver/, "the command that delivers them by hand");
+  assert.match(step, /mise run config:project/, "and the command that refreshes the projections first");
+  assert.doesNotMatch(o, /secrets:project/);
 });
 
 // @spec DEPLOY-INST-008
-test("when the loader fails the first error line goes to stderr and the URL has no port; the installer still finishes", () => {
-  const bad = nextSteps(MINIMAL_YAML.replace("name: Coco", "name: ''"));
+test("when mise run config:get fails its first error line goes to stderr and the URL has no port; the installer still finishes", () => {
+  const bad = nextSteps("echo 'Error: the settings store is locked' >&2; echo 'second line' >&2; exit 1");
   assert.equal(bad.status, 0);
-  assert.match(bad.stderr.split("\n")[0]!, /^Invalid .*config\.yaml:/);
+  assert.equal(bad.stderr.split("\n")[0], "Error: the settings store is locked");
+  assert.doesNotMatch(bad.stderr, /second line/, "only the first error line");
   assert.match(bad.stdout, /http:\/\/localhost(?![:\d])/);
   assert.doesNotMatch(bad.stdout, /localhost:\d/);
   assert.match(bad.stdout, /start output/i, "the dashboard's own start output shows the address it listens on");
@@ -218,20 +220,21 @@ test("when the loader fails the first error line goes to stderr and the URL has 
 });
 
 // @spec DEPLOY-INST-008
-test("config.yaml is never parsed as text or executed by the installer: a hostile value changes nothing", () => {
+test("the installer reads the port only from the task's output: no file is parsed or imported, and a hostile output runs nothing", () => {
   const dir = mkdtempSync(join(tmpdir(), "cohost-next-"));
-  const out = nextSteps(MINIMAL_YAML.replace("dashboard: {}", `dashboard: { port: 3100 }\n# port: $(touch ${dir}/pwned)`));
-  assert.match(out.stdout, /localhost:3100\b/);
+  const hostile = nextSteps(`echo '3100; $(touch ${dir}/pwned)'`);
+  assert.equal(hostile.status, 0, hostile.stderr);
   assert.ok(!existsSync(join(dir, "pwned")));
-  assert.match(src.slice(src.indexOf("# begin next-steps")), /packages\/config\/dist\/index\.js/);
-  const steps = src.slice(src.indexOf("# begin next-steps"), src.indexOf("# end next-steps")).split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
-  assert.doesNotMatch(steps, /\b(sed|grep|awk|source)\b|\. config/, "no text parsing and no execution of config.yaml");
+  assert.doesNotMatch(hostile.stdout, /localhost:\d/, "an output that is not a port gives the URL without one");
+  const steps = block("next-steps").split("\n").filter((l) => !l.trimStart().startsWith("#")).join("\n");
+  assert.ok(steps.includes(`"$MISE" ${PORT_QUERY}`), "the port comes from mise run config:get");
+  assert.doesNotMatch(steps, /packages\/(config|store)\/dist|\bnode\b|\b(sed|awk|source)\b|^\s*\.\s|config\.yaml|\.db\b/m, "no import, no file parsing, no sourcing");
 });
 
 
 // @spec DEPLOY-INST-011
 test("the Docker-free dev loop is mise run infra:up then mise run dev or one service's watch, and doctor checks the host", () => {
-  const out = nextSteps(MINIMAL_YAML).stdout;
+  const out = nextSteps().stdout;
   const page = readFileSync(fileURLToPath(new URL("../../../docs/advanced/dev-setup.md", import.meta.url)), "utf8");
   const infra = "redis postgres ollama tts stt";
   assert.match(out, /mise run infra:up/);
@@ -251,13 +254,25 @@ const at = (s: string, from = code) => {
   assert.ok(i >= 0, `install.sh runs ${s}`);
   return i;
 };
+/** The first docker compose command that is not the version check: the first to pull, create or start anything. */
+const firstCompose = (): number => {
+  const i = code.search(/^\s*docker compose (?!version\b)/m);
+  assert.ok(i >= 0);
+  return i;
+};
+/** The top-level call of set_control_token (its definition is in the control-token block, before the build). */
+const setTokenCall = (): number => {
+  const i = code.search(/^set_control_token$/m);
+  assert.ok(i >= 0, "install.sh calls set_control_token");
+  return i;
+};
 
 // Source checks of the installer's order and wording; the apt and docker steps themselves are exercised only by running the
 // installer (a manual verification item of the segment).
 // @spec DEPLOY-INST-007
-test("install.sh builds through mise run build, projects the secrets, then probes redis and postgres (and ollama when pulling) for 60 s", () => {
-  assert.ok(at('"$MISE" run build') < at('"$MISE" run secrets:project'));
-  assert.ok(at('"$MISE" run secrets:project') < at("docker compose pull --ignore-buildable"));
+test("install.sh builds through mise run build, writes the projections, then probes redis and postgres (and ollama when pulling) for 60 s", () => {
+  assert.ok(at('"$MISE" run build') < at('"$MISE" run config:project'));
+  assert.ok(at('"$MISE" run config:project') < at("docker compose pull --ignore-buildable"));
   assert.ok(at("docker compose pull --ignore-buildable") < at("docker compose up -d ollama models"));
   assert.ok(at("docker compose wait models") < at("docker compose up -d redis postgres"));
   for (const probe of ["redis-cli ping", "pg_isready", "/api/tags"]) at(probe);
@@ -277,21 +292,27 @@ test("the installer installs the workspace only through the build task's frozen 
   assert.match(code.slice(at('"$MISE" run build')).split("\n")[0]!, /\|\|\s*die\b/);
 });
 
-// @spec DEPLOY-SECRET-006
-test("install.sh runs the secrets projection after the build and before any docker compose command, and stops with the projection's message on failure", () => {
-  const proj = at('"$MISE" run secrets:project');
+// @spec DEPLOY-INST-007, DEPLOY-INST-013
+test("install.sh runs config:project, then the control token, after the build and before any docker compose command, and stops naming mise run config:check when the projection fails", () => {
+  const proj = at('"$MISE" run config:project');
   assert.ok(at('"$MISE" run build') < proj, "after the workspace is built");
-  assert.ok(proj < code.indexOf("docker compose pull") && proj < code.indexOf("docker compose up"), "before the first docker compose command that creates a container");
+  assert.ok(proj < setTokenCall() && setTokenCall() < firstCompose(), "the token is set once the store exists, before any docker compose command");
+  assert.ok(proj < firstCompose());
   const line = code.slice(proj).split("\n")[0]!;
-  assert.match(line, /\|\|\s*die\b|\|\|\s*exit\b/, "a failing projection stops the installer");
+  assert.match(line, /\|\|\s*die\b.*mise run config:check/, "a failing projection stops the installer, naming mise run config:check");
   assert.doesNotMatch(line, />\s*\/dev\/null|2>\s*\/dev\/null/, "the projection's message is not swallowed");
+  const token = block("control-token").split("\n").find((l) => l.includes('"$MISE" run config:token'));
+  assert.ok(token, "set_control_token runs the token task");
+  assert.match(token!, /"\$MISE" run config:token -- --if-unset\s*\|\|\s*die\b/);
+  assert.doesNotMatch(token!, />|\|\s*tee|\$\(/, "the token's output goes straight to the terminal");
+  assert.doesNotMatch(src, /secrets:project/, "no secrets:project");
 });
 
 // @spec DEPLOY-INST-015
 test("install.sh builds the docs after the workspace, and a docs failure is a warning naming mise run docs:build", () => {
   const docs = at('"$MISE" run docs:build');
-  assert.ok(at('"$MISE" run build') < docs && at('"$MISE" run secrets:project') < docs);
-  assert.ok(docs < code.indexOf("docker compose pull"));
+  assert.ok(at('"$MISE" run build') < docs && at('"$MISE" run config:project') < docs && setTokenCall() < docs);
+  assert.ok(docs < firstCompose());
   const line = code.slice(docs).split("\n")[0]!;
   assert.match(line, /\|\|\s*warn\s+"mise run docs:build failed/, "a warning naming the command, not a stop");
   assert.doesNotMatch(line, /\bdie\b|\bexit\b/);
@@ -338,7 +359,8 @@ test("the installer fetches the min_version release into ~/.local/bin/mise unles
 // @spec DEPLOY-INST-004, DEPLOY-INST-009
 test("every mise command runs ~/.local/bin/mise by its full path: trust, install --locked, then the shims first on the path before any build step", () => {
   assert.match(code, /^MISE="\$HOME\/\.local\/bin\/mise"$/m);
-  const commands = code.slice(0, code.indexOf("print_next_steps() {"));
+  // the messages log, warn and die print are text, not commands
+  const commands = code.slice(0, code.indexOf("print_next_steps() {")).replace(/\b(log|warn|die)\s+"[^"]*"/g, '$1 ""');
   assert.doesNotMatch(commands, /(^\s*|&&\s*|\|\|\s*|;\s*|\$\(\s*)mise\s/m, "no bare mise from the path");
   const trust = at('"$MISE" trust "$ROOT/mise.toml"');
   const install = at('"$MISE" install --locked');
@@ -382,8 +404,8 @@ test("the installer appends the mise activate line to the login shell's rc file 
 
 // @spec DEPLOY-INST-008, DEPLOY-INST-016
 test("next steps also give the line that activates mise in the current shell", () => {
-  assert.match(nextSteps(MINIMAL_YAML, { SHELL: "/usr/bin/zsh" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate zsh\)"/);
-  assert.match(nextSteps(MINIMAL_YAML, { SHELL: "/usr/bin/fish" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate <shell>\)"/);
+  assert.match(nextSteps(undefined, { SHELL: "/usr/bin/zsh" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate zsh\)"/);
+  assert.match(nextSteps(undefined, { SHELL: "/usr/bin/fish" }).stdout, /eval "\$\(~\/\.local\/bin\/mise activate <shell>\)"/);
 });
 
 // @spec DEPLOY-TOOL-004

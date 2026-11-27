@@ -7,7 +7,6 @@ import { readFileSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
 import { isatty } from "node:tty";
 import { join } from "node:path";
-import { parseDocument } from "yaml";
 import pino from "pino";
 import { LoggingSchema, type LoggingSettings } from "./schema.js";
 import { configDir, dataDir, loadDotEnv } from "./paths.js";
@@ -131,11 +130,24 @@ let settings: LoggingSettings | undefined;
 let sink: Sink | undefined;
 let configLog: Logger | undefined;
 let colour: boolean | undefined;
+let source: LoggingSource | undefined;
+
+/** Where a store-owning program's `logging` section comes from: a function returning the stored section (or undefined). */
+export type LoggingSource = () => unknown;
 
 /**
- * The process's one read of the `logging` section: `.env` first (it never overrides a set variable), then `config.yaml` in the
- * config directory, that section alone. A missing or unparsable file, or an invalid section, gives the defaults silently:
- * `loadConfig` reports the same fault moments later.
+ * Registers the `logging` section's source for this process (CFG-LOG-002): the dashboard, `cohostctl`, the unit runner and the
+ * `config:*` tasks register the settings store's stored section before their first log line (settings-store STORE-PKG-003).
+ * A process that registers none reads the section from its projection.
+ */
+// @spec CFG-LOG-002
+export function setLoggingSource(fn: LoggingSource | undefined): void { source = fn; }
+
+/**
+ * The process's one read of the `logging` section: `.env` first (it never overrides a set variable), then the section from the
+ * registered logging source (`setLoggingSource`), else from the projection's `settings.json` in the config directory, that
+ * section alone. A missing or unparsable file, or an invalid section, gives the defaults silently: `loadConfig` or the store
+ * reports the same fault.
  */
 // @spec CFG-LOG-002, CFG-LOG-003, CFG-LOG-004
 export function loggingSettings(): LoggingSettings {
@@ -143,8 +155,11 @@ export function loggingSettings(): LoggingSettings {
   let section: unknown;
   try {
     loadDotEnv();
-    const doc = parseDocument(readFileSync(join(configDir(), "config.yaml"), "utf8"));
-    if (doc.errors.length === 0) section = (doc.toJS() as { logging?: unknown } | null)?.logging;
+    if (source) section = source();
+    else {
+      const raw = JSON.parse(readFileSync(join(configDir(), "settings.json"), "utf8")) as { sections?: Record<string, unknown> } | null;
+      section = raw?.sections?.logging;
+    }
   } catch { /* missing or unreadable: the defaults */ }
   // A key written with no value is null and takes its default, as in loadConfig (CFG-LOAD-002).
   const parsed = LoggingSchema.safeParse(coerceEmptyNumbers(section ?? {}));
@@ -254,5 +269,6 @@ export function resetLoggingForTest(terminal?: TerminalOut): void {
   settings = undefined;
   configLog = undefined;
   colour = undefined;
+  source = undefined;
   out = terminal ?? STDOUT;
 }

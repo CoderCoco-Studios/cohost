@@ -8,10 +8,10 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ConfigSchema, ExpressionMapSchema, secretPathOf, type Config, type ExpressionMap } from "./schema.js";
+import { ConfigSchema, ExpressionMapSchema, CREDENTIAL_QUERY_NAMES, secretPathOf, type Config, type ExpressionMap } from "./schema.js";
 import { SECTION_PATHS } from "./presentation.js";
 import { applyIsolation, coerceEmptyNumbers, decodeIsolation, unknownKeys, ISOLATION_ENV, ISOLATION_OVERRIDES, type ConfigIssue, type IsolationName, type IsolationOverrides } from "./pipeline.js";
-import { configDir } from "./paths.js";
+import { configDir, loadDotEnv } from "./paths.js";
 import { diag } from "./diag.js";
 import { ConfigError, bracketIndexes, invalidMessage } from "./errors.js";
 
@@ -33,9 +33,11 @@ export interface Projection {
   documents: { personality?: unknown; expressions?: unknown };
 }
 
-export interface ProjectionOptions {
+export interface LoadOptions {
   /** The directory holding `settings.json` (default `configDir()`). */
   dir?: string;
+  /** The calling unit: a projection written for another unit is refused (default: not checked). */
+  unit?: string;
   /** The credentials the process received, by concrete secret path (default none). */
   credentials?: Readonly<Record<string, string>>;
   /** The `COHOST_ISOLATION` value to apply (default the process's own). */
@@ -43,6 +45,9 @@ export interface ProjectionOptions {
   /** Read the file again instead of returning the cached configuration. */
   force?: boolean;
 }
+
+/** What a cached configuration was loaded from: a call naming another directory, unit, isolation or credentials reloads. */
+interface CacheKey { dir: string; unit: string | undefined; isolation: string; credentials: string }
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 
@@ -111,19 +116,39 @@ function guard<T extends object>(target: T, known: ReadonlySet<string>, held: Re
   });
 }
 
-let cached: Config | undefined;
+let cached: { cfg: Config; key: CacheKey } | undefined;
+
+/** Whether a call with `opts` may return the cached configuration: it names nothing the cache was not loaded from. */
+function cacheFits(opts: LoadOptions, key: CacheKey): boolean {
+  if (opts.dir !== undefined && opts.dir !== key.dir) return false;
+  if (opts.unit !== undefined && opts.unit !== key.unit) return false;
+  if (opts.isolation !== undefined && opts.isolation !== key.isolation) return false;
+  if (opts.credentials !== undefined && JSON.stringify(opts.credentials) !== key.credentials) return false;
+  return true;
+}
+
+/** Forget the cached configuration (tests that load several projections in one process). */
+export function resetConfigCache(): void { cached = undefined; }
 
 /**
  * The unit's configuration from its projection: each held section with nulls dropped, the isolation overrides that fall in a
  * held section applied, validated with that section's own schema (a refinement across sections only where every section it
  * reads is held, the store having validated the whole configuration on write), then the delivered credentials set at their
- * secret paths. Reading a section the projection does not hold throws. Cached until called with `force`.
+ * secret paths. Reading a section the projection does not hold throws. Cached: a later call returns the same object unless it
+ * passes `force`, or names a directory, unit, isolation value or credentials other than the cached load's.
  */
-// @spec CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
-export function loadProjection(opts: ProjectionOptions = {}): Config {
-  if (cached && !opts.force) return cached;
-  const { file, projection } = readProjection(opts.dir);
+// @spec CFG-ENV-004, CFG-LOAD-001, CFG-LOAD-003, CFG-LOAD-005, CFG-LOAD-008, CFG-SCH-086, CFG-SEC-002, CFG-SEC-003, CFG-SEC-016, CFG-SEC-017, CFG-SEC-020, CFG-SEC-021, CFG-ISO-007
+export function loadConfig(opts: LoadOptions = {}): Config {
+  // `.env` first (CFG-ENV-004): it sets only what the environment does not, so loading it again changes nothing.
+  loadDotEnv();
+  if (cached && !opts.force && cacheFits(opts, cached.key)) return cached.cfg;
+  const dir = opts.dir ?? configDir();
+  const isolation = opts.isolation ?? process.env[ISOLATION_ENV] ?? "";
+  const { file, projection } = readProjection(dir);
   const { unit } = projection;
+  if (opts.unit !== undefined && unit !== opts.unit) {
+    throw notWritten(file, `is the projection of ${unit}, not of ${opts.unit}`);
+  }
 
   const held = new Set<string>();
   const stray: string[] = [];
@@ -134,7 +159,7 @@ export function loadProjection(opts: ProjectionOptions = {}): Config {
     if (value !== null) setIn(tree, path.split("."), coerceEmptyNumbers(value));
   }
 
-  const overrides = decodeIsolation(opts.isolation ?? process.env[ISOLATION_ENV]);
+  const overrides = decodeIsolation(isolation);
   const applicable: IsolationOverrides = Object.fromEntries(Object.entries(overrides).filter(([name]) => {
     const section = sectionOf(ISOLATION_OVERRIDES[name as IsolationName]);
     return section !== undefined && held.has(section);
@@ -147,7 +172,8 @@ export function loadProjection(opts: ProjectionOptions = {}): Config {
   const topLevel = [...held].filter((s) => !s.startsWith(BRAIN));
   const shape = ConfigSchema.shape as unknown as Record<string, typeof brainShape[string]>;
   for (const name of topLevel) {
-    const r = shape[name]!.safeParse(tree[name]);
+    // A declared section the store holds no key of is projected as null: its keys take their schema defaults.
+    const r = shape[name]!.safeParse(tree[name] ?? {});
     if (r.success) out[name] = r.data;
     else issues.push(...r.error!.issues.map((i) => ({ path: [name, ...i.path.map(String)].join("."), message: i.message })));
   }
@@ -179,11 +205,19 @@ export function loadProjection(opts: ProjectionOptions = {}): Config {
 
   const unknown = [...stray, ...topLevel.flatMap((s) => unknownKeys(raw[s], out[s], s)), ...heldBrain.flatMap((s) => unknownKeys(getIn(raw, ["brain", s]), brain[s], `brain.${s}`))];
   if (unknown.length > 0) diag().warn(`[config] ${file}: ignoring unknown keys: ${unknown.join(", ")}`);
+  // A credential in a query string is sent to the server on every call; the warning names the parameter, never its value.
+  if (held.has("tools")) {
+    for (const [name, server] of Object.entries((out.tools as Config["tools"]).servers)) {
+      const names = [...new Set([...new URL(server.url).searchParams.keys()].filter((k) => CREDENTIAL_QUERY_NAMES.includes(k)))];
+      if (names.length > 0) diag().warn(`[config] ${file}: tools.servers.${name}.url has a query parameter that looks like a credential (${names.join(", ")}); its value is not shown: put the credential in tools.servers.${name}.token`);
+    }
+  }
 
   // The delivered credentials, set after validation so a credential creates no section or entry the settings do not hold.
   for (const [path, value] of Object.entries(opts.credentials ?? {})) {
     if (path === EARS_VERIFIER_PATH) {
-      if (held.has("ears") && typeof value === "string" && /^[0-9a-f]{64}$/.test(value)) setIn(out, path.split("."), value);
+      if (!held.has("ears")) diag().warn(`[config] ignoring ${path}: it is delivered to ears alone, and the projection of ${unit} holds no ears section`);
+      else if (typeof value === "string" && /^[0-9a-f]{64}$/.test(value)) setIn(out, path.split("."), value);
       else diag().warn(`[config] ignoring ${path}: it is not 64 lowercase hex digits, so the ears audio listener has no key`);
       continue;
     }
@@ -205,8 +239,19 @@ export function loadProjection(opts: ProjectionOptions = {}): Config {
   const knownTop = new Set(SECTION_PATHS.filter((s) => !s.includes(".")));
   const knownBrain = new Set(Object.keys(brainShape));
   out.brain = guard(brain, knownBrain, new Set(heldBrain), BRAIN, unit);
-  cached = guard(out, knownTop, new Set(topLevel), "", unit) as Config;
-  return cached;
+  const cfg = guard(out, knownTop, new Set(topLevel), "", unit) as Config;
+  cached = { cfg, key: { dir, unit: opts.unit, isolation, credentials: JSON.stringify(opts.credentials ?? {}) } };
+  return cfg;
+}
+
+/**
+ * The ears listener key the loader set from ears' delivery (`ears.http.verifier`, CFG-SEC-020), or undefined when the delivery
+ * carried none in its valid form. It is not a key of `ConfigSchema`: only ears' credentials message carries it.
+ */
+// @spec CFG-SEC-020
+export function earsListenerVerifier(cfg: Config): string | undefined {
+  const v = (cfg.ears.http as { verifier?: unknown }).verifier;
+  return typeof v === "string" ? v : undefined;
 }
 
 /**
@@ -214,7 +259,7 @@ export function loadProjection(opts: ProjectionOptions = {}): Config {
  * none.
  */
 // @spec CFG-USR-001
-export function loadProjectionPersonality(dir?: string): string {
+export function loadPersonality(dir?: string): string {
   const { file, projection } = readProjection(dir);
   const text = projection.documents.personality;
   if (typeof text !== "string") throw new Error(`${file}: the projection of ${projection.unit} holds no personality document; declare it in the unit's documents list`);
@@ -226,7 +271,7 @@ export function loadProjectionPersonality(dir?: string): string {
  * and one that fails validation throws `Invalid <file>:` with every failing key.
  */
 // @spec CFG-USR-002
-export function loadProjectionExpressions(dir?: string): ExpressionMap {
+export function loadExpressions(dir?: string): ExpressionMap {
   const { file, projection } = readProjection(dir);
   const parsed = ExpressionMapSchema.safeParse(projection.documents.expressions ?? {});
   if (!parsed.success) throw new Error(invalidMessage(file, parsed.error.issues.map((i) => ({ path: ["expressions", ...i.path.map(String)].join("."), message: i.message }))));

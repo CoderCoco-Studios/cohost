@@ -1,76 +1,53 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
-import { loadConfig, parseConfigText } from "../src/index.js";
-import * as api from "../src/index.js";
-import { MINIMAL_YAML, isolateEnv, sandbox, captureWarnings, repo } from "./helpers/config-sandbox.js";
+import { parseConfigText, placeholderIssues, parseYaml, loadConfig } from "../src/index.js";
+import { MINIMAL_YAML, isolateEnv, captureWarnings, repo } from "./helpers/config-sandbox.js";
 
 isolateEnv();
 
+/** The placeholder issues a settings write of the YAML settings `yaml` is refused with, one `path: message` line each. */
 const message = (yaml: string): string => {
-  sandbox({ "config.yaml": yaml });
-  try { loadConfig(true); } catch (e) { return (e as Error).message; }
-  return assert.fail("expected the load to fail");
+  const issues = placeholderIssues(parseYaml(yaml));
+  assert.ok(issues.length > 0, "expected the write to be refused");
+  return issues.map((i) => `${i.path}: ${i.message}`).join("\n");
 };
 
 // @spec CFG-ENV-011
-test("a ${VAR} or ${VAR:-default} placeholder fails the load, naming the key (an array entry as path[index]), the variable and the literal to write", () => {
+test("a ${VAR} or ${VAR:-default} placeholder refuses the write, naming the key (an array entry as path[index]), the variable and the literal to write", () => {
   const yaml = MINIMAL_YAML
     .replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"${TWITCH_CHANNEL}\" }, ignore_users: [ok, \"${BOT_NAME:-nightbot}\"] }")
     .replace("llm: { model: m, embed_model: e }", "llm: { model: \"${LLM_MODEL:-qwen}\", embed_model: e, openai: { api_key: \"${LLM_API_KEY}\" } }");
   const m = message(yaml);
-  assert.ok(m.startsWith(`Invalid ${join(process.env.CONFIG_DIR!, "config.yaml")}:`));
-  assert.match(m, /chat\.twitch\.channel: .*TWITCH_CHANNEL.*literal in config\.yaml/);
-  assert.match(m, /chat\.ignore_users\[1\]: .*BOT_NAME.*literal in config\.yaml/);
-  assert.match(m, /llm\.model: .*LLM_MODEL.*literal in config\.yaml/);
-  assert.match(m, /llm\.openai\.api_key: .*LLM_API_KEY.*secrets\.yaml/, "a secret key says to use secrets.yaml");
+  assert.equal(m.split("\n").length, 4, m);
+  assert.match(m, /chat\.twitch\.channel: .*TWITCH_CHANNEL.*literal/);
+  assert.match(m, /chat\.ignore_users\[1\]: .*BOT_NAME.*literal/);
+  assert.match(m, /llm\.model: .*LLM_MODEL.*literal/);
+  assert.match(m, /llm\.openai\.api_key: .*LLM_API_KEY.*credential/, "a secret key says to set it as a credential");
 });
 
 // @spec CFG-ENV-011
 test("a placeholder is never substituted, a placeholder in a comment is not checked, and lower-case or malformed ones are literal text", () => {
   process.env.TWITCH_CHANNEL = "from-env";
-  sandbox({ "config.yaml": `# channel: \${TWITCH_CHANNEL}\n${MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"literal-${lower_case}-${A-B}\" } } # \\${COMMENTED}")}` });
-  const cfg = loadConfig(true);
-  assert.equal(cfg.chat.twitch.channel, "literal-${lower_case}-${A-B}");
+  const text = `# channel: \${TWITCH_CHANNEL}\n${MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"literal-${lower_case}-${A-B}\" } } # \\${COMMENTED}")}`;
+  assert.deepEqual(placeholderIssues(parseYaml(text)), []);
+  const r = parseConfigText(text);
+  assert.ok(r.ok);
+  assert.equal(r.config.chat.twitch.channel, "literal-${lower_case}-${A-B}");
   const e = parseConfigText(MINIMAL_YAML.replace("brain: {}", "brain: { salience: { barge_in_sources: [\"${X}\"] } }"));
   assert.equal(e.ok, false);
   assert.ok(!e.ok && e.issues.some((i) => i.path === "brain.salience.barge_in_sources[0]" && /\bX\b/.test(i.message)));
 });
 
-// @spec CFG-ENV-001, CFG-ENV-002, CFG-ENV-003
-test("no environment substitution remains: substituteEnv is gone and an environment variable named in a value changes nothing", () => {
-  assert.equal("substituteEnv" in api, false);
-  process.env.TWITCH_CHANNEL = "from-env";
-  sandbox({ "config.yaml": MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: plain } }") });
-  assert.equal(loadConfig(true).chat.twitch.channel, "plain");
-});
-
-// @spec CFG-LOAD-004
-test("an invalid config.yaml adds no hint about a missing .env, and the helper that supplied it is gone", () => {
-  const m = message(MINIMAL_YAML.replace("name: Coco", "name: ''"));
-  assert.match(m, /cohost\.name:/);
-  assert.doesNotMatch(m, /\.env/);
-  assert.equal("missingDotEnv" in api, false);
-});
-
-// @spec CFG-LOAD-001
-test("loadConfig seeds config.yaml from the example, validates, caches until forced and reads secrets in the same pass", () => {
-  const dir = sandbox({ "config.example.yaml": MINIMAL_YAML });
-  const warnings = captureWarnings(() => { const a = loadConfig(true); assert.equal(loadConfig(), a); });
-  assert.ok(warnings.some((w) => /created .*config\.yaml from config\.example\.yaml/.test(w)));
-  writeFileSync(join(dir, "config.yaml"), MINIMAL_YAML.replace("name: Coco", "name: Moco"));
-  assert.equal(loadConfig().cohost.name, "Coco");
-  assert.equal(loadConfig(true).cohost.name, "Moco");
-});
-
 // ---- CFG-ENV-012: cohost source reads only the permitted environment variables
 
 const ALLOWED = new Set([
-  "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_SECRETS_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "HEARTBEAT_INTERVAL_MS",
+  "COHOST_ISOLATION", "CONFIG_DIR", "COHOST_ENV_FILE", "COHOST_DATA_DIR", "COHOST_DOCKER_BIN", "COHOST_VERSION", "HEARTBEAT_INTERVAL_MS",
   "REDIS_URL", "DATABASE_URL", "OLLAMA_URL", "TTS_URL", "STT_URL", "VOICE_URL", "VOICE_PORT",
   "CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST", "PATH", "HOSTNAME", "WSLENV", "NO_COLOR",
-  "COHOST_KEY_FILE", "XDG_CONFIG_HOME", "EDITOR",
+  "COHOST_KEY_FILE", "XDG_CONFIG_HOME", "EDITOR", "COHOST_CREDENTIALS_FD",
 ]);
 
 /**
@@ -113,8 +90,7 @@ test("cohost source reads only the permitted environment variables; the pending 
     }
   }
   const unexpected = found.filter((r) => !ALLOWED.has(r.split("::")[1]!) && !PENDING.has(r));
-  assert.deepEqual(unexpected, [], "an environment variable that is not in the permitted set; operator settings are config.yaml or secrets.yaml keys");
-  assert.ok(found.includes("packages/config/src/index.ts::COHOST_SECRETS_FILE"), "the loader reads COHOST_SECRETS_FILE (CFG-SEC-001)");
+  assert.deepEqual(unexpected, [], "an environment variable that is not in the permitted set; operator settings live in the settings store");
   const stale = [...PENDING].filter((r) => !found.includes(r));
   assert.deepEqual(stale, [], "a pending read that no longer exists: delete it from PENDING");
 });
@@ -146,7 +122,7 @@ test("the environment-read scan finds property, call, index and dynamic reads an
 });
 
 // @spec CFG-LOAD-007, CFG-SEC-010
-test("a config.yaml syntax error is reported by line, column and reason code only: no text of the source reaches the message, the issues or the log", () => {
+test("a settings syntax error is reported by line, column and reason code only: no text of the source reaches the message, the issues or the log", () => {
   const MARKER = "sk-LEFTOVER-CREDENTIAL-MARKER";
   const broken = `${MINIMAL_YAML}\nnote: a: ${MARKER}\n`;
   const r = parseConfigText(broken);
@@ -154,19 +130,20 @@ test("a config.yaml syntax error is reported by line, column and reason code onl
   const issues = JSON.stringify(!r.ok ? r.issues : []);
   assert.match(issues, /line \d+, column \d+/);
   assert.doesNotMatch(issues, /LEFTOVER|MARKER/);
-  sandbox({ "config.yaml": broken });
+  // A projection that is not JSON fails naming the file and who writes it, quoting none of its text.
+  const dir = mkdtempSync(join(tmpdir(), "cohost-proj-"));
+  writeFileSync(join(dir, "settings.json"), `{"format": 1, "note": ${MARKER}`);
   let thrown = "";
-  const warnings = captureWarnings(() => { try { loadConfig(true); } catch (e) { thrown = (e as Error).message; } });
-  assert.match(thrown, /^Invalid .*config\.yaml:/);
-  assert.match(thrown, /line \d+, column \d+/);
+  const warnings = captureWarnings(() => { try { loadConfig({ dir, force: true }); } catch (e) { thrown = (e as Error).message; } });
+  assert.match(thrown, /settings\.json is not JSON: .*dashboard, cohostctl or the unit runner/);
   assert.doesNotMatch(thrown + warnings.join("\n"), /LEFTOVER|MARKER/);
 });
 
 // @spec CFG-ENV-011
-test("the placeholder failure says ${...} is not supported in config.yaml and how to keep the text literal", () => {
+test("the placeholder failure says ${...} is not supported and how to keep the text literal", () => {
   const m = message(MINIMAL_YAML.replace("chat: { twitch: {} }", "chat: { twitch: { channel: \"say ${NAME} now\" } }"));
   assert.match(m, /chat\.twitch\.channel: /);
-  assert.match(m, /\$\{\.\.\.\} is not supported in config\.yaml/);
+  assert.match(m, /\$\{\.\.\.\} is not supported/);
   assert.match(m, /no escape/);
   assert.match(m, /lower-case/);
 });

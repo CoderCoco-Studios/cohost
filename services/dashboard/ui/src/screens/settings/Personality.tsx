@@ -28,16 +28,16 @@ export function Personality() {
   return (
     <section className="card" aria-label="Personality">
       <div className="card-h">
-        <span className="small muted">personality.md · the prompt that makes the co-host who they are</span>
+        <span className="small muted">personality · the prompt that makes the co-host who they are</span>
         <span className="grow" />
         {dirty ? <span className="tag">edited</span> : null}
       </div>
       <div className="card-b stack-y">
         <p className="note note-ok"><b>Applies at once.</b> Saving reloads the co-host's brain with the new text. No service restarts, unlike the other sections.</p>
         {p.status === "loading" ? <LoadingState label="Loading personality…" /> : null}
-        {p.status === "error" ? <ErrorState message={`Could not load personality.md: ${p.error}`} onRetry={() => void settings.loadPersonality()} /> : null}
+        {p.status === "error" ? <ErrorState message={`Could not load the personality: ${p.error}`} onRetry={() => void settings.loadPersonality()} /> : null}
         <div>
-          <label className="label" htmlFor={id}>personality.md</label>
+          <label className="label" htmlFor={id}>Personality</label>
           <textarea id={id} className="field mono pers" spellCheck={false} readOnly={!ready} value={p.text} aria-describedby={`${id}-meta`}
             onChange={(e) => settings.setPersonalityText(e.target.value)}
             onKeyDown={(e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); } }} />
@@ -55,7 +55,7 @@ export function Personality() {
         <Button variant="primary" disabled={!ready || !dirty || over} busy={ready && p.saving} onClick={save}>Save <span className="kbd" aria-hidden="true">Ctrl S</span></Button>
       </div>
       <ConfirmDialog open={confirming} title="Discard your unsaved text?" confirmLabel="Discard and reload" danger onCancel={() => setConfirming(false)} onConfirm={() => void reload()}>
-        Reloading reads personality.md again and replaces the text you changed.
+        Reloading reads the saved personality again and replaces the text you changed.
       </ConfirmDialog>
     </section>
   );

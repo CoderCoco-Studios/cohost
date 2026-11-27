@@ -391,9 +391,9 @@ test("at start every .incoming-* file in the model folder is removed and nothing
 // @spec DASH-MDL-032, DASH-AVR-027
 test("a stored upload changes no setting and does not select the model", async (t) => {
   const r = await rig(t, { seed: { "Old.vrm": model("old") }, renderer: { model: "Old.vrm", zoom: 1.5 } });
-  const cfg = readFileSync(r.cfgFile, "utf8");
+  const cfg = r.settings();
   assert.equal((await up(r, "?name=New.vrm", model("new"))).status, 201);
-  assert.equal(readFileSync(r.cfgFile, "utf8"), cfg);
+  assert.equal(r.settings(), cfg);
   assert.equal((await r.get("/avatar/models")).json().active, "Old.vrm");
   assert.deepEqual((await r.get("/avatar/model")).body, model("old"));
 });

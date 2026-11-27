@@ -4,7 +4,7 @@ The co-host's speaking module: plays `voice.utterance` on the outputs the owner 
 
 ## Status
 
-**#372 settings-store design (docs only, not built):** 101 specs: 99 `[x]`, 1 `[ ]`, 1 `[D]`; MOUTH-LIVE-005 reworded ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
+**#372 settings-store design (docs only, not built):** 101 specs: 100 `[x]`, 0 `[ ]`, 1 `[D]`; MOUTH-LIVE-005 reworded ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
 Built since the one-place configuration design ([decision](../decisions/config-in-one-place.md)): mouth uses no Discord token key (MOUTH-CONN-001). Total 101 specs: 100 `[x]`, 0 `[ ]`, 1 `[D]`.
 

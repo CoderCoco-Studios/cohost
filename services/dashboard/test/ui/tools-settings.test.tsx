@@ -1,7 +1,7 @@
 import "./helpers/dom";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { GROUPS, SECTION_PATHS, sectionJsonSchema, sectionPresentation, sectionSecrets, readSection } from "@cohost/config";
+import { GROUPS, SECTION_PATHS, sectionJsonSchema, sectionPresentation, sectionSecrets, readSection, parseYaml } from "@cohost/config";
 import { act, screen, userEvent, waitFor, within } from "./helpers/render";
 import { boot, settle } from "./settings-helpers";
 import type { TestApp } from "./helpers/render";
@@ -59,7 +59,7 @@ const WEATHER_TOOLS: CatTool[] = [
 async function open(opts: { yaml?: string; cat?: ReturnType<typeof catalog> | null; secretsSet?: string[]; putStatus?: number; secretStatus?: number } = {}) {
   const yaml = opts.yaml ?? BASE_YAML;
   const routes: Record<string, Parameters<TestApp["fetch"]["on"]>[1]> = {
-    "GET /config/tools": { json: { section: "tools", etag: "e1", ...readSection(yaml, "tools", opts.secretsSet ?? []) } },
+    "GET /config/tools": { json: { section: "tools", etag: "e1", ...readSection(parseYaml(yaml) as Record<string, unknown>, "tools", opts.secretsSet ?? []) } },
     "PUT /config/tools": opts.putStatus && opts.putStatus !== 200
       ? { status: opts.putStatus, json: { ok: false, etag: "e9" } }
       : { json: { ok: true, etag: "e2", restart: ["tools", "cortex", "salience"], warnings: [] } },

@@ -2,7 +2,9 @@
 # (install.sh writes COMPOSE_FILE into .env so plain `docker compose up` picks both).
 #
 #   The dashboard is not a Compose service: it runs on the host (`mise run dashboard`) and its Launch button
-#   runs `docker compose up -d` for the stack. By hand:
+#   runs `docker compose up -d` for the stack, writing each unit's projection first and delivering each started unit's
+#   credentials into its /run/cohost tmpfs after. By hand (`mise run config:project` first; the services then wait for their
+#   credentials until the dashboard or `mise run deliver` delivers them):
 #   docker compose up -d                 # everything
 #   docker compose up -d --build         # everything, rebuilding the service images first (cohostctl rebuild)
 #   docker compose up -d chat salience affect memory cortex voice avatar   # minimal talking path
@@ -10,8 +12,8 @@
 #   docker compose --profile mouth up -d # add the speaker (writes her voice to the sinks)
 #   docker compose --profile discord up -d # add the Discord connector (the one bot login: source and sink `discord`)
 #   docker compose --profile eyes up -d  # add OBS vision
-#   docker compose run --rm consolidate  # one-shot viewer-note pass (profile maintenance; best-effort, see below)
-#   docker compose run --rm reembed      # one-shot vector migration after changing the embedder (memory stopped first)
+#   cohostctl consolidate                # one-shot viewer-note pass (profile maintenance; best-effort, see below)
+#   cohostctl reembed                    # one-shot vector migration after changing the embedder (memory stopped first)
 
 # The settings every application service gets, whatever its environment: the restart policy, the host gateway, the bus
 # dependency and the container healthcheck. A service that must hold less (tools, DEPLOY-COMPOSE-026) takes this block
@@ -33,13 +35,20 @@ x-ts-service-base: &ts-base  # @spec DEPLOY-COMPOSE-026, DEPLOY-COMPOSE-031
     timeout: 5s
     retries: 3
     start_period: 30s
+  # The unit's credentials message arrives here in RAM through `docker exec -i` (settings-store STORE-DLV-003); no host path
+  # is mounted at /run/cohost. Docker has no option that keeps its pages out of swap (settings-store threat model).
+  tmpfs:  # @spec DEPLOY-COMPOSE-033
+    - /run/cohost:mode=0700,size=1m
+  # No core file: a crash must not write a process's memory, credentials included, to disk.
+  ulimits: { core: 0 }  # @spec DEPLOY-COMPOSE-034
 
-x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLOY-COMPOSE-024
+x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLOY-COMPOSE-025
   <<: *ts-base
   env_file: .env
   # The environment every application service gets: the in-network addresses, and the one pass-through for an isolated
-  # start. Operator settings live in config/config.yaml and credentials in secrets/secrets.yaml, which no container mounts (each service mounts its own projection);
-  # nothing else is interpolated here, and .env adds only the bootstrap variables of the HLD's "what lives where" table.
+  # start. Operator settings and credentials live in the settings store (data/store/), which no container mounts: each service
+  # mounts its own projection and receives its credentials in memory. Nothing else is interpolated here, and .env adds only
+  # the bootstrap variables of the HLD's "what lives where" table.
   environment:  # @spec DEPLOY-COMPOSE-003
     REDIS_URL: redis://redis:6379
     DATABASE_URL: postgres://cohost:cohost@postgres:5432/cohost
@@ -48,20 +57,14 @@ x-ts-service: &ts-service  # @spec DEPLOY-COMPOSE-002, DEPLOY-COMPOSE-015, DEPLO
     STT_URL: http://stt:8000
     VOICE_URL: http://voice:8700
     CONFIG_DIR: /app/config
-    # Empty so a value in .env cannot point the loader away from the unit's own projection at /app/secrets/secrets.yaml
-    # (DEPLOY-SECRET-002); tools carries no env_file, so it needs no pin.
-    COHOST_SECRETS_FILE: ""
-    # cohost's one lock reaches no container: this empty value wins over env_file .env. ears gets only the listener key
-    # derived from it, in its projection (DEPLOY-COMPOSE-032, DEPLOY-SECRET-012).
-    CONTROL_TOKEN: ""  # @spec DEPLOY-COMPOSE-032
     # Pinned so each program's log file lands in the ./data/logs mount whatever .env says (DEPLOY-COMPOSE-029).
     COHOST_DATA_DIR: /app/data
     # The JSON preset the control plane sets on the `docker compose` process for an isolated start; empty leaves the
-    # literal values of config.yaml in charge (CTRL-RUNTIME-009).
+    # stored settings in charge (CTRL-RUNTIME-009).
     COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
-  # ./data/logs holds each program's log file (config CFG-LOG-012). A service that lists its own volumes restates both mounts.
+  # ./data/logs holds each program's log file (config CFG-LOG-012). Every service lists its own volumes, restating this mount
+  # beside its projection (DEPLOY-COMPOSE-025).
   volumes:  # @spec DEPLOY-COMPOSE-029, DEPLOY-COMPOSE-030
-    - ./config:/app/config
     - ./data/logs:/app/data/logs
 
 # The network `tools` lives on: it holds `redis` and `tools` and nothing else, so `tools` can name no other container
@@ -112,10 +115,10 @@ services:  # @spec DEPLOY-COMPOSE-001
       OLLAMA_FLASH_ATTENTION: "1"
       OLLAMA_KV_CACHE_TYPE: "q8_0"
 
-  # Pulls the Ollama models config.yaml names (llm.model, llm.embed_model, vision.model and the hook models) once ollama is
+  # Pulls the Ollama models the settings name (llm.model, llm.embed_model, vision.model and the hook models) once ollama is
   # up, then exits (the config package's pull-models entry, built into the memory image). It exits non-zero if a pull of the
   # LLM, vision or embedding model fails (no restart policy: a failed run stays visible in `docker compose ps`); a hook model
-  # that fails to pull is a warning, that hook then falls back to its rules. The model names come from config.yaml only.
+  # that fails to pull is a warning, that hook then falls back to its rules. The model names come from the models projection only.
   models:  # @spec DEPLOY-COMPOSE-008, DEPLOY-COMPOSE-011
     build: { context: ., args: { SERVICE: memory } }
     command: ["node", "packages/config/dist/pull-models.js"]
@@ -123,7 +126,11 @@ services:  # @spec DEPLOY-COMPOSE-001
       OLLAMA_URL: http://ollama:11434
       CONFIG_DIR: /app/config
     volumes:
-      - ./config:/app/config
+      - type: bind   # DEPLOY-COMPOSE-025: the models projection (STORE-PROJ-005) (no credential), read-only, never created by Compose
+        source: ./data/projections/models
+        target: /app/config
+        read_only: true
+        bind: { create_host_path: false }
     depends_on:
       ollama: { condition: service_started }
 
@@ -140,7 +147,7 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # ---------- optional speech engine servers (DEPLOY-ENG-001..020) ----------
   # Each is built from a pinned source and runs behind its own profile; the owner enables it in COMPOSE_PROFILES in .env and
-  # selects it in config.yaml. Each caches its weights under /root/.cache, in its own volume. None is an application service:
+  # selects it in the settings. Each caches its weights under /root/.cache, in its own volume. None is an application service:
   # no SERVICE build argument, no x-ts-service anchor, no ./config mount, no env_file. Engine servers publish on loopback only.
   tts-pocket:  # @spec DEPLOY-ENG-001, DEPLOY-ENG-004, DEPLOY-ENG-008, DEPLOY-ENG-009, DEPLOY-ENG-011, DEPLOY-ENG-012, DEPLOY-ENG-014, DEPLOY-ENG-015, DEPLOY-ENG-019
     image: cohost-tts-pocket:4.0.1
@@ -148,15 +155,18 @@ services:  # @spec DEPLOY-COMPOSE-001
       context: https://github.com/kyutai-labs/pocket-tts.git#a922b912dfa366975294afb568d815b305acde5d   # tag v4.0.1
     profiles: [pocket]
     restart: unless-stopped
-    # The entrypoint exports the Pocket token for this server alone (DEPLOY-ENG-014, DEPLOY-ENG-019); the command is the
-    # upstream image's own ENTRYPOINT and CMD, which the cohost entrypoint replaces.
+    # The entrypoint waits for the Pocket token the control plane delivers and exports it for this server alone
+    # (DEPLOY-ENG-014, DEPLOY-ENG-019); the command is the upstream image's own ENTRYPOINT and CMD, which the entrypoint replaces.
     entrypoint: ["/bin/sh", "/cohost/entrypoint.sh"]
     command: ["uv", "run", "pocket-tts", "serve", "--host", "0.0.0.0", "--port", "8000"]
     ports: ["127.0.0.1:8881:8000"]
     volumes:
       - tts-pocket-cache:/root/.cache
       - ./docker/tts-pocket/entrypoint.sh:/cohost/entrypoint.sh:ro
-      - ./data/tts-pocket-secret:/run/cohost-secret:ro
+    # The Pocket token arrives as /run/cohost/hf_token in RAM, delivered by the control plane (STORE-DLV-006).
+    tmpfs:  # @spec DEPLOY-COMPOSE-033
+      - /run/cohost:mode=0700,size=1m
+    ulimits: { core: 0 }  # @spec DEPLOY-COMPOSE-034
     healthcheck:  # @spec DEPLOY-ENG-012
       test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 10s
@@ -203,12 +213,11 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: chat } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
       - ./data/chat:/app/data/chat
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/chat
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/chat
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
 
@@ -219,11 +228,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: salience } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/salience
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/salience
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
 
@@ -231,11 +239,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: affect } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/affect
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/affect
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
 
@@ -243,11 +250,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/memory
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/memory
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     depends_on:  # @spec DEPLOY-COMPOSE-005
@@ -256,19 +262,18 @@ services:  # @spec DEPLOY-COMPOSE-001
       ollama: { condition: service_started }
 
   # One-shot viewer-note consolidation (the memory image, `consolidate` entry point): run it by hand after
-  # shutting the AI down, `docker compose run --rm consolidate` (or `cohostctl consolidate`). Profile `maintenance`
+  # shutting the AI down, `cohostctl consolidate`, which delivers the memory unit's credentials it waits for. Profile `maintenance`
   # keeps it out of `docker compose up`. Best-effort: memory catches up at its next start if it never runs.
   # No redis: the entry point never opens the bus. Inherits the anchor's env_file, environment and extra_hosts, and restates
-  # its volumes (./config, ./data/logs) beside its projection; depends_on is restated because a service's own map replaces the anchor's.
+  # its volumes (./data/logs and the memory unit's projection); depends_on is restated because a service's own map replaces the anchor's.
   consolidate:  # @spec DEPLOY-COMPOSE-018, DEPLOY-COMPOSE-019
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/memory
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/memory
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     command: ["node", "services/memory/dist/consolidate.js"]
@@ -281,16 +286,15 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # One-shot vector migration (the memory image, `reembed` entry point): after changing the embedder to one with another
   # vector size the memory service refuses to start ("memories table has vector(N)"); stop it, then run
-  # `docker compose run --rm reembed` (or `cohostctl reembed`) to re-embed every stored row. Profile `maintenance`, no redis.
+  # `cohostctl reembed` to re-embed every stored row (it delivers the credentials the run waits for). Profile `maintenance`, no redis.
   reembed:  # @spec DEPLOY-COMPOSE-021
     <<: *ts-service
     build: { context: ., args: { SERVICE: memory } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/memory
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/memory
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     command: ["node", "services/memory/dist/reembed.js"]
@@ -305,11 +309,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: cortex } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/cortex
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/cortex
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     depends_on:  # @spec DEPLOY-COMPOSE-005
@@ -320,11 +323,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: voice } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/voice
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/voice
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     ports: ["127.0.0.1:8700:8700"]   # for the host-run dashboard (audio proxy, /health); containers use http://voice:8700
@@ -334,8 +336,8 @@ services:  # @spec DEPLOY-COMPOSE-001
       tts-pocket: { condition: service_started, required: false }
 
   # The tool-calling unit (services/tools, TOOL-SVC-*). Least privilege (DEPLOY-COMPOSE-026): no env_file, and no database
-  # or engine address; it gets the bus address, the config directory it reads and the isolation pass-through, plus its
-  # ./config mount and the host gateway (host-side MCP servers). It has no profile, so a plain `docker compose up -d` runs it.
+  # or engine address; it gets the bus address, the config directory it reads and the isolation pass-through, plus its projection
+  # and the host gateway (host-side MCP servers). It has no profile, so a plain `docker compose up -d` runs it.
   tools:  # @spec DEPLOY-COMPOSE-026, DEPLOY-COMPOSE-027
     <<: *ts-base
     build: { context: ., args: { SERVICE: tools } }
@@ -345,10 +347,9 @@ services:  # @spec DEPLOY-COMPOSE-001
       CONFIG_DIR: /app/config
       COHOST_ISOLATION: ${COHOST_ISOLATION:-}  # @spec DEPLOY-COMPOSE-017
     volumes:
-      - ./config:/app/config:ro   # read-only: tools never writes config (DEPLOY-COMPOSE-026)
-      - type: bind   # DEPLOY-SECRET-002: its projection only, read-only, never created by Compose
-        source: ./secrets/units/tools
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/tools
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
 
@@ -356,16 +357,23 @@ services:  # @spec DEPLOY-COMPOSE-001
   avatar:
     <<: *ts-service
     build: { context: ., args: { SERVICE: avatar } }
+    volumes:
+      - ./data/logs:/app/data/logs
+      - ./data/avatar:/app/data/avatar
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/avatar
+        target: /app/config
+        read_only: true
+        bind: { create_host_path: false }
 
   eyes:
     <<: *ts-service
     build: { context: ., args: { SERVICE: eyes } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/eyes
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/eyes
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     profiles: [eyes]  # @spec DEPLOY-COMPOSE-004
@@ -374,11 +382,10 @@ services:  # @spec DEPLOY-COMPOSE-001
     <<: *ts-service
     build: { context: ., args: { SERVICE: ears } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/ears
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/ears
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     profiles: [ears]  # @spec DEPLOY-COMPOSE-004
@@ -390,24 +397,30 @@ services:  # @spec DEPLOY-COMPOSE-001
 
   # The speaking half (writes her voice to the connectors' sinks). Off by default like ears: profile `mouth`. Waits for
   # redis only (the anchor's depends_on): it reaches voice by URL and covers a voice outage with its cached fallback clip.
-  # No port and no volume of its own beyond the anchor's ./config and ./data/logs: the clip cache lives in the container's filesystem.
+  # No port and no volume of its own beyond its projection, ./data/logs and the /run/cohost tmpfs: the clip cache lives in the container's filesystem.
   mouth:  # @spec DEPLOY-COMPOSE-020
     <<: *ts-service
     build: { context: ., args: { SERVICE: mouth } }
+    volumes:
+      - ./data/logs:/app/data/logs
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/mouth
+        target: /app/config
+        read_only: true
+        bind: { create_host_path: false }
     profiles: [mouth]  # @spec DEPLOY-COMPOSE-004
 
   # The Discord connector (CONN-*): the one bot login and voice connection, publishing source `discord` and playing sink
   # `discord` over the bus. Off by default: profile `discord`. Waits for redis only; no port and no volume beyond the shared mounts. The bot token is
-  # connections.discord.token in secrets/secrets.yaml, which reaches the connector as its own projection (DEPLOY-SECRET-002).
+  # connections.discord.token, which reaches the connector in its credentials message (settings-store STORE-DLV-002).
   connector-discord:  # @spec DEPLOY-COMPOSE-023
     <<: *ts-service
     build: { context: ., args: { SERVICE: connector-discord } }
     volumes:
-      - ./config:/app/config
       - ./data/logs:/app/data/logs
-      - type: bind   # DEPLOY-SECRET-002: this unit's projection only, read-only, never created by Compose
-        source: ./secrets/units/connector-discord
-        target: /app/secrets
+      - type: bind   # DEPLOY-COMPOSE-025: this unit's projection only (no credential), read-only, never created by Compose
+        source: ./data/projections/connector-discord
+        target: /app/config
         read_only: true
         bind: { create_host_path: false }
     profiles: [discord]  # @spec DEPLOY-COMPOSE-004

@@ -1,10 +1,10 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, realpathSync, readFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, realpathSync, readFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureFromExample, loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, savePersonality, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
+import { loadConfig, loadDotEnv, configDir, findWorkspaceRoot, loadExpressions, loadPersonality, parseYaml, env, envOr, urls, EMOTIONS, dataDir, setConfigLogger, earsSources, parseConfigText, ExpressionMapSchema, Emotion } from "../src/index.js";
 
 /** Every test starts from the environment the file started with; sandbox() and loaders mutate CONFIG_DIR, COHOST_ENV_FILE and .env values. */
 const initialEnv = { ...process.env };
@@ -14,21 +14,8 @@ function restoreEnv(to: NodeJS.ProcessEnv = initialEnv): void {
 }
 afterEach(() => { restoreEnv(); setConfigLogger(undefined); });
 
-// @spec CFG-DIR-003, CFG-DIR-004, CFG-DIR-005
-test("ensureFromExample seeds the real file once and then leaves it alone", () => {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-cfg-"));
-  process.env.CONFIG_DIR = dir;
-  writeFileSync(join(dir, "thing.example.yaml"), "a: 1\n");
-  const file = ensureFromExample("thing.yaml", "thing.example.yaml");
-  assert.equal(file, join(dir, "thing.yaml"));
-  assert.ok(existsSync(file));
-  writeFileSync(file, "a: 2\n"); // user edits it
-  ensureFromExample("thing.yaml", "thing.example.yaml");
-  assert.equal(readFileSync(file, "utf8"), "a: 2\n");
-  assert.throws(() => ensureFromExample("missing.yaml", "missing.example.yaml"), /no .*missing\.example\.yaml/);
-});
-
-import { ConfigSchema, ModuleSchema, unknownKeys } from "../src/index.js";
+import { ConfigSchema, ModuleSchema, unknownKeys, type Config } from "../src/index.js";
+import { loadSettings, exampleYaml, projectionDir, MINIMAL_YAML } from "./helpers/config-sandbox.js";
 
 // @spec CFG-SCH-004
 test("reflex match must be a valid regex (a bad one would crash-loop salience)", () => {
@@ -83,28 +70,19 @@ ears: {}
 dashboard: {}
 `;
 
-// @spec CFG-USR-003, CFG-ENV-004
-test("the shipped config.example.yaml + .env.example load cleanly, with no unknown keys", () => {
-  const dir = sandbox();
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
-  copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
-  const saved = { ...process.env };
-  try {
-    let cfg!: ReturnType<typeof loadConfig>;
-    const warnings = captureWarnings(() => { cfg = loadConfig(true); });
-    assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
-    assert.equal(cfg.cohost.name, "Coco");
-    assert.ok(cfg.llm.model.length > 0, "LLM_MODEL from .env.example filled in llm.model");
-  } finally {
-    restoreEnv(saved);
-  }
+// @spec CFG-USR-003
+test("the shipped config.example.yaml loads cleanly, with no unknown keys and a non-empty llm.model", () => {
+  let cfg!: Config;
+  const warnings = captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
+  assert.deepEqual(warnings.filter((w) => w.includes("unknown keys")), []);
+  assert.equal(cfg.cohost.name, "Coco");
+  assert.ok(cfg.llm.model.length > 0, "llm.model is written in the example");
 });
 
 // @spec CFG-USR-002, CFG-USR-004
 test("the shipped expressions.example.yaml parses and maps every emotion for each driver", () => {
-  const dir = sandbox();
-  copyFileSync(join(repo, "config", "expressions.example.yaml"), join(dir, "expressions.example.yaml"));
-  const map = loadExpressions();
+  const expressions = parseYaml(readFileSync(join(repo, "config", "expressions.example.yaml"), "utf8"));
+  const map = loadExpressions(projectionDir(minimalYaml, { documents: { expressions } }));
   assert.ok(Object.keys(map).length > 0);
   for (const [driver, exprs] of Object.entries(map)) {
     for (const e of EMOTIONS) assert.equal(typeof exprs[e], "string", `${driver}.${e}`);
@@ -114,25 +92,23 @@ test("the shipped expressions.example.yaml parses and maps every emotion for eac
 
 // @spec CFG-LOAD-001, CFG-LOAD-002, CFG-SCH-005
 test("loadConfig: empty numbers fall back to defaults, no environment variable changes a value, results are cached", () => {
-  sandbox({ "config.yaml": minimalYaml });
+  const dir = projectionDir(minimalYaml);
   process.env.T_CHANNEL = "from-env";
-  const cfg = loadConfig(true);
+  const cfg = loadConfig({ dir, force: true });
   assert.equal(cfg.vision.obs.port, 4455); // `port: ` (null) → schema default, not a validation error
   assert.equal(cfg.chat.twitch.channel, "somechan");
   assert.equal(cfg.brain.salience.cooldown_ms, 6000);
-  assert.equal(loadConfig(), cfg);
+  assert.equal(loadConfig({ dir }), cfg);
 });
 
 // @spec CFG-LOAD-003, CFG-SCH-001, CFG-SCH-006
-test("loadConfig: an invalid file names every bad path", () => {
-  sandbox({ "config.yaml": minimalYaml.replace("name: Coco", "name: ''").replace("voice: {}", "voice: { speed: -1 }") });
-  assert.throws(() => loadConfig(true), (e: Error) => /cohost\.name:/.test(e.message) && /voice\.speed:/.test(e.message));
+test("loadConfig: invalid settings name every bad path", () => {
+  assert.throws(() => loadSettings(minimalYaml.replace("name: Coco", "name: ''").replace("voice: {}", "voice: { speed: -1 }")), (e: Error) => /cohost\.name:/.test(e.message) && /voice\.speed:/.test(e.message));
 });
 
 // @spec CFG-LOAD-005
 test("loadConfig warns about keys the schema doesn't know", () => {
-  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { tick_ms: 900 }") });
-  const warnings = captureWarnings(() => loadConfig(true));
+  const warnings = captureWarnings(() => loadSettings(minimalYaml.replace("brain: {}", "brain: { tick_ms: 900 }")));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /ignoring unknown keys: brain\.tick_ms/);
 });
@@ -153,11 +129,13 @@ test("loadDotEnv: comments, quotes, blank lines, and never overrides the real en
 });
 
 // @spec CFG-USR-001
-test("personality is seeded from the example, then saved and reloaded in place", () => {
-  sandbox({ "personality.example.md": "# Coco\n" });
-  assert.equal(loadPersonality(), "# Coco\n");
-  savePersonality("# Coco\n\n## Learned\n- likes cats\n");
-  assert.equal(loadPersonality(), "# Coco\n\n## Learned\n- likes cats\n");
+test("loadPersonality reads the projection's personality document anew on every call", () => {
+  const dir = projectionDir(minimalYaml, { documents: { personality: "# Coco\n" } });
+  assert.equal(loadPersonality(dir), "# Coco\n");
+  const projection = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as { documents: Record<string, unknown> };
+  projection.documents.personality = "# Coco\n\n## Learned\n- likes cats\n";
+  writeFileSync(join(dir, "settings.json"), JSON.stringify(projection));
+  assert.equal(loadPersonality(dir), "# Coco\n\n## Learned\n- likes cats\n");
 });
 
 // @spec CFG-ENV-007, CFG-URL-001
@@ -232,12 +210,9 @@ test("urls has no dashboard(): uploads travel over Redis, so no service needs th
   assert.equal("dashboard" in urls, false);
 });
 
-function loadShipped() {
-  const dir = sandbox();
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
-  copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
-  let cfg!: ReturnType<typeof loadConfig>;
-  captureWarnings(() => { cfg = loadConfig(true); });
+function loadShipped(): Config {
+  let cfg!: Config;
+  captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
   return cfg;
 }
 
@@ -255,12 +230,11 @@ test("new keys default to live backends when omitted; bad enum values are reject
   assert.equal(ConfigSchema.safeParse({ ...base, voice: { engine: "x" } }).success, false);
 });
 
-/** Loads the shipped example through the real loader with no .env file, no secrets.yaml and no override. */
+/** Loads the shipped example through the real loader with no credentials and no override. */
 function loadShippedBare() {
-  const dir = sandbox();
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
-  let cfg!: ReturnType<typeof loadConfig>;
-  const warnings = captureWarnings(() => { cfg = loadConfig(true); });
+  delete process.env.COHOST_ISOLATION;
+  let cfg!: Config;
+  const warnings = captureWarnings(() => { cfg = loadSettings(exampleYaml()); });
   return { cfg, warnings };
 }
 
@@ -290,8 +264,7 @@ test("unknownKeys descends into arrays and reports path[index].key", () => {
 // @spec CFG-LOAD-006
 test("loadConfig warns about a typo inside a reflex, without migration advice", () => {
   const yaml = minimalYaml.replace("brain: {}", "brain: { salience: { reflexes: [{ match: 'x', say: ['y'], cooldwn_ms: 5 }] } }");
-  sandbox({ "config.yaml": yaml });
-  const warnings = captureWarnings(() => loadConfig(true));
+  const warnings = captureWarnings(() => loadSettings(yaml));
   assert.equal(warnings.length, 1);
   assert.match(warnings[0]!, /ignoring unknown keys: brain\.salience\.reflexes\[0\]\.cooldwn_ms/);
   assert.doesNotMatch(warnings[0]!, /used to sit|moved into/);
@@ -601,16 +574,8 @@ test("the shipped config.example.yaml sends the co-host's voice to the Discord c
 
 // @spec CFG-USR-011
 test("the shipped example has no unknown mouth keys: loading it warns about none", () => {
-  const dir = sandbox();
-  copyFileSync(join(repo, "config", "config.example.yaml"), join(dir, "config.example.yaml"));
-  copyFileSync(join(repo, ".env.example"), join(dir, "..", ".env"));
-  const saved = { ...process.env };
-  try {
-    const warnings = captureWarnings(() => { loadConfig(true); });
-    assert.deepEqual(warnings.filter((w) => w.includes("mouth")), []);
-  } finally {
-    restoreEnv(saved);
-  }
+  const warnings = captureWarnings(() => { loadSettings(exampleYaml()); });
+  assert.deepEqual(warnings.filter((w) => w.includes("mouth")), []);
 });
 
 // @spec CFG-SCH-017
@@ -848,10 +813,8 @@ test("viewer_text.max_chars is an integer of at least 16 and max_name_chars of a
   assert.deepEqual(issuePaths(vt({ max_name_chars: 7 })), ["viewer_text.max_name_chars"]);
   assert.deepEqual(issuePaths(vt({ max_chars: 100.5 })), ["viewer_text.max_chars"]);
   assert.deepEqual(issuePaths(vt({ max_name_chars: 8.5 })), ["viewer_text.max_name_chars"]);
-  sandbox({ "config.yaml": `${minimalYaml}viewer_text: { max_chars: 15 }\n` });
-  assert.throws(() => loadConfig(true), /viewer_text\.max_chars:/);
-  sandbox({ "config.yaml": `${minimalYaml}viewer_text: { max_name_chars: 7 }\n` });
-  assert.throws(() => loadConfig(true), /viewer_text\.max_name_chars:/);
+  assert.throws(() => loadSettings(`${minimalYaml}viewer_text: { max_chars: 15 }\n`), /viewer_text\.max_chars:/);
+  assert.throws(() => loadSettings(`${minimalYaml}viewer_text: { max_name_chars: 7 }\n`), /viewer_text\.max_name_chars:/);
 });
 
 // @spec CFG-SCH-044
@@ -864,10 +827,8 @@ test("brain.input_limits defaults speech_max_chars to 1000 and vision_max_chars 
     assert.equal(brain({ input_limits: { [k]: 16 } }).success, true, `${k} at 16`);
     for (const v of [15, 0, 20.5]) assert.deepEqual(issuePaths(brain({ input_limits: { [k]: v } })), [`brain.input_limits.${k}`], `${k}=${v}`);
   }
-  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { input_limits: { speech_max_chars: 15 } }") });
-  assert.throws(() => loadConfig(true), /brain\.input_limits\.speech_max_chars:/);
-  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { input_limits: { vision_max_chars: 15 } }") });
-  assert.throws(() => loadConfig(true), /brain\.input_limits\.vision_max_chars:/);
+  assert.throws(() => loadSettings(minimalYaml.replace("brain: {}", "brain: { input_limits: { speech_max_chars: 15 } }")), /brain\.input_limits\.speech_max_chars:/);
+  assert.throws(() => loadSettings(minimalYaml.replace("brain: {}", "brain: { input_limits: { vision_max_chars: 15 } }")), /brain\.input_limits\.vision_max_chars:/);
 });
 
 // @spec CFG-SCH-045
@@ -885,8 +846,7 @@ test("brain.working_memory_own_lines defaults to 4, is an integer of at least 1,
   }
   assert.equal(brain({ working_memory_events: 5 }).success, true); // the default 4 own lines fit under 5
   assert.equal(brain({ working_memory_events: 3, working_memory_own_lines: 2 }).success, true);
-  sandbox({ "config.yaml": minimalYaml.replace("brain: {}", "brain: { working_memory_events: 6, working_memory_own_lines: 6 }") });
-  assert.throws(() => loadConfig(true), /brain\.working_memory_own_lines:/);
+  assert.throws(() => loadSettings(minimalYaml.replace("brain: {}", "brain: { working_memory_events: 6, working_memory_own_lines: 6 }")), /brain\.working_memory_own_lines:/);
 });
 
 // @spec CFG-SCH-046
@@ -905,4 +865,14 @@ test("brain.affect.count_window_ms defaults to 30000 and is a positive integer",
   assert.equal(ConfigSchema.parse(baseCfg()).brain.affect.count_window_ms, 30000);
   assert.equal(affect({ count_window_ms: 1 }).success, true);
   for (const v of [0, -5, 1.5]) assert.deepEqual(issuePaths(affect({ count_window_ms: v })), ["brain.affect.count_window_ms"], `count_window_ms=${v}`);
+});
+
+// @spec CFG-ENV-004
+test("loadConfig loads .env first, setting only the variables the environment does not define", () => {
+  sandbox({ ".env": "COHOST_DOTENV_PROBE=from-dotenv\nCOHOST_DOTENV_KEPT=from-dotenv\n" });
+  delete process.env.COHOST_DOTENV_PROBE;
+  process.env.COHOST_DOTENV_KEPT = "from-the-environment";
+  loadSettings(MINIMAL_YAML);
+  assert.equal(process.env.COHOST_DOTENV_PROBE, "from-dotenv");
+  assert.equal(process.env.COHOST_DOTENV_KEPT, "from-the-environment", "a defined variable is not overridden");
 });

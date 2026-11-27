@@ -6,7 +6,7 @@ import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
 import { StackService } from "../src/stack.js";
-import { AUTH, ON } from "./control-fixture.js";
+import { AUTH, TEST_GATE, UNUSED_STORE } from "./control-fixture.js";
 
 // The audio route's `?target=` (DASH-INJ-010): the Discord connector's test input rides the same upload path as ears'.
 
@@ -15,11 +15,11 @@ const ids = ["chat", "eyes", "ears", "connector-discord"];
 async function boot(states: Record<string, HealthState> = {}) {
   const bus = new (class extends FakeBus { async resetGroup() {} })();
   const rec = recordingLog();
-  const setup = setupControl(ON, bus, rec.log);
+  const setup = setupControl({}, bus, rec.log, TEST_GATE);
   const services = (): ServiceHealth[] => ids.map((service) => ({ service, state: states[service] ?? "up", restarts: 0 }));
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services,
+    store: UNUSED_STORE, services,
     control: setup.control,
     uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },
     stack: new StackService({ log: rec.log, bus: () => "connected" }),

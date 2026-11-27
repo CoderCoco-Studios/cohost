@@ -5,6 +5,7 @@ import { FakeBus, recordingLog } from "@cohost/testing";
 import type { HealthState, ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { setupControl } from "../src/control.js";
+import { UNUSED_STORE, gateFor } from "./control-fixture.js";
 import { guardFullSurface, lanHandler } from "../src/host.js";
 import { StackService } from "../src/stack.js";
 
@@ -22,11 +23,11 @@ interface Opts {
 async function boot(o: Opts = {}) {
   const bus = new (class extends FakeBus { async resetGroup() {} })();
   const rec = recordingLog();
-  const setup = setupControl({ CONTROL_TOKEN: TOKEN }, bus, rec.log);
+  const setup = setupControl({}, bus, rec.log, gateFor(TOKEN));
   const services = () => health("up").map((s) => (o.states?.[s.service] ? { ...s, state: o.states[s.service]! } : s));
   const handler = createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services,
+    store: UNUSED_STORE, services,
     control: setup.control,
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
   });

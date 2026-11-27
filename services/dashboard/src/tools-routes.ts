@@ -1,12 +1,12 @@
 import type http from "node:http";
-import { authorized, unauthorized } from "./access.js";
+import { pass, type Gate } from "./access.js";
 import type { Publisher } from "@cohost/bus";
 import { BodyTooLarge, readText } from "./body.js";
 
 export interface ToolRouteDeps {
   bus: Publisher;
-  /** `CONTROL_TOKEN`, the one lock. */
-  token: string;
+  /** The one lock (DASH-CTRL-011). */
+  gate: Gate;
 }
 
 /**
@@ -16,7 +16,7 @@ export interface ToolRouteDeps {
 // @spec DASH-TOOL-001, DASH-TOOL-002
 export async function handleToolAnswer(d: ToolRouteDeps, req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean> {
   if (req.method !== "POST" || url.pathname !== "/tools/answer") return false;
-  if (!authorized(d.token, req)) { req.resume(); unauthorized(res, "json"); return true; } // the one gate (DASH-CTRL-011)
+  if (!(await pass(d.gate, req, res, "json"))) return true; // the one gate (DASH-CTRL-011)
   let raw: string;
   try { raw = await readText(req); } catch (e) {
     if (e instanceof BodyTooLarge) { res.writeHead(413); res.end("body too large"); return true; }

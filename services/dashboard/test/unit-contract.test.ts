@@ -1,24 +1,18 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { EventPayloads } from "@cohost/bus";
 import { FakeBus, recordingLog } from "@cohost/testing";
 import { SERVICE_MANIFEST, type HealthState, type ServiceController, type ServiceHealth } from "@cohost/control";
 import { createDashboardHandler } from "../src/routes.js";
 import { StackService } from "../src/stack.js";
+import { AUTH, TEST_GATE } from "./control-fixture.js";
+import { testStore } from "./store-fixture.js";
 
 // The module contract's per-unit obligations, one table row per unit of SERVICE_MANIFEST (MOD-MAN-010): a unit added
 // to the manifest without a declaration this table needs (a config section, a sample for an input) fails here.
 
 const units = SERVICE_MANIFEST.filter((s) => s.pnpmFilter);
-const repo = join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..");
-const EXAMPLE = readFileSync(join(repo, "config", "config.example.yaml"), "utf8");
-const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 
 /** One valid payload per bus event type a unit may be fed; a type with no sample fails the table. */
 const SAMPLES: Record<string, unknown> = {
@@ -39,9 +33,8 @@ const KIND_ROUTE: Record<string, { path: (unit: string) => string; type?: string
 };
 
 async function boot(states: Record<string, HealthState> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "cohost-unit-contract-"));
-  const file = join(dir, "config.yaml");
-  writeFileSync(file, EXAMPLE);
+  const { store, close } = await testStore({ token: false });
+  after(close);
   const bus = new FakeBus();
   const rec = recordingLog();
   const calls: { action: string; id: string }[] = [];
@@ -50,18 +43,15 @@ async function boot(states: Record<string, HealthState> = {}) {
   const services = (): ServiceHealth[] => units.map((u) => ({ service: u.id, state: states[u.id] ?? "up", restarts: 0 }));
   const server = http.createServer(createDashboardHandler({
     bus, log: rec.log, cohostName: "Coco", voiceUrl: "http://127.0.0.1:1",
-    loadPersonality: () => "p", savePersonality: () => {}, services,
+    store, services,
     stack: new StackService({ log: rec.log, bus: () => "connected" }),
-    configFile: () => file, secretsFile: () => file.replace(/config\.yaml$/, "secrets.yaml"),
-    control: { token: "tok", runtime: "compose", advanced: false, controller },
-   
+    control: { gate: TEST_GATE, runtime: "compose", advanced: false, controller },
     uploads: { maxImageBytes: 64, maxAudioBytes: 64, ttlMs: 300_000 },
   }));
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   after(() => server.close());
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const auth = { authorization: "Bearer tok" };
-  return { bus, calls, file, base, auth, text: () => readFileSync(file, "utf8") };
+  return { bus, calls, base, auth: AUTH, store };
 }
 
 test("the table covers every application unit and each declares config and test inputs", () => {
@@ -74,18 +64,19 @@ for (const u of units) {
   // @spec MOD-MAN-010, MOD-CFG-003, MOD-CFG-008, MOD-CFG-016
   test(`${u.id}: each declared section answers an etag, and a PUT with a stale etag is 409 writing nothing`, async () => {
     const t = await boot();
+    const before = t.store.revision();
     for (const section of u.config) {
       const got = await fetch(`${t.base}/config/${section}`);
       assert.equal(got.status, 200, section);
       const j = (await got.json()) as { etag: string };
-      assert.equal(j.etag, sha(t.text()), section);
+      assert.equal(j.etag, String(t.store.revision()), section);
       const stale = await fetch(`${t.base}/config/${section}`, {
-        method: "PUT", headers: t.auth, body: JSON.stringify({ etag: sha("not the file"), values: {} }),
+        method: "PUT", headers: t.auth, body: JSON.stringify({ etag: String(t.store.revision() + 1000), values: {} }),
       });
       assert.equal(stale.status, 409, section);
       assert.deepEqual(await stale.json(), { ok: false, etag: j.etag });
     }
-    assert.equal(t.text(), EXAMPLE);
+    assert.equal(t.store.revision(), before, "nothing was written");
     assert.deepEqual(t.calls, [], "the settings routes never drive a unit");
   });
 

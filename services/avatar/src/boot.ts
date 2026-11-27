@@ -1,6 +1,7 @@
 import type { Bus, BusEvent } from "@cohost/bus";
 import { runService, type RunServiceOptions, type ServiceContext } from "@cohost/shared";
-import { configDir, createLogger, loadExpressions as loadExpressionsFile, type Config, type ExpressionMap } from "@cohost/config";
+import { join } from "node:path";
+import { createLogger, dataDir, loadExpressions as loadProjectionExpressions, type Config, type ExpressionMap } from "@cohost/config";
 import { Engine } from "./engine.js";
 import { avatarHealth } from "./health.js";
 import { statePublisher } from "./state.js";
@@ -11,15 +12,15 @@ import type { AvatarDriver } from "./types.js";
 export type AvatarBus = Pick<Bus, "publish" | "publishHealth" | "consumer" | "resetGroup" | "subscribe" | "stop" | "publishAvatarFrame">;
 
 /** The process-level collaborators of the service, replaceable so a test runs it without Redis, an avatar app or signals. */
-export type AvatarEnv = Pick<RunServiceOptions<AvatarBus>, "loadConfig" | "createBus" | "onShutdown" | "exit" | "log" | "stopTimeoutMs"> & {
+export type AvatarEnv = Pick<RunServiceOptions<AvatarBus>, "loadConfig" | "receiveCredentials" | "createBus" | "onShutdown" | "exit" | "log" | "stopTimeoutMs"> & {
   createDriver?: typeof createDriverFor;
   loadExpressions?: () => ExpressionMap;
-  /** Directory the driver may persist small state in (default: the config directory). */
+  /** Directory the driver may persist small state in (default: `<dataDir()>/avatar`). */
   stateDir?: string;
 };
 
 /**
- * The block of `expressions.yaml` named after the active driver (empty maps when it has none), split into the
+ * The block of the `expressions` document named after the active driver (empty maps when it has none), split into the
  * emotion-to-expression map and the gesture map (AVATAR-DRV-005).
  */
 export function expressionsFor(all: ExpressionMap, driverName: string): { expressions: Record<string, string>; gestures: Record<string, string> } { // @spec AVATAR-DRV-005
@@ -34,17 +35,18 @@ export function expressionsFor(all: ExpressionMap, driverName: string): { expres
  * Nothing waits for the avatar app.
  */
 export async function avatarMain(ctx: ServiceContext<AvatarBus>, driverRef: { current?: AvatarDriver }, env: AvatarEnv = {}): Promise<void> {
-  const { cfg, bus, log, heartbeat, onStop } = ctx;
+  const { cfg, bus, log, heartbeat, onStop, stateKey } = ctx;
   const exit = env.exit ?? ((code: number) => process.exit(code));
   const fatal = (err: unknown) => { log.error({ err }, "fatal"); exit(1); };
   const driver = (env.createDriver ?? createDriverFor)(cfg.avatar); // @spec AVATAR-DRV-002
   driverRef.current = driver;
-  const { expressions, gestures } = expressionsFor((env.loadExpressions ?? loadExpressionsFile)(), cfg.avatar.driver); // @spec AVATAR-DRV-005
+  const { expressions, gestures } = expressionsFor((env.loadExpressions ?? (() => loadProjectionExpressions()))(), cfg.avatar.driver); // @spec AVATAR-DRV-005
   const engine = new Engine(cfg.avatar, driver, statePublisher({ bus, driver, log })); // @spec AVATAR-STATE-001
   onStop(async () => { engine.stop(); await driver.disconnect(); }); // @spec AVATAR-HEALTH-004
 
   // Not awaited: a first VTube Studio pairing can wait for the operator, and the face must animate meanwhile.
-  driver.connect({ log, expressions, gestures, stateDir: env.stateDir ?? configDir(), frames: bus }).catch(fatal); // @spec AVATAR-DRV-006, AVATAR-VTS-002, AVATAR-BRW-002
+  const stateDir = env.stateDir ?? join(dataDir(), "avatar");
+  driver.connect({ log, expressions, gestures, stateDir, ...(stateKey ? { stateKey } : {}), frames: bus }).catch(fatal); // @spec AVATAR-DRV-006, AVATAR-VTS-002, AVATAR-BRW-002
   engine.start();
 
   // Ready means "can receive events": the group exists at the newest entry before the loop reads.

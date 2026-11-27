@@ -57,12 +57,12 @@ function fakeGitHub(init: Partial<State>) {
     return items.slice((n - 1) * per, n * per);
   };
   const fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = new URL(String(input));
+    const url = new URL(input instanceof Request ? input.url : input);
     assert.equal(url.origin, API, "every request goes to the configured API");
     const method = init?.method ?? "GET";
     const headers = new Headers(init?.headers);
     assert.equal(headers.get("authorization"), "Bearer test-token");
-    const body: unknown = init?.body ? JSON.parse(String(init.body)) : undefined;
+    const body: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     const path = url.pathname;
     calls.push({ method, path: path + url.search, body });
     const base = `/repos/${REPO}`;
@@ -85,7 +85,7 @@ function fakeGitHub(init: Partial<State>) {
       else assert.equal(b.sha, undefined, "a new file has no SHA");
       state.record = Buffer.from(b.content, "base64").toString("utf8");
       recordSha += 1;
-      return json(state.record === null ? 201 : 200, { content: { sha: `rec${recordSha}` } });
+      return json(200, { content: { sha: `rec${recordSha}` } });
     }
     if (route === `GET ${base}/git/ref/heads/cla-signatures`) return state.branch ? json(200, { object: { sha: "cla-head" } }) : json(404, { message: "Not Found" });
     if (route === `GET ${base}/git/ref/heads/main`) return json(200, { object: { sha: "main-head" } });
@@ -153,7 +153,7 @@ test("an unsigned author fails the check and gets one comment linking CLA.md wit
   // A second run updates the same comment rather than posting another.
   assert.equal(await check(gh, "pull_request_target", prEvent("synchronize")), 1);
   assert.equal(botComment(gh).length, 1);
-  assert.ok(gh.calls.some((x) => x.method === "PATCH"));
+  assert.equal(gh.calls.filter((x) => x.method === "POST" && x.path === `/repos/${REPO}/issues/7/comments`).length, 1);
 });
 
 // @spec DEPLOY-CI-014

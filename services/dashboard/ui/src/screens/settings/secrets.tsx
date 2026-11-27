@@ -5,6 +5,7 @@ import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/Dialog";
 import { SecretField } from "../../components/SecretField";
 import { RowShell } from "./RowShell";
+import { SensitiveNote } from "./SensitiveNote";
 import type { KeyModel, KeyRead, SectionModel } from "./schemaModel";
 import { useSettings } from "./store";
 
@@ -44,7 +45,7 @@ export function SecretRow({ section, km, info }: { section: SectionModel; km: Ke
       <div className="embedded">
         <SecretField label={km.label} isSet={!!info?.set} busy={busy} help={km.help} error={error} onSave={(v) => write(v)} onClear={() => write(null)} />
       </div>
-      {km.sensitive ? <p className="help">Changing this needs the control token.</p> : null}
+      {km.sensitive ? <SensitiveNote /> : null}
     </RowShell>
   );
 }

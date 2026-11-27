@@ -105,23 +105,21 @@ test("a request path never reaches a file: traversal, separators, NUL and odd en
 });
 
 // @spec DASH-MDL-008
-test("GET /avatar/model is served on both listeners and needs no token in either control mode", async (t) => {
-  for (const control of [false, true]) {
-    const r = await rig(t, { control, seed: { "Aiko.vrm": model("a") }, renderer: { model: "Aiko.vrm" } });
-    const full = await r.get("/avatar/model");
-    assert.equal(full.status, 200, `full surface, control ${control}`);
-    const lan = await r.lan("GET", "/avatar/model");
-    assert.equal(lan.status, 200, `LAN listener, control ${control}`);
-    assert.deepEqual(lan.body, full.body);
-    assert.equal((await r.lan("HEAD", "/avatar/model")).status, 200);
-  }
+test("GET /avatar/model is served on both listeners and needs no token", async (t) => {
+  const r = await rig(t, { seed: { "Aiko.vrm": model("a") }, renderer: { model: "Aiko.vrm" } });
+  const full = await r.get("/avatar/model");
+  assert.equal(full.status, 200, "full surface");
+  const lan = await r.lan("GET", "/avatar/model");
+  assert.equal(lan.status, 200, "LAN listener");
+  assert.deepEqual(lan.body, full.body);
+  assert.equal((await r.lan("HEAD", "/avatar/model")).status, 200);
 });
 
 // @spec DASH-MDL-009
 test("GET and HEAD /avatar/models/<name> serve a listed valid model as /avatar/model does, 304 included; an error model or a bad name is 404; the LAN listener answers 404", async (t) => {
   const good = model("good", 256);
   const r = await rig(t, { seed: { "Aiko.vrm": good, "Broken.vrm": glb({ asset: { version: "2.0" } }, { bin: 8 }) } });
-  const res = await r.get("/avatar/models/Aiko.vrm"); // no token, control mode on
+  const res = await r.get("/avatar/models/Aiko.vrm"); // no token
   assert.equal(res.status, 200);
   assert.equal(res.headers["content-type"], "model/gltf-binary");
   assert.equal(res.headers["x-content-type-options"], "nosniff");

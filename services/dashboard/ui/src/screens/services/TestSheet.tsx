@@ -32,13 +32,13 @@ function BusForm({ type, onSend }: { type: string; onSend: (type: string, text: 
 }
 
 /**
- * The per-unit test side sheet (a modal `<dialog>`): the unit's isolated start where control is on, one input form per
+ * The per-unit test side sheet (a modal `<dialog>`): the unit's isolated start, one input form per
  * entry of the manifest's `test.inputs` (text, image and audio through the real pipeline, a bus event type as editable
  * JSON), one status line, and the live events the unit declares in `test.observe` plus the `inject.result` events answering
  * this sheet's injections. A result that beats the HTTP answer is cached and shown once the answer names its id.
  */
 // @spec MOD-TEST-001, DASH-UI-032, DASH-UI-015
-export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDescriptor; controlOn: boolean; blocked: string | undefined; onClose: () => void }) {
+export function TestSheet({ unit, blocked, onClose }: { unit: UnitDescriptor; blocked: string | undefined; onClose: () => void }) {
   const api = useApi();
   const { feed } = useRuntime();
   const act = useAction();
@@ -79,7 +79,7 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
       return r;
     }, (d) => `Sent text (id ${d.id}), waiting for its result…`);
   };
-  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. The route is token-gated whether or not control mode is on; the token (or this browser's unlock session) is asked for on a 401.
+  // A tool call: service-level text marked `as: "tool"` whose text is the JSON {tool, arguments}. The route is token-gated; the token (or this browser's unlock session) is asked for on a 401.
   // @spec MOD-MAN-010, MOD-TEST-005, DASH-INJ-011
   const sendTool = () => {
     const tool = toolRef.current?.value.trim() ?? "";
@@ -125,12 +125,10 @@ export function TestSheet({ unit, controlOn, blocked, onClose }: { unit: UnitDes
   return (
     <>
       <SideSheet open title={`Test ${unit.id}`} onClose={onClose}>
-        {controlOn ? (
-          <div className="row">
-            <Button size="sm" onClick={() => { act.dismiss(); setAsking(true); }}>{label}</Button>
-            <span className="help">Only this service, with mock or off backends.</span>
-          </div>
-        ) : null}
+        <div className="row">
+          <Button size="sm" onClick={() => { act.dismiss(); setAsking(true); }}>{label}</Button>
+          <span className="help">Only this service, with mock or off backends.</span>
+        </div>
         {inputs.map((type) => {
           if (type === "text" && unit.id === TOOLS_UNIT) return (
             <div className="td-form" key={type}>

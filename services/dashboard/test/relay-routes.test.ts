@@ -7,7 +7,7 @@ import { relay, tmpUi, connect } from "./relay-rig.js";
 import { send } from "./models-rig.js";
 
 // GET /avatar and its Content-Security-Policy, the avatar share of the LAN listener's route list and of the
-// control-mode ungated list (DASH-AVP-001, DASH-AVP-002, DASH-HOST-002, DASH-CTRL-005).
+// ungated list (DASH-AVP-001, DASH-AVP-002, DASH-HOST-002, DASH-CTRL-005).
 
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; connect-src 'self' blob: data:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 const PAGE = "<!doctype html><title>Avatar</title><script type=\"module\" src=\"/assets/avatar-abc.js\"></script>";
@@ -93,7 +93,7 @@ test("a /avatar/ws upgrade is accepted on the LAN listener while an upgrade to a
 });
 
 // @spec DASH-CTRL-005
-test("with control on, GET /avatar, /avatar/renderer, /avatar/model and the /avatar/ws relay need no token", async (t) => {
+test("GET /avatar, /avatar/renderer, /avatar/model and the /avatar/ws relay need no token", async (t) => {
   const r = await relay(t, { uiDir: builtUi() });
   assert.equal((await send(r.port, "GET", "/avatar")).status, 200);
   assert.equal((await send(r.port, "GET", "/avatar/renderer")).status, 200);

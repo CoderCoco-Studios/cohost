@@ -89,7 +89,7 @@ function resolvedEnvironments(envFile: Record<string, string>): Record<string, R
     const files = s.env_file === undefined ? [] : Array.isArray(s.env_file) ? s.env_file : [s.env_file];
     const env: Record<string, string> = {};
     for (const f of files) { assert.equal(f, ".env", `${name} reads ${f}`); Object.assign(env, envFile); }
-    out[name] = { ...env, ...(s.environment ?? {}) };
+    out[name] = { ...env, ...s.environment };
   }
   return out;
 }

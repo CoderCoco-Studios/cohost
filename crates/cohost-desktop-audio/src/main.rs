@@ -7,13 +7,13 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let redis = std::env::var("REDIS_URL").ok();
-    let token = std::env::var("EARS_HTTP_TOKEN").ok();
+    let token = std::env::var("CONTROL_TOKEN").ok();
     let mut env: Vec<(&str, &str)> = Vec::new();
     if let Some(v) = &redis {
         env.push(("REDIS_URL", v.as_str()));
     }
     if let Some(v) = &token {
-        env.push(("EARS_HTTP_TOKEN", v.as_str()));
+        env.push(("CONTROL_TOKEN", v.as_str()));
     }
     let opts = match Options::parse(&refs, &env) {
         Ok(opts) => opts,

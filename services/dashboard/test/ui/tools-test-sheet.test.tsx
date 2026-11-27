@@ -17,8 +17,7 @@ const open = async (control: ControlInfo) => {
   await userEvent.setup().click(within(row).getByRole("button", { name: "Test tools" }));
   return { ...m, sheet: screen.getByRole("dialog", { name: "Test tools" }) };
 };
-const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
-const OFF = { enabled: false, unlocked: false } as const;
+const ON = { runtime: "compose", advanced: false, unlocked: false } as const;
 
 async function fill(sheet: HTMLElement, toolName: string, args: string) {
   const user = userEvent.setup();
@@ -50,7 +49,7 @@ test("a tools Test sheet sends service-level text as: tool, never as a chat mess
 
 // @spec MOD-MAN-010, DASH-INJ-011, DASH-UI-006
 test("the tool call goes out without a token when none is held: when it succeeds no Access dialog opens; a 401 asks for one, and Cancel sends nothing more", async () => {
-  const { app, sheet } = await open(OFF);
+  const { app, sheet } = await open(ON);
   app.fetch.on("POST /inject/text", { status: 202, json: { id: "req-2" } });
   const user = await fill(sheet, "stream_info", "{}");
   await user.click(within(sheet).getByRole("button", { name: "Send text" }));
@@ -103,7 +102,7 @@ test("a 409 service not running is shown with its status, and the answer is the 
 
 // @spec MOD-MAN-010
 test("every other unit's text form is unchanged: chat sends plain service-level text with no as", async () => {
-  const m = await mountServices({ control: OFF, manifest, services: [...UNITS, toolsUnit].map((u) => svc(u.id)) });
+  const m = await mountServices({ control: ON, manifest, services: [...UNITS, toolsUnit].map((u) => svc(u.id)) });
   const row = within(screen.getByRole("table", { name: "Services" })).getAllByRole("row").find((r) => within(r).queryByRole("rowheader", { name: "chat" }) !== null)!;
   await userEvent.setup().click(within(row).getByRole("button", { name: "Test chat" }));
   const sheet = screen.getByRole("dialog", { name: "Test chat" });

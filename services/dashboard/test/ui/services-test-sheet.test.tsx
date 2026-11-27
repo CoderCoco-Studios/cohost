@@ -5,15 +5,15 @@ import { act, fireEvent, screen, userEvent, waitFor, within } from "./helpers/re
 import { sampleFor } from "../../ui/src/screens/services/samples";
 import { UNITS, mountServices, push, svc } from "./services-fixtures";
 
-const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
+const ON = { runtime: "compose", advanced: false, unlocked: false } as const;
 const rowOf = (name: string): HTMLElement => {
   const row = within(screen.getByRole("table", { name: "Services" })).getAllByRole("row").find((r) => within(r).queryByRole("rowheader", { name }) !== null);
   assert.ok(row !== undefined, `no row for ${name}`);
   return row;
 };
 const all = () => UNITS.map((u) => svc(u.id));
-const open = async (unit: string, control: typeof ON | { enabled: false, unlocked: false } = { enabled: false, unlocked: false }) => {
-  const m = await mountServices({ control, services: all() });
+const open = async (unit: string) => {
+  const m = await mountServices({ control: ON, services: all() });
   const opener = within(rowOf(unit)).getByRole("button", { name: `Test ${unit}` });
   await userEvent.setup().click(opener);
   return { ...m, opener, sheet: screen.getByRole("dialog", { name: `Test ${unit}` }) };
@@ -22,16 +22,13 @@ const feed = () => screen.getByRole("log", { name: "Live events" });
 const frame = (type: string, data: Record<string, unknown>, id = `${type}-${Math.random()}`) => ({ id, type, ts: 1, source: "x", data });
 
 // @spec MOD-TEST-001, DASH-UI-032
-test("a Test button shows on each manifest unit that declares test inputs, with control enabled or not, and nowhere else", async () => {
-  for (const control of [ON, { enabled: false, unlocked: false } as const]) {
-    const { unmount } = await mountServices({ control, services: [...all(), svc("dashboard"), svc("mystery")] });
-    for (const u of UNITS) {
-      const has = within(rowOf(u.id)).queryByRole("button", { name: `Test ${u.id}` }) !== null;
-      assert.equal(has, (u.test as { inputs: string[] }).inputs.length > 0, u.id);
-    }
-    for (const o of ["dashboard", "mystery"]) assert.equal(within(rowOf(o)).queryAllByRole("button").length, 0, o);
-    unmount();
+test("a Test button shows on each manifest unit that declares test inputs, and nowhere else", async () => {
+  await mountServices({ control: ON, services: [...all(), svc("dashboard"), svc("mystery")] });
+  for (const u of UNITS) {
+    const has = within(rowOf(u.id)).queryByRole("button", { name: `Test ${u.id}` }) !== null;
+    assert.equal(has, (u.test as { inputs: string[] }).inputs.length > 0, u.id);
   }
+  for (const o of ["dashboard", "mystery"]) assert.equal(within(rowOf(o)).queryAllByRole("button").length, 0, o);
 });
 
 // @spec DASH-UI-032
@@ -46,16 +43,14 @@ test("Test opens a modal dialog side sheet that takes focus, and Esc closes it a
 });
 
 // @spec MOD-TEST-001
-test("the sheet offers one form per declared input, and the isolated start only with control enabled", async () => {
-  const on = await open("salience", ON);
+test("the sheet offers the unit's isolated start and one form per declared input", async () => {
+  const on = await open("salience");
   for (const t of ["chat.message", "speech.heard", "vision.summary"]) assert.ok(within(on.sheet).getByRole("textbox", { name: `${t} data (JSON)` }) !== null, t);
   assert.equal(within(on.sheet).getAllByRole("button", { name: /^Send / }).length, 3);
   assert.ok(within(on.sheet).getByRole("button", { name: "Start salience isolated" }) !== null);
   on.unmount();
-  const off = await open("salience");
-  assert.ok(within(off.sheet).queryByRole("button", { name: /isolated/ }) === null);
-  off.unmount();
   const chat = await open("chat");
+  assert.ok(within(chat.sheet).getByRole("button", { name: "Start chat isolated" }) !== null);
   assert.ok(within(chat.sheet).getByRole("textbox", { name: "Message, sent as a chat message through the real pipeline" }) !== null);
   assert.equal(within(chat.sheet).getAllByRole("button", { name: /^Send / }).length, 1);
   chat.unmount();
@@ -201,7 +196,7 @@ test("the ears unit's audio form posts to /inject/audio with the unit as target"
 
 // @spec MOD-TEST-001
 test("the isolated start asks first, then posts the unit's start with isolated true; declining sends nothing", async () => {
-  const { app, sheet } = await open("voice", ON);
+  const { app, sheet } = await open("voice");
   app.fetch.on("POST /services/voice/start", { json: { ok: true } });
   const user = userEvent.setup();
   await user.click(within(sheet).getByRole("button", { name: "Start voice isolated" }));
@@ -218,7 +213,7 @@ test("the isolated start asks first, then posts the unit's start with isolated t
 
 // @spec MOD-TEST-001, DASH-UI-015
 test("a refused isolated start is shown inside its dialog, which stays open; after Cancel the sheet's status line keeps it", async () => {
-  const { app } = await open("voice", ON);
+  const { app } = await open("voice");
   app.fetch.on("POST /services/voice/start", { status: 409, json: { ok: false, detail: "busy: stack" } });
   const user = userEvent.setup();
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Start voice isolated" }));
@@ -232,7 +227,7 @@ test("a refused isolated start is shown inside its dialog, which stays open; aft
 // @spec MOD-TEST-001, DASH-INJ-010
 test("the Discord connector's row opens a sheet with an audio form that posts to /inject/audio with its own target, and its inject.result shows in the live list", async () => {
   const connector = { ...UNITS[0]!, id: "connector-discord", test: { inputs: ["audio"], observe: ["inject.result"] } };
-  const m = await mountServices({ control: { enabled: false, unlocked: false }, manifest: [...UNITS, connector], services: [...all(), svc("connector-discord")] });
+  const m = await mountServices({ control: ON, manifest: [...UNITS, connector], services: [...all(), svc("connector-discord")] });
   const user = userEvent.setup();
   await user.click(within(rowOf("connector-discord")).getByRole("button", { name: "Test connector-discord" }));
   const sheet = screen.getByRole("dialog", { name: "Test connector-discord" });

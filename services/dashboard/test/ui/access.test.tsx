@@ -126,14 +126,15 @@ test("a prompt opened because the server rejected a stored token carries the rej
 });
 
 // @spec DASH-ACC-001, DASH-ACC-008
-test("the Access panel opens and closes through the store; the server-side 'not set up' mark is kept per token", () => {
+test("the Access panel opens and closes through the store; the token's state is only whether it is held and where", () => {
   const { access } = mk();
   access.openPanel();
   assert.equal(access.state.get().panelOpen, true);
   access.closePanel();
   assert.equal(access.state.get().panelOpen, false);
-  access.markNotSetUp("control", true);
-  assert.equal(access.state.get().control.notSetUp, true);
-  access.markNotSetUp("control", false);
-  assert.equal(access.state.get().control.notSetUp, false);
+  assert.deepEqual(access.state.get().control, { present: false, scope: null });
+  access.setToken("control", "t", "tab");
+  assert.deepEqual(access.state.get().control, { present: true, scope: "tab" });
+  access.lock("control");
+  assert.deepEqual(access.state.get().control, { present: false, scope: null });
 });

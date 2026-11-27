@@ -4,20 +4,17 @@ import { act, screen, userEvent, waitFor, within } from "./helpers/render";
 import type { StackSnapshot } from "../../ui/src/state/types";
 import { mountServices, push, stackMsg, svc } from "./services-fixtures";
 
-const ON = { enabled: true, runtime: "compose", advanced: false, unlocked: false } as const;
+const ON = { runtime: "compose", advanced: false, unlocked: false } as const;
 const card = () => screen.getByRole("region", { name: "Stack" });
 const buttons = () => within(card()).queryAllByRole("button").map((b) => b.textContent);
 const press = async (name: string) => userEvent.setup().click(within(card()).getByRole("button", { name }));
 const confirm = (name: string) => userEvent.setup().click(within(screen.getByRole("dialog")).getByRole("button", { name }));
 
 // @spec DASH-UI-018
-test("the card shows the stack state as a status with a sentence of cause, with control on or off", async () => {
-  for (const control of [{ enabled: false, unlocked: false } as const, ON]) {
-    const { unmount } = await mountServices({ control, stack: stackMsg({ state: "up" }), services: [] });
-    assert.ok(within(card()).getByText("Up", { selector: ".st" }) !== null);
-    assert.match(card().textContent ?? "", /Docker is running\. The bus \(Redis\) is connected\./);
-    unmount();
-  }
+test("the card shows the stack state as a status with a sentence of cause", async () => {
+  await mountServices({ control: ON, stack: stackMsg({ state: "up" }), services: [] });
+  assert.ok(within(card()).getByText("Up", { selector: ".st" }) !== null);
+  assert.match(card().textContent ?? "", /Docker is running\. The bus \(Redis\) is connected\./);
 });
 
 // @spec DASH-UI-018
@@ -52,11 +49,12 @@ test("before the first stack message the card says it is waiting, and offers no 
   assert.deepEqual(buttons(), []);
 });
 
-// @spec DASH-UI-017, DASH-UI-029
-test("with control off the card has no buttons and says how to turn control on", async () => {
-  await mountServices({ control: { enabled: false, unlocked: false }, stack: stackMsg({ state: "down" }) });
-  assert.deepEqual(buttons(), []);
-  assert.match(screen.getByRole("status", { name: "Service control is off" }).textContent ?? "", /CONTROL_ENABLED=1/);
+// @spec DASH-UI-017
+test("the stack buttons are always offered: the card has no control-off note and never names CONTROL_ENABLED", async () => {
+  await mountServices({ stack: stackMsg({ state: "down" }) });
+  assert.deepEqual(buttons(), ["Launch"]);
+  assert.equal(screen.queryByRole("status", { name: /control is off/i }), null);
+  assert.ok(!(document.body.textContent ?? "").includes("CONTROL_ENABLED"));
 });
 
 // @spec DASH-UI-017
@@ -161,12 +159,6 @@ test("after a successful stop, and only then, the card offers Run consolidation 
   await waitFor(() => assert.equal(app.fetch.callsTo("POST /stack/consolidate").length, 1));
   push(app, { type: "stack", ...stackMsg({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: 4 }, last: last({}) }) });
   assert.equal(shown(), false, "not while another action runs");
-});
-
-// @spec DASH-UI-019
-test("with control off the consolidation button never shows", async () => {
-  await mountServices({ control: { enabled: false, unlocked: false }, stack: stackMsg({ state: "down", last: { kind: "stop", ok: true, finishedAt: 1 } }) });
-  assert.equal(within(card()).queryAllByRole("button").length, 0);
 });
 
 // @spec DASH-UI-020

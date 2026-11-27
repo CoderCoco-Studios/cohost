@@ -6,11 +6,11 @@ import { SCREENS } from "../../ui/src/app/screens";
 
 const ids = () => SCREENS.map((s) => s.id);
 
-function boot(hash = "", opts: { sink?: boolean; control?: boolean; unlocked?: boolean } = {}) {
+function boot(hash = "", opts: { sink?: boolean; unlocked?: boolean } = {}) {
   location.hash = hash;
   const app = makeApp({ sink: opts.sink });
   const unlocked = !!opts.unlocked;
-  app.fetch.on("GET /services/control", { json: opts.control ? { enabled: true, runtime: "compose", advanced: false, unlocked } : { enabled: false, unlocked } });
+  app.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked } });
   app.fetch.on("POST /control", { status: 204 });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   const r = renderApp(<App sink={!!opts.sink} />, app);
@@ -220,7 +220,7 @@ test("the Access button reads Locked without a control token and Unlocked with o
 
 // @spec DASH-ACC-001
 test("the Access button reads Unlocked, with no token held, in a browser the unlock link unlocked", async () => {
-  boot("", { control: true, unlocked: true });
+  boot("", { unlocked: true });
   await screen.findByRole("button", { name: "Unlocked" });
 });
 

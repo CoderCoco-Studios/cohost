@@ -5,7 +5,7 @@ fn run(args: &[&str]) -> (i32, String) {
     let out = Command::new(env!("CARGO_BIN_EXE_cohost-desktop-audio"))
         .args(args)
         .env_remove("REDIS_URL")
-        .env_remove("EARS_HTTP_TOKEN")
+        .env_remove("CONTROL_TOKEN")
         .output()
         .expect("the helper runs");
     (
@@ -28,4 +28,15 @@ fn an_invalid_url_exits_2_naming_the_flag() {
     let (code, err) = run(&["--url", "ftp://127.0.0.1/audio"]);
     assert_eq!(code, 2);
     assert!(err.contains("--url"), "{err}");
+}
+
+// @spec EARS-SRC-021
+#[test]
+fn without_control_token_or_token_the_helper_exits_2_naming_both_before_capturing() {
+    let (code, err) = run(&[]);
+    assert_eq!(code, 2);
+    assert!(
+        err.contains("CONTROL_TOKEN") && err.contains("--token"),
+        "{err}"
+    );
 }

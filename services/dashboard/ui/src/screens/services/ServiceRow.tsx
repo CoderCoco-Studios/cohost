@@ -29,7 +29,6 @@ export interface RowProps {
   s: ServiceHealth;
   /** The manifest's descriptor when this service is a manifest unit. */
   unit: UnitDescriptor | undefined;
-  controlOn: boolean;
   /** Why a request cannot be sent now (a stack action runs, Docker is unavailable), shown on the dialogs' confirm buttons. */
   blocked: string | undefined;
   /** The isolation overrides the unit's container runs with, as `NAME=value, ...`; empty when none. */
@@ -50,7 +49,7 @@ function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiRes
  * why, the last-seen text, and, for a manifest unit, its actions with per-action feedback (DASH-UI-008, DASH-UI-015).
  */
 // @spec DASH-UI-007, DASH-UI-008, DASH-UI-035, DASH-UI-037, MOD-PAUSE-001, MOD-PAUSE-002, MOD-PAUSE-003, MOD-LIFE-002
-export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked, isolatedBy, onTest, egress }: RowProps) {
+export const ServiceRow = memo(function ServiceRow({ s, unit, blocked, isolatedBy, onTest, egress }: RowProps) {
   const api = useApi();
   const act = useAction();
   const [dialog, setDialog] = useState<Op | null>(null);
@@ -98,19 +97,15 @@ export const ServiceRow = memo(function ServiceRow({ s, unit, controlOn, blocked
         {unit ? (
           <div className="svc-actions">
             <div className="row">
-              {controlOn ? (
+              {running ? (
                 <>
-                  {running ? (
-                    <>
-                      <Button size="sm" variant={needsAttention(s) ? "primary" : undefined} aria-label={`Restart ${id}`} disabled={pending} onClick={() => open("restart")}>Restart</Button>
-                      <Button size="sm" aria-label={`Stop ${id}`} disabled={pending} onClick={() => open("stop")}>Stop</Button>
-                    </>
-                  ) : <Button size="sm" variant="primary" aria-label={`Start ${id}`} disabled={pending} onClick={() => open("start")}>Start</Button>}
-                  {unit.pause ? (paused
-                    ? <Button size="sm" aria-label={`Resume ${id}`} disabled={pending} onClick={() => pause("resume")}>Resume</Button>
-                    : <Button size="sm" aria-label={`Pause ${id}`} disabled={pending} onClick={() => pause("pause")}>Pause</Button>) : null}
+                  <Button size="sm" variant={needsAttention(s) ? "primary" : undefined} aria-label={`Restart ${id}`} disabled={pending} onClick={() => open("restart")}>Restart</Button>
+                  <Button size="sm" aria-label={`Stop ${id}`} disabled={pending} onClick={() => open("stop")}>Stop</Button>
                 </>
-              ) : null}
+              ) : <Button size="sm" variant="primary" aria-label={`Start ${id}`} disabled={pending} onClick={() => open("start")}>Start</Button>}
+              {unit.pause ? (paused
+                ? <Button size="sm" aria-label={`Resume ${id}`} disabled={pending} onClick={() => pause("resume")}>Resume</Button>
+                : <Button size="sm" aria-label={`Pause ${id}`} disabled={pending} onClick={() => pause("pause")}>Pause</Button>) : null}
               {test && test.inputs.length > 0 ? <Button size="sm" variant="ghost" aria-label={`Test ${id}`} onClick={() => onTest(id)}>Test</Button> : null}
             </div>
             {pending ? <span className="small muted">{working}</span> : null}

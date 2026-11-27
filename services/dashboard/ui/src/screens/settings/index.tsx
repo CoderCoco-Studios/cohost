@@ -21,7 +21,6 @@ export function Screen({ route }: ScreenProps) {
   const stale = useStale();
   useEffect(() => {
     if (settings.state.get().schema.status !== "ready") void settings.loadSchema();
-    void settings.loadControl();
   }, [settings]);
 
   if (schema.status === "loading") return <><PageHeading>Settings</PageHeading><LoadingState label="Loading settings…" /></>;

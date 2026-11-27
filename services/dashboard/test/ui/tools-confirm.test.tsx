@@ -11,10 +11,10 @@ import { App } from "../../ui/src/app/App";
 
 type Screen = "live" | "services" | "viewers" | "settings";
 
-function boot(view: Screen = "live", control = true) {
+function boot(view: Screen = "live") {
   location.hash = view === "live" ? "" : `#${view}`;
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: control ? { enabled: true, runtime: "compose", advanced: false, unlocked: false } : { enabled: false, unlocked: false } });
+  app.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: false } });
   app.fetch.on("POST /tools/answer", { status: 202, text: "" });
   document.head.innerHTML = `<meta name="cohost-name" content="Coco">`;
   renderApp(<App />, app);
@@ -184,19 +184,19 @@ test("Allow posts /tools/answer {id, allow: true} with the control token and Den
 
 // @spec DASH-TOOL-005, DASH-TOOL-002, DASH-UI-006
 test("with no token held the answer is sent without one: when it succeeds no Access dialog opens; a 401 asks for the token, and Cancel leaves the bar", async () => {
-  for (const control of [true, false]) {
-    const app = boot("live", control);
+  {
+    const app = boot("live");
     skewed(app, 0);
     app.fetch.on("POST /tools/answer", { status: 202, text: "" });
     confirm(app);
     const user = userEvent.setup();
     await user.click(within(bar("c1")!).getByRole("button", { name: "Allow" }));
-    await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1, `control ${control}: sent`));
+    await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1, "sent"));
     assert.equal(app.fetch.callsTo("POST /tools/answer")[0]!.headers.authorization, undefined);
     assert.equal(app.rt.access.state.get().prompt, null, "no Access dialog without a 401");
     document.body.innerHTML = "";
   }
-  const app = boot("live", true);
+  const app = boot("live");
   skewed(app, 0);
   app.fetch.on("POST /tools/answer", { status: 401, text: "unauthorized" });
   confirm(app);
@@ -212,8 +212,8 @@ test("with no token held the answer is sent without one: when it succeeds no Acc
 });
 
 // @spec DASH-TOOL-005, DASH-TOOL-026
-test("a refused or failed answer (403 no token configured, 401, a network error) leaves the bar and shows the failure; the bar is never removed by a failed press", async () => {
-  for (const reply of [{ status: 403, json: { ok: false, detail: "no control token is configured: set CONTROL_TOKEN" } }, { status: 401, text: "unauthorized" }] as const) {
+test("a refused or failed answer (a 5xx, 401, a network error) leaves the bar and shows the failure; the bar is never removed by a failed press", async () => {
+  for (const reply of [{ status: 500, json: { ok: false, detail: "publish failed" } }, { status: 401, text: "unauthorized" }] as const) {
     const app = boot();
     skewed(app, 0);
     app.rt.access.setToken("control", "tok", "tab");
@@ -321,7 +321,7 @@ test("Allow and Deny are disabled while the answer request is in flight, and the
   skewed(app, 0);
   app.rt.access.setToken("control", "tok", "tab");
   let release!: () => void;
-  app.fetch.on("POST /tools/answer", () => new Promise((resolve) => { release = () => resolve({ status: 403, json: { ok: false, detail: "no control token is configured: set CONTROL_TOKEN" } }); }));
+  app.fetch.on("POST /tools/answer", () => new Promise((resolve) => { release = () => resolve({ status: 500, json: { ok: false, detail: "publish failed" } }); }));
   confirm(app);
   const b = bar("c1")!;
   await userEvent.setup().click(within(b).getByRole("button", { name: "Allow" }));
@@ -329,6 +329,6 @@ test("Allow and Deny are disabled while the answer request is in flight, and the
   assert.equal((within(b).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, true);
   assert.equal((within(b).getByRole("button", { name: "Deny" }) as HTMLButtonElement).disabled, true);
   await act(async () => { release(); await new Promise((r) => setTimeout(r, 0)); });
-  await waitFor(() => assert.match(within(bar("c1")!).getByRole("alert").textContent ?? "", /403/));
+  await waitFor(() => assert.match(within(bar("c1")!).getByRole("alert").textContent ?? "", /500/));
   assert.equal((within(bar("c1")!).getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled, false, "a refused answer can be tried again");
 });

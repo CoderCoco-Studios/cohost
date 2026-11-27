@@ -158,24 +158,7 @@ test("a rejected control token is not stored: the dialog stays open, says so and
 });
 
 // @spec DASH-ACC-004
-test("a 403 from the access check stores nothing and shows the control token as not set up, naming CONTROL_TOKEN and CONTROL_ENABLED", async () => {
-  const user = userEvent.setup();
-  const { app } = mount();
-  app.fetch.on("PUT /secrets/access-check", { status: 403, json: { ok: false, detail: "secrets cannot be written: no control token is configured. Set CONTROL_TOKEN in .env (CONTROL_ENABLED does not have to be 1) and restart the dashboard" } });
-  ask(app, "control");
-  await user.type(field(), "anything");
-  await user.click(unlock());
-  await flush();
-  assert.equal(app.session.getItem("cohost.controlToken"), null);
-  const text = dlg().textContent!;
-  assert.match(text, /Not set up on the server/);
-  assert.match(text, /CONTROL_TOKEN/);
-  assert.match(text, /CONTROL_ENABLED/);
-  assert.equal(app.rt.access.state.get().control.notSetUp, true);
-});
-
-// @spec DASH-ACC-004
-test("any other outcome of the check (a network error, a 5xx, a 403 that is not about the token) stores nothing and shows the failure", async () => {
+test("any other outcome of the check (a network error, a 5xx, any 403) stores nothing and shows the failure in the dialog", async () => {
   const user = userEvent.setup();
   const { app } = mount();
   ask(app, "control");
@@ -183,6 +166,7 @@ test("any other outcome of the check (a network error, a 5xx, a 403 that is not 
     [() => app.fetch.fail("PUT /secrets/access-check"), /network error/i],
     [() => app.fetch.on("PUT /secrets/access-check", { status: 500, text: "boom" }), /500.*boom/],
     [() => app.fetch.on("PUT /secrets/access-check", { status: 403, text: "forbidden origin" }), /403.*forbidden origin/],
+    [() => app.fetch.on("PUT /secrets/access-check", { status: 403, json: { ok: false, detail: "no control token is configured: set CONTROL_TOKEN" } }), /403.*CONTROL_TOKEN/],
   ] as const) {
     setup();
     await user.clear(field());
@@ -192,6 +176,7 @@ test("any other outcome of the check (a network error, a 5xx, a 403 that is not 
     assert.equal(app.session.getItem("cohost.controlToken"), null);
     assert.match(within(dlg()).getByRole("alert").textContent!, expect);
     assert.ok(!dlg().textContent!.includes(REJECTED), "a failed check is not a rejection");
+    assert.ok(!/not set up/i.test(dlg().textContent!), "no not-set-up state");
   }
 });
 
@@ -296,9 +281,8 @@ test("the Access panel shows the one token with its state and what it unlocks, v
   assert.match(control.textContent!, /mute, say lines, save settings/i);
   assert.match(control.textContent!, /read and edit viewer notes/i);
   assert.ok(within(control).getByRole("button", { name: /Change token/ }));
-  act(() => app.rt.access.markNotSetUp("control", true));
-  assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Not set up on the server/);
-  act(() => { app.rt.access.markNotSetUp("control", false); app.rt.access.lock("control"); });
+  assert.ok(!/not set up/i.test(control.textContent!), "the states are Unlocked and Locked only");
+  act(() => app.rt.access.lock("control"));
   assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Locked/);
   assert.equal((within(control).getByRole("button", { name: /Lock/ }) as HTMLButtonElement).disabled, true, "nothing to lock");
   await user.click(within(dlg()).getByRole("button", { name: "Done" }));
@@ -309,13 +293,13 @@ test("the Access panel shows the one token with its state and what it unlocks, v
 // @spec DASH-ACC-008, DASH-CTRL-007
 test("a browser unlocked by the unlock link shows the control token as Unlocked (this browser); without the session it is Locked", async () => {
   const unlocked = makeApp();
-  unlocked.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  unlocked.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: true } });
   const a = mount(unlocked);
   act(() => unlocked.rt.access.openPanel());
   await within(within(dlg()).getByRole("group", { name: "Control token" })).findByText("Unlocked (this browser)");
   a.unmount();
   const locked = makeApp();
-  locked.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: false } });
+  locked.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: false } });
   mount(locked);
   act(() => locked.rt.access.openPanel());
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
@@ -326,7 +310,7 @@ test("a browser unlocked by the unlock link shows the control token as Unlocked 
 test("Lock in a browser the unlock link unlocked sends POST /unlock/forget and the panel shows Locked", async () => {
   const user = userEvent.setup();
   const app = makeApp();
-  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  app.fetch.on("GET /services/control", { json: { runtime: "compose", advanced: false, unlocked: true } });
   app.fetch.on("POST /unlock/forget", { status: 204 });
   mount(app);
   act(() => app.rt.access.openPanel());
@@ -378,7 +362,8 @@ test("the dialog explains that the .env variables are read once at start and tak
   const { app } = mount();
   ask(app, "control");
   const where = within(dlg()).getByText(/Where these are set/i).closest("details")!;
-  for (const name of ["CONTROL_TOKEN", "CONTROL_ENABLED", "CONTROL_ADVANCED", "DASHBOARD_HOST"]) assert.ok(where.textContent!.includes(name), name);
+  for (const name of ["CONTROL_TOKEN", "CONTROL_ADVANCED", "DASHBOARD_HOST"]) assert.ok(where.textContent!.includes(name), name);
+  assert.ok(!dlg().textContent!.includes("CONTROL_ENABLED"), "CONTROL_ENABLED does not exist");
   assert.ok(!where.textContent!.includes("VIEWERS_TOKEN"), "one token");
   assert.match(where.textContent!, /\.env/);
   assert.match(where.textContent!, /once when the dashboard starts/i);

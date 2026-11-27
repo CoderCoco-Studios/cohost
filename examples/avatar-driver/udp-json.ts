@@ -35,7 +35,7 @@ export class UdpJsonDriver implements AvatarDriver { // @spec AVATAR-EX-001, AVA
     this.send({ type: "params", ...p });
   }
 
-  /** `emotion` is a canonical name; expressions.yaml says what the app calls it. */
+  /** `emotion` is a canonical name; the emotion map in the settings says what the app calls it. */
   setExpression(emotion: string, intensity: number): void {
     this.send({ type: "expression", name: this.ctx?.expressions[emotion] || emotion, intensity });
   }

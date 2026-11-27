@@ -7,12 +7,12 @@ verified: 938a38e3
 
 # Choose a voice engine
 
-The co-host speaks each line through one speech engine, chosen by `voice.engine` in `config.yaml`. [Kokoro](../../start/glossary.md#kokoro) is the default and needs no setup. This page says what each engine costs you and what it sends over the network, so you can pick one on purpose.
+The co-host speaks each line through one speech engine, chosen by the setting `voice.engine`. [Kokoro](../../start/glossary.md#kokoro) is the default and needs no setup. This page says what each engine costs you and what it sends over the network, so you can pick one on purpose.
 
 ## What you need
 
 - A running co-host. [Try it with no accounts](../install/first-run.md) runs the default stack.
-- The dashboard's **Settings** screen, or a text editor for `config/config.yaml`.
+- The dashboard's **Settings** screen (the **Voice** section), or `mise run config:set` in a terminal ([Changing a setting](../operate/settings.md#changing-a-setting)).
 
 ## The four engines
 
@@ -49,7 +49,7 @@ This engine sends the text of every line to the address you write. There is no d
 2. Set `voice.openai.base_url` to the server's address including its version path, for example `http://my-gpu-box:8880/v1`.
 3. Set `voice.openai.model` to the model name the server expects, for example `tts-1`.
 4. Set `voice.voice` to a voice name the server knows. It has no default.
-5. For a hosted service, put the key in `voice.openai.api_key` in `secrets/secrets.yaml`. It is sent only to `base_url`.
+5. For a hosted service, set the credential `voice.openai.api_key` on the Settings screen or with `mise run config:secret -- voice.openai.api_key`. It is sent only to `base_url`.
 
 If `base_url`, `model` or `voice` is blank, the co-host still starts, but it speaks nothing and the dashboard shows voice as degraded, with the missing key named.
 
@@ -60,7 +60,7 @@ If `base_url`, `model` or `voice` is blank, the co-host still starts, but it spe
 
 ## Changing the engine
 
-The engine and its settings are read once, when the voice service starts. Change them in Settings or `config.yaml`, then restart the stack or the voice service. A change to the engine, its server, its voice or its model makes cohost regenerate the fallback clips at the next start; a rotated API key does not.
+The engine and its settings are read once, when the voice service starts. Change them on the Settings screen or with `mise run config:set`, then restart the stack or the voice service. A change to the engine, its server, its voice or its model makes cohost regenerate the fallback clips at the next start; a rotated API key does not.
 
 If a server is slow to answer, raise `voice.timeout_ms` (default 15000). It is the longest wait for the first sound of a line, and for each gap in it, before that line is given up.
 

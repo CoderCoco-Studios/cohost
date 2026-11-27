@@ -1,8 +1,9 @@
 """Send one audio clip to cohost's ears `http` source. Standard library only.
 
-    CONTROL_TOKEN=<the value in cohost's .env> mise run example:audio-send:py -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
+    CONTROL_TOKEN=<cohost's control token> mise run example:audio-send:py -- <file> [--url <url>] [--speaker <name>] [--source <tag>]
 
-The listener key is derived from CONTROL_TOKEN; the token itself is never sent.
+The listener key is derived from CONTROL_TOKEN, read from this command's environment only (export it from
+your password manager); the token itself is never sent.
 
 A copy outside the checkout runs as `python3 send_clip.py <file> ...`.
 """
@@ -71,7 +72,7 @@ def main():
     path, options = parse(sys.argv[1:])
     token = os.environ.get("CONTROL_TOKEN", "").strip()
     if not token:
-        fail("send_clip.py: set CONTROL_TOKEN to the value in cohost's .env")
+        fail("send_clip.py: set CONTROL_TOKEN to cohost's control token (from your password manager)")
     try:
         status, text = send(path, options["--url"], listener_key(token), options.get("--speaker"), options.get("--source"))
     except (OSError, ValueError) as err:

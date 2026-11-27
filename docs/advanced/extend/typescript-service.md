@@ -2,7 +2,7 @@
 title: Add a TypeScript service
 description: Run a complete cohost service that watches a file and tells the co-host when the song changes, then see what it takes to make it a module of the repository.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Add a TypeScript service
@@ -15,7 +15,7 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 
 - A checkout of cohost with mise, with the commands run from its top folder. Each task below builds the workspace before it runs. [Developer setup](../dev-setup.md) covers it, and covers starting Redis in a [container](../../start/glossary.md#container).
 - Redis running on `localhost:6379`, which is where the services look for it by default.
-- A `config/config.yaml`. Every service loads the same config, and the first run of any service creates it from `config/config.example.yaml`.
+- A settings store, which `mise run config:check` creates on first use (see [Developer setup](../dev-setup.md)).
 - A text file holding a song title. Create `song.txt` in your home folder, or anywhere you like, with a title such as `Blue Monday` on one line.
 
 ## Steps
@@ -63,9 +63,9 @@ A service built on `@cohost/bus` gets what the bus gives: every [event](../../st
 The example is not yet a module of cohost: it has no manifest entry and no [Compose](../../start/glossary.md#docker-compose) service, so the dashboard cannot start it and does not know which settings it reads. The contract a module meets has four obligations, and the example meets the last one only. Meeting the first three is a matter of files, in this order:
 
 1. A new folder under `services/`, named for your service, holding your file as `src/index.ts`, a `package.json` that depends on `@cohost/bus`, `@cohost/config` and `@cohost/shared` with `workspace:*`, and a `tsconfig.json` that references the packages it uses. Inside the folder, import the packages by name instead of by path.
-2. An entry in `packages/config/src/units.ts`, naming the settings sections, credentials and documents the service reads, and one in `packages/control/src/manifest.ts`, naming the services it uses, whether it honours `pause`, and its test input. Those entries are what make the dashboard's settings editor, its start and stop buttons and its test panel know the service.
-3. A service in `docker-compose.yml`, copied from a neighbour such as `salience`, so it starts with the rest.
-4. A reference to the new folder in the root `tsconfig.json`, so `mise run build` builds it, and a `dev:<service>` task in `mise.toml` beside the others, so `mise run dev` runs it.
+2. An entry in `packages/config/src/units.ts` (the [module contract](https://github.com/CoderCoco-Studios/cohost/blob/main/docs/intent/module-contract/module-contract-design.md)'s settings declarations): the settings sections it reads (`config`), its credentials (`secrets`), the stored documents it reads (`documents`, `personality` or `expressions`) and whether it persists a credential it obtains at run time (`stateKey`). Add one in `packages/control/src/manifest.ts` too, naming the services it uses, whether it honours `pause`, and its test input. Before each start the control plane writes the unit's projection from those lists, and `runService` reads it through `loadConfig`: a section the unit did not declare throws when read. Its credentials arrive in memory after the start, never in a file, and the service waits, reporting `waiting for credentials`, until they do. Those entries are also what make the dashboard's settings editor, its start and stop buttons and its test panel know the service. Its settings are then edited on the Settings screen or with `mise run config:set`.
+3. A service in `docker-compose.yml`, copied from a neighbour such as `salience`, so it starts with the rest, with the same read-only mount of its projection at `/app/config` and, when it declares credentials, the same `/run/cohost` tmpfs.
+4. A reference to the new folder in the root `tsconfig.json`, so `mise run build` builds it, and a `dev:<service>` task in `mise.toml` beside the others, running the unit runner as they do, so `mise run dev` runs it.
 
 A new kind of event is one more entry in `packages/bus/src/events.ts`: a name and the schema of its payload. The example avoids that on purpose, because an example that needs a new event type would have to change the bus to run.
 
@@ -88,7 +88,7 @@ A new kind of event is one more entry in `packages/bus/src/events.ts`: a name an
 ## If it didn't
 
 - **A usage line and nothing else.** The path was missing. Pass the file's path after `--`.
-- **`config` errors on start, or the process exits at once.** `runService` ends the process with status 1 when the config does not load. Run any other service once, or copy `config/config.example.yaml` to `config/config.yaml`, and try again.
+- **`config` errors on start, or the process exits at once.** `runService` ends the process with status 1 when the configuration does not load. A service reads its projection, `settings.json` in `CONFIG_DIR`, which the control plane or the unit runner writes for a unit of the manifest; the error names the file and what is wrong with it.
 - **`Cannot find module` for a path under `packages/`.** The workspace is not built. Run `mise run build`; the example imports the built packages.
 - **The service waits and prints nothing.** It cannot reach Redis. Start it, or set `REDIS_URL` to where it runs.
 - **No `vision.summary` appears.** The title must be non-empty and different from the last one it published. A file the service cannot read publishes nothing, and shows as `down` on the Services screen.

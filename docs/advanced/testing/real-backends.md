@@ -2,7 +2,7 @@
 title: Real hardware and accounts
 description: Which services need a GPU or an outside account, what stands in for each in tests, and how to bring each real backend in one at a time.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Real hardware and accounts
@@ -27,7 +27,7 @@ The pattern: run the services from [One service on its own](isolated.md) with ev
 | `eyes` | [OBS](../../start/glossary.md#obs) over [obs-websocket](../../start/glossary.md#obs-websocket) and a vision model | Yes | An isolated start of `eyes` (`vision.provider: stub`) with an image injected from the dashboard, or a hand-published `vision.summary`. Leave `vision.enabled: false` unless OBS is up |
 | `ears` | The Discord [connector](../../start/glossary.md#connector) and an [STT](../../start/glossary.md#stt) container ([faster-whisper](../../start/glossary.md#whisper)) | STT is GPU-friendly | An isolated start of `ears` (`ears.stt_engine: stub`) with audio injected from the dashboard, or a hand-published `speech.heard`; the `http` and `dir` sources need no account |
 | `mouth` | The Discord connector's [sink](../../start/glossary.md#sink) and `voice` | No | An isolated start of `mouth` (`mouth.outputs.dryrun.enabled: true` with `mouth.outputs.discord.enabled: false`). The dashboard's `?sink=1` page is a second, independent sink |
-| `connector-discord` | The one Discord bot (`connections.discord.token` in `secrets/secrets.yaml`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
+| `connector-discord` | The one Discord bot (the credential `connections.discord.token`) | No | An isolated start of `connector-discord` (`connections.discord.enabled: false`); an injected clip is still answered |
 | `chat` | Twitch IRC | No | An isolated start of `chat` (`chat.sources: [fake]`), or a hand-published `chat.message` |
 | `avatar` | [VTube Studio](../../start/glossary.md#vtube-studio) or a [VMC](../../start/glossary.md#vmc) receiver | No; the app renders | An isolated start of `avatar` (`avatar.driver: "null"`, also the default in `config.example.yaml`) |
 
@@ -47,9 +47,9 @@ curl -s localhost:8880/v1/audio/speech -H 'content-type: application/json' \
 curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/health
 ```
 
-`docker compose ps` should show Postgres and [Redis](../../start/glossary.md#redis) `healthy`. The first pull is the 768-dimension embedding model; the second is a tiny chat model that answers fast and says silly things. It is for checking the plumbing; use the `llm.model` from `config.example.yaml` for real quality. The speech request should return a WAV, and the health check should print `200`.
+`docker compose ps` should show Postgres and [Redis](../../start/glossary.md#redis) `healthy`. The first pull is the 768-dimension embedding model; the second is a tiny chat model that answers fast and says silly things. It is for checking the plumbing; use the default `llm.model` for real quality. The speech request should return a WAV, and the health check should print `200`.
 
-Then run the services on the host against them. Set `llm.model: "qwen2.5:0.5b-instruct"` in `config/config.yaml` first. A variable you set in the shell overrides the same variable in `.env`:
+Then run the services on the host against them. Set the model first with `mise run config:set -- llm.model qwen2.5:0.5b-instruct`. A variable you set in the shell overrides the same variable in `.env`:
 
 ```bash
 export VOICE_URL=http://127.0.0.1:8700
@@ -104,17 +104,17 @@ Publish a chat message with `mise run bus:pub` ([Fake inputs](inject.md)) and it
 
 ## Twitch
 
-Reading a channel needs only its name, with no login. Set `chat.twitch.channel: "somechannel"` in `config/config.yaml`, then run:
+Reading a channel needs only its name, with no login. Set the channel with `mise run config:set -- chat.twitch.channel somechannel`, then run:
 
 ```bash
 mise run dev:chat
 ```
 
-`chat` logs `connected to twitch chat` with `authenticated: false` and publishes `chat.message` [events](../../start/glossary.md#event) as people talk, so pick a busy channel. With `chat.twitch.channel` empty it idles `degraded` instead of exiting. Posting back and the authenticated path need the `chat.twitch` credentials in `secrets/secrets.yaml`; see [Twitch chat](../../guide/connect/twitch.md).
+`chat` logs `connected to twitch chat` with `authenticated: false` and publishes `chat.message` [events](../../start/glossary.md#event) as people talk, so pick a busy channel. With `chat.twitch.channel` empty it idles `degraded` instead of exiting. Posting back and the authenticated path need the `chat.twitch` credentials, set on the Settings screen or with `mise run config:secret`; see [Twitch chat](../../guide/connect/twitch.md).
 
 ## VMC avatar driver
 
-Point the `vmc` driver at a UDP listener to see its packets without an avatar app. Set `avatar.driver: vmc` and `avatar.vmc.host: "127.0.0.1"` in `config/config.yaml`, then run:
+Point the `vmc` driver at a UDP listener to see its packets without an avatar app. Set `avatar.driver` to `vmc` and `avatar.vmc.host` to `127.0.0.1` (on the Settings screen, or with `mise run config:set`), then run:
 
 ```bash
 mise run dev:avatar
@@ -126,7 +126,7 @@ With a listener on UDP port 39539, a `brain.say` produces `/VMC/Ext/Blend/Val`, 
 
 Needed only by `eyes` with `vision.enabled: true`, and for the stream itself; every other service ignores OBS.
 
-- OBS 28 or newer, where obs-websocket v5 is built in. Under Tools, WebSocket Server Settings, enable the server on port 4455 (`vision.obs.port`) and set a password (`vision.obs.password` in `secrets/secrets.yaml`).
+- OBS 28 or newer, where obs-websocket v5 is built in. Under Tools, WebSocket Server Settings, enable the server on port 4455 (`vision.obs.port`) and set a password, stored as the credential `vision.obs.password` (Settings screen, or `mise run config:secret -- vision.obs.password`).
 - A source named exactly as `vision.obs.source` (default `Game Capture`) that can produce a screenshot.
 - Reachable from the `eyes` container: `vision.obs.host: host.docker.internal` for OBS on the same Windows PC as Docker Desktop, or the gaming PC's LAN address for two PCs, with obs-websocket listening on the LAN and the firewall open on 4455.
 - A vision model pulled into Ollama (`vision.model`); `vision.provider: stub` replaces it with fixed text.
@@ -137,7 +137,7 @@ Checks:
 1. With OBS closed, `eyes` is `degraded` with `obs: down` and retries every 10 seconds, doubling up to 60.
 2. Start OBS: `eyes` connects without a restart, and `vision.summary` events appear when the screen changes.
 3. Restart OBS mid-run: `eyes` reconnects.
-4. Change `vision.obs.password` in `secrets/secrets.yaml` and restart `eyes`: `eyes` shows `degraded` and the log carries the login error.
+4. Change the credential `vision.obs.password` and restart `eyes`: `eyes` shows `degraded` and the log carries the login error.
 
 ## Discord: one bot
 
@@ -145,20 +145,20 @@ One Discord connector holds the bot's login and its voice connection. `ears` (he
 
 | | Discord connector |
 | --- | --- |
-| Token in `secrets/secrets.yaml` | `connections.discord.token`, the only Discord token |
+| Credential | `connections.discord.token`, the only Discord token, set on the Settings screen or with `mise run config:secret -- connections.discord.token` |
 | Bot permissions in the voice channel | Connect and Speak |
 | Privileged intents | Server Members |
 | [Compose profile](../../start/glossary.md#compose-profile) | `discord`, beside `ears` and `mouth` |
 | Without its token | `degraded`; it registers nothing |
 
-Also set `connections.discord.guild_id` and `connections.discord.voice_channel_id` in `config/config.yaml` (ids go in quotes), and `COMPOSE_PROFILES=discord,ears,mouth` keeps the profiles on across Launch. Checks, in order:
+Also set the settings `connections.discord.guild_id` and `connections.discord.voice_channel_id` (ids are strings), and `COMPOSE_PROFILES=discord,ears,mouth` keeps the profiles on across Launch. Checks, in order:
 
 1. Start only `ears`, with no connector: `deps.discord` is `down` (`discord connector not connected`) and injected audio still works. Start the connector and `deps.discord` returns to `ok` without restarting `ears`.
 2. With the connector joined, undeafened and unmuted, speak in the channel. `speech.heard` appears on the feed with your display name and `source` `discord`. This is where the native voice dependencies (`libsodium-wrappers`, `@snazzah/davey`, `opusscript`) are confirmed or found missing.
 3. Start `mouth`, send a chat line and hear the reply in the channel. Then stop `voice` and send another: `mouth` plays its cached fallback line, at most once per `mouth.fallback.min_interval_ms`.
 4. The co-host's own voice never becomes `speech.heard`; the connector ignores every bot account.
 5. Set `mouth.outputs.discord.enabled: false` in the Settings screen and restart `mouth`: it idles `off` and plays nothing. Kill and restart the connector: it rejoins and both halves resume.
-6. Set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio` with one of the [audio clients](../extend/audio-in.md) (which send the listener key derived from `CONTROL_TOKEN`) and see `speech.heard` with `source` `http`. Stop the connector and see only `deps.discord` go `down`.
+6. Set `ears.sources: [discord, http]`, post a clip to `http://127.0.0.1:8765/audio` with one of the [audio clients](../extend/audio-in.md) (which send the listener key derived from the control token) and see `speech.heard` with `source` `http`. Stop the connector and see only `deps.discord` go `down`.
 
 ## What has not been run
 

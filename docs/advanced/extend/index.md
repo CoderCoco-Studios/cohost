@@ -2,7 +2,7 @@
 title: Ways to extend cohost
 description: The supported ways to swap or add a piece of cohost, what each route gives you, which languages have tested examples, and why a process that is on neither bus client is not one of them.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Ways to extend cohost
@@ -22,7 +22,7 @@ cohost is built so that any piece can be swapped, because pieces only meet on th
 | Add a service that reads and writes [events](../../start/glossary.md#event) | A TypeScript service on `@cohost/bus`: [Add a TypeScript service](typescript-service.md) | TypeScript, in a folder under `services/` | Every event validated against its schema on publish and on read, a place on the dashboard (configurable, startable, injectable) through the service manifest, and [heartbeat](../../start/glossary.md#heartbeat) health from the shared runtime |
 | Add a service that reads and writes events, in Rust | A Rust service on `crates/cohost-bus`: [Rust bus client](rust-bus.md) | Rust, linking the crate | The bus client and a typed codec for the event types it handles. It is a client, not a runtime: you publish your own heartbeats |
 | Replace a brain judgement with your own model | A [hook](../../start/glossary.md#hook) server over HTTP: [Brain hooks](hooks.md) | Any language that serves HTTP | cohost calls it, checks the reply, and falls back to the built-in rules if it fails |
-| Use a different chat model | Any OpenAI-compatible server: [Your own model server](model-server.md) | Nothing: a few `llm` config lines | The same brain on a model you host or rent |
+| Use a different chat model | Any OpenAI-compatible server: [Your own model server](model-server.md) | Nothing: a few `llm` settings | The same brain on a model you host or rent |
 | Send audio into the listening service | The `http` [audio source](../../start/glossary.md#audio-source) of `ears`: [Send audio to ears](audio-in.md) | A `POST` of a WAV clip from any language | The clip goes through the same [speech-to-text](../../start/glossary.md#stt) and hearing path as Discord audio, with no account |
 | Drive a different avatar app | An avatar driver in the avatar service: [Add an avatar driver](avatar-driver.md) | TypeScript, in the repository | The same expressions on your app |
 | Put a new judgement behind a hook | A new hook in the repository: [Add a brain hook](new-hook.md) | TypeScript, in the repository | A judgement that can run rules, a model or an HTTP server like the existing five |

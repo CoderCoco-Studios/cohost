@@ -10,7 +10,7 @@ verified: f126b949cf41b503f28c7935d3c8522bb7b659d6
 
 Run 2026-11-11 on [WSL2](../start/glossary.md#wsl2) (Ubuntu) with [Docker](../start/glossary.md#docker) Desktop 29.9.2 driven through `docker.exe` (`COHOST_DOCKER_BIN=docker.exe`),
 [mock mode](../start/glossary.md#mock-mode), no Twitch, Discord, [OBS](../start/glossary.md#obs), avatar app, [GPU](../start/glossary.md#gpu) or API key. Evidence is the output of the commands below; the
-secret values in `.env` were never printed.
+credential values were never printed.
 
 ## Setup
 
@@ -28,7 +28,7 @@ LLM_MODEL=VISION_MODEL=NOTES_MODEL=qwen2.5:0.5b-instruct   # about 0.7 GB pulled
 - Pulls that were unavoidable: the pinned infra images ([Ollama](../start/glossary.md#ollama) 0.40.16, [Kokoro](../start/glossary.md#kokoro) (kokoro-fastapi-cpu v0.10.0), [speaches](../start/glossary.md#speaches) 0.8.3-cpu,
   [Redis](../start/glossary.md#redis), [Postgres](../start/glossary.md#postgres), curl) through `docker compose pull`, and the three small Ollama models above through the `models` service.
 - Bind mount: `docker inspect` shows `bind \\wsl.localhost\Ubuntu\home\chris\...\config -> /app/config`, and
-  `docker.exe exec c1-shared-salience-1 ls -la /app/config` lists `config.yaml`, `personality.md`, `expressions.yaml`.
+  `docker.exe exec c1-shared-salience-1 ls -la /app/config` lists the settings, the personality and the emotion map.
   The `\\wsl.localhost` path that CTRL-STACK-012 describes works as written; no workaround was needed.
 
 ## Launch (quickstart)
@@ -117,7 +117,7 @@ pause affect   -> detail=paused   resume affect   -> detail=None
 | --- | --- |
 | CTRL-STACK-015 | `COHOST_DOCKER_BIN=docker.exe node --import tsx --test packages/control/test/launch.e2e.test.ts` -> pass 1, fail 0, 4.5 s. Now `[x]`. |
 | DEPLOY-CI-007 | the `compose-smoke` workflow already runs that test; the precondition (a pass on a Docker host) is met. Now `[x]`. |
-| MOD-TEST-007 | new `services/dashboard/test/live-stack.e2e.test.ts` (`@spec MOD-TEST-007`): starts a dashboard, launches the stack if it is not up, waits for every unit `up`, injects into all ten units and asserts each answering event. Run with `COHOST_LIVE_STACK=1` and the `.env` exported: pass 1, fail 0 (32 s). Skips otherwise. Now `[x]`. |
+| MOD-TEST-007 | new `services/dashboard/test/live-stack.e2e.test.ts` (`@spec MOD-TEST-007`): starts a dashboard, launches the stack if it is not up, waits for every unit `up`, injects into all ten units and asserts each answering event. Run with `COHOST_LIVE_STACK=1` and the control token exported: pass 1, fail 0 (32 s). Skips otherwise. Now `[x]`. |
 
 ## Cleanup
 

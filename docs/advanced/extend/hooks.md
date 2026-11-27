@@ -2,12 +2,12 @@
 title: Brain hooks
 description: How rules, llm and http hooks work, the request and reply of each hook, and a curl script that checks a hook server written in any language.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Brain hooks: rules, a model call, or your own server
 
-A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../../start/glossary.md#brain-region) where its judgement lives. [Salience](../../start/glossary.md#salience) scores [events](../../start/glossary.md#event), [affect](../../start/glossary.md#affect) works out how a line moves the mood, the [cortex](../../start/glossary.md#cortex)'s critic vets a reply before it is spoken, and memory captures and tidies notes about viewers. Each hook can run one of three kinds, and you pick per hook in `config/config.yaml`. This page is the contract. It is plain HTTP and JSON, so a server in any language works, and a short `curl` script checks one. To build a server in Python, TypeScript or Rust, follow the guide for that language: [Python](hook-server-python.md), [TypeScript](hook-server-typescript.md) or [Rust](hook-server-rust.md).
+A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../../start/glossary.md#brain-region) where its judgement lives. [Salience](../../start/glossary.md#salience) scores [events](../../start/glossary.md#event), [affect](../../start/glossary.md#affect) works out how a line moves the mood, the [cortex](../../start/glossary.md#cortex)'s critic vets a reply before it is spoken, and memory captures and tidies notes about viewers. Each hook can run one of three kinds, and you pick per hook in the settings, on the dashboard's Settings screen or with `mise run config:set`. This page is the contract. It is plain HTTP and JSON, so a server in any language works, and a short `curl` script checks one. To build a server in Python, TypeScript or Rust, follow the guide for that language: [Python](hook-server-python.md), [TypeScript](hook-server-typescript.md) or [Rust](hook-server-rust.md).
 
 ## What you need
 
@@ -17,7 +17,7 @@ A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../.
 
 ## The five hooks
 
-| Hook key in `config.yaml` | Region | The question it answers |
+| Hook setting | Region | The question it answers |
 | --- | --- | --- |
 | `brain.salience.module` | `salience` | How much does each event deserve a reaction? |
 | `brain.affect.module` | `affect` | How does this line move the mood? |
@@ -25,7 +25,7 @@ A [hook](../../start/glossary.md#hook) is the one place in a [brain region](../.
 | `brain.memory.notes.capture` | `memory` | Does this chat line reveal something worth a viewer note? |
 | `brain.memory.notes.consolidator` | `memory` | How should these notes be merged, reworded or dropped? |
 
-Every hook has the same shape in the config:
+Every hook has the same shape in the settings, shown here as YAML, the form `mise run config:export` writes:
 
 ```yaml
 brain:
@@ -34,7 +34,7 @@ brain:
       kind: rules    # rules | llm | http
       url: ""        # http: where to POST
       timeout_ms: 8000
-      llm:           # llm: override the provider and model; empty = the same as llm.* at the top of the file
+      llm:           # llm: override the provider and model; empty = the same as the llm section
         provider: ""
         model: ""
 ```
@@ -82,17 +82,16 @@ brain:
 
 Leave `llm.provider` and `llm.model` under a hook empty to reuse the cortex's model. Setting `llm.provider` on a hook requires setting `llm.model` too, because a model id is only valid for one provider, and config loading rejects the combination otherwise. The two memory hooks default to local [Ollama](../../start/glossary.md#ollama) when they name no provider, so chat lines and health or family notes stay on your machine even when the cortex uses a hosted model.
 
-Hook calls are cut off at `timeout_ms`. The default is 8000 for every hook, long enough for a hosted Claude model with thinking; `config.example.yaml` sets the critic to 2500, capture to 20000 and the consolidator to 60000. Small local models answer in well under a second, so lower it if you want a quick give-up. The prompts live in `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`, `services/cortex/src/critic.ts`, `services/memory/src/capture.ts` and `services/memory/src/consolidator.ts`.
+Hook calls are cut off at `timeout_ms`. The default is 8000 for every hook, long enough for a hosted Claude model with thinking; the seed of a new store (`config/config.example.yaml`) sets the critic to 2500, capture to 20000 and the consolidator to 60000. Small local models answer in well under a second, so lower it if you want a quick give-up. The prompts live in `services/salience/src/scoring.ts`, `services/affect/src/appraise.ts`, `services/cortex/src/critic.ts`, `services/memory/src/capture.ts` and `services/memory/src/consolidator.ts`.
 
 ## `http`: your own server
 
-cohost `POST`s the hook's input as a JSON body to exactly the `url` you configured, with `Content-Type: application/json`, and expects a successful (2xx) status with a JSON reply. Any other status, a body that is not JSON, or a reply that fails the checks below makes the region use its rules for that call. The path in the URL is yours to design; the example server routes on it.
+cohost `POST`s the hook's input as a JSON body to exactly the `url` you configured, with `Content-Type: application/json`, and expects a successful (2xx) status with a JSON reply. Any other status, a body that is not JSON, or a reply that fails the checks below makes the region use its rules for that call. The path in the URL is yours to design; the example server routes on it. Each hook is one setting, so a whole hook is set at once (a `url` alone fails while `kind` is not `http`, and `kind: http` fails without a `url`):
 
-```yaml
-brain:
-  salience: { module: { kind: http, url: "http://host.docker.internal:8900/salience" } }
-  affect:   { module: { kind: http, url: "http://host.docker.internal:8900/affect" } }
-  cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
+```bash
+mise run config:set -- brain.salience.module '{kind: http, url: "http://host.docker.internal:8900/salience"}'
+mise run config:set -- brain.affect.module '{kind: http, url: "http://host.docker.internal:8900/affect"}'
+mise run config:set -- brain.cortex.critic '{kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500}'
 ```
 
 Mix freely: affect on `http` with a sentiment model you fine-tuned, the critic on `llm`, salience on `rules`.
@@ -199,7 +198,7 @@ Once your server passes, set a hook to `kind: http` as above and restart the ser
 
 ## Training your own
 
-Everything a hook would learn from is already on the [bus](../../start/glossary.md#bus) and in [Postgres](../../start/glossary.md#postgres). `chat.message` and `speech.heard` events, with the `attention.focus` and `brain.say` that followed them, form a labelled dataset for salience. The `memories` table and the `affect.state` history form one for affect. Train offline, serve the model behind one of the endpoints above, and set `kind: http` in `config.yaml`. Nothing else changes.
+Everything a hook would learn from is already on the [bus](../../start/glossary.md#bus) and in [Postgres](../../start/glossary.md#postgres). `chat.message` and `speech.heard` events, with the `attention.focus` and `brain.say` that followed them, form a labelled dataset for salience. The `memories` table and the `affect.state` history form one for affect. Train offline, serve the model behind one of the endpoints above, and set the hook's `kind` to `http`. Nothing else changes.
 
 ## Adding a sixth hook
 

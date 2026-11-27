@@ -2,7 +2,7 @@
 title: YouTube chat
 description: Point the co-host at a YouTube live broadcast so it reads the live chat with a Data API key, and what the polling floor and the quota mean.
 track: simple
-verified: 7b10576a
+verified: a86e930
 ---
 
 # YouTube chat
@@ -17,26 +17,22 @@ By the end of this page the co-host will be reading the live chat of a YouTube b
 
 ## Steps
 
-1. Put the key in `secrets/secrets.yaml`, never in `config.yaml`. Or write it through the dashboard's secrets route, which never shows it again once saved.
+1. Set the key as the credential `chat.youtube.api_key`: in the write-only field of the dashboard's Settings screen, section **Chat**, which never shows it again once saved, or from a terminal in the cohost folder, which asks for it without showing it:
 
-   ```yaml
-   chat:
-     youtube:
-       api_key: "your-api-key"
+   ```bash
+   mise run config:secret -- chat.youtube.api_key
    ```
 
-2. Set the broadcast and list `youtube` in the sources in `config/config.yaml`.
+2. Set the broadcast and list `youtube` in the sources, in the same **Chat** section or from the terminal:
 
-   ```yaml
-   chat:
-     sources: [youtube]
-     youtube:
-       video: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   ```bash
+   mise run config:set -- chat.youtube.video "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   mise run config:set -- chat.sources "[youtube]"
    ```
 
    The video value accepts a bare id, a `watch`, `youtu.be`, `live`, `embed` or `live_chat` link. A channel URL, a playlist or a search phrase names no video and leaves the source off with a gap message in the dashboard.
 
-3. Restart the `chat` service. A new broadcast has a new video id, so restart chat for each stream. From a terminal in the cohost folder:
+3. Restart the `chat` service from the Services screen, because a setting applies at the service's next start. A new broadcast has a new video id, so set it and restart chat for each stream. From a terminal:
 
    ```bash
    mise run cohostctl restart chat
@@ -65,7 +61,7 @@ The Services screen shows `youtube` as `reading`, and a message typed in the bro
 ## If it didn't
 
 - `chat.youtube.video is not a YouTube video URL or id`: the value names no video. Use the watch link or the video id.
-- `the API key was rejected` or `authentication failed`: the key is wrong or not in `secrets.yaml`. The key is read at start, so restart chat after you change it.
+- `the API key was rejected` or `authentication failed`: the key is wrong or `chat.youtube.api_key` is not set. The key is read at start, so restart chat after you change it.
 - `live chat is disabled for this broadcast` or `the broadcast has ended`: the source stops and does not retry. Start a new broadcast, set its URL and restart chat.
 - `retrying` with the reason `quota`: the daily quota is spent. It resumes on its own; a higher `poll_floor_ms` spends less.
 

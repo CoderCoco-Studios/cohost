@@ -2,7 +2,7 @@
 title: Starting and stopping
 description: Start the whole co-host with Launch, stop it cleanly, restart one part, switch optional services on, and do the same from a terminal with cohostctl.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Starting and stopping
@@ -22,10 +22,10 @@ You start, stop and restart the co-host from the dashboard with a click, or from
    mise run dashboard
    ```
 
-2. Open the unlock link the terminal prints (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`), or `http://localhost:<dashboard.port>` (3000 by default) in a browser that is already unlocked, and open the **Services** screen. A browser that is not unlocked asks for the `CONTROL_TOKEN` from `.env` in the [Access dialog](dashboard.md#the-access-dialog); `mise run dashboard:unlock` prints a fresh link if the first one has expired.
+2. Open the unlock link the terminal prints (`Unlock this browser: http://127.0.0.1:3000/unlock?n=...`), or `http://localhost:<dashboard.port>` (3000 by default) in a browser that is already unlocked, and open the **Services** screen. A browser that is not unlocked asks for the control token from your password manager in the [Access dialog](dashboard.md#the-access-dialog); `mise run dashboard:unlock` prints a fresh link if the first one has expired.
 3. Press **Launch** and confirm.
 
-Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), starts every [container](../../start/glossary.md#container) of the stack, and waits until they are ready. The **Stack** card shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.
+Launch rebuilds any service whose code changed (a quick no-op when nothing did, several minutes when something did), hands each service its settings from the [settings store](settings.md#where-your-settings-live), starts every [container](../../start/glossary.md#container) of the stack, passes each one its credentials, and waits until they are ready. The **Stack** card shows the phase and a timer while it works. The very first Launch is the slowest, because images are built and models are downloaded.
 
 **Launch** shows while the stack is down; while it is up, **Rebuild** rebuilds the images from the current code and brings the stack up again.
 
@@ -35,9 +35,11 @@ Press **Stop stack** on the **Stack** card and confirm. Every container stops, i
 
 After a successful Stop, a **Run consolidation pass** button appears. It tidies the co-host's viewer notes and is optional; see [After a stream](after-stream.md).
 
+Stopping the stack leaves the dashboard running; stop it with Ctrl+C in its terminal. After a reboot, Docker starts the containers again on its own, but they wait for their credentials until you start the dashboard or run `mise run deliver`; see [After a reboot](settings.md#after-a-reboot).
+
 ## Restart one part, or all of them
 
-On the **Services** screen each service row has **Start** or **Restart** and **Stop** buttons (**Start** while the service is down, **Restart** and **Stop** otherwise). **Stop** asks you to confirm; **Start** and **Restart** open a dialog. **Restart all** on the **Stack** card restarts every running co-host service. Restarting is the way to apply a change you saved on the **Settings** screen, because services read their settings when they start.
+On the **Services** screen each service row has **Start** or **Restart** and **Stop** buttons (**Start** while the service is down, **Restart** and **Stop** otherwise). **Stop** asks you to confirm; **Start** and **Restart** open a dialog. **Restart all** on the **Stack** card restarts every running co-host service. Restarting is the way to apply a change you saved on the **Settings** screen or with `mise run config:set`, because services read their settings when they start.
 
 The **Start** and **Restart** dialog holds two options that change how a start behaves:
 
@@ -50,7 +52,7 @@ The [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.m
 
 ## Do it from a terminal
 
-`cohostctl` does everything the buttons do. It runs on the same PC as the dashboard and uses your own [Docker](../../start/glossary.md#docker) access. It does not need the dashboard running and does not ask for `CONTROL_TOKEN`, because you are already you; it reads it only to derive the key it hands `ears` when it copies the secrets.
+`cohostctl` does everything the buttons do. It runs on the same PC as the dashboard and uses your own [Docker](../../start/glossary.md#docker) access. It does not need the dashboard running and does not ask for the control token, because you are already you. Like the dashboard, it hands each service its settings before a start and its credentials after it.
 
 | Command | What it does |
 | --- | --- |
@@ -63,6 +65,7 @@ The [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.m
 | `mise run cohostctl restart cortex --mode fresh` | Restarts with a start mode (`resume` or `fresh`). `--isolated` starts it with pretend backends. |
 | `mise run cohostctl consolidate` | Runs the viewer-note pass. See [After a stream](after-stream.md). |
 | `mise run cohostctl reembed` | Re-embeds stored memories after you change the [embedding](../../start/glossary.md#embedding) model. See below. |
+| `mise run deliver` | Hands their credentials to every running service that waits for them, as after a reboot. The same as `mise run cohostctl deliver`. |
 | `mise run cohostctl latency` | Prints how long each stage of the speech and sight paths takes, from recent history. Read-only. |
 
 Each command exits with 0 on success and 1 on failure or refusal. A mistyped command prints the usage and exits with 2.
@@ -91,7 +94,7 @@ Then press **Launch** again.
 
 ## Change the embedding model
 
-If you change `llm.embed_model` in `config/config.yaml` to one that produces a different vector size (from `nomic-embed-text` to `mxbai-embed-large`, say), the memory service refuses to start, because the stored vectors no longer fit. Stop memory, then re-embed every stored row in place:
+If you change the `llm.embed_model` setting to one that produces a different vector size (from `nomic-embed-text` to `mxbai-embed-large`, say), the memory service refuses to start, because the stored vectors no longer fit. Stop memory, then re-embed every stored row in place:
 
 ```bash
 mise run cohostctl reembed
@@ -109,4 +112,5 @@ An interrupted run changes nothing, and running it again resumes where it stoppe
 
 - **Launch** is disabled or the header says `Stack: Docker unavailable`: the dashboard cannot reach Docker. See [Troubleshooting](../troubleshooting.md).
 - A button answers `busy`: the other of the dashboard and `cohostctl` is mid-action. Wait for it.
+- A service stays `degraded` with `waiting for credentials`: nothing has handed it its credentials since it started. Start the dashboard or run `mise run deliver`.
 - A service stays `down` or `crash-looping`: see [Troubleshooting](../troubleshooting.md).

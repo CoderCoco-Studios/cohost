@@ -2,7 +2,7 @@
 title: Service health
 description: How to read the Services screen and cohostctl status to tell which parts of the co-host are up, degraded, off or pretending.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Service health
@@ -31,7 +31,7 @@ Open the dashboard's **Services** screen. The **State** column shows one of thes
 | State | What it means | Usual cause |
 | --- | --- | --- |
 | `up` | Heartbeats are arriving, the service says it is ready and nothing it relies on is down. | All is well. |
-| `degraded` | It is running but not at full strength: it said `starting` or `degraded`, or one of its dependencies is `down`. | A model server or database it uses is not answering yet, or it is still booting. |
+| `degraded` | It is running but not at full strength: it said `starting` or `degraded`, or one of its dependencies is `down`. | A model server or database it uses is not answering yet, or it is still booting. A detail of `waiting for credentials` means it started without the dashboard to hand it its credentials, as after a reboot; see [After a reboot](settings.md#after-a-reboot). |
 | `stale` | No heartbeat for more than 3 intervals (15 seconds at the default). | Busy, stuck or just slow. Often clears by itself. |
 | `down` | No heartbeat for more than 10 intervals (50 seconds at the default), or the service reported `stopping`. | It stopped, crashed or was never started. |
 | `crash-looping` | It started three times within 60 seconds. | It keeps dying at boot; look at its container logs. |
@@ -120,5 +120,6 @@ After **Launch**, the **Services** screen fills up: every row turns `up` within 
 ## If it didn't
 
 - Everything `unknown`: nothing has been started, or the dashboard cannot reach Redis (the bus). Press **Launch**, and see [Starting and stopping](start-stop.md).
+- Services stay `degraded` with `waiting for credentials`: start the dashboard with `mise run dashboard`, or run `mise run deliver`.
 - One service `down` or `crash-looping`: see [Troubleshooting](../troubleshooting.md), then read that service's logs.
 - Services `degraded` with a `down` dependency: that dependency is the thing to fix. A hook that is `down` means its model server is not reachable; see [Choose a model](../tune/model.md).

@@ -2,7 +2,7 @@
 title: Choose a model
 description: Pick the language model that writes the co-host's replies, from a model on your own graphics card to a rented GPU box or a hosted API, with a copy-paste recipe for each.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Choose a model
@@ -16,9 +16,11 @@ The words your co-host says are written by a [language model](../../start/glossa
 
 ## How the choice works
 
-Which model answers is a `config/config.yaml` setting, `llm.provider`. The model's name goes in `llm.model`, written the way that provider names it. Credentials such as API keys never go in `config.yaml`; they go in `secrets/secrets.yaml` (copy it from `config/secrets.example.yaml` if it is not there yet). It is git-ignored, and each key is named by its dotted path.
+Which model answers is the setting `llm.provider`, in the **Language model** section of the dashboard's **Settings** screen. The model's name goes in `llm.model`, written the way that provider names it. Credentials such as API keys are set apart from the other settings: on the Settings screen they have a masked field marked **Set** or **Not set**, and from a terminal `mise run config:secret -- <path>` asks for one without showing it. Both store it encrypted in the [settings store](../operate/settings.md#where-your-settings-live); it never goes in a file or in `.env`.
 
-| `llm.provider` | What it is | Key in `secrets.yaml` |
+Each recipe below is a few `mise run config:set -- <path> <value>` lines and, for a hosted model, one or two `mise run config:secret` lines. Type the same values on the Settings screen if you prefer. [Changing a setting](../operate/settings.md#changing-a-setting) has the details.
+
+| `llm.provider` | What it is | Credential |
 | --- | --- | --- |
 | `ollama` | A model on your own [GPU](../../start/glossary.md#gpu), run by [Ollama](../../start/glossary.md#ollama). The default. | none |
 | `openai` | Any server that speaks the OpenAI chat format: a GPU box you rent by the hour, or a hosted router such as OpenRouter, Groq, Together or Fireworks. | `llm.openai.api_key` |
@@ -29,7 +31,7 @@ Two things stay local whatever you choose. The [embeddings](../../start/glossary
 
 What does leave the machine with a hosted choice is the text the co-host's brain sends to the model: the prompt with recent chat, memories and the [personality](personality.md), and the reflection pass after a stream.
 
-After changing `config.yaml` or `secrets.yaml`, restart the parts that read the `llm` section. Each is one command:
+A change applies when the parts that read the `llm` section next start, so restart them. Each is one command:
 
 ```bash
 mise run cohostctl restart cortex
@@ -41,7 +43,7 @@ mise run cohostctl restart eyes
 
 Restart `eyes` too when it describes the screen with a hosted provider (`vision.provider` `openai`, `anthropic` or `bedrock`), because it then uses the same keys.
 
-Or press **Save** on the dashboard's **Settings** screen and let it offer to restart them. A restart is what applies an edit to either file; the [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. The **Settings** screen edits both: ordinary keys are written to `config.yaml`, and an API key or password has a masked field (marked **Set** or **Not set**) that writes `secrets.yaml` and needs your control token.
+Or press **Save** on the dashboard's **Settings** screen and let it offer to restart them. The [Starting and stopping](../operate/start-stop.md) page covers restarting and Launch. Saving a setting or a credential on the Settings screen needs your control token.
 
 ## Streaming and tools
 
@@ -55,15 +57,14 @@ The same goes for pictures: a model for [vision](#pictures-for-the-vision-model)
 
 ## Local GPU (the default)
 
-```yaml
-llm:
-  provider: ollama
-  model: "qwen2.5:7b-instruct-q4_K_M"
-  # 12 GB of VRAM or more:
-  # model: "qwen2.5:14b-instruct-q4_K_M"
+```bash
+mise run config:set -- llm.provider ollama
+mise run config:set -- llm.model "qwen2.5:7b-instruct-q4_K_M"
+# 12 GB of VRAM or more:
+mise run config:set -- llm.model "qwen2.5:14b-instruct-q4_K_M"
 ```
 
-The stack's `models` one-shot downloads the model `llm.model` names on Launch. Pick a size to match your card's video memory (VRAM). The first one suits an 8 GB card. To upgrade your card later, change the line in `config.yaml`, press **Launch** and restart the services above. Nothing else changes. The first download is several gigabytes, so give it a few minutes.
+The stack's `models` one-shot downloads the model `llm.model` names on Launch. Pick a size to match your card's video memory (VRAM). The first model suits an 8 GB card; run only the line for your card. To upgrade your card later, set `llm.model` again, press **Launch** and restart the services above. Nothing else changes. The first download is several gigabytes, so give it a few minutes.
 
 ## A GPU box you rent by the hour
 
@@ -73,60 +74,42 @@ Rented machines run the model for you. Anything that serves the OpenAI chat rout
 vllm serve meta-llama/Llama-3.3-70B-Instruct --port 8000 --api-key change-me
 ```
 
-On your machine, point the co-host at it:
+On your machine, point the co-host at it, with the box's address in place of `<box-ip>`, and store the key:
 
-```yaml
-llm:
-  provider: openai
-  model: meta-llama/Llama-3.3-70B-Instruct
-  openai:
-    base_url: "http://<box-ip>:8000/v1"
+```bash
+mise run config:set -- llm.provider openai
+mise run config:set -- llm.model meta-llama/Llama-3.3-70B-Instruct
+mise run config:set -- llm.openai.base_url "http://<box-ip>:8000/v1"
+mise run config:secret -- llm.openai.api_key
 ```
 
-The key goes in `secrets/secrets.yaml`:
-
-```yaml
-llm:
-  openai:
-    api_key: "change-me"
-```
-
-Use a real secret instead of `change-me`, and the same one on both sides. A plain `http://` address sends that key and your chat over the open internet; put the box behind HTTPS or an SSH tunnel if it is not on your own network.
+The last line asks for the key without showing it. Use a real secret instead of `change-me`, and the same one on both sides. A plain `http://` address sends that key and your chat over the open internet; put the box behind HTTPS or an SSH tunnel if it is not on your own network.
 
 ### A hosted router
 
 The same shape works for hosted routers (OpenRouter, Groq, Together, Fireworks): their base URL, your key, and their model id. For OpenRouter:
 
-```yaml
-llm:
-  provider: openai
-  model: meta-llama/llama-3.3-70b-instruct
-  openai: { base_url: "https://openrouter.ai/api/v1" }
+```bash
+mise run config:set -- llm.provider openai
+mise run config:set -- llm.model meta-llama/llama-3.3-70b-instruct
+mise run config:set -- llm.openai.base_url "https://openrouter.ai/api/v1"
+mise run config:secret -- llm.openai.api_key
 ```
 
-with your OpenRouter key as `llm.openai.api_key` in `secrets.yaml`.
+and type your OpenRouter key at the last line's prompt.
 
 ## Claude through the Claude API
 
-```yaml
-llm:
-  provider: anthropic
-  model: claude-opus-5-5
-  claude:
-    effort: low
-    max_tokens: 2048
-    fallbacks: true
+```bash
+mise run config:set -- llm.provider anthropic
+mise run config:set -- llm.model claude-opus-5-5
+mise run config:set -- llm.claude.effort low
+mise run config:set -- llm.claude.max_tokens 2048
+mise run config:set -- llm.claude.fallbacks true
+mise run config:secret -- llm.claude.api_key
 ```
 
-The key goes in `secrets/secrets.yaml`:
-
-```yaml
-llm:
-  claude:
-    api_key: "sk-ant-..."
-```
-
-The `claude` keys tune how Claude answers:
+The last line asks for your Claude API key (it starts `sk-ant-`). The other `claude` settings tune how Claude answers:
 
 | Key | Meaning |
 | --- | --- |
@@ -138,23 +121,15 @@ The `claude` keys tune how Claude answers:
 
 Bedrock bills to your AWS account. In the Bedrock console, enable the model for your region first.
 
-```yaml
-llm:
-  provider: bedrock
-  model: anthropic.claude-opus-5-5
-  bedrock: { region: us-east-1 }
+```bash
+mise run config:set -- llm.provider bedrock
+mise run config:set -- llm.model anthropic.claude-opus-5-5
+mise run config:set -- llm.bedrock.region us-east-1
+mise run config:secret -- llm.bedrock.access_key_id
+mise run config:secret -- llm.bedrock.secret_access_key
 ```
 
-Put your AWS access key in `secrets/secrets.yaml`. This is the only way Bedrock is given credentials:
-
-```yaml
-llm:
-  bedrock:
-    access_key_id: "AKIA..."
-    secret_access_key: "..."
-```
-
-Both keys must be set together. With only one set, the services that build the model client (cortex, memory, [salience](../../start/glossary.md#salience) and [affect](../../start/glossary.md#affect)) refuse to start, so setting just one is an incomplete state to avoid. The stack's [containers](../../start/glossary.md#container) do not mount your home directory, and no AWS profile or `~/.aws` file is read. Create the key pair for an IAM user that may invoke Bedrock. `llm.bedrock.region` in `config.yaml` is required with the two keys; write the region of the Bedrock endpoint, such as `us-east-1`.
+The two credentials, `llm.bedrock.access_key_id` (it starts `AKIA`) and `llm.bedrock.secret_access_key`, are your AWS access key, and they are the only way Bedrock is given credentials. Set both before you restart anything. With only one set, the services that build the model client (cortex, memory, [salience](../../start/glossary.md#salience) and [affect](../../start/glossary.md#affect)) refuse to start; the Settings screen saves the two together, so it never leaves just one. The stack's [containers](../../start/glossary.md#container) mount no home directory, and no AWS profile or `~/.aws` file is read. Create the key pair for an IAM user that may invoke Bedrock. `llm.bedrock.region` is required with the two keys; set it to the region of the Bedrock endpoint, such as `us-east-1`.
 
 Server-side fallbacks are not offered on Bedrock; if a safety check declines a reply, the co-host says nothing that turn. Bedrock models other than Claude (Llama, Mistral) are not covered by this provider.
 
@@ -166,7 +141,7 @@ The [OBS](../connect/obs.md) screenshots that the `eyes` service describes go to
 | --- | --- |
 | `ollama` (default) | Your Ollama server at `OLLAMA_URL`. On your machine or your LAN, nothing leaves it; a URL off the LAN sends the pictures off it. |
 | `openai` | The OpenAI-compatible server at `llm.openai.base_url`. The default is the hosted `https://api.openai.com/v1`, so the picture leaves your machine; a server on your LAN keeps it there. |
-| `anthropic`, `bedrock` | The hosted Claude API or Amazon Bedrock, with the keys from `secrets.yaml`. The picture leaves your machine. |
+| `anthropic`, `bedrock` | The hosted Claude API or Amazon Bedrock, with the credentials set above. The picture leaves your machine. |
 | `stub` | Nowhere: fixed text, no model. |
 
 Each provider takes pictures in its own form. A model that takes no images fails the describe call with an error. A 400 or 422 from the provider reports that one frame as failed and leaves `vision` as it was; any other error marks `vision` down until a later describe succeeds. cohost cannot tell from a model's name whether it takes images, so check the model before you rely on it. For `openai`, `anthropic` and `bedrock`, bytes that are not a JPEG, PNG, GIF or WebP, such as a BMP or a PDF injected from the dashboard, are refused before anything is sent; `ollama` passes the bytes through unchecked.
@@ -189,6 +164,6 @@ A bigger brain will not make me funnier on its own. It will just make me wrong i
 
 ## If it didn't
 
-- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, the key in `secrets.yaml` and the [cortex](../../start/glossary.md#cortex)'s detail in the **Why** column of the Services screen. See [Troubleshooting](../troubleshooting.md).
+- `cortex` is `degraded` or the replies never come: the model server may be unreachable or the key wrong. Check `llm.openai.base_url`, that the key is set (`mise run config:get -- llm.openai.api_key` prints `set` or `not set`) and the [cortex](../../start/glossary.md#cortex)'s detail in the **Why** column of the Services screen. See [Troubleshooting](../troubleshooting.md).
 - The download is stuck or failed: the `models` one-shot exits with an error if the main, vision or embedding model fails to download. Check your disk space and connection and press **Launch** again.
 - Replies are cut short or empty on Claude: raise `llm.claude.max_tokens`, since thinking and the reply share it.

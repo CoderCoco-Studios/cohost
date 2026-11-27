@@ -64,6 +64,7 @@ export const sidebar = [
           { text: 'Service health', link: '/guide/operate/health' },
           { text: 'Starting and stopping', link: '/guide/operate/start-stop' },
           { text: 'After a stream', link: '/guide/operate/after-stream' },
+          { text: 'Settings, backups and recovery', link: '/guide/operate/settings' },
         ],
       },
       { text: 'Troubleshooting', link: '/guide/troubleshooting' },

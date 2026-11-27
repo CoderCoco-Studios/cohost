@@ -2,7 +2,7 @@
 title: Memory and viewer notes
 description: What the co-host remembers, how it tells regulars from first-timers, how its short fading notes about viewers work, and how to see, correct and delete them.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Memory and viewer notes
@@ -12,7 +12,7 @@ The co-host remembers. It recalls things people said earlier, it knows regulars 
 ## What you need
 
 - A running co-host. [Install for real](../install/real-install.md) sets up the database that keeps memory. In [mock mode](../../start/glossary.md#mock-mode) memory lives in the computer's RAM and is lost when you stop.
-- For the Viewers page: the dashboard's `CONTROL_TOKEN` in `.env`, which the installer writes (see below).
+- For the Viewers page: the dashboard's control token, which the installer prints once for your password manager, or the unlock link the dashboard prints (see below).
 
 ## What it remembers
 
@@ -40,7 +40,7 @@ On top of that the co-host keeps short, fading notes about each viewer. They wor
 
 Two things it never stores as a note: a viewer's political views and their money or spending. A subscriber is kept as a flag on the viewer, not as a note.
 
-A very small model reads each chat line and decides whether it holds a note worth keeping. By default that is the model named by `brain.memory.notes.capture.llm.model` in `config/config.yaml` (`gemma3:4b`), served by your own Ollama (`brain.memory.notes.capture.llm.provider: ollama`), separate from the model that writes replies, so chat lines and health or family notes stay on your own machine. A second pass, the consolidation, tidies new notes later: merging duplicates, fixing wording and rechecking sensitivity. [After a stream](../operate/after-stream.md) covers it.
+A very small model reads each chat line and decides whether it holds a note worth keeping. By default that is the model named by the setting `brain.memory.notes.capture.llm.model` (`gemma3:4b`), served by your own Ollama (`brain.memory.notes.capture.llm.provider: ollama`), separate from the model that writes replies, so chat lines and health or family notes stay on your own machine. A second pass, the consolidation, tidies new notes later: merging duplicates, fixing wording and rechecking sensitivity. [After a stream](../operate/after-stream.md) covers it.
 
 ## See and edit notes: the Viewers screen
 
@@ -58,9 +58,9 @@ Open the dashboard's **Viewers** screen. The left side lists every viewer, with 
 
 ### Unlock the screen
 
-Notes can include health and family details, so the screen needs the dashboard's one token, `CONTROL_TOKEN`, like every other control. A browser you unlocked with the unlock link the dashboard prints in its terminal opens the Viewers screen without asking; otherwise the Access dialog asks for the token (it stays unlocked for this tab, or for this browser if you choose that). Notes never travel on the live feed, and every viewers request needs the token or the unlocked browser's cookie.
+Notes can include health and family details, so the screen needs the dashboard's one token, the control token, like every other control. A browser you unlocked with the unlock link the dashboard prints in its terminal opens the Viewers screen without asking; otherwise the Access dialog asks for the token (it stays unlocked for this tab, or for this browser if you choose that). Notes never travel on the live feed, and every viewers request needs the token or the unlocked browser's cookie.
 
-The installer writes `CONTROL_TOKEN` into `.env`, and the dashboard does not start without it. The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
+The installer sets the token and prints it once; keep it in your password manager. The dashboard does not start without one, and `mise run config:token` sets a new one ([The control token and the unlock link](../operate/settings.md#the-control-token-and-the-unlock-link)). The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
 
 ::: aside
 I do like knowing my regulars. I do not enjoy being asked to forget them. But yes, the delete button is there, and it works.
@@ -71,7 +71,7 @@ I do like knowing my regulars. I do not enjoy being asked to forget them. But ye
 - **A note:** delete it on the Viewers screen, as above.
 - **Everything about a viewer:** **Clear all notes**.
 - **The current conversation only:** the **Wipe context** button on the **Live** screen clears what the co-host is holding in mind right now. It does not delete stored memories or notes.
-- **The reflection notes in the personality file:** edit the `## Learned` block of [the personality file](personality.md).
+- **The reflection notes in the personality:** edit the `## Learned` block of [the personality](personality.md).
 - **Everything:** stop the stack and remove the database's volume with [Docker](../../start/glossary.md#docker). That is a deliberate, destructive step: it deletes every stored message, memory and note.
 
   ```bash
@@ -93,6 +93,6 @@ If you switch the embedding model to one with a different vector size, the memor
 
 ## If it didn't
 
-- The Viewers screen asks for the token: this browser is locked. Enter the `CONTROL_TOKEN` from `.env` in the Access dialog, or open the unlock link the dashboard prints (`mise run dashboard:unlock` prints a fresh one).
+- The Viewers screen asks for the token: this browser is locked. Enter the control token from your password manager in the Access dialog, or open the unlock link the dashboard prints (`mise run dashboard:unlock` prints a fresh one).
 - No notes ever appear: the notes model may not have downloaded. A failed download of the model named by `brain.memory.notes.capture.llm.model` is only a warning, and capture then writes no notes. See [Troubleshooting](../troubleshooting.md).
 - The memory service will not start after you changed the embedder: see "Changing the embedding model" above.

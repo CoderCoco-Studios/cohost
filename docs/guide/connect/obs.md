@@ -2,7 +2,7 @@
 title: OBS and the voice on stream
 description: Add the co-host's voice to your stream with an OBS Browser Source, on the same PC or a second one, and optionally let it see your game through obs-websocket.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # OBS and the voice on stream
@@ -30,7 +30,7 @@ Use this with `avatar.driver: "browser"` ([browser renderer](avatar.md#browser-r
 
 1. In OBS, add a new **Browser Source** to your scene.
 
-2. For the address, enter the renderer page. On the same computer use the dashboard's own port; from a second PC use the LAN port as in the voice steps above:
+2. For the address, enter the renderer page. On the same computer use the dashboard's own port; from a second PC use the LAN port as in the voice steps below:
 
    ```text
    http://localhost:3000/avatar
@@ -52,13 +52,13 @@ Use this when OBS runs on the same computer as the dashboard.
 
 1. In OBS, add a new **Browser Source** to your scene.
 
-2. For the address, enter the dashboard's [sink](../../start/glossary.md#sink) page:
+2. For the address, enter the dashboard's [sink](../../start/glossary.md#sink) page, `http://localhost:<dashboard.port>/?sink=1`. With the default port, 3000:
 
    ```text
    http://localhost:3000/?sink=1
    ```
 
-   The port is the `dashboard.port` key in `config/config.yaml`; 3000 is the default.
+   The port is the setting `dashboard.port`, in the Settings screen's **Dashboard** section (or `mise run config:get -- dashboard.port`).
 
 3. Tick **Control audio via OBS**.
 
@@ -70,13 +70,13 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 1. Find the AI PC's address on your network.
 
-2. In OBS on the gaming PC, add a **Browser Source** with the address:
+2. In OBS on the gaming PC, add a **Browser Source** with the address `http://<ai-pc-ip>:<dashboard.lan_port>/?sink=1`. With the default LAN port, 3001:
 
    ```text
    http://<ai-pc-ip>:3001/?sink=1
    ```
 
-   Replace `<ai-pc-ip>` with the AI PC's IP address, such as `192.168.1.20`. To use the computer's name instead (`http://streampc:3001/?sink=1`), add the name to the `dashboard.allowed_hosts` list in `config/config.yaml` (`allowed_hosts: [streampc]`, or the Allowed host names setting on the dashboard's Settings screen) and restart the dashboard: it answers every other name with a refusal, because a web page you visit could otherwise pose as the dashboard under a name it controls, and an IP address cannot be posed as. Port 3001 is the `dashboard.lan_port` key in `config/config.yaml`. It serves only the sink page and its files, the live feed, the audio and the playback reports, never the controls, so it is safe to reach from the network.
+   Replace `<ai-pc-ip>` with the AI PC's IP address, such as `192.168.1.20`. To use the computer's name instead (`http://streampc:3001/?sink=1`), add the name to the setting `dashboard.allowed_hosts`: the **Allowed host names** field in the Settings screen's **Dashboard** section, or `mise run config:set -- dashboard.allowed_hosts "[streampc]"`. Then restart the dashboard, because the setting applies at its next start. The dashboard answers every other name with a refusal, because a web page you visit could otherwise pose as the dashboard under a name it controls, and an IP address cannot be posed as. Port 3001 is the setting `dashboard.lan_port`. It serves only the sink page and its files, the live feed, the audio and the playback reports, never the controls, so it is safe to reach from the network.
 
 3. Tick **Control audio via OBS**.
 
@@ -88,28 +88,24 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 2. Check that your scene has a source that can produce a screenshot, and note its exact name. The default the co-host looks for is `Game Capture`.
 
-3. Put OBS's details in `config/config.yaml`:
+3. Put OBS's details in the Settings screen's **Vision** section, or set them from a terminal in the cohost folder:
 
-   ```yaml
-   vision:
-     enabled: true
-     obs:
-       host: "host.docker.internal"
-       port: 4455
-       source: "Game Capture"
+   ```bash
+   mise run config:set -- vision.enabled true
+   mise run config:set -- vision.obs.host host.docker.internal
+   mise run config:set -- vision.obs.port 4455
+   mise run config:set -- vision.obs.source "Game Capture"
    ```
 
    `host.docker.internal` is how a [container](../../start/glossary.md#container) reaches OBS running on the same machine. If OBS is on a second PC, put that PC's address in `vision.obs.host` instead, and make sure obs-websocket listens on the network and the firewall allows port 4455.
 
-   The OBS WebSocket password is a credential, so it goes in the **OBS password** secret field of **Settings**, **Vision** (saving needs your control token), or in `secrets/secrets.yaml` by hand:
+   The OBS WebSocket password is the credential `vision.obs.password`. Set it in the write-only **OBS password** field of the same **Vision** section, which never shows it again once saved, or from the terminal, which asks for it without showing it:
 
-   ```yaml
-   vision:
-     obs:
-       password: "your-obs-password"
+   ```bash
+   mise run config:secret -- vision.obs.password
    ```
 
-4. Start the `eyes` service by listing its profile in `.env`:
+4. Start the `eyes` service by listing its profile in `COMPOSE_PROFILES` in the `.env` file:
 
    ```dotenv
    COMPOSE_PROFILES=eyes
@@ -117,13 +113,13 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
    If you already list other profiles in `COMPOSE_PROFILES`, add `eyes` to that list instead of replacing it.
 
-5. Press **Launch** in the dashboard again, or start it by hand:
+5. Press **Launch** in the dashboard again, or from a terminal:
 
    ```bash
-   docker compose --profile eyes up -d
+   mise run cohostctl launch
    ```
 
-   With the default `vision.provider: ollama`, the vision model (`vision.model` in `config/config.yaml`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers. If `vision.provider` names a hosted provider, the screenshots leave your machine for it instead; see [Pictures for the vision model](../tune/model.md#pictures-for-the-vision-model).
+   Launch starts `eyes` and hands it the OBS password. With the default `vision.provider: ollama`, the vision model (the setting `vision.model`) is downloaded by the first Launch, through [Ollama](../../start/glossary.md#ollama). A graphics card helps a lot with how quickly it answers. If `vision.provider` names a hosted provider, the screenshots leave your machine for it instead; see [Pictures for the vision model](../tune/model.md#pictures-for-the-vision-model).
 
 ## How you know it worked
 
@@ -135,7 +131,7 @@ Use this when OBS runs on a different computer (a gaming PC, say) from the one r
 
 - **No sound on stream.** Check that **Control audio via OBS** is ticked, that the address is the sink page (`?sink=1`), and that the dashboard page is reachable from OBS. Open the same address in a browser: the page says whether audio is on, and **Turn audio on** starts playback if the browser blocked it.
 - **The second PC cannot load the page.** Use the `dashboard.lan_port` port (3001 by default), not `dashboard.port` (3000), and check the AI PC's firewall.
-- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check `vision.obs.host`, `vision.obs.port` and `vision.obs.source` in `config/config.yaml`, `vision.obs.password` in `secrets/secrets.yaml`, and that the named source exists in OBS. Restart `eyes` after an edit.
+- **`eyes` stays `degraded`.** OBS is not reachable, or the password is wrong (the log shows the login error). Check the settings `vision.obs.host`, `vision.obs.port` and `vision.obs.source` and the credential `vision.obs.password` (all in the **Vision** section), and that the named source exists in OBS. Restart `eyes` after a change: a setting applies at the service's next start.
 - **The eyes have not been run against a real OBS yet.** The obs-websocket path is covered by tests, not yet by a live run. If it misbehaves, the logs will say where.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).

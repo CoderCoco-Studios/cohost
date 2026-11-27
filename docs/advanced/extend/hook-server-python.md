@@ -2,7 +2,7 @@
 title: Hook server in Python
 description: Run a Python server that answers the three brain hooks, check it with the try-it script, point cohost at it and put your own model behind it.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Hook server in Python
@@ -40,13 +40,12 @@ You will have a small Python server that answers the three brain [hooks](../../s
 
    Python writes a space after each colon and comma; the check compares the JSON, so that difference does not matter.
 
-3. Point a hook at it in `config/config.yaml`. The services run in containers, so they reach a server on your machine by the name `host.docker.internal`, not `localhost`.
+3. Point a hook at it: on the dashboard's Settings screen (the sections `brain.salience`, `brain.affect` and `brain.cortex`), or with these commands. The services run in containers, so they reach a server on your machine by the name `host.docker.internal`, not `localhost`.
 
-   ```yaml
-   brain:
-     salience: { module: { kind: http, url: "http://host.docker.internal:8900/salience" } }
-     affect:   { module: { kind: http, url: "http://host.docker.internal:8900/affect" } }
-     cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
+   ```bash
+   mise run config:set -- brain.salience.module '{kind: http, url: "http://host.docker.internal:8900/salience"}'
+   mise run config:set -- brain.affect.module '{kind: http, url: "http://host.docker.internal:8900/affect"}'
+   mise run config:set -- brain.cortex.critic '{kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500}'
    ```
 
 4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services screen has a Restart button on its row.

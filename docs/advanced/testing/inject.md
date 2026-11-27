@@ -2,7 +2,7 @@
 title: Fake inputs
 description: Put fake events on the bus and watch what comes out, from the dashboard, bus:pub and bus:tail, with three worked recipes.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Fake inputs
@@ -13,7 +13,7 @@ Every service that talks to the outside world is a publisher and subscriber of [
 
 - A built workspace (`mise run build`) and [Redis](../../start/glossary.md#redis) running (`mise run infra:up`). See [Developer setup](../dev-setup.md).
 - The services you want to watch running. [One service on its own](isolated.md) shows how to start them with no accounts.
-- For the dashboard routes: the [dashboard](../../guide/operate/dashboard.md) running (`mise run dashboard`) and the `CONTROL_TOKEN` from your `.env`.
+- For the dashboard routes: the [dashboard](../../guide/operate/dashboard.md) running (`mise run dashboard`) and the [control token](../../start/glossary.md#control-token) from your password manager, exported as `CONTROL_TOKEN` in the shell you run `curl` from (never in `.env`).
 
 ## Injection surfaces
 
@@ -96,7 +96,7 @@ chat.message -> affect.state (mood: happy)
 
 `cortex` logs `memory region did not answer in time` because no `memory` is running. That is expected.
 
-Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token (the installer writes it into `.env`; the dashboard does not start without it):
+Add the dashboard (`mise run dashboard`, then <http://localhost:3000>, the port being `dashboard.port`) to watch the same events in a browser. Its controls are plain HTTP, so they script well. The route needs the control token (`mise run config:token` sets it and the installer runs it; the dashboard does not start without one), sent from `CONTROL_TOKEN` exported in this shell:
 
 ```bash
 curl -XPOST localhost:3000/control -H "authorization: Bearer $CONTROL_TOKEN" -H 'content-type: application/json' -d '{"cmd":"say","text":"hi"}'
@@ -125,7 +125,7 @@ mise run bus:pub -- control '{"cmd":"mute"}'
 
 The first three stand in for `chat`, `eyes` and `ears`; the last is an operator command (`unmute`, `say` with `text`, `forget_context` and `reload_personality` also work). These payloads validate, but whether salience acts on one depends on its score against `brain.salience.speak_threshold` (0.6 by default). A mention scores 1.0, speech 0.9, a question 0.55, a mod or subscriber 0.35, a screen change 0.3 and plain chat 0.15.
 
-To force a line without scoring, add a `brain.salience.reflexes` entry to `config.yaml`: a [reflex](../../start/glossary.md#reflex) goes straight to `brain.say`. Or publish `brain.say` yourself, as in the first command of this recipe.
+To force a line without scoring, add a `brain.salience.reflexes` entry on the Settings screen (section `brain.salience`) or with `mise run config:set`: a [reflex](../../start/glossary.md#reflex) goes straight to `brain.say`. Or publish `brain.say` yourself, as in the first command of this recipe.
 
 ## How you know it worked
 

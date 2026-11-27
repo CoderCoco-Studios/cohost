@@ -35,7 +35,7 @@ Mood is not remembered between runs and needs no database. Every start begins at
 
 ## Change the resting mood
 
-The keys live under `brain.affect` in `config/config.yaml`; the dashboard's **Settings** screen edits them and keeps your comments.
+The keys live under `brain.affect`, in the **Mood** section of the dashboard's **Settings** screen. From a terminal, `mise run config:set -- brain.affect.baseline_valence 0.3` sets one (see [Changing a setting](../operate/settings.md#changing-a-setting)). A change applies when [affect](../../start/glossary.md#affect) next starts.
 
 | Key | Default | What it does |
 | --- | --- | --- |

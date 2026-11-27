@@ -2,7 +2,7 @@
 title: Add a brain hook
 description: Build a new hook with rules, llm and http implementations, test it, and wire it into a brain region.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Add a brain hook
@@ -42,7 +42,7 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 6. Wire the hook into a region. These edits change files outside the example, so they are described here, not shown:
 
    - In `packages/config/src/schema.ts`, give the region's section a field built from `ModuleSchema`, as the existing hooks have, so the hook has a `kind`, a `url`, a `timeout_ms` and an `llm` override like the others.
-   - In `config/config.example.yaml`, add that key under the region with `kind: rules`, so a new install starts on the built-in judge.
+   - In `config/config.example.yaml`, the seed of a new settings store, add that key under the region with `kind: rules`, so a new install starts on the built-in judge. A store that exists takes the schema's default for the key until you set it.
    - In the region's service, build the module once at start (`createShoutHook` becomes a `createX` function beside the region's other code, as `services/affect/src/appraise.ts` shows) and call `run` where the judgement used to be written inline.
    - Pass the module to `hookHealth` from `@cohost/modules` with the service's other hooks, and merge what its `deps()` returns into the service's [heartbeat](../../start/glossary.md#heartbeat) dependencies, as `services/affect/src/main.ts` does. A hook whose `kind` is `http` or `llm` then reports a `hook.<name>` dependency, where `<name>` is the name the module was given. A hook on `rules` reports none.
 
@@ -59,4 +59,4 @@ You will have a new [hook](../../start/glossary.md#hook), a place where a [brain
 - **The test cannot find the packages.** The example imports `packages/modules` and `packages/config` from their `dist` folders. Run it through `mise run test`, which builds them first, or run `mise run build`.
 - **`rules` throws for some input.** It must not: the module calls it with no guard, as the answer and as the fallback. Make the function total, then add that input to the test.
 - **An `llm` or `http` reply is ignored.** The validator returned `undefined`, so the rules answered. The region log says `module returned something unusable; using rules`. Compare the reply with what the validator accepts.
-- **The config refuses to load after the schema edit.** The error names the key and the problem. For a hook, `kind` must be `rules`, `llm` or `http`, and an `llm.provider` needs an `llm.model` beside it.
+- **A settings write or a service start is refused after the schema edit.** The error names the key and the problem. For a hook, `kind` must be `rules`, `llm` or `http`, and an `llm.provider` needs an `llm.model` beside it.

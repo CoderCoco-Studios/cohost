@@ -2,7 +2,7 @@
 title: After a stream
 description: Wrap up a stream the tidy way, with a reflection pass that lets the co-host learn from the show and an optional consolidation pass over its viewer notes.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # After a stream
@@ -16,15 +16,15 @@ When the stream ends you do not have to do anything but press Stop. Two optional
 
 ## The reflection pass
 
-Reflection lets the co-host update its own [personality file](../tune/personality.md). It reads what was said since the last reflection (up to 600 memories, oldest first), asks the [language model](../../start/glossary.md#llm) for three to six short bullet points about what it learned, and adds them under a dated heading in the file's `## Learned` section.
+Reflection lets the co-host update its own [personality](../tune/personality.md). It reads what was said since the last reflection (up to 600 memories, oldest first), asks the [language model](../../start/glossary.md#llm) for three to six short bullet points about what it learned, and adds them under a dated heading in the personality's `## Learned` section.
 
-Run it while the stack is up:
+Run it from the cohost folder while the stack is up:
 
 ```bash
-docker compose run --rm memory node services/memory/dist/reflect.js
+mise run reflect
 ```
 
-If you run services on the host rather than in [containers](../../start/glossary.md#container), `mise run reflect` does the same. The first command uses [Docker](../../start/glossary.md#docker) to run the memory image once.
+It runs once on your PC as the memory service, with the memory service's settings and credentials, and reaches the database and models the stack's [containers](../../start/glossary.md#container) run. The pass does not write the personality itself: it leaves its new text in an outbox, and the command stores it in the [settings store](settings.md#where-your-settings-live) when the pass ends well. If the command is cut short, the dashboard stores it at its next start. If you edited the personality between the pass reading it and the outbox being stored, your edit wins: the bullets are not stored, and a warning says so.
 
 The pass is careful about when to do nothing:
 
@@ -33,7 +33,7 @@ The pass is careful about when to do nothing:
 - If another memory job is running, it does nothing and leaves your place marked for next time.
 - With the in-memory store used by mock mode it does nothing, because the memories are already gone.
 
-When it works, it prints the bullets it added. Open `config/personality.md` and read them. **Edit or delete anything you do not like.** It is only a file, and what is left is what the co-host acts on next time.
+When it works, it prints the bullets it added. Read them in the personality editor on the dashboard's **Settings** screen (**Personality**, the first entry under Identity), or with `mise run config:personality`. **Edit or delete anything you do not like**, in that editor or with `mise run config:personality -- --edit`. It is only text, and what is left is what the co-host acts on next time. The [cortex](../../start/glossary.md#cortex) reads the new text at its next start, or at once when you save in the dashboard's editor.
 
 ::: aside
 I write notes to myself after every show. Last week's said "Chris, stop dying to the same door." You can delete that. It will be true again.
@@ -56,24 +56,18 @@ Run it after Stop by whichever route you like:
   mise run cohostctl consolidate
   ```
 
-- Or with Docker directly:
-
-  ```bash
-  docker compose run --rm consolidate
-  ```
-
-It starts the database and [Ollama](../../start/glossary.md#ollama) if they are down and leaves them running. It can take up to half an hour when there is a lot to tidy; the terminal command exits 0 when it is done and 1 if it failed.
+Both run the stack's one-shot `consolidate` [container](../../start/glossary.md#container) with [Docker](../../start/glossary.md#docker), handing it its settings and credentials as a Launch does. It starts the database and [Ollama](../../start/glossary.md#ollama) if they are down and leaves them running. It can take up to half an hour when there is a lot to tidy; the terminal command exits 0 when it is done and 1 if it failed.
 
 ## Look at what it learned
 
 Two places show what the co-host kept:
 
 - The **Viewers** screen on the dashboard lists each viewer's notes. Delete or correct any you disagree with. See [Memory and viewer notes](../tune/memory.md). When a platform removes a chat line, the co-host deletes its stored copy from memory; notes already made from that line stay, and you can delete them here.
-- The `## Learned` section of `config/personality.md` holds the bullets from reflection.
+- The `## Learned` section of the personality holds the bullets from reflection. See [Personality](../tune/personality.md).
 
 ## How you know it worked
 
-- Reflection printed its bullets, and `config/personality.md` has a new dated block under `## Learned`.
+- Reflection printed its bullets, and the personality (on the dashboard, or `mise run config:personality`) has a new dated block under `## Learned`.
 - Consolidation finished with exit code 0, or the dashboard stack panel shows `consolidate: ok`.
 
 ## If it didn't

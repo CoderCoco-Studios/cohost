@@ -2,16 +2,16 @@
 title: Environment and ports
 description: Every environment variable cohost reads and every port it publishes, with the default and what it changes.
 track: advanced
-verified: f126b94
+verified: a86e930
 ---
 
 # Environment variables and ports
 
-`.env`, copied from `.env.example`, holds only what must exist before configuration can be read, plus the dashboard's access controls. Every operator setting is a literal key of `config/config.yaml` (see [Configuration](config.md)), and every credential is a key of `secrets/secrets.yaml`. No environment variable overrides a config key, so a value in `.env` or your shell never shadows one. A restart of the services that read a setting applies an edit to `config.yaml` or `secrets.yaml`; an edit to `.env` applies when the containers are created or the dashboard is started again.
+`.env`, which `scripts/install.sh` copies from `.env.example`, holds only non-secret host and Compose variables: what must exist before the settings can be read, and where the dashboard listens. Every operator setting and every credential lives in the [settings store](../../start/glossary.md#settings-store) (see [Configuration](config.md)), and no credential belongs in `.env`. No environment variable overrides a setting, so a value in `.env` or your shell never shadows one. A setting applies at the next start of the units that read it; an edit to `.env` applies when the containers are created or the dashboard is started again.
 
 [Docker Compose](../../start/glossary.md#docker-compose) reads `.env` for its own settings and passes it to each application [container](../../start/glossary.md#container), and services run on the host read it themselves from the workspace root without overriding variables already set in your shell. `COHOST_ENV_FILE` points them at a different file. A variable set in your shell wins over `.env`.
 
-Provider credentials such as `ANTHROPIC_API_KEY` or `AWS_ACCESS_KEY_ID` are not read from the environment. They are keys of `secrets.yaml`: `llm.claude.api_key`, `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key`, among others. A key left in `.env` cannot keep a provider working.
+Provider credentials such as `ANTHROPIC_API_KEY` or `AWS_ACCESS_KEY_ID` are not read from the environment. They are credentials of the settings store: `llm.claude.api_key`, `llm.bedrock.access_key_id` and `llm.bedrock.secret_access_key`, among others, set on the Settings screen or with `mise run config:secret -- <path>`. A key left in `.env` cannot keep a provider working.
 
 ## Compose
 
@@ -28,13 +28,14 @@ Read by `docker compose` itself, before any container exists.
 
 ## The dashboard's access controls
 
-The dashboard cannot edit these: a page it serves must not be able to remove its own lock. They are read once, when the dashboard starts.
+The dashboard cannot edit these: a page it serves must not be able to remove its own lock. They are read once, when the dashboard starts. The dashboard's ports are the settings [`dashboard.port`](config.md#dashboard) and `dashboard.lan_port`, not variables, and its startup log prints the URL it actually uses.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `DASHBOARD_HOST` | `127.0.0.1` | Where the full dashboard listens. `0.0.0.0` opens it to other machines; it needs nothing more than the `CONTROL_TOKEN` every start needs, and it logs a warning. The token, and an unlocked browser's session cookie, travel in cleartext over HTTP. This is the way to reach the dashboard from another machine: never put a port forward or a proxy in front of the loopback port, because it makes every machine that reaches it look local. An `ssh -L` tunnel opened from your own machine is fine |
-| `CONTROL_TOKEN` | never set here | cohost's one lock, which you keep in your password manager: `mise run config:token` sets it (the installer runs it once) and prints it once, and the settings store keeps only its verifier. It is the bearer token every route that changes something requires (an unlocked browser's session cookie counts in its place), and the key the `ears` audio listener checks is derived from it (see [HTTP routes](http.md#ears-capture-endpoint)). The control plane refuses to start anything, naming the line and never the value, while `.env` or its environment defines it; `mise run config:token -- --stdin` moves a token you already have into the store |
-| `COHOST_KEY_FILE` | `~/.config/cohost/master.key` | The settings store's master key file, outside the checkout so a copy of the checkout or of `data/` carries no key. It is created when missing and its text, shown once, is the recovery key to keep in your password manager |
+| `DASHBOARD_HOST` | `127.0.0.1` | Where the full dashboard listens. `0.0.0.0` opens the full dashboard to other machines: they open it by this PC's IP address, or by a name listed in `dashboard.allowed_hosts`, and need the control token or an unlock link like any browser. It logs a warning. The token, and an unlocked browser's session cookie, travel in cleartext over HTTP. This is the way to reach the dashboard from another machine: never put a port forward or a proxy in front of the loopback port, because it makes every machine that reaches it look local. An `ssh -L` tunnel opened from your own machine is fine |
+| `CONTROL_TOKEN` | never in `.env` | cohost's one lock, the [control token](../../start/glossary.md#control-token), which you keep in your password manager: `mise run config:token` sets it (the installer runs it once) and prints it once, and the settings store keeps only its verifier. It is the bearer token every route that changes something requires (an unlocked browser's session cookie counts in its place), and the key the `ears` audio listener checks is derived from it (see [HTTP routes](http.md#ears-capture-endpoint)). The dashboard refuses to start while `.env` or its own environment defines it, and the control plane refuses to start anything, naming the line and never the value. The variable is read only from the environment of the command that needs the token: `mise run dashboard:unlock`, and a script or `curl` that sends it as `Authorization: Bearer <token>`. Export it in that shell from your password manager |
+| `COHOST_KEY_FILE` | `$XDG_CONFIG_HOME/cohost/master.key`, else `~/.config/cohost/master.key` | The settings store's [master key](../../start/glossary.md#master-key) file, mode 0600, outside the checkout so a copy of the checkout, of `data/` or of a backup carries no key. It is created the first time a program opens a store that holds no credential, and its text, shown once, is the [recovery key](../../start/glossary.md#recovery-key) to keep in your password manager |
+| `XDG_CONFIG_HOME` | `~/.config` | Only where the default master key file lives, when `COHOST_KEY_FILE` is unset |
 | `CONTROL_ADVANCED` | `0` | A safety switch, not access: `1` lets a lifecycle action also stop and restart `redis` and `postgres`, which are read-only otherwise. It still needs the token. The dashboard can never stop itself |
 
 ## Locating files and tools
@@ -43,15 +44,15 @@ Needed before configuration can be read.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `CONFIG_DIR` | `config/` at the workspace root | The folder holding `config.yaml`, `personality.md` and `expressions.yaml` (credentials are in `secrets/secrets.yaml`, which it does not move). Compose sets `/app/config` |
-| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file services load when run on the host |
-| `COHOST_SECRETS_FILE` | `secrets/secrets.yaml` at the workspace root | A test seam: the tests point it at a credentials file in a temporary folder, and each `dev:<service>` task points it at its unit's copy under `secrets/units/`. Do not set it in `.env`; Compose pins it empty in the containers, so each reads its own copy of its credentials |
-| `COHOST_DATA_DIR` | `data/` under the repository root | Where services keep files that must outlive a restart, such as the fallback clip cache, and where each program writes its log file (`logs/<program>.log`). Compose pins it to `/app/data` in every container except `tools`, so the containers' log files land in the checkout's `data/logs/` |
+| `CONFIG_DIR` | set for each service | The folder holding the unit's projection, `settings.json`: the settings sections and documents it declares, no credential. Compose sets `/app/config`, where `data/projections/<unit>/` is mounted read-only; the unit runner behind `mise run dev:<service>` points it at `data/projections/<unit>/`. You do not set it |
+| `COHOST_ENV_FILE` | `.env` at the workspace root | The env file host-run programs (the dashboard, `cohostctl`, the tasks and services) load |
+| `COHOST_CREDENTIALS_FD` | unset | Set by the unit runner on a host-run service: the file descriptor (`3`) of the pipe its credentials arrive on. You never set it |
+| `COHOST_DATA_DIR` | `data/` under the repository root | Where the settings store lives (`store/cohost.db` and its `store/backups/`), where services keep files that must outlive a restart, such as the fallback clip cache, and where each program writes its log file (`logs/<program>.log`). Projections are always written under the checkout's `data/projections/`, which Compose mounts. Compose pins it to `/app/data` in every container except `tools`, so the containers' log files land in the checkout's `data/logs/` |
 | `COHOST_DOCKER_BIN` | `docker` | The [Docker](../../start/glossary.md#docker) executable the dashboard and `cohostctl` run. Set it to `docker.exe` on [WSL2](../../start/glossary.md#wsl2) without Docker Desktop's WSL integration |
 
 ## Infrastructure addresses
 
-Where a service finds the other pieces before it can open the bus. Compose pins the first six for containers.
+Where a service finds the other pieces before it can open the bus. Like the other variables on this page, they come from `.env` or the environment, never from the settings store. Compose pins the first six for containers.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -69,7 +70,7 @@ Where a service finds the other pieces before it can open the bus. Compose pins 
 | --- | --- | --- |
 | `HEARTBEAT_INTERVAL_MS` | `5000` | How often each service publishes its [heartbeat](../../start/glossary.md#heartbeat). The Services screen and the Compose health checks derive staleness from it |
 
-The log level, the terminal format and the log files are the `logging` section of `config.yaml` (see [Configuration](config.md#logging)), not variables. Each program's logger reads that section itself before the rest of the configuration loads.
+The log level, the terminal format and the log files are the `logging` settings section (see [Configuration](config.md#logging)), not variables. Each program's logger reads that section before the rest of the configuration.
 
 ## Platform
 
@@ -85,7 +86,7 @@ The log level, the terminal format and the log files are the `logging` section o
 
 ## `COHOST_ISOLATION`
 
-`COHOST_ISOLATION` is the one variable that can change a setting. It holds a single JSON object from override name to value, such as `{"LLM_PROVIDER":"mock","AVATAR_DRIVER":"null"}`. The control plane sets it on the `docker compose` process for an isolated start of one unit, and Compose passes it to that container; you never write it. The name is reserved for the control plane: do not set it in `.env` or in the shell. The dashboard and `cohostctl` set it on every `docker compose` command they run (empty unless it is an isolated start), so a value in `.env` or in the shell that started them is ignored. A `docker compose up` you run by hand is outside the control plane and nothing checks it: a value there reaches every container it starts, and each applies it as an isolation preset, so the whole stack runs with those overrides (a malformed value stops each service). The loader applies each entry to the config key in the table, so the unit runs with no external backend while the rest of the stack uses `config.yaml` as saved. The Settings screen reports a key that a running isolated unit has overridden. See [One service on its own](../testing/isolated.md).
+`COHOST_ISOLATION` is the one variable that can change a setting. It holds a single JSON object from override name to value, such as `{"LLM_PROVIDER":"mock","AVATAR_DRIVER":"null"}`. The control plane sets it on the `docker compose` process for an isolated start of one unit, and Compose passes it to that container; you never write it. The name is reserved for the control plane: do not set it in `.env` or in the shell. The dashboard and `cohostctl` set it on every `docker compose` command they run (empty unless it is an isolated start), so a value in `.env` or in the shell that started them is ignored. A `docker compose up` you run by hand is outside the control plane and nothing checks it: a value there reaches every container it starts, and each applies it as an isolation preset, so the whole stack runs with those overrides (a malformed value stops each service). The loader applies each entry to the config key in the table, so the unit runs with no external backend while the rest of the stack uses the settings as stored. The Settings screen reports a key that a running isolated unit has overridden. See [One service on its own](../testing/isolated.md).
 
 The override names are labels inside that object, not environment variables: a plain `LLM_PROVIDER` in `.env` or the shell is read by nothing. A malformed value, or a name not in the table, stops the service with an error naming `COHOST_ISOLATION`.
 
@@ -107,7 +108,7 @@ The override names are labels inside that object, not environment variables: a p
 
 ## Development and test variables
 
-Set these yourself only to point a script or a test somewhere else.
+Set these yourself only to point a script or a test somewhere else. Every test task runs through `scripts/test-env.sh`, which sets `COHOST_DATA_DIR`, `CONFIG_DIR`, `COHOST_ENV_FILE` and `COHOST_KEY_FILE` to temporary paths and `COHOST_TEST_ENV` to `1` (the settings store then has no default key path), so no test opens your settings store, `.env` or master key.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -123,8 +124,8 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 
 | Port | What | Published by | Notes |
 | --- | --- | --- | --- |
-| `3000` | The full dashboard (page, controls, Launch and Stop) | The host process (`mise run dashboard`) | The `dashboard.port` key of `config.yaml`, bound to `DASHBOARD_HOST` |
-| `3001` | The LAN listener: the [sink](../../start/glossary.md#sink) page, its audio and the playback report, for a second PC's [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) | The host process | The `dashboard.lan_port` key of `config.yaml`, all interfaces. Must differ from `dashboard.port` |
+| `3000` | The full dashboard (page, controls, Launch and Stop) | The host process (`mise run dashboard`) | The setting `dashboard.port`, bound to `DASHBOARD_HOST` |
+| `3001` | The LAN listener: the [sink](../../start/glossary.md#sink) page, its audio and the playback report, for a second PC's [OBS](../../start/glossary.md#obs) [Browser Source](../../start/glossary.md#browser-source) | The host process | The setting `dashboard.lan_port`, all interfaces. Must differ from `dashboard.port` |
 | `6379` | [Redis](../../start/glossary.md#redis) | `redis` | For `mise run dev` outside Docker |
 | `5432` | [Postgres](../../start/glossary.md#postgres) | `postgres` | |
 | `11434` | [Ollama](../../start/glossary.md#ollama) | `ollama` | |
@@ -136,6 +137,6 @@ Compose publishes each infrastructure port on `127.0.0.1` only, so nothing is re
 | `8082` | The moshi-server Kyutai STT server (profile `kyutai`) | `stt-kyutai` | Container port 8080 |
 | `8765` | `ears`' `http` source | Not published by Compose | `ears.http.port`, local only by default; in Docker bind `0.0.0.0` and publish it yourself |
 
-Both dashboard ports are read when the dashboard starts, so an edit to `dashboard.port` or `dashboard.lan_port` applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, behind the same `CONTROL_TOKEN`; the other machine opens it by IP address, or by a name listed in `dashboard.allowed_hosts` (the dashboard answers any other name with `403`).
+Both dashboard ports are settings read when the dashboard starts, so a change to `dashboard.port` or `dashboard.lan_port` (on the Settings screen, or `mise run config:set -- dashboard.port 3100`) applies at its next start, and its startup log prints the URL it actually uses. `DASHBOARD_HOST=0.0.0.0` opens the full dashboard to another machine, behind the same control token; the other machine opens it by IP address, or by a name listed in `dashboard.allowed_hosts` (the dashboard answers any other name with `403`).
 
-Ports on the machines cohost connects to, which cohost does not publish, are keys of `config.yaml`: [obs-websocket](../../start/glossary.md#obs-websocket) on `vision.obs.port` (4455), [VTube Studio](../../start/glossary.md#vtube-studio) on `avatar.vtube_studio.port` (8001) and a [VMC](../../start/glossary.md#vmc) receiver on `avatar.vmc.port` (39539).
+Ports on the machines cohost connects to, which cohost does not publish, are settings: [obs-websocket](../../start/glossary.md#obs-websocket) on `vision.obs.port` (4455), [VTube Studio](../../start/glossary.md#vtube-studio) on `avatar.vtube_studio.port` (8001) and a [VMC](../../start/glossary.md#vmc) receiver on `avatar.vmc.port` (39539).

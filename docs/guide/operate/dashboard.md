@@ -2,7 +2,7 @@
 title: Dashboard tour
 description: A screen-by-screen tour of the cohost dashboard, the web page where you watch, steer and test your co-host.
 track: simple
-verified: 11075e1
+verified: a86e930
 glossary-skip: [affect]
 ---
 
@@ -13,8 +13,8 @@ The dashboard is a web page that runs on your own PC. It is where you watch what
 ## What you need
 
 - A running dashboard. If you followed [Try it with no accounts](../install/first-run.md) or [Install for real](../install/real-install.md), you started it with `mise run dashboard`.
-- A browser pointed at `http://localhost:3000` (the port is `dashboard.port` in `config/config.yaml`).
-- Your control token, for anything that changes something, or the unlock link the dashboard prints when it starts, which unlocks your browser without the token. See [The Access dialog](#the-access-dialog).
+- A browser pointed at `http://localhost:3000` (the port is the `dashboard.port` setting; `mise run config:get -- dashboard.port` prints it).
+- Your control token, kept in your password manager, for anything that changes something, or the unlock link the dashboard prints when it starts, which unlocks your browser without the token. See [The Access dialog](#the-access-dialog).
 
 ## Open it
 
@@ -24,7 +24,7 @@ mise run dashboard
 
 `mise run dashboard` builds the page before it starts. If the page's build fails, it prints the error and stops without starting the dashboard, so you never get an old or missing page; fix the error it printed and run it again. (A failed build of the documentation alone does not stop it.)
 
-Then visit `http://localhost:3000`. (The number is `dashboard.port` in `config/config.yaml`; the startup log prints the address it actually uses.) Better, open the unlock link the terminal prints:
+Then visit `http://localhost:3000`. (The number is the `dashboard.port` setting; the startup log prints the address it actually uses.) Better, open the unlock link the terminal prints:
 
 ```text
 Unlock this browser: http://127.0.0.1:3000/unlock?n=...
@@ -50,6 +50,12 @@ The strip across the top is the same on every screen. On a narrow window the nav
 | **Locked** / **Unlocked** | Whether this page can act with your control token: **Unlocked** when it holds the token or this browser was unlocked by the unlock link. It opens the [Access panel](#the-access-dialog). |
 | **Theme** | **Auto** follows your system's light or dark setting; **Light** and **Dark** override it. Your choice other than Auto is remembered in this browser. |
 
+### The recovery-key banner
+
+When the master key that protects your credentials was made where no terminal could show its recovery key, a banner above every screen says that a recovery key was created and has not been confirmed as saved. Run `mise run config:key -- --show`, save the key in your password manager, and press **I have saved it** (or run `mise run config:key -- --confirm`). The key itself is never shown on the page. See [The recovery key](settings.md#the-recovery-key).
+
+### When the connection drops
+
 If the connection to the dashboard drops, a banner says that live updates stopped and when the next attempt is; the page reconnects by itself every two seconds, and the lists and feeds are dimmed until it does.
 
 ## The Access dialog
@@ -60,7 +66,7 @@ Anything that changes something needs your control token, or a browser unlocked 
 
 `mise run dashboard` prints one line to its terminal when it starts: `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`. Open that link in the browser you use for the dashboard. It works once and only for 10 minutes, and it leaves the browser unlocked: every action that needs the control token works there without the token being pasted, saving secrets and answering tool confirmations included. The link is printed only in the terminal, never in `data/logs/dashboard.log`.
 
-The browser stays unlocked for 90 days, through dashboard restarts and config recovery, until you press **Lock** in its Access panel, change `CONTROL_TOKEN` in `.env` (which locks every unlocked browser) or clear the browser's cookies for the dashboard. For another browser, or after the link expired, run `mise run dashboard:unlock` while the dashboard runs: it prints a fresh link. An unlocked browser can also ask the dashboard for a link (`POST /unlock/link`) to open in another browser. Opening the link again in the browser it already unlocked (clicking it a second time, or a restored tab) just opens the dashboard. In any other browser, a link that is used, expired or from an earlier start opens a page that says so, how to get a new one and links to the dashboard.
+The browser stays unlocked for 90 days, through dashboard restarts, until you press **Lock** in its Access panel, set a new control token with `mise run config:token` (which locks every unlocked browser) or clear the browser's cookies for the dashboard. For another browser, or after the link expired, run `mise run dashboard:unlock` while the dashboard runs: it prints a fresh link. An unlocked browser can also ask the dashboard for a link (`POST /unlock/link`) to open in another browser. Opening the link again in the browser it already unlocked (clicking it a second time, or a restored tab) just opens the dashboard. In any other browser, a link that is used, expired or from an earlier start opens a page that says so, how to get a new one and links to the dashboard.
 
 ### Pasting the token
 
@@ -68,9 +74,9 @@ When you press a button that needs the token and the browser is not unlocked, a 
 
 | Token | Where it comes from | What it unlocks |
 | --- | --- | --- |
-| Control token (`CONTROL_TOKEN`) | The installer generated it into `.env`. In the cohost folder, `grep ^CONTROL_TOKEN= .env` prints the line; paste the value after the equals sign. Or open the unlock link printed in the terminal running `mise run dashboard`, which unlocks this browser without the token. | Muting, saying lines, saving settings, saving secrets, test inputs, controlling services, and reading and editing viewer notes on the Viewers screen. |
+| Control token (`CONTROL_TOKEN`) | The installer printed it once, for your password manager; `mise run config:token` sets a new one. Or open the unlock link printed in the terminal running `mise run dashboard`, which unlocks this browser without the token. | Muting, saying lines, saving settings, saving secrets, test inputs, controlling services, and reading and editing viewer notes on the Viewers screen. |
 
-The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value after the name, with no spaces or quotes, and a restart of the dashboard if `.env` changed after it started). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). The Access panel shows the token's state: **Unlocked** with where it is kept, **Unlocked (this browser)** when the unlock link unlocked this browser and no token is held, or **Locked**. **Change token** replaces a token and **Lock** forgets a held one; a browser unlocked by the link stays unlocked until its cookies are cleared or `CONTROL_TOKEN` changes. The dialog also explains that `CONTROL_TOKEN`, `CONTROL_ADVANCED` and `DASHBOARD_HOST` are set in `.env` and read once when the dashboard starts, so a change there takes effect after you restart the dashboard. The dashboard does not start at all without a `CONTROL_TOKEN` of at least 32 characters.
+The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value, with no spaces or quotes, and that a token set with `mise run config:token` after the one you copied replaces it). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). The Access panel shows the token's state: **Unlocked** with where it is kept, **Unlocked (this browser)** when the unlock link unlocked this browser and no token is held, or **Locked**. **Change token** replaces a token and **Lock** forgets a held one; a browser unlocked by the link stays unlocked until its cookies are cleared or the token changes. The dialog also explains that `CONTROL_ADVANCED` and `DASHBOARD_HOST` are set in `.env` and read once when the dashboard starts, so a change there takes effect after you restart the dashboard, while a token set with `mise run config:token` takes effect at once. The token itself is never in `.env`: the dashboard does not start when `.env` or its environment defines `CONTROL_TOKEN`, or when the settings store holds no token. [The control token and the unlock link](settings.md#the-control-token-and-the-unlock-link) covers setting it.
 
 ## The Live screen
 
@@ -105,21 +111,21 @@ Everything the co-host remembers about people, one viewer at a time: pick someon
 
 ## The Settings screen
 
-A form for `config/config.yaml`, and for your credentials. The list on the left groups the sections under **Identity**, **Brain**, **Senses**, **Voice and body** and **System**; the number beside a section counts your unsaved edits. **Personality** is the first entry under Identity: an editor for the co-host's [personality file](../tune/personality.md), saved with **Save** or Ctrl+S, which applies at once without a restart.
+A form for the [settings store](settings.md#where-your-settings-live), where cohost keeps every setting and credential. The list on the left groups the sections under **Identity**, **Brain**, **Senses**, **Voice and body** and **System**; the number beside a section counts your unsaved edits. **Personality** is the first entry under Identity: an editor for the co-host's [personality](../tune/personality.md), saved with **Save** or Ctrl+S, which the co-host picks up at once without a restart.
 
-For the other sections, change values, press **Check** to validate them without saving, and **Save** to write them; **Discard** drops your edits. Saving keeps your comments and unknown keys, and refuses if the file changed since you loaded it (press **Reload**). Settings apply when the services that read them restart, and after a save a banner names those services with a **Restart** button. A few keys, such as an address a credential is sent to, show a warning that they decide where a credential or private data goes, or who may reach the dashboard; the warning is only a hint, and saving them needs the control token like every other save. Every key is explained on the [configuration reference](../../advanced/reference/config.md).
+For the other sections, change values, press **Check** to validate them without saving, and **Save** to store them; **Discard** drops your edits. Beside each key the screen says where its value comes from: `saved` for a value you stored, `default` for one you never changed, `secret` for a credential. Saving refuses if the settings changed since you loaded the section, from another browser or a `mise run config:set` (press **Reload**). A stored key this build does not know is listed in an **Unrecognised keys** note, with **Remove**. Settings apply when the services that read them restart, and after a save a banner names those services with a **Restart** button. A few keys, such as an address a credential is sent to, show a warning that they decide where a credential or private data goes, or who may reach the dashboard; the warning is only a hint, and saving them needs the control token like every other save. Every key is explained on the [configuration reference](../../advanced/reference/config.md).
 
 Beside the engine and provider keys (`voice.engine`, `ears.stt_engine`, `ears.stt_fallback_engine`, `vision.provider` and `llm.provider`) the screen shows an egress note for any destination that leaves your LAN, such as "spoken text goes to speech.example.com" or "the conversation goes to chat.example.com". It appears before you restart the service, so you can see where audio, text or frames will go. The Services screen marks the same destinations on each service's row.
 
 **Tools** (the `tools` section) has two parts. **MCP servers** lists each server you configured with its URL (without any user name, password or query string), its state and detail from the latest tool catalog, a note `tool requests go to <host>` for an external one, and how many of its tools were left out by the limits. **Add server** takes a name, a URL, an optional header name, an optional token and the External switch; the server and its token are saved in that order, and a token that fails to save is reported as `server added without a token`. A name that is already used, a name the configuration does not accept and a URL with a user name are refused before anything is saved. Each server's token shows **Set** or **Not set** and is never shown again; **Remove** clears the token and then removes the server. The **Tools** list groups the tools under their server or **Built in**. Each has **Allowed**, which lets the co-host use it at all; **May act**, which lets it change things (a tool with no mark is not offered until you allow it to act); **Usable for viewer chat**, which lets viewers' chat use it (it excludes May act); and, for a tool that acts, **Ask me before it runs**, on by default. The page says when the tools service is not running: the saved servers and tools stay editable, and descriptions and states wait for the service to come back. Changed marks apply when the tools service restarts; the page says so beside each.
 
-Secrets are set here too. A key such as an API key shows **Set** or **Not set** and a masked field, and never shows the saved value: type the value and press **Save** to write it to `secrets/secrets.yaml`, or **Clear** (after confirming) to remove it. Writing a secret needs the control token, like every other save.
+Credentials are set here too. A key such as an API key shows **Set** or **Not set** and a masked field, and never shows the saved value: type the value and press **Save secret** to store it, encrypted, in the settings store, or **Clear** (after confirming) to remove it. The two Amazon Bedrock keys are saved together, so one is never set without the other. Writing a credential needs the control token, like every other save, and applies at the next start of the services that use it. From a terminal, `mise run config:secret -- <path>` does the same ([Changing a setting](settings.md#changing-a-setting)).
 
 ## The sink page
 
 The dashboard has a second face for streaming: the same address with `?sink=1` on the end (`http://localhost:3000/?sink=1`) shows only the name, whether audio is on and a one-line status, with no navigation. Audio starts on without a click. That is the page [OBS](../../start/glossary.md#obs) plays on stream. It is covered on [OBS and the voice on stream](../connect/obs.md).
 
-On another PC, load it from the LAN port with the AI PC's **IP address**, `http://192.168.1.20:3001/?sink=1`. To load it by the computer's name (`http://streampc:3001/?sink=1`), add the name to `dashboard.allowed_hosts` in `config/config.yaml` and restart the dashboard (it reads the list when it starts); a name that is not listed is refused outright, because a page reached by a name could be a web page you visited acting as the dashboard, and an IP address cannot be. On the same PC, `localhost` is fine.
+On another PC, load it from the LAN port with the AI PC's **IP address**, `http://192.168.1.20:3001/?sink=1`. To load it by the computer's name (`http://streampc:3001/?sink=1`), add the name to the `dashboard.allowed_hosts` setting and restart the dashboard (it reads the list when it starts); a name that is not listed is refused outright, because a page reached by a name could be a web page you visited acting as the dashboard, and an IP address cannot be. On the same PC, `localhost` is fine.
 
 A streamed reply plays clause by clause in this browser, and the feed shows it as one **Co-host** row that grows as the clauses arrive, with one **Voice** row per clause. A `voice.stop` (a barge-in, for example) cuts the clip that is playing and reports how much was said; a browser that refuses to start a clip turns **Audio on** back to **Audio off** and says so.
 
@@ -131,7 +137,7 @@ Choose the model in `renderer.model` (blank draws the built-in placeholder). A s
 
 The model is served to anyone who can reach the LAN listener, without a token, so keep that listener off networks you do not trust if the model is under a licence that forbids redistribution. The terms a model carries are its author's; cohost enforces none of them.
 
-On the Settings screen's Avatar page, the **Avatar renderer** group does the same work without the file. Its model list has None and one row per stored model, with each model's size, VRM version, title, authors, licence, usage and expressions as plain text; the applied model is badged and its Delete is disabled until you select another model and save. Upload takes a `.vrm` file up to the limit the group states; a name already stored asks before it is replaced, and a control token is asked for through the Access dialog. Choosing a row, or moving a framing slider, shows in the live preview at once without saving; Save writes the section and Discard drops the choices, and the preview's aspect (16:9, square or tall) is kept in this browser. Zoom, vertical position and turn are sliders with exact boxes, and Reset framing sets them to their defaults as an unsaved edit. The status line above the preview says how many OBS pages are drawing and at what frame rate, and when the file holds other renderer values than the renderer applies, a note asks you to restart the dashboard. The group links to the third-party notices of the build.
+On the Settings screen's Avatar page, the **Avatar renderer** group does the same work without the file. Its model list has None and one row per stored model, with each model's size, VRM version, title, authors, licence, usage and expressions as plain text; the applied model is badged and its Delete is disabled until you select another model and save. Upload takes a `.vrm` file up to the limit the group states; a name already stored asks before it is replaced, and a control token is asked for through the Access dialog. Choosing a row, or moving a framing slider, shows in the live preview at once without saving; Save writes the section and Discard drops the choices, and the preview's aspect (16:9, square or tall) is kept in this browser. Zoom, vertical position and turn are sliders with exact boxes, and Reset framing sets them to their defaults as an unsaved edit. The status line above the preview says how many OBS pages are drawing and at what frame rate, and when the stored renderer values differ from the ones the renderer applies, a note asks you to restart the dashboard. The group links to the third-party notices of the build.
 
 The renderer page itself is at `/avatar` (for OBS, see [OBS and the avatar renderer](../connect/obs.md#steps-the-avatar-renderer-in-obs)). It is a separate page of the build, with its own script, and it loads the 3D libraries it draws with only there; the sink page and the dashboard do not carry them. The libraries' licence notices are written beside the build as `assets/third-party-notices-<hash>.txt`, and the build fails if a bundled library has a licence the owner has not allowed.
 
@@ -160,25 +166,21 @@ The dashboard has a lot of buttons. Only one of them says **Mute co-host**. Lear
 
 ## Config recovery
 
-When `config/config.yaml` or `secrets/secrets.yaml` does not validate, for example a file from an older cohost that still holds `${NAME}` placeholders, the dashboard still starts, but only to fix it. The page shows **Config recovery** in place of the usual screens: one row per failing key with the reason, and the buttons that apply to it.
+When the dashboard starts and the [settings store](settings.md#where-your-settings-live) cannot be used, it still starts, but only to fix the store. The page shows **Config recovery** in place of the usual screens: a sentence naming the cause, a **Check again** button, a **Stop the stack** button, and the fixes for that cause.
 
-- **Set** writes the value you type (`3000` is a number, other text a string).
-- **Use** followed by a value (**Use 3000**, say) writes the value an old `${NAME:-value}` placeholder fell back to; the dashboard takes the value from the problem itself, not from the page.
-- **Reset to default** removes the key so its default applies; for a key inside a list it resets the whole list.
-- **Remove from config.yaml** takes a credential out of `config.yaml`. Credentials live in `secrets/secrets.yaml`: set it in **Settings**, in the section the row names, once the dashboard is back.
-- **Reset all failing keys** does the above for every key it can. Keys that have no default and no fallback stay in the list for you to set.
-- **Edit config.yaml as text** (or **Edit secrets.yaml as text**) appears when the file is not valid YAML, so no key can be named. It opens the whole file in a text box, with the line and column the parser stopped at above it. Fix the line and press **Save**: the file is replaced as you typed it and checked at once. If it still does not parse, the box stays open with the new position; once it parses, any key that is still wrong gets its own row. Opening either file here needs the control token, because it shows the whole file.
-- **Stop the stack** runs `docker compose stop` for the whole stack, as the Stop button on the Services screen does, without needing a valid config. It asks for the control token.
-- **Check again** reads the files again after you edit one by hand.
+- **Invalid settings** (a stored setting fails this build's checks, typically after an update): one row per failing key with the reason, **Set** and **Reset to default** on each, and **Reset all failing keys**.
+- **Damaged store**: the backups, each with **Restore**, and an import of an export file.
+- **Missing key**: a field for your recovery key (only from a browser on the same PC) and **Discard the stored credentials**.
+- **Newer store**: nothing to press; update cohost.
 
-Every write keeps the rest of the file and its comments and is checked at once. Every button here needs the control token, as every other change does: **Set**, **Reset to default**, **Use**, **Reset all failing keys**, the raw editor and **Stop the stack**. The unlock link works here too: open it, or a fresh one from `mise run dashboard:unlock`, and the page is unlocked. When nothing fails any more the dashboard starts normally in the same process and the page reloads. Until then, Launch and every service start are refused, because every program would fail on the same file; stopping the whole stack works (**Stop the stack**, or `mise run cohostctl stop-all`). See [Troubleshooting](../troubleshooting.md#the-dashboard-says-the-config-is-invalid).
+Every button needs the control token. For invalid settings the unlock link works as usual; for the other causes the page accepts only the token from your password manager. Until the store can be used, Launch and every service start are refused; stopping the whole stack works (**Stop the stack**, or `mise run cohostctl stop-all`). Once nothing is wrong, the dashboard starts normally in the same process and the page reloads. [Recovery mode](settings.md#recovery-mode) explains each cause and its fix.
 
 ## If it didn't
 
-- The page shows **Config recovery**: a setting does not validate; fix it there ([Config recovery](#config-recovery)).
+- The page shows **Config recovery**: the settings store cannot be used; fix it there ([Config recovery](#config-recovery)).
 - The page does not load, or a banner says live updates stopped: the dashboard is not running. Start it again with `mise run dashboard`. If that command stops with a build error instead of starting, the dashboard is deliberately not started; fix the error and run it again.
-- The dashboard does not start and names `CONTROL_TOKEN`: `.env` has none, or one shorter than 32 characters. See [Troubleshooting](../troubleshooting.md).
-- The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`, or open the unlock link from the terminal running `mise run dashboard` (`mise run dashboard:unlock` prints a fresh one).
+- The dashboard does not start and names `CONTROL_TOKEN`: `.env` or your shell defines it (remove it), or no token is set yet (run `mise run config:token`). See [The control token and the unlock link](settings.md#the-control-token-and-the-unlock-link).
+- The Access dialog asks for a token you do not know: it is the one in your password manager (`mise run config:token` sets a new one if it is lost), or open the unlock link from the terminal running `mise run dashboard` (`mise run dashboard:unlock` prints a fresh one).
 - The unlock link says it is not valid: it was used, it is older than 10 minutes, or it came from an earlier start. Run `mise run dashboard:unlock`, or restart the dashboard, and open the new link.
-- The Viewers screen asks for the token: this browser is locked. Enter the `CONTROL_TOKEN` from `.env`, or open the unlock link.
+- The Viewers screen asks for the token: this browser is locked. Enter the control token from your password manager, or open the unlock link.
 - No sound: turn audio on in the header first, and see [Troubleshooting](../troubleshooting.md).

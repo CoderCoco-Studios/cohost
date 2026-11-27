@@ -2,7 +2,7 @@
 title: Try it with no accounts
 description: Start cohost in mock mode from a fresh checkout and watch a talking co-host on the dashboard, with no Twitch, Discord, OBS, GPU or API key.
 track: simple
-verified: f126b94
+verified: a86e930
 ---
 
 # Try it with no accounts
@@ -29,29 +29,28 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
    cd cohost
    ```
 
-2. Run the installer. It installs what is missing, including mise and the project's toolchains (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the code and the connection to the [bus](../../start/glossary.md#bus), and writes your `.env`, `config/config.yaml` and `secrets/secrets.yaml` from their examples. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
+2. Run the installer. It installs what is missing, including mise and the project's toolchains (see [what the installer does](prerequisites.md#what-the-installer-does)), builds the code and the connection to the [bus](../../start/glossary.md#bus), writes your `.env`, and creates the [settings store](../../start/glossary.md#settings-store) with the default settings. If it installs [Docker](../../start/glossary.md#docker) for you, it will ask you to log out and back in and run it again.
 
    ```bash
    ./scripts/install.sh --no-pull
    ```
 
+   On the way it prints two things once: the [recovery key](../../start/glossary.md#recovery-key) of the store's [master key](../../start/glossary.md#master-key), and the [control token](../../start/glossary.md#control-token), cohost's one lock. Save both in your password manager now. You will not see them again, and the try-out needs neither, but the real install does.
+
    <details>
    <summary>Already have Docker and mise?</summary>
 
-   You can skip the installer. Check the system prerequisites, install the project's toolchains and create your files from their examples:
+   You can skip the installer. Check the system prerequisites, install the project's toolchains, create `.env` from its example and set the control token:
 
    ```bash
    mise run doctor
    mise trust
    mise install
    cp .env.example .env
-   cp config/config.example.yaml config/config.yaml
-   mkdir -m 700 secrets
-   cp config/secrets.example.yaml secrets/secrets.yaml
-   chmod 600 secrets/secrets.yaml
+   mise run config:token
    ```
 
-   Then add a control token to `.env` (the dashboard's Access dialog asks for it) by putting a random string of at least 32 characters after `CONTROL_TOKEN=`; the dashboard does not start without it. `openssl rand -hex 24` makes one. Run no separate build: the next step installs the packages and builds the bus connection before it starts anything.
+   The first `mise run` task that opens the settings store creates it, seeded with the defaults, along with the master key, and prints the recovery key once; `mise run config:token` then prints the token once. Save both in your password manager. Run no separate build: each task installs the packages it needs, and the next step builds the bus connection before it starts anything.
    </details>
 
 3. Start the dashboard.
@@ -62,7 +61,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on and a line `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`.
 
-4. Open that unlock link in your browser. It works once, within 10 minutes, and opens the dashboard with this browser unlocked, so you never paste the control token. If the link has expired, `mise run dashboard:unlock` prints a fresh one. You can instead open `http://localhost:3000` and, when the Access dialog asks for a token, paste the value of `CONTROL_TOKEN` from your `.env`. If you used the installer, it filled one in; find it with `grep ^CONTROL_TOKEN= .env`.
+4. Open that [unlock link](../../start/glossary.md#unlock-link) in your browser. It works once, within 10 minutes, and opens the dashboard with this browser unlocked, so you never type the control token. If the link has expired, `mise run dashboard:unlock` prints a fresh one. You can instead open `http://localhost:3000` and, when the Access dialog asks for a token, paste the control token from your password manager.
 
 5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
 

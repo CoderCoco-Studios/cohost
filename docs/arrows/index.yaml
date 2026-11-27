@@ -304,7 +304,7 @@ arrows:
     blocks: []
     blockedBy: [docs-site]
     detail: deployment.md
-    next: "177 specs: 170 [x], 7 [ ], 0 [D]. #372 built: projection mounts, the /run/cohost tmpfs and ulimits, the installer's config:token, dev tasks through the unit runner, the legacy plaintext files kept out of git and the build context (DEPLOY-REPO-007), the test tasks on temporary key and data paths. Open: the docs lines DEPLOY-README-* and DEPLOY-HOST-003 (step 4 of #372), and the manual Docker-host checks DEPLOY-ENG-018, -020 and DEPLOY-NET-006."
+    next: "178 specs: 175 [x], 3 [ ], 0 [D]. #372 built, docs included: projection mounts, the /run/cohost tmpfs and ulimits, the installer's config:token, dev tasks through the unit runner, the legacy plaintext files kept out of git and the build context (DEPLOY-REPO-007), the test tasks on temporary key and data paths with COHOST_TEST_ENV (DEPLOY-TOOL-022), the store-opening tasks raw (DEPLOY-TOOL-024, #382), the DEPLOY-README and DEPLOY-HOST-003 docs lines. Open: the manual Docker-host checks DEPLOY-ENG-018, -020 and DEPLOY-NET-006."
     drift: null
 
   docs-site:
@@ -316,7 +316,7 @@ arrows:
     blocks: [deployment]
     blockedBy: [region-hooks, model-backends, ears, avatar, module-contract, event-bus]
     detail: docs-site.md
-    next: "156 specs: 153 [x], 3 [ ], 0 [D]. #372 settings-store design (docs only, unbuilt): DOCS-README-003 and DOCS-EX-004 describe the settings store. Earlier: DOCS-THEME-017 open until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
+    next: "156 specs: 155 [x], 1 [ ], 0 [D]. #372 step 4 built: every page describes the settings store, the Settings, backups and recovery page, DOCS-README-003 and DOCS-EX-004. Open: DOCS-THEME-017 until the favicon is viewed in a browser; run a separate audit to move MAPPED to AUDITED."
     drift: null
 
   settings-store:
@@ -328,7 +328,7 @@ arrows:
     blocks: [control-plane, dashboard, deployment, module-contract, shared-runtime, memory, chat, avatar]
     blockedBy: [config]
     detail: settings-store.md
-    next: "68 specs: 67 [x], 1 [ ], 0 [D]. #372 steps 1 to 3 built: the package and its config:* tasks, the projections and the delivery, the unit runner, the boot order, the state files, the outbox, and the dashboard's cut-over. Open: STORE-DB-007 (no migration until schema version 2). Next: step 4, the docs."
+    next: "68 specs: 67 [x], 1 [ ], 0 [D]. #372 steps 1 to 3 built: the package and its config:* tasks, the projections and the delivery, the unit runner, the boot order, the state files, the outbox, and the dashboard's cut-over. Step 4 built: the docs site describes the store. #382: the store-opening tasks are raw (STORE-KEY-002) and the test environment has no default key path (STORE-KEY-001). Open: STORE-DB-007 (no migration until schema version 2)."
     drift: null
 
 

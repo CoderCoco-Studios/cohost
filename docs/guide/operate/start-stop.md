@@ -50,7 +50,7 @@ The [Redis](../../start/glossary.md#redis) and [Postgres](../../start/glossary.m
 
 ## Do it from a terminal
 
-`cohostctl` does everything the buttons do. It runs on the same PC as the dashboard and uses your own [Docker](../../start/glossary.md#docker) access. It does not need the dashboard running and ignores `CONTROL_TOKEN`, because you are already you.
+`cohostctl` does everything the buttons do. It runs on the same PC as the dashboard and uses your own [Docker](../../start/glossary.md#docker) access. It does not need the dashboard running and does not ask for `CONTROL_TOKEN`, because you are already you; it reads it only to derive the key it hands `ears` when it copies the secrets.
 
 | Command | What it does |
 | --- | --- |

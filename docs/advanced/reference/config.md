@@ -20,8 +20,8 @@ Terms used in the tables, defined once in the [glossary](../../start/glossary.md
 | Literal values | Every value is written as a literal. A `${...}` placeholder anywhere in `config.yaml` is refused when the file loads, with a message naming the key, and the service does not start; the dashboard starts in config recovery mode instead, where each failing key can be fixed ([Dashboard tour](../../guide/operate/dashboard.md#config-recovery)). A blank value means "use the schema's default" for most keys |
 | When it applies | Every service reads the file once, at start. A change takes effect when the services that read it restart |
 | Validation | Services check the file against the schema in `packages/config/src/schema.ts` and refuse to start on an error, naming the key. Unknown keys are ignored with a warning at start |
-| Editing | The dashboard's Settings screen edits one section at a time from the same schema, keeps your comments, shows a secret only as set or not set (and writes it to `secrets.yaml` through its own route, never to `config.yaml`), refuses a save when the file changed under it, and offers to restart the services that read the section |
-| Secrets | The eleven credential keys listed under [Credentials](#credentials-secrets-yaml) live in `secrets/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
+| Editing | The dashboard's Settings screen edits one section at a time from the same schema, keeps your comments, shows a secret only as set or not set (and writes it to `secrets.yaml` through its own route, never to `config.yaml`), shows a warning beside a sensitive key (one that decides where a credential or private data goes, or who may reach the dashboard; the warning is a hint, and a save is gated by the control token like any other), refuses a save when the file changed under it, and offers to restart the services that read the section |
+| Secrets | The credential keys listed under [Credentials](#credentials-secrets-yaml) live in `secrets/secrets.yaml`, not here. A credential written in `config.yaml` is ignored |
 
 The defaults shown are the schema's, and where the example file sets a different value that is noted.
 
@@ -340,7 +340,7 @@ The `ears` service: audio in, speech-to-text, `speech.heard` out.
 | --- | --- | --- |
 | `ears` | map | The ears service |
 | `ears.sources` | `[discord]` | The listening sources, all started at once and read at start: `discord`, `http`, `dir`, or another connector's source tag. An empty list idles. Written in flow syntax such as `[http, dir]` |
-| `ears.http` | map | The `http` source's listener. Its bearer token is `ears.http.token` in `secrets.yaml`; empty requires none, so set one when others can reach the port |
+| `ears.http` | map | The `http` source's listener. Every `POST /audio` needs `Authorization: Bearer <listener key>`, on loopback too: the key is derived from `CONTROL_TOKEN` and delivered to `ears` alone when the control plane starts it (see [HTTP routes](http.md#ears-capture-endpoint)) |
 | `ears.http.host` | `127.0.0.1` | The address to bind. In [Docker](../../start/glossary.md#docker) bind `0.0.0.0` and publish the port yourself |
 | `ears.http.port` | `8765` | The port. 0 picks a free one |
 | `ears.dir` | map | The `dir` source |
@@ -504,7 +504,7 @@ A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, a
 
 ## Credentials (`secrets.yaml`)
 
-`secrets/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 in a folder of mode 0700 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), and lives outside `config/` so that no container can read it. Before the dashboard or `cohostctl` starts or restarts a service, it copies into `secrets/units/<service>/secrets.yaml` only the keys that service uses, and that copy is the one the service's container sees; a service reads each key as the dotted path it has here. Edit only `secrets/secrets.yaml`; the copies are rewritten on every start. A hand-run `docker compose up` skips that copy, so after an edit start through the dashboard or `cohostctl`, or run `node packages/control/dist/project-secrets.js` first. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
+`secrets/secrets.yaml` holds exactly these keys, and nothing else is read from it. It is git-ignored, mode 0600 in a folder of mode 0700 (`scripts/install.sh` creates it from `config/secrets.example.yaml`), and lives outside `config/` so that no container can read it. Before the dashboard or `cohostctl` starts or restarts a service, it copies into `secrets/units/<service>/secrets.yaml` only the keys that service uses, and that copy is the one the service's container sees; a service reads each key as the dotted path it has here. Edit only `secrets/secrets.yaml`; the copies are rewritten on every start. `ears`' copy also carries `ears.http.verifier`, the `http` listener's key, which the control plane derives from `CONTROL_TOKEN` at each copy; it is not a key of `secrets/secrets.yaml`, and a value written there is ignored. A hand-run `docker compose up` skips that copy, so after an edit start through the dashboard or `cohostctl`, or run `node packages/control/dist/project-secrets.js` first. A secret written in `config.yaml` is ignored. The settings editor never shows or writes them, and the dashboard reports each only as set or not set; edit the file by hand and restart the services that read it. Write each value as a string, and leave a credential you do not use as `""`.
 
 | Key | Default | What it is |
 | --- | --- | --- |
@@ -513,7 +513,6 @@ A failed load names the key (`tools.servers.<name>.url`, `tools.allow.<name>`, a
 | `llm.bedrock.access_key_id` | `""` | An AWS access key id, for `provider: bedrock`. Needs `llm.bedrock.region` and the secret access key too |
 | `llm.bedrock.secret_access_key` | `""` | The secret access key that goes with the access key id |
 | `vision.obs.password` | `""` | The obs-websocket password. Empty when the server needs none |
-| `ears.http.token` | `""` | The bearer token `POST /audio` must carry. Empty requires none |
 | `chat.twitch.client_id` | `""` | The Twitch application's client id |
 | `chat.twitch.client_secret` | `""` | The Twitch application's client secret |
 | `chat.twitch.access_token` | `""` | A user access token for the bot account. `chat` keeps its refreshed copy under the data directory |

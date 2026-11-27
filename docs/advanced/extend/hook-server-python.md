@@ -49,7 +49,7 @@ You will have a small Python server that answers the three brain [hooks](../../s
      cortex:   { critic: { kind: http, url: "http://host.docker.internal:8900/critic", timeout_ms: 2500 } }
    ```
 
-4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services screen has a Restart button on its row when the controls are on.
+4. Restart the service that owns each hook, so it reads the new address. The dashboard's Services screen has a Restart button on its row.
 
 A hook server is not a service, so there is no [heartbeat](../../start/glossary.md#heartbeat) of its own to look for: it sends no heartbeat, and nothing on the Services screen lists it. The service that calls it shows its health, as the `hook.<name>` dependency. When your server is down, the region answers with its built-in rules and keeps going.
 

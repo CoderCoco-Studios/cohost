@@ -28,7 +28,7 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 | `eyes` | `VISION_ENABLED=false` (`vision.enabled`, the default) | Idles and never touches [OBS](../../start/glossary.md#obs) (`off`); injected images are still described |
 | `eyes` | `VISION_PROVIDER=stub` (`vision.provider`) | A fixed description and no vision model (`mock`); with `vision.enabled: true` it still needs OBS |
 | `ears` | `EARS_SOURCES=[]` (`ears.sources`) | Idles with no Discord client; injected audio is still transcribed |
-| `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips; no account |
+| `ears` | `EARS_SOURCES=[http]` | Listens on `ears.http` (default `127.0.0.1:8765`) for `POST /audio` clips, each carrying the listener key derived from `CONTROL_TOKEN` ([Send audio to ears](../extend/audio-in.md)); no account |
 | `ears` | `EARS_SOURCES=[dir]` | Hears `.wav` files dropped in `ears.dir.path`, then renames them; no account |
 | `ears` | `EARS_STT_ENGINE=stub` (`ears.stt_engine`) | A fixed transcript and no `stt` server (`mock`) |
 | `mouth` | `MOUTH_DISCORD_ENABLED=false` (`mouth.outputs.discord.enabled`) | Idles and plays nothing (`off`) |
@@ -41,7 +41,7 @@ An isolation override is one entry in `COHOST_ISOLATION`, a JSON object in the e
 
 ## Three ways to start one service
 
-**From the dashboard.** With stack control on, each service's row on the Services screen has **Start** (or **Restart**) with an **Isolated** switch in its dialog. It sets that service's overrides for you, and it also starts the services it needs (`cortex` brings up `salience` and `affect`). See the [dashboard tour](../../guide/operate/dashboard.md).
+**From the dashboard.** Each service's row on the Services screen has **Start** (or **Restart**) with an **Isolated** switch in its dialog. It sets that service's overrides for you, and it also starts the services it needs (`cortex` brings up `salience` and `affect`). See the [dashboard tour](../../guide/operate/dashboard.md).
 
 **From `cohostctl`.** The same control path from a shell. It runs services through [Docker](../../start/glossary.md#docker) [Compose](../../start/glossary.md#docker-compose):
 

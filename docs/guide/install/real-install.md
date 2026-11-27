@@ -36,7 +36,7 @@ By the end of this page you will have the real stack running: a language model a
 
    | Where | What it is | When to change it |
    | --- | --- | --- |
-   | `CONTROL_TOKEN` in `.env` | The password the dashboard asks for. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`. |
+   | `CONTROL_TOKEN` in `.env` | cohost's one lock: the password the dashboard asks for. The dashboard does not start without it. The installer fills it in. | If it is empty, make one with `openssl rand -hex 24`; it must be at least 32 characters. |
    | `llm.model`, `llm.embed_model`, `vision.model` in `config/config.yaml` | The models [Ollama](../../start/glossary.md#ollama) downloads | Size them to your graphics card ([GPU](../../start/glossary.md#gpu)); see [choose a model](../tune/model.md). |
    | `ears.stt_model` in `config/config.yaml` | The speech-to-text model name | Rarely. |
    | `chat.twitch.channel`, `connections.discord.*`, `vision.obs.*`, `avatar.*` in `config/config.yaml` | Your accounts and apps | Fill each in on its own page under Connect. |
@@ -116,7 +116,7 @@ Real model, real voice, real me. Try not to get attached. I will remember it if 
 - **Launch fails or `models` exits with an error.** A model download failed, usually the network. Check your connection and press Launch again. The models are the ones `config/config.yaml` names; a failed download of a [hook](../../start/glossary.md#hook) model is only a warning.
 - **A service shows `degraded`.** That usually means it is waiting for an account you have not filled in. Fill it in on its Connect page (the **Settings** screen, or `config/config.yaml` for settings and `secrets/secrets.yaml` for credentials), then restart that service from the Services screen.
 - **Replies are very slow.** There is no GPU, or the model is too big for it. Pick a smaller `llm.model`; see [choose a model](../tune/model.md).
-- **The dashboard refuses to start.** If you set `DASHBOARD_HOST=0.0.0.0` it also needs `CONTROL_ENABLED=1` and a `CONTROL_TOKEN`.
+- **The dashboard refuses to start, naming `CONTROL_TOKEN`.** `.env` has no `CONTROL_TOKEN`, or one shorter than 32 characters. Run `./scripts/install.sh` again, which fills an empty one, or set one made with `openssl rand -hex 24`, then start the dashboard and open the unlock link it prints.
 
 More cases are on the [troubleshooting page](../troubleshooting.md).
 

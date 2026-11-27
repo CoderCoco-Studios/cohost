@@ -16,7 +16,7 @@ import type { Load } from "./useViewers";
 
 type Dlg = { kind: "delete"; note: NoteData } | { kind: "clear" } | { kind: "link" } | { kind: "unlink"; link: LinkData } | null;
 const enc = encodeURIComponent;
-const gate = (action: string) => ({ auth: "viewers" as const, action });
+const gate = (action: string) => ({ auth: "control" as const, action });
 const narrow = (): boolean => { try { return window.matchMedia("(max-width: 719.98px)").matches; } catch { return false; } };
 
 function NoteItem({ note, figures, onDelete }: { note: NoteData; figures: MemoryFigures | null; onDelete: () => void }) {

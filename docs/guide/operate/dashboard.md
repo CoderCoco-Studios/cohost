@@ -64,14 +64,13 @@ The browser stays unlocked for 90 days, through dashboard restarts and config re
 
 ### Pasting the token
 
-When you press a button that needs the token and the browser is not unlocked, a dialog opens naming what is waiting ("Restart voice", say), and the action runs once the token is accepted. Cancelling does nothing and the control reports `not done: locked`. You can also press **Locked** or **Unlocked** in the header to see both tokens at any time.
+When you press a button that needs the token and the browser is not unlocked, a dialog opens naming what is waiting ("Restart voice", say), and the action runs once the token is accepted. Cancelling does nothing and the control reports `not done: locked`. You can also press **Locked** or **Unlocked** in the header to see the token's state at any time. There is one token: a browser that is unlocked is unlocked everywhere, the Viewers screen included.
 
 | Token | Where it comes from | What it unlocks |
 | --- | --- | --- |
-| Control token (`CONTROL_TOKEN`) | The installer generated it into `.env`. In the cohost folder, `grep ^CONTROL_TOKEN= .env` prints the line; paste the value after the equals sign. Or open the unlock link printed in the terminal running `mise run dashboard`, which unlocks this browser without the token. | Muting, saying lines, saving settings, saving secrets, test inputs and controlling services. |
-| Viewers token (`VIEWERS_TOKEN`) | The installer does not generate it. Add one with `echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env`, then restart the dashboard. | Reading and editing viewer notes on the Viewers screen. |
+| Control token (`CONTROL_TOKEN`) | The installer generated it into `.env`. In the cohost folder, `grep ^CONTROL_TOKEN= .env` prints the line; paste the value after the equals sign. Or open the unlock link printed in the terminal running `mise run dashboard`, which unlocks this browser without the token. | Muting, saying lines, saving settings, saving secrets, test inputs, controlling services, and reading and editing viewer notes on the Viewers screen. |
 
-The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value after the name, with no spaces or quotes, and a restart of the dashboard if `.env` changed after it started). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). The Access panel shows each token's state: **Unlocked** with where it is kept, **Unlocked (this browser)** when the unlock link unlocked this browser and no token is held, **Locked**, or **Not set up on the server**. **Change token** replaces a token and **Lock** forgets a held one; a browser unlocked by the link stays unlocked until its cookies are cleared or `CONTROL_TOKEN` changes. Both tokens are read from `.env` once when the dashboard starts, so a change there takes effect after you restart the dashboard.
+The dialog has a masked field with **Show**, **Hide** and **Paste** buttons, and a **Copy** button for the command. The token is checked with the dashboard before it is kept; a wrong one is refused and the dialog says what to check (the whole value after the name, with no spaces or quotes, and a restart of the dashboard if `.env` changed after it started). **Stay unlocked** chooses **This tab** (the default; forgotten when the tab closes) or **This browser** (kept until you lock it). The Access panel shows the token's state: **Unlocked** with where it is kept, **Unlocked (this browser)** when the unlock link unlocked this browser and no token is held, **Locked**, or **Not set up on the server**. **Change token** replaces a token and **Lock** forgets a held one; a browser unlocked by the link stays unlocked until its cookies are cleared or `CONTROL_TOKEN` changes. The token is read from `.env` once when the dashboard starts, so a change there takes effect after you restart the dashboard.
 
 ## The Live screen
 
@@ -102,7 +101,7 @@ Below it, a table lists every service with its state, a one-sentence **Why**, wh
 
 ## The Viewers screen
 
-Everything the co-host remembers about people, one viewer at a time: pick someone from the list (or search by name) to see their core and recent notes with how strong each memory is, a **Always a regular** switch, and the buttons to **Delete** a note, **Undo** a deletion and **Clear all notes**. **Mark regular** at the top marks a name as a regular before they have chatted. It is locked until you set `VIEWERS_TOKEN`: until then the screen shows three setup steps and **Check again**. See [Memory and viewer notes](../tune/memory.md).
+Everything the co-host remembers about people, one viewer at a time: pick someone from the list (or search by name) to see their core and recent notes with how strong each memory is, a **Always a regular** switch, and the buttons to **Delete** a note, **Undo** a deletion and **Clear all notes**. **Mark regular** at the top marks a name as a regular before they have chatted. It needs the same token as every other control, so a browser that is unlocked opens it without asking. A dashboard started without a `CONTROL_TOKEN` keeps it locked: the screen then shows three setup steps and **Check again**. See [Memory and viewer notes](../tune/memory.md).
 
 ## The Settings screen
 
@@ -181,5 +180,5 @@ Every write keeps the rest of the file and its comments and is checked at once. 
 - The Stack card says service control is off: check that `CONTROL_ENABLED=1` is set in `.env`, restart the dashboard, and see [Troubleshooting](../troubleshooting.md).
 - The Access dialog asks for a token you do not know: it is the `CONTROL_TOKEN` line in `.env`, or open the unlock link from the terminal running `mise run dashboard` (`mise run dashboard:unlock` prints a fresh one).
 - The unlock link says it is not valid: it was used, it is older than 10 minutes, or it came from an earlier start. Run `mise run dashboard:unlock`, or restart the dashboard, and open the new link.
-- The Viewers screen says it is not set up: add a `VIEWERS_TOKEN` as above and restart the dashboard.
+- The Viewers screen says it is not set up: the dashboard has no `CONTROL_TOKEN`. Add one with `echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env`, restart the dashboard and open the unlock link it prints.
 - No sound: turn audio on in the header first, and see [Troubleshooting](../troubleshooting.md).

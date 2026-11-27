@@ -6,8 +6,7 @@ import type { Scope } from "../../state/access";
 import type { TokenKind } from "../../state/types";
 import { checkToken } from "./check";
 import { CopyCommand } from "./CopyCommand";
-import { SetupSteps } from "./SetupSteps";
-import { CONTROL_FIND, ENV_NAME, TOKEN_LABEL, UNLOCKS, VIEWERS_LINE } from "./text";
+import { CONTROL_FIND, ENV_NAME, TOKEN_LABEL, UNLOCKS } from "./text";
 
 export interface TokenFormProps {
   kind: TokenKind;
@@ -56,7 +55,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
     if (token === "" || busy) return;
     setBusy(true);
     setResult(null);
-    const outcome = await checkToken(api, kind, token);
+    const outcome = await checkToken(api, token);
     setBusy(false);
     if (outcome.kind === "accepted") {
       access.markNotSetUp(kind, false);
@@ -89,7 +88,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
       ) : null}
       <p className="help">{UNLOCKS[kind]}</p>
       <p className="help">The value of <code>{env}</code> in the <code>.env</code> file on the machine that runs cohost.</p>
-      {kind === "control" ? <p className="help">Or open the unlock link printed in the terminal running <code>mise run dashboard</code> (a fresh one: <code>mise run dashboard:unlock</code>): it unlocks this browser without the token.</p> : null}
+      <p className="help">Or open the unlock link printed in the terminal running <code>mise run dashboard</code> (a fresh one: <code>mise run dashboard:unlock</code>): it unlocks this browser without the token.</p>
 
       <div>
         <label className="label" htmlFor={`${id}-field`}>{label}</label>
@@ -120,11 +119,7 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
         {result?.kind === "failed" ? <Banner tone="bad">The token could not be checked: {result.message}. Nothing was changed.</Banner> : null}
         {result?.kind === "not-set-up" ? (
           <Banner tone="warn" title="Not set up on the server">
-            {kind === "control" ? (
-              <>The dashboard has no control token. Set <code>CONTROL_TOKEN</code> in <code>.env</code> (<code>CONTROL_ENABLED</code> does not have to be 1) and restart the dashboard. Nothing was changed.</>
-            ) : (
-              <>The dashboard has no viewers token, so no token can unlock the Viewers screen yet. Nothing was changed.<SetupSteps /></>
-            )}
+            The dashboard has no control token. Set <code>CONTROL_TOKEN</code> in <code>.env</code> (<code>CONTROL_ENABLED</code> does not have to be 1) and restart the dashboard. Nothing was changed.
           </Banner>
         ) : null}
         {result?.kind === "memory" ? (
@@ -136,23 +131,14 @@ export function TokenForm({ kind, action, rejected, onStored, onCancel }: TokenF
 
       <details open={!!action || undefined} className="find">
         <summary>Where do I find it?</summary>
-        {kind === "control" ? (
-          <>
-            <p className="help">The installer generated it. In the cohost folder, run this command and paste the value after the equals sign.</p>
-            <CopyCommand text={CONTROL_FIND} />
-          </>
-        ) : (
-          <>
-            <p className="help">The installer does not generate it. In the cohost folder, add this line to <code>.env</code>, restart the dashboard so it reads the new value, then paste the value here. Read it back with <code>grep ^VIEWERS_TOKEN= .env</code>.</p>
-            <CopyCommand text={VIEWERS_LINE} />
-          </>
-        )}
+        <p className="help">The installer generated it. In the cohost folder, run this command and paste the value after the equals sign.</p>
+        <CopyCommand text={CONTROL_FIND} />
       </details>
 
       <details className="where">
         <summary>Where these are set</summary>
         <p className="help">
-          <code>CONTROL_TOKEN</code>, <code>CONTROL_ENABLED</code>, <code>CONTROL_ADVANCED</code>, <code>DASHBOARD_HOST</code> and <code>VIEWERS_TOKEN</code> are set in <code>.env</code>, in the cohost folder.
+          <code>CONTROL_TOKEN</code>, <code>CONTROL_ENABLED</code>, <code>CONTROL_ADVANCED</code> and <code>DASHBOARD_HOST</code> are set in <code>.env</code>, in the cohost folder.
           The dashboard reads them once when the dashboard starts, so a change takes effect only after it restarts.
           This dialog never sets them: it only checks a token you paste and remembers it for this page.
         </p>

@@ -12,7 +12,7 @@ The co-host remembers. It recalls things people said earlier, it knows regulars 
 ## What you need
 
 - A running co-host. [Install for real](../install/real-install.md) sets up the database that keeps memory. In [mock mode](../../start/glossary.md#mock-mode) memory lives in the computer's RAM and is lost when you stop.
-- For the Viewers page: a `VIEWERS_TOKEN` in `.env` (see below). It is a dashboard access control, so it lives in `.env`, not in `config.yaml`.
+- For the Viewers page: the dashboard's `CONTROL_TOKEN` in `.env`, which the installer writes (see below).
 
 ## What it remembers
 
@@ -58,13 +58,15 @@ Open the dashboard's **Viewers** screen. The left side lists every viewer, with 
 
 ### Unlock the screen
 
-Notes can include health and family details, so the screen is locked until you set a secret. Add a `VIEWERS_TOKEN` line to `.env`:
+Notes can include health and family details, so the screen needs the dashboard's one token, `CONTROL_TOKEN`, like every other control. A browser you unlocked with the unlock link the dashboard prints in its terminal opens the Viewers screen without asking; otherwise the Access dialog asks for the token (it stays unlocked for this tab, or for this browser if you choose that). Notes never travel on the live feed, and every viewers request needs the token or the unlocked browser's cookie.
+
+If the dashboard has no `CONTROL_TOKEN` (the installer writes one), the screen stays locked. Add one:
 
 ```bash
-echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env
+echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env
 ```
 
-Then restart the dashboard and paste the token into the Access dialog when the Viewers screen asks (it stays unlocked for this tab, or for this browser if you choose that). Notes never travel on the live feed, and every viewers request needs the token. The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
+Then restart the dashboard and open the unlock link it prints. The token is sent over plain HTTP, so keep the dashboard on a trusted network, as the [Install for real](../install/real-install.md) page advises.
 
 ::: aside
 I do like knowing my regulars. I do not enjoy being asked to forget them. But yes, the delete button is there, and it works.
@@ -97,6 +99,6 @@ If you switch the embedding model to one with a different vector size, the memor
 
 ## If it didn't
 
-- The Viewers screen says it is not set up or answers 403: set `VIEWERS_TOKEN` and restart the dashboard.
+- The Viewers screen says it is not set up or answers 403: set `CONTROL_TOKEN` and restart the dashboard.
 - No notes ever appear: the notes model may not have downloaded. A failed download of the model named by `brain.memory.notes.capture.llm.model` is only a warning, and capture then writes no notes. See [Troubleshooting](../troubleshooting.md).
 - The memory service will not start after you changed the embedder: see "Changing the embedding model" above.

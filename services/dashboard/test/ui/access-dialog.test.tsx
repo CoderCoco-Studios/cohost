@@ -6,7 +6,6 @@ import { FakeStorage } from "./helpers/fakes";
 import { AccessDialog } from "../../ui/src/app/AccessDialog";
 
 const CONTROL_CMD = "grep ^CONTROL_TOKEN= .env";
-const VIEWERS_CMD = 'echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env';
 const REJECTED = "The dashboard rejected this token. Nothing was changed.";
 
 const flush = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
@@ -20,7 +19,7 @@ function mount(app: TestApp = makeApp()) {
 }
 
 /** Asks for a token as a waiting request would, and returns what the request will see. */
-function ask(app: TestApp, kind: "control" | "viewers", action = "Restart voice") {
+function ask(app: TestApp, kind: "control", action = "Restart voice") {
   let result: boolean | undefined;
   act(() => { void app.rt.access.ask(kind, action).then((v) => { result = v; }); });
   return () => result;
@@ -32,7 +31,6 @@ const unlock = () => within(dlg()).getByRole("button", { name: /^(Unlock|Try aga
 
 const checkRoutes = (app: TestApp, good = "good") => {
   app.fetch.on("PUT /secrets/access-check", (c) => c.headers.authorization === `Bearer ${good}` ? { status: 404, json: { ok: false, detail: "unknown secret" } } : { status: 401, text: "unauthorized" });
-  app.fetch.on("GET /viewers", (c) => c.headers.authorization === `Bearer ${good}` ? { json: { viewers: [] } } : { status: 401, text: "unauthorized" });
 };
 
 const consoleCalls: unknown[][] = [];
@@ -57,20 +55,8 @@ test("the dialog shows a masked field (password, autocomplete off) with Show, Hi
   const text = dlg().textContent!;
   assert.match(text, /CONTROL_TOKEN/);
   assert.ok(text.includes(CONTROL_CMD), "the command is shown");
-  assert.match(text, /mute, say lines, save settings, send test inputs and control services/i);
+  assert.match(text, /mute, say lines, save settings, send test inputs, control services, and read and edit viewer notes/i);
   assert.match(text, /Restart voice/);
-});
-
-// @spec DASH-ACC-003
-test("the viewers token dialog shows the exact line to add to .env, says the installer does not generate it and that the dashboard must restart", () => {
-  const { app } = mount();
-  ask(app, "viewers", "Load viewers");
-  const text = dlg().textContent!;
-  assert.ok(text.includes(VIEWERS_CMD), "the line is shown");
-  assert.match(text, /VIEWERS_TOKEN/);
-  assert.match(text, /installer does not (generate|create)/i);
-  assert.match(text, /restart the dashboard/i);
-  assert.match(text, /read and edit viewer notes/i);
 });
 
 // @spec DASH-ACC-003
@@ -209,43 +195,6 @@ test("any other outcome of the check (a network error, a 5xx, a 403 that is not 
   }
 });
 
-// @spec DASH-ACC-004
-test("a viewers token is checked with GET /viewers: 200 and 504 accept it, 401 rejects it", async () => {
-  const user = userEvent.setup();
-  for (const status of [200, 504]) {
-    const { app, unmount } = mount();
-    app.fetch.on("GET /viewers", (c) => c.headers.authorization === "Bearer vt" ? { status, json: status === 200 ? { viewers: [] } : { ok: false } } : { status: 401, text: "unauthorized" });
-    const result = ask(app, "viewers", "Load viewers");
-    await user.type(field(), "bad");
-    await user.click(unlock());
-    await flush();
-    assert.ok(dlg().textContent!.includes(REJECTED), "401 rejects");
-    assert.equal(app.session.getItem("cohost.viewersToken"), null);
-    await user.clear(field());
-    await user.type(field(), " vt ");
-    await user.click(unlock());
-    await flush();
-    assert.equal(app.session.getItem("cohost.viewersToken"), "vt", `${status} accepts`);
-    assert.equal(result(), true);
-    unmount();
-  }
-});
-
-// @spec DASH-ACC-004, DASH-ACC-009
-test("a 403 from the viewers check shows the setup steps with the line to add, and stores nothing", async () => {
-  const user = userEvent.setup();
-  const { app } = mount();
-  app.fetch.on("GET /viewers", { status: 403, text: "The Viewers page is locked: set VIEWERS_TOKEN in .env" });
-  ask(app, "viewers", "Load viewers");
-  await user.type(field(), "x");
-  await user.click(unlock());
-  await flush();
-  assert.equal(app.session.getItem("cohost.viewersToken"), null);
-  assert.equal(app.rt.access.state.get().viewers.notSetUp, true);
-  assert.match(dlg().textContent!, /Not set up on the server/);
-  assert.ok(within(dlg()).getAllByRole("listitem").length >= 3, "numbered steps");
-});
-
 // @spec DASH-ACC-007
 test("Stay unlocked is a radio group: This tab (the default) keeps the token in sessionStorage, This browser in localStorage, and the choice is not remembered", async () => {
   const user = userEvent.setup();
@@ -335,26 +284,23 @@ test("a stored token the server rejects is cleared, the button state follows, an
 });
 
 // @spec DASH-ACC-008
-test("the Access panel lists both tokens with their state and what they unlock, with Change token and Lock", async () => {
+test("the Access panel shows the one token with its state and what it unlocks, viewer notes included, with Change token and Lock", async () => {
   const user = userEvent.setup();
   const { app } = mount();
   app.rt.access.setToken("control", "c", "browser");
-  app.rt.access.markNotSetUp("viewers", true);
   act(() => app.rt.access.openPanel());
+  assert.equal(within(dlg()).getAllByRole("group").filter((g) => (g.getAttribute("aria-label") ?? "").endsWith("token")).length, 1, "one token");
   const control = within(dlg()).getByRole("group", { name: "Control token" });
-  const viewers = within(dlg()).getByRole("group", { name: "Viewers token" });
   assert.match(control.textContent!, /Unlocked/);
   assert.match(control.textContent!, /this browser/i);
   assert.match(control.textContent!, /mute, say lines, save settings/i);
-  assert.match(viewers.textContent!, /Not set up on the server/);
-  assert.match(viewers.textContent!, /read and edit viewer notes/i);
-  for (const g of [control, viewers]) {
-    assert.ok(within(g).getByRole("button", { name: /Change token/ }));
-    assert.ok(within(g).getByRole("button", { name: /Lock/ }));
-  }
-  act(() => app.rt.access.markNotSetUp("viewers", false));
-  assert.match(within(dlg()).getByRole("group", { name: "Viewers token" }).textContent!, /Locked/);
-  assert.equal((within(viewers).getByRole("button", { name: /Lock/ }) as HTMLButtonElement).disabled, true, "nothing to lock");
+  assert.match(control.textContent!, /read and edit viewer notes/i);
+  assert.ok(within(control).getByRole("button", { name: /Change token/ }));
+  act(() => app.rt.access.markNotSetUp("control", true));
+  assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Not set up on the server/);
+  act(() => { app.rt.access.markNotSetUp("control", false); app.rt.access.lock("control"); });
+  assert.match(within(dlg()).getByRole("group", { name: "Control token" }).textContent!, /Locked/);
+  assert.equal((within(control).getByRole("button", { name: /Lock/ }) as HTMLButtonElement).disabled, true, "nothing to lock");
   await user.click(within(dlg()).getByRole("button", { name: "Done" }));
   assert.ok(screen.queryByRole("dialog") === null, "closed");
   assert.equal(app.rt.access.state.get().panelOpen, false);
@@ -432,7 +378,8 @@ test("the dialog explains that the .env variables are read once at start and tak
   const { app } = mount();
   ask(app, "control");
   const where = within(dlg()).getByText(/Where these are set/i).closest("details")!;
-  for (const name of ["CONTROL_TOKEN", "CONTROL_ENABLED", "CONTROL_ADVANCED", "DASHBOARD_HOST", "VIEWERS_TOKEN"]) assert.ok(where.textContent!.includes(name), name);
+  for (const name of ["CONTROL_TOKEN", "CONTROL_ENABLED", "CONTROL_ADVANCED", "DASHBOARD_HOST"]) assert.ok(where.textContent!.includes(name), name);
+  assert.ok(!where.textContent!.includes("VIEWERS_TOKEN"), "one token");
   assert.match(where.textContent!, /\.env/);
   assert.match(where.textContent!, /once when the dashboard starts/i);
   assert.match(where.textContent!, /after it restarts|restart/i);
@@ -493,25 +440,6 @@ test("an empty field cannot be submitted", async () => {
   await user.type(field(), "   ");
   assert.equal((unlock() as HTMLButtonElement).disabled, true);
   assert.equal(app.fetch.calls.length, 0);
-});
-
-// @spec DASH-ACC-008, DASH-ACC-009
-test("a viewers token that is not set up on the server shows the setup steps in the panel, and Check again clears the state once the server answers other than 403", async () => {
-  const user = userEvent.setup();
-  const { app } = mount();
-  app.rt.access.markNotSetUp("viewers", true);
-  app.fetch.on("GET /viewers", { status: 403, text: "locked: set VIEWERS_TOKEN" });
-  act(() => app.rt.access.openPanel());
-  const viewers = within(dlg()).getByRole("group", { name: "Viewers token" });
-  assert.ok(viewers.textContent!.includes(VIEWERS_CMD));
-  assert.equal(within(viewers).getAllByRole("listitem").length, 3);
-  await user.click(within(viewers).getByRole("button", { name: "Check again" }));
-  await flush();
-  assert.equal(app.rt.access.state.get().viewers.notSetUp, true);
-  app.fetch.on("GET /viewers", { status: 401, text: "unauthorized" });
-  await user.click(within(viewers).getByRole("button", { name: "Check again" }));
-  await flush();
-  assert.equal(app.rt.access.state.get().viewers.notSetUp, false);
 });
 
 // @spec DASH-A11Y-005

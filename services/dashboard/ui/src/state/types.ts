@@ -62,4 +62,5 @@ export interface UnitDescriptor {
   defaultMode: string;
 }
 
-export type TokenKind = "control" | "viewers";
+/** The dashboard's one token, `CONTROL_TOKEN`. */
+export type TokenKind = "control";

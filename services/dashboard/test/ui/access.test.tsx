@@ -11,17 +11,18 @@ const mk = (o: { local?: Storage; session?: Storage } = {}) => {
 };
 
 // @spec DASH-ACC-007
-test("a token is kept per tab by default (sessionStorage) and per browser on request (localStorage), under separate keys", () => {
+test("the token is kept per tab by default (sessionStorage) and per browser on request (localStorage), under its own key", () => {
   const { access, local, session } = mk();
   access.setToken("control", "c1", "tab");
-  access.setToken("viewers", "v1", "browser");
   assert.equal(session.getItem("cohost.controlToken"), "c1");
   assert.equal(local.getItem("cohost.controlToken"), null);
-  assert.equal(local.getItem("cohost.viewersToken"), "v1");
-  assert.equal(session.getItem("cohost.viewersToken"), null);
   assert.equal(access.getToken("control"), "c1");
   assert.deepEqual(access.state.get().control, { present: true, scope: "tab" });
-  assert.deepEqual(access.state.get().viewers, { present: true, scope: "browser" });
+  access.setToken("control", "c2", "browser");
+  assert.equal(local.getItem("cohost.controlToken"), "c2");
+  assert.equal(session.getItem("cohost.controlToken"), null);
+  assert.deepEqual(access.state.get().control, { present: true, scope: "browser" });
+  assert.equal("viewers" in access.state.get(), false, "one token");
 });
 
 // @spec DASH-ACC-007
@@ -60,10 +61,10 @@ test("a storage event from another tab that removes or changes a token updates t
   assert.equal(access.getToken("control"), undefined);
   assert.equal(access.state.get().control.present, false);
   // clear() fires the event with a null key
-  access.setToken("viewers", "v", "browser");
+  access.setToken("control", "v", "browser");
   local.clear();
   events.dispatchEvent(Object.assign(new Event("storage"), { key: null }));
-  assert.equal(access.getToken("viewers"), undefined);
+  assert.equal(access.getToken("control"), undefined);
 });
 
 // @spec DASH-ACC-007
@@ -97,25 +98,22 @@ test("ask opens one prompt naming the waiting action and resolves true when it i
 // @spec DASH-UI-006, DASH-ACC-002
 test("cancelling the prompt resolves false", async () => {
   const { access } = mk();
-  const waiting = access.ask("viewers", "Load viewers");
+  const waiting = access.ask("control", "Load viewers");
   access.resolvePrompt(false);
   assert.equal(await waiting, false);
   assert.equal(access.state.get().prompt, null);
 });
 
 // @spec DASH-UI-006
-test("two requests waiting on the same token share one prompt; a prompt for the other token waits its turn", async () => {
+test("requests waiting on the token share one prompt, a viewers request included", async () => {
   const { access } = mk();
   const a = access.ask("control", "Mute");
   const b = access.ask("control", "Say");
-  const c = access.ask("viewers", "Viewers");
-  assert.equal(access.state.get().prompt?.kind, "control");
+  const c = access.ask("control", "Load viewers");
+  assert.equal(access.state.get().prompt?.action, "Mute");
   access.resolvePrompt(true);
-  assert.deepEqual(await Promise.all([a, b]), [true, true]);
-  await Promise.resolve();
-  assert.equal(access.state.get().prompt?.kind, "viewers");
-  access.resolvePrompt(false);
-  assert.equal(await c, false);
+  assert.deepEqual(await Promise.all([a, b, c]), [true, true, true]);
+  assert.equal(access.state.get().prompt, null);
 });
 
 // @spec DASH-ACC-006

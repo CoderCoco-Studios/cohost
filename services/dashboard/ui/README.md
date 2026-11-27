@@ -37,7 +37,7 @@ export function Screen({ route }: ScreenProps) { ... }   // route.view, route.se
 
 - Render exactly one `<PageHeading>` (an `<h1 tabIndex={-1}>`): the shell moves focus to it after navigation.
 - Read data with hooks: `useApi()` (requests), `useFeed(selector)` (services, stack, events, mute), `useFeedClock()` (a tick that stops while the socket is closed), `useAccess()`, `useAction()` (feedback state for one control). Selectors must return stable values.
-- Every request goes through `api`. A gated request: `api.post(path, body, { auth: "control", action: "Restart voice" })`. A 401 or a missing token opens the Access dialog and retries once; a cancel resolves `{ ok: false, locked: true, detail: "not done: locked" }`. `/viewers` calls use `auth: "viewers"`. A secret write adds `requireToken: true`.
+- Every request goes through `api`. A gated request: `api.post(path, body, { auth: "control", action: "Restart voice" })`. The request goes out with the held token or none (an unlocked browser's session cookie stands in for it); a 401 opens the Access dialog and retries once; a cancel resolves `{ ok: false, locked: true, detail: "not done: locked" }`. `/viewers` calls use the same `auth: "control"`: there is one token.
 - Show the outcome beside the control: `const a = useAction(); a.run(() => api.post(...), "Saved")` and `<ActionStatus state={a.state} onDismiss={a.dismiss} />`.
 - Regions that show live data spread `useStale()` (`aria-busy` and the `stale` class while the socket is closed).
 - The Live screen's Say field carries `data-shortcut="say"` so `/` can focus it. The shell owns the header, Mute, Audio and the shortcut list; reuse `useMute()` for a mute control on the screen (the header's is the shell's).

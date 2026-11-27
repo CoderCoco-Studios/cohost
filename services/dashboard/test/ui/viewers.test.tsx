@@ -40,7 +40,7 @@ const authed = (reply: (c: Call) => Plain | Promise<Plain>, good = "tok"): ((c: 
 interface Boot { list?: unknown; details?: Record<string, unknown>; config?: unknown; token?: string | false; access?: boolean }
 function boot(o: Boot = {}) {
   const app: TestApp = makeApp();
-  if (o.token !== false) app.rt.access.setToken("viewers", o.token ?? "tok", "tab");
+  if (o.token !== false) app.rt.access.setToken("control", o.token ?? "tok", "tab");
   app.fetch.on("GET /viewers", authed(() => ({ json: o.list ?? LIST })));
   for (const [key, d] of Object.entries(o.details ?? { "1": DETAIL })) app.fetch.on(`GET /viewers/${encodeURIComponent(key)}`, authed(() => ({ json: d })));
   if (o.config !== false) app.fetch.on("GET /config/brain.memory", { json: o.config ?? CONFIG });
@@ -54,7 +54,7 @@ const panel = () => screen.getByRole("region", { name: /Viewer details/ });
 const open = async (user: ReturnType<typeof userEvent.setup>, name: RegExp | string = /Alice/) => { await user.click(await within(await screen.findByRole("list", { name: "Viewers" })).findByRole("button", { name })); await within(await screen.findByRole("region", { name: /Viewer details/ })).findByRole("heading", { level: 2 }); };
 
 // @spec DASH-VIEWERS-010, DASH-UI-030
-test("opening the screen loads the list with the viewers token: rows are buttons with name, REGULAR, set by you, VOICE and counts, all as text", async () => {
+test("opening the screen loads the list with the control token: rows are buttons with name, REGULAR, set by you, VOICE and counts, all as text", async () => {
   const { app } = boot({ list: { viewers: [...LIST.viewers, { key: "discord:7", display: "Vox", regular: false, regularManual: false, msgCount: 0, noteCount: 1, voice: true, discordId: "7" }] } });
   assert.equal(screen.getAllByRole("heading", { level: 1 }).length, 1);
   await screen.findByRole("list", { name: "Viewers" });
@@ -108,7 +108,7 @@ test("states: loading while the list loads, No viewers yet when empty, No viewer
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
   const app = makeApp();
-  app.rt.access.setToken("viewers", "tok", "tab");
+  app.rt.access.setToken("control", "tok", "tab");
   app.fetch.on("GET /viewers", async (c) => { await gate; return c.path.includes("zzz") ? { json: { viewers: [] } } : { json: { viewers: [] } }; });
   renderApp(<Screen route={{ view: "viewers" }} />, app);
   const loading = screen.getByText(/Loading viewers/);
@@ -411,22 +411,38 @@ test("a viewer with no notes shows an empty state, and very long names wrap in t
 });
 
 // @spec DASH-VIEWERS-016
-test("a 401 opens the Access dialog for the viewers token naming the action, then retries once with the bearer header; the token is kept under its own key", async () => {
+test("a 401 opens the one Access dialog, for the control token, naming the action, then retries once with the bearer header", async () => {
   const user = userEvent.setup();
   const app = makeApp();
   app.fetch.on("GET /viewers", authed(() => ({ json: LIST }), "vt"));
   app.fetch.on("GET /viewers/1", authed(() => ({ json: DETAIL }), "vt"));
+  app.fetch.on("PUT /secrets/access-check", (c) => c.headers.authorization === "Bearer vt" ? { status: 404, json: { ok: false, detail: "unknown secret" } } : { status: 401, text: "unauthorized" });
   renderApp(<><AccessDialog /><Screen route={{ view: "viewers" }} /></>, app);
   const dlg = await screen.findByRole("dialog", { name: "Access" });
   assert.match(dlg.textContent!, /Load viewers/);
-  assert.match(dlg.textContent!, /VIEWERS_TOKEN/);
-  await user.type(within(dlg).getByLabelText(/Viewers token/), " vt ");
+  assert.match(dlg.textContent!, /CONTROL_TOKEN/);
+  assert.doesNotMatch(dlg.textContent!, /VIEWERS_TOKEN/);
+  await user.type(within(dlg).getByLabelText(/Control token/), " vt ");
   await user.click(within(dlg).getByRole("button", { name: /^Unlock/ }));
   await screen.findByRole("list", { name: "Viewers" });
-  assert.equal(app.session.getItem("cohost.viewersToken"), "vt");
-  assert.equal(app.session.getItem("cohost.controlToken"), null);
+  assert.equal(app.session.getItem("cohost.controlToken"), "vt");
   const real = vcalls(app).filter((c) => c.method === "GET" && c.path === "/viewers");
-  assert.deepEqual(real.map((c) => c.headers.authorization ?? null), [null, "Bearer vt", "Bearer vt"], "first without a token, the check, the one retry");
+  assert.deepEqual(real.map((c) => c.headers.authorization ?? null), [null, "Bearer vt"], "first without a token, then the one retry");
+});
+
+// @spec DASH-VIEWERS-016
+test("in a browser the unlock link unlocked, the screen opens with no prompt: the request carries the session cookie, not a token", async () => {
+  const app = makeApp();
+  app.fetch.on("GET /services/control", { json: { enabled: true, runtime: "compose", advanced: false, unlocked: true } });
+  // The server lets the cookie through; the fake sees no Authorization header, as the browser sends none.
+  app.fetch.on("GET /viewers", (c) => c.headers.authorization === undefined ? { json: LIST } : { status: 400, text: "unexpected header" });
+  app.fetch.on("GET /config/brain.memory", { json: CONFIG });
+  act(() => app.rt.access.markUnlocked(true));
+  renderApp(<><AccessDialog /><Screen route={{ view: "viewers" }} /></>, app);
+  await screen.findByRole("list", { name: "Viewers" });
+  await settle();
+  assert.ok(screen.queryByRole("dialog") === null, "no Access dialog");
+  assert.ok(vcalls(app).every((c) => c.headers.authorization === undefined));
 });
 
 // @spec DASH-VIEWERS-016
@@ -446,10 +462,10 @@ test("cancelling the Access dialog leaves a locked state with a button that asks
   await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
   await settle();
   // Unlocked elsewhere (the panel): the screen loads. Then Lock empties it without asking.
-  act(() => app.rt.access.setToken("viewers", "vt", "tab"));
+  act(() => app.rt.access.setToken("control", "vt", "tab"));
   await screen.findByRole("list", { name: "Viewers" });
   const asked = app.fetch.callsTo("GET /viewers").length;
-  act(() => app.rt.access.lock("viewers"));
+  act(() => app.rt.access.lock("control"));
   await settle();
   assert.ok(screen.queryByRole("list", { name: "Viewers" }) === null, "notes are not left on screen after Lock");
   assert.ok(screen.queryByRole("dialog") === null, "Lock does not itself prompt");
@@ -460,27 +476,26 @@ test("cancelling the Access dialog leaves a locked state with a button that asks
 test("a 403 shows the setup steps, the copyable line and Check again in place of the list, with no field to paste a token into", async () => {
   const user = userEvent.setup();
   const app = makeApp();
-  app.fetch.on("GET /viewers", { status: 403, text: "The Viewers page is locked: set VIEWERS_TOKEN in .env" });
+  app.fetch.on("GET /viewers", { status: 403, text: "Viewer notes are locked: this dashboard has no control token. Set CONTROL_TOKEN in .env" });
   renderApp(<><AccessDialog /><Screen route={{ view: "viewers" }} /></>, app);
   await screen.findByText(/not set up/i);
   assert.ok(screen.queryByRole("dialog") === null, "403 does not open the Access dialog");
   const steps = screen.getAllByRole("listitem");
   assert.equal(steps.length, 3);
-  assert.ok(document.body.textContent!.includes('echo "VIEWERS_TOKEN=$(openssl rand -hex 24)" >> .env'));
+  assert.ok(document.body.textContent!.includes('echo "CONTROL_TOKEN=$(openssl rand -hex 24)" >> .env'));
+  assert.match(document.body.textContent!, /unlock link/);
   assert.ok(screen.queryByRole("list", { name: "Viewers" }) === null);
   assert.ok(screen.queryByRole("searchbox") === null, "no list controls");
   assert.ok(document.querySelector("input") === null, "no field at all");
-  assert.equal(app.rt.access.state.get().viewers.notSetUp, true);
   const before = app.fetch.callsTo("GET /viewers").length;
   await user.click(screen.getByRole("button", { name: "Check again" }));
   await settle();
   assert.equal(app.fetch.callsTo("GET /viewers").length, before + 1);
   assert.ok(screen.getByText(/not set up/i), "still set up as not");
-  act(() => app.rt.access.setToken("viewers", "tok", "tab"));
+  act(() => app.rt.access.setToken("control", "tok", "tab"));
   app.fetch.on("GET /viewers", authed(() => ({ json: LIST })));
   await user.click(screen.getByRole("button", { name: "Check again" }));
   await screen.findByRole("list", { name: "Viewers" });
-  assert.equal(app.rt.access.state.get().viewers.notSetUp, false);
 });
 
 // @spec DASH-VIEWERS-020

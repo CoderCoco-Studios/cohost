@@ -23,7 +23,6 @@ export interface Prompt {
 
 export interface AccessState {
   control: TokenState;
-  viewers: TokenState;
   prompt: Prompt | null;
   /** The Access panel, opened by the header's Access button (DASH-ACC-001). */
   panelOpen: boolean;
@@ -41,7 +40,7 @@ export interface AccessDeps {
   events?: EventTarget;
 }
 
-const KEYS: Record<TokenKind, string> = { control: "cohost.controlToken", viewers: "cohost.viewersToken" };
+const KEYS: Record<TokenKind, string> = { control: "cohost.controlToken" };
 const none = (): TokenState => ({ present: false, scope: null });
 
 export interface Access {
@@ -57,7 +56,7 @@ export interface Access {
   markUnlocked(unlocked: boolean): void;
   /**
    * Asks the operator for a token for a waiting action. Resolves true once it is unlocked, false on Cancel. One prompt is
-   * open at a time; requests for the same token share it, requests for the other token wait for it.
+   * open at a time; requests waiting for the token share it.
    */
   ask(kind: TokenKind, action: string, opts?: { rejected?: boolean }): Promise<boolean>;
   /** Called by the Access dialog: true after it stored a checked token, false on Cancel. */
@@ -84,20 +83,18 @@ export function createAccess(deps: AccessDeps = {}): Access {
     if (scope) return { present: true, scope };
     return memory[kind] ? { present: true, scope: "tab" } : none();
   };
-  const state = createStore<AccessState>({ control: present("control"), viewers: present("viewers"), prompt: null, panelOpen: false, memoryOnly: false, unlocked: false });
+  const state = createStore<AccessState>({ control: present("control"), prompt: null, panelOpen: false, memoryOnly: false, unlocked: false });
   const refresh = (kind: TokenKind): void => state.set((s) => {
     const next = present(kind);
     return { ...s, [kind]: { ...next, ...(s[kind].notSetUp !== undefined ? { notSetUp: s[kind].notSetUp } : {}) } };
   });
   deps.events?.addEventListener("storage", (e) => {
     const key = (e as Event & { key: string | null }).key;
-    for (const kind of ["control", "viewers"] as const) if (key === null || key === KEYS[kind]) refresh(kind);
+    for (const kind of ["control"] as const) if (key === null || key === KEYS[kind]) refresh(kind);
   });
 
-  /** Prompts not yet shown (one is open at a time) and the promise each token's waiting requests share. */
-  const waiting: Prompt[] = [];
+  /** The promise the requests waiting on the open prompt share. */
   const open = new Map<TokenKind, Promise<boolean>>();
-  const show = (p: Prompt): void => state.set((s) => ({ ...s, prompt: p }));
 
   return {
     state,
@@ -123,7 +120,7 @@ export function createAccess(deps: AccessDeps = {}): Access {
       if (shared) return shared;
       const p = new Promise<boolean>((resolve) => {
         const prompt: Prompt = { kind, action, rejected: !!opts.rejected, resolve };
-        if (state.get().prompt) waiting.push(prompt); else show(prompt);
+        state.set((s) => ({ ...s, prompt }));
       });
       open.set(kind, p);
       return p;
@@ -132,8 +129,7 @@ export function createAccess(deps: AccessDeps = {}): Access {
       const p = state.get().prompt;
       if (!p) return;
       open.delete(p.kind);
-      const next = waiting.shift();
-      state.set((s) => ({ ...s, prompt: next ?? null }));
+      state.set((s) => ({ ...s, prompt: null }));
       p.resolve(unlocked);
     },
     openPanel: () => state.set((s) => ({ ...s, panelOpen: true })),

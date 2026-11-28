@@ -62,7 +62,31 @@ test("after a probe the snapshot carries the derived state, container status and
   const s = svc.snapshot();
   assert.equal(s.state, "degraded"); // voice is long-running and exited
   assert.equal(s.bus, "unreachable");
-  assert.deepEqual(s.services, [{ service: "cortex", status: "running", health: "healthy" }, { service: "voice", status: "exited" }]);
+  assert.deepEqual(s.services, [{ service: "cortex", status: "running", health: "healthy" }, { service: "voice", status: "exited" }], "no exit code on a long-running container");
+});
+
+// @spec DASH-STACK-001
+test("a one-shot container carries oneShot, and its exit code once it has exited", async () => {
+  const { svc, f } = service();
+  f.setStatus({ docker: { ok: true }, services: [{ service: "models", status: "exited", exitCode: 0 }, { service: "reembed", status: "exited", exitCode: 3 }, { service: "consolidate", status: "running" }, { service: "cortex", status: "running" }] });
+  await svc.probe();
+  assert.deepEqual(svc.snapshot().services, [
+    { service: "consolidate", status: "running", oneShot: true },
+    { service: "cortex", status: "running" },
+    { service: "models", status: "exited", oneShot: true, exitCode: 0 },
+    { service: "reembed", status: "exited", oneShot: true, exitCode: 3 },
+  ]);
+});
+
+// @spec DASH-FEED-008
+test("onChange fires when a one-shot's exit code changes", async () => {
+  const { svc, f } = service();
+  const seen: StackSnapshot[] = [];
+  svc.onChange((s) => seen.push(s));
+  f.setStatus({ docker: { ok: true }, services: [{ service: "models", status: "exited", exitCode: 0 }] }); await svc.probe();
+  f.setStatus({ docker: { ok: true }, services: [{ service: "models", status: "exited", exitCode: 1 }] }); await svc.probe();
+  assert.equal(seen.length, 2);
+  assert.equal(seen[1]!.services[0]!.exitCode, 1);
 });
 
 // @spec DASH-STACK-007

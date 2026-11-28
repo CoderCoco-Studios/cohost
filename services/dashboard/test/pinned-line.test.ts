@@ -1,43 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
-import { PinnedLine, rowsFor, type Renewal, type TerminalIo } from "../src/pinned-line.js";
+import { PinnedLine, rowsFor, type Renewal } from "../src/pinned-line.js";
+import { fakeTerminal } from "./terminal-fixture.js";
 
 const ESC = "\x1b";
 const LINE = "Unlock this browser: http://127.0.0.1:3000/unlock?n=AAAA";
 /** A renewal that makes `next` and is due while `stale` says so (never, by default). */
 const renewal = (next: () => string, stale: () => boolean = () => false): Renewal => ({ next, stale });
 const POLL = 15_000;
-
-/**
- * A terminal as `PinnedLine` sees it: what was written, its size (changed with `resize`), its one-shot timers (fired with
- * `fire`) and a process whose signal and exit listeners the test can emit and whose `kill` it records.
- */
-function fakeTerminal(o: { tty?: boolean; rows?: number; cols?: number } = {}) {
-  let size = { rows: o.rows ?? 24, cols: o.cols ?? 80 };
-  const out: string[] = [];
-  const resizers = new Set<() => void>();
-  const timers: { fn: () => void; ms: number; live: boolean }[] = [];
-  const proc = Object.assign(new EventEmitter(), { killed: [] as string[], kill(sig: NodeJS.Signals) { this.killed.push(sig); } });
-  const io: TerminalIo = {
-    write: (s) => { out.push(s); },
-    isTTY: () => o.tty ?? true,
-    size: () => size,
-    onResize: (fn) => { resizers.add(fn); return () => { resizers.delete(fn); }; },
-    setTimer: (fn, ms) => { const t = { fn, ms, live: true }; timers.push(t); return () => { t.live = false; }; },
-    proc,
-  };
-  return {
-    io, out, proc, timers,
-    /** Everything written since the last call. */
-    take: (): string => out.splice(0).join(""),
-    resize: (rows: number, cols = size.cols) => { size = { rows, cols }; for (const fn of [...resizers]) fn(); },
-    /** Fires the live timers, as the clock reaching them would. */
-    fire: () => { for (const t of timers.splice(0)) if (t.live) t.fn(); },
-    liveTimers: () => timers.filter((t) => t.live),
-    resizeListeners: () => resizers.size,
-  };
-}
 
 // @spec DASH-UNL-009
 test("the rows a line needs follow the terminal's width", () => {
@@ -112,8 +82,9 @@ test("a resize sets the scroll region and writes the line again for the new size
 
   t.resize(40);
   let w = t.take();
-  assert.ok(w.indexOf(`${ESC}[24;1H${ESC}[J`) >= 0, "the old pinned rows are cleared at the old geometry");
-  assert.ok(w.indexOf(`${ESC}[24;1H${ESC}[J`) < w.indexOf(`${ESC}[1;39r`), "before pinning again");
+  assert.ok(w.indexOf(`${ESC}[24;1H${ESC}[2K`) >= 0, "the old pinned row is erased at the old geometry");
+  assert.ok(w.indexOf(`${ESC}[24;1H${ESC}[2K`) < w.indexOf(`${ESC}[1;39r`), "before pinning again");
+  assert.ok(!w.includes(`${ESC}[24;1H${ESC}[J`), "only the line's own rows, nothing below them");
   assert.ok(w.includes(`${ESC}[1;39r`), "the region for 40 rows");
   assert.ok(w.indexOf(LINE) > w.indexOf(`${ESC}[40;1H`));
 
@@ -121,13 +92,27 @@ test("a resize sets the scroll region and writes the line again for the new size
   w = t.take();
   assert.ok(w.includes(`${ESC}[r`), "the region is the whole terminal again");
   assert.ok(!w.includes(LINE), "the line is not pinned in a terminal too small for it");
-  assert.ok(!w.includes(`${ESC}[J`), "the rows it wrote are left to scroll away");
+  assert.ok(!w.includes(`${ESC}[J`) && !w.includes(`${ESC}[2K`), "the rows it wrote are left to scroll away");
   assert.ok(!/\x1b\[1;\d+r/.test(w));
 
   t.resize(30);
   w = t.take();
   assert.ok(w.includes(`${ESC}[1;29r`), "pinned again once there is room");
   assert.ok(w.includes(LINE));
+});
+
+// @spec DASH-UNL-010
+test("a resize with room erases exactly the rows the old line took at the old width, one by one, and nothing below", () => {
+  const line = "y".repeat(50); // 3 rows at width 20
+  const t = fakeTerminal({ rows: 10, cols: 20 });
+  new PinnedLine(t.io).show(line, renewal(() => line));
+  t.take();
+  t.resize(14, 25); // the old line took rows 8 to 10 at width 20
+  const w = t.take();
+  const erase = w.slice(0, w.indexOf(`${ESC}[1;`));
+  assert.equal(erase.match(/\x1b\[2K/g)?.length, 3);
+  for (const row of [8, 9, 10]) assert.ok(erase.includes(`${ESC}[${row};1H${ESC}[2K`), `row ${row}`);
+  assert.ok(!erase.includes(`${ESC}[J`) && !erase.includes(`${ESC}[11;1H`));
 });
 
 // @spec DASH-UNL-011

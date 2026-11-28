@@ -479,14 +479,20 @@ export const RENEW_EARLY_MS = 30_000;
 export function showUnlockLine(o: { base: string; links: UnlockLinks; terminal: UnlockTerminal; open?: ((url: string, warn: (msg: string) => void) => void) | undefined; warn: (msg: string) => void }): void {
   const first = o.links.issue();
   let nonce = first;
+  /** True while `next` issues: the issue's own check would see the old nonce, so it is skipped (no re-entry, whatever the terminal). */
+  let renewing = false;
   const renewal = {
-    next: (): string => { nonce = o.links.issue(); return unlockLine(o.base, nonce); },
+    next: (): string => {
+      renewing = true;
+      try { nonce = o.links.issue(); } finally { renewing = false; }
+      return unlockLine(o.base, nonce);
+    },
     stale: (): boolean => { const until = o.links.expiresAt(nonce); return until === undefined || o.links.now() >= until - RENEW_EARLY_MS; },
   };
   o.terminal.show(unlockLine(o.base, first), renewal);
   if (o.terminal.pinned) {
     o.links.watch(() => { o.terminal.release(); });
-    o.links.afterIssue(() => { o.terminal.check(); });
+    o.links.afterIssue(() => { if (!renewing) o.terminal.check(); });
   }
   o.open?.(unlockUrl(o.base, first), o.warn);
 }

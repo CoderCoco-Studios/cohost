@@ -10,6 +10,7 @@ const SAVE = `${ESC}7`;
 const RESTORE = `${ESC}8`;
 const RESET_REGION = `${ESC}[r`;
 const CLEAR_BELOW = `${ESC}[J`;
+const ERASE_LINE = `${ESC}[2K`;
 const region = (bottom: number): string => `${ESC}[1;${bottom}r`;
 const rowStart = (row: number): string => `${ESC}[${row};1H`;
 
@@ -77,6 +78,8 @@ export class PinnedLine implements UnlockTerminal {
   private active = false;
   /** The first row of the pinned rows, while they are on screen; undefined while the terminal is too small. */
   private top: number | undefined;
+  /** How many rows the line took when it was pinned, at the width of that time. */
+  private height = 0;
   private cleanups: (() => void)[] = [];
   private renewal: Renewal | undefined;
   private checking = false;
@@ -145,6 +148,7 @@ export class PinnedLine implements UnlockTerminal {
     const need = rowsFor(this.line, size.cols);
     const bottom = size.rows - need;
     this.top = bottom + 1;
+    this.height = need;
     this.io.write(`${"\n".repeat(need)}${SAVE}${region(bottom)}${RESTORE}${ESC}[${need}A`);
     this.paint();
   }
@@ -158,9 +162,13 @@ export class PinnedLine implements UnlockTerminal {
     if (!this.active) return;
     const size = this.io.size();
     const fits = size !== undefined && this.fits(this.line, size);
-    // With room, the old rows are cleared at the old geometry so no stale copy of the link is left in the scrollback; without
-    // room they are left to scroll away with the logs (DASH-UNL-010).
-    if (this.top !== undefined) this.io.write(fits ? `${SAVE}${RESET_REGION}${rowStart(this.top)}${CLEAR_BELOW}${RESTORE}` : `${SAVE}${RESET_REGION}${RESTORE}`);
+    // With room, the old line's own rows are erased at the old geometry, one by one, so no stale copy of the link is left in the
+    // scrollback and no log row a growing terminal pulled down is lost; without room they are left to scroll away (DASH-UNL-010).
+    if (this.top !== undefined) {
+      const top = this.top;
+      const erase = fits ? Array.from({ length: this.height }, (_, i) => `${rowStart(top + i)}${ERASE_LINE}`).join("") : "";
+      this.io.write(`${SAVE}${RESET_REGION}${erase}${RESTORE}`);
+    }
     this.top = undefined;
     if (fits) this.pin(size);
   }

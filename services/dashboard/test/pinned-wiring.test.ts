@@ -16,7 +16,8 @@ import { dashboardService, storeGate } from "../src/service.js";
 import { runRecovery, showUnlockLine } from "../src/recovery.js";
 import { SESSION_COOKIE, UnlockLinks, newSession } from "../src/access.js";
 import { firstOnly } from "../src/opener.js";
-import type { Renewal, UnlockTerminal } from "../src/pinned-line.js";
+import { PinnedLine, type Renewal, type UnlockTerminal } from "../src/pinned-line.js";
+import { fakeTerminal } from "./terminal-fixture.js";
 import { brokenStore, testStore } from "./store-fixture.js";
 import { AUTH } from "./control-fixture.js";
 
@@ -248,4 +249,35 @@ test("--open opens the first unlock line of the process only: not the line norma
   const second = recordingTerminal();
   showUnlockLine({ base: "http://127.0.0.1:3001", links: new UnlockLinks(), terminal: second, open, warn: () => {} });
   assert.deepEqual(opened, [first.shown[0]!.line.slice("Unlock this browser: ".length)]);
+});
+
+// @spec DASH-UNL-011
+test("a pinned nonce evicted by the cap is renewed exactly once in the terminal, and the new pinned nonce is held", () => {
+  const links = new UnlockLinks();
+  const t = fakeTerminal({ rows: 24, cols: 120 });
+  const terminal = new PinnedLine(t.io);
+  showUnlockLine({ base: BASE, links, terminal, warn: () => {} });
+  const first = new URL(t.take().match(/http:\/\/\S+?n=[A-Za-z0-9_-]{43}/)![0]).searchParams.get("n")!;
+  for (let i = 0; i < 16; i++) links.issue();
+  assert.equal(links.expiresAt(first), undefined, "the first nonce was dropped");
+  const painted = t.take().match(/n=[A-Za-z0-9_-]{43}/g) ?? [];
+  assert.equal(painted.length, 1, "one fresh link painted");
+  assert.notEqual(links.expiresAt(painted[0]!.slice(2)), undefined, "and its nonce is held");
+});
+
+// @spec DASH-UNL-011
+test("renewing does not re-enter the terminal's check, even with a terminal that has no guard of its own", () => {
+  const links = new UnlockLinks();
+  let renewal: Renewal | undefined;
+  let renewals = 0;
+  const terminal: UnlockTerminal = {
+    pinned: true,
+    show: (_line, r) => { renewal = r; },
+    release: () => {},
+    check: () => { if (renewal?.stale()) { renewals++; renewal.next(); } },
+  };
+  showUnlockLine({ base: BASE, links, terminal, warn: () => {} });
+  for (let i = 0; i < 16; i++) links.issue();
+  assert.equal(renewals, 1);
+  assert.equal(renewal!.stale(), false);
 });

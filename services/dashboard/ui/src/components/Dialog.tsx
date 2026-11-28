@@ -66,10 +66,16 @@ function shown(el: HTMLElement): boolean {
  */
 function focusInto(d: HTMLDialogElement, initialFocus?: string): void {
   const controls = [...d.querySelectorAll<HTMLElement>(`${FOCUSABLE}, summary`)].filter(shown);
-  const target = (initialFocus ? d.querySelector<HTMLElement>(initialFocus) : null) ?? d.querySelector<HTMLElement>("[data-autofocus]")
-    ?? controls.find((el) => !el.closest(".dialog-h")) ?? controls[0] ?? d;
-  target.focus();
-  if (document.activeElement !== target) d.focus();
+  const candidates = [
+    initialFocus ? d.querySelector<HTMLElement>(initialFocus) : null, d.querySelector<HTMLElement>("[data-autofocus]"),
+    ...controls.filter((el) => !el.closest(".dialog-h")), ...controls.filter((el) => el.closest(".dialog-h")),
+  ];
+  for (const el of candidates) {
+    if (!el) continue;
+    el.focus();
+    if (document.activeElement === el) return;
+  }
+  d.focus();
 }
 
 /**

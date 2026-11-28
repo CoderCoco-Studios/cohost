@@ -104,7 +104,9 @@ export function LaunchDialogHost({ mute, children }: { /** The shell's mute stat
   const sawRunning = useRef<number | null>(null);
   const [closed, setClosed] = useState<number | null>(null);
   const [reopened, setReopened] = useState<number | null>(null);
-  // Running only while the server still reports the action the record belongs to (DASH-UI-060).
+  // Running only while the server still reports the action the record belongs to (DASH-UI-060). This gates opening and
+  // dismissal only: the title and outcome follow the record, since at an action's end the `stack` message without the action
+  // arrives before the final record, whose `ok` is not known until then.
   const running = p !== null && p.running && actionStart === p.startedAt;
   if (running) sawRunning.current = p.startedAt;
   const key = p?.startedAt ?? null;
@@ -113,14 +115,14 @@ export function LaunchDialogHost({ mute, children }: { /** The shell's mute stat
   const show = useCallback(() => setReopened(key), [key]);
   const control = useMemo(() => ({ open, show }), [open, show]);
   const alert = p !== null && p.failure !== undefined && !p.running && sawRunning.current === key && reopened !== key;
-  const title = p ? `${KIND_LABEL[p.kind]} ${outcomeWords({ running, ok: p.ok })}` : "";
+  const title = p ? `${KIND_LABEL[p.kind]} ${outcomeWords(p)}` : "";
   return (
     <Ctx.Provider value={control}>
       {children}
       <Dialog open={open} title={title} className="launch-dialog" dismissible={!running} muteShortcut onClose={close}
         footer={p && !running ? <Button onClick={close}>Close</Button> : undefined}>
         {offline ? <p className="note note-warn small" role="status">Live updates stopped. What this shows may be out of date until the dashboard reconnects.</p> : null}
-        {p ? <Progress p={{ ...p, running }} alert={alert} /> : null}
+        {p ? <Progress p={p} alert={alert} /> : null}
         <div className="row launch-mute">
           <Button aria-pressed={mute.muted} busy={mute.pending} onClick={() => void mute.toggle()}><Icon name="mic" /><span className="btn-text">{mute.label}</span></Button>
           <ActionStatus state={mute.action.state} onDismiss={mute.action.dismiss} />

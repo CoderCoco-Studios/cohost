@@ -109,6 +109,42 @@ test("a dashboard restarted mid-action: the dialog says live updates stopped, th
   assert.equal(queryDialog(), null, "the dialog is not held open by a record the server no longer has");
 });
 
+// @spec DASH-UI-060
+test("a reconnect to the same dashboard while the action runs keeps the dialog open, the same element throughout", async () => {
+  const { app } = await boot("#live");
+  push(app, record());
+  const d = dialog();
+  act(() => { app.socket().serverClose(); });
+  act(() => { app.clock.tick(2000); });
+  act(() => { app.socket().open(); });
+  assert.ok(dialog() === d && d.isConnected, "not unmounted on open");
+  raw(app, stack({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: 1 } }));
+  assert.ok(dialog() === d && d.isConnected, "kept by the first stack message, which still reports the action");
+  raw(app, record({ rows: [{ service: "voice", state: "building" }] }));
+  assert.ok(dialog() === d && d.isConnected, "the resent record replaces the old one in place");
+  assert.equal(d.open, true);
+});
+
+// @spec DASH-UI-060
+test("at the start the record arrives before the stack message: the dialog opens once the action is reported", async () => {
+  const { app } = await boot("#live");
+  raw(app, record());
+  raw(app, stack({ state: "starting", action: { kind: "launch", phase: "starting", startedAt: 1 } }));
+  assert.ok(screen.getByRole("dialog", { name: "Launch running" }));
+});
+
+// @spec DASH-UI-062
+test("at the end the stack message without the action arrives before the final ok record: the title never reads failed", async () => {
+  const { app } = await boot("#live");
+  push(app, record());
+  raw(app, stack({ state: "up" }));
+  assert.equal(screen.queryByRole("dialog", { name: /failed/ }), null);
+  assert.ok(screen.getByRole("dialog", { name: "Launch running" }), "still the record's own state until the final record");
+  raw(app, record({ running: false, ok: true, finishedAt: 2 }));
+  assert.ok(screen.getByRole("dialog", { name: "Launch finished" }));
+  assert.doesNotMatch(dialog().textContent ?? "", /failed/);
+});
+
 // @spec DASH-UI-069
 test("the launch dialog holds the Mute button and the pending tool confirmations, and m toggles mute while it is open", async () => {
   const { app } = await boot("#live");

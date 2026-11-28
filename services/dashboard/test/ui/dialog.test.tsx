@@ -41,6 +41,12 @@ test("on open focus skips a control inside a closed disclosure", () => {
   assert.equal(document.activeElement?.textContent, "More", "the summary, not the hidden log");
 });
 
+// @spec DASH-A11Y-005
+test("on open, a [data-autofocus] element that refuses focus gives way to the first shown control", () => {
+  render(<Dialog open title="T" onClose={() => {}}><button type="button" data-autofocus disabled>Off</button><button type="button">Go</button></Dialog>);
+  assert.equal(document.activeElement?.textContent, "Go");
+});
+
 function Host({ children = <input aria-label="Field" />, initialFocus }: { children?: React.ReactNode; initialFocus?: string }) {
   const [open, setOpen] = useState(false);
   return (<>

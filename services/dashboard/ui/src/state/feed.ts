@@ -30,6 +30,11 @@ export interface FeedState {
   stack: StackSnapshot | null;
   /** The latest `stack-progress` record, or null until one arrives (the launch progress dialog, DASH-UI-060). */
   progress: StackProgress | null;
+  /**
+   * The socket has opened again since `progress` arrived: the first `stack` message keeps the record only when its action is
+   * the record's (a dashboard restarted mid-action has no record and sends none); a new record replaces it either way.
+   */
+  progressUnconfirmed?: boolean;
   /** Rendered event types, oldest first, at most `LOG_LIMIT`, replayed events included and flagged. */
   events: FeedEvent[];
   /** The latest event of each type (`brain.status`, `avatar.state`, ...), whether or not it is a rendered type. */
@@ -187,8 +192,17 @@ export function createFeed(deps: FeedDeps): Feed {
     if (!msg || typeof msg !== "object") return;
     const m = msg as { type?: unknown } & Record<string, unknown>;
     if (m.type === "services" && Array.isArray(m.services)) state.set((s) => ({ ...s, services: m.services as ServiceHealth[], servicesAt: now() }));
-    else if (m.type === "stack") { const { type: _t, ...snap } = m; state.set((s) => ({ ...s, stack: snap as unknown as StackSnapshot })); }
-    else if (m.type === "stack-progress" && Array.isArray(m.rows) && Array.isArray(m.lines)) { const { type: _t, ...rec } = m; state.set((s) => ({ ...s, progress: rec as unknown as StackProgress })); }
+    else if (m.type === "stack") {
+      const { type: _t, ...snap } = m;
+      const stack = snap as unknown as StackSnapshot;
+      state.set((s) => {
+        if (!s.progressUnconfirmed) return { ...s, stack };
+        // The first `stack` after a reconnect: keep the record only while the server still runs its action (DASH-UI-060).
+        const keep = s.progress !== null && stack.action?.startedAt === s.progress.startedAt;
+        return { ...s, stack, progress: keep ? s.progress : null, progressUnconfirmed: false };
+      });
+    }
+    else if (m.type === "stack-progress" && Array.isArray(m.rows) && Array.isArray(m.lines)) { const { type: _t, ...rec } = m; state.set((s) => ({ ...s, progress: rec as unknown as StackProgress, progressUnconfirmed: false })); }
     else if (typeof m.type === "string") onEvent(m as unknown as FeedEvent);
   }
 
@@ -205,7 +219,7 @@ export function createFeed(deps: FeedDeps): Feed {
       return;
     }
     socket = sock;
-    sock.onopen = () => state.set((s) => { const { stoppedAt: _a, nextAttemptAt: _b, ...rest } = s; return { ...rest, status: "open", progress: null }; }); // a record the server no longer has must not survive a reconnect (DASH-UI-060)
+    sock.onopen = () => state.set((s) => { const { stoppedAt: _a, nextAttemptAt: _b, ...rest } = s; return { ...rest, status: "open", progressUnconfirmed: s.progress !== null }; }); // confirmed or dropped by the next `stack` (DASH-UI-060)
     sock.onmessage = (e) => { if (typeof e.data === "string") onFrame(e.data); };
     sock.onclose = () => {
       if (socket !== sock || stopped) return;

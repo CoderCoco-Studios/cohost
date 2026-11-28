@@ -1,7 +1,8 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { handleUnlock, hasSession, pass, pathOf, unlockBase, unlockLine, UnlockLinks, type Gate } from "./access.js";
+import { handleUnlock, hasSession, pass, pathOf, unlockBase, unlockLine, unlockUrl, UnlockLinks, type Gate } from "./access.js";
+import { plainTerminal, processTerminal, type UnlockTerminal } from "./pinned-line.js";
 import {
   ConfigSchema, PRESENTATION, canSetKey, dotEnvPath, findWorkspaceRoot, inputValue, loadDotEnv, resetPathOf, setLoggingSource, type Config, type ConfigIssue, type Logger,
 } from "@cohost/config";
@@ -260,6 +261,8 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
   let first: Promise<unknown> | undefined;
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     await (first ??= check().catch(() => undefined));
+    // A browser unlocked on an earlier run is unlocked already: the pinned line goes (DASH-UNL-012). This listener is the full surface.
+    if (links.watched && hasSession(gate, req)) links.unlocked();
     const url = new URL(req.url ?? "/", "http://x");
     const method = req.method ?? "GET";
     if (handleUi(uiDir, "cohost", req, res, url)) return;
@@ -446,7 +449,7 @@ export function createRecoveryHandler(d: RecoveryHandlerDeps): http.RequestListe
 
 export interface RecoveryOptions {
   env: NodeJS.ProcessEnv;
-  log: Pick<Logger, "info" | "error" | "fatal">;
+  log: Pick<Logger, "info" | "warn" | "error" | "fatal">;
   /** The problems that started recovery mode (`checkStore()`). */
   problems: readonly StoreProblem[];
   store?: StoreOptions;
@@ -456,11 +459,43 @@ export interface RecoveryOptions {
   signals?: boolean;
   /** Writes the unlock line to the terminal (DASH-UNL-001); standard output by default, never the logger. */
   print?: (line: string) => void;
+  /** Where the unlock line is shown and pinned (DASH-UNL-009); this process's terminal by default, `print` when that is given. */
+  terminal?: UnlockTerminal;
+  /** Set by `--open`: hands the start link to the browser opener, `warn` logging its failure (DASH-UNL-014, DASH-UNL-015). */
+  open?: (url: string, warn: (msg: string) => void) => void;
   notice?: NoticeOut;
 }
 
-/** The terminal alone: the unlock line goes to standard output and never through the logger, so never to its log file (DASH-UNL-001). */
-export const printToTerminal = (line: string): void => { process.stdout.write(`${line}\n`); };
+/** How long before its nonce's 10 minutes end the pinned link is renewed, so the link shown always has time left. */
+export const RENEW_EARLY_MS = 30_000;
+
+/**
+ * Writes the unlock line at start (DASH-UNL-001), in normal mode and in config recovery mode: to the terminal, which pins it and
+ * renews it when its nonce is due by the wall clock or was dropped by the cap (DASH-UNL-009, DASH-UNL-011), releases it on the
+ * first unlock (DASH-UNL-012) and, with `--open`, hands the same link to the opener, which opens the first line of the process
+ * only (DASH-UNL-014). Called once the listener is bound.
+ */
+// @spec DASH-UNL-001, DASH-UNL-009, DASH-UNL-011, DASH-UNL-012, DASH-UNL-014
+export function showUnlockLine(o: { base: string; links: UnlockLinks; terminal: UnlockTerminal; open?: ((url: string, warn: (msg: string) => void) => void) | undefined; warn: (msg: string) => void }): void {
+  const first = o.links.issue();
+  let nonce = first;
+  /** True while `next` issues: the issue's own check would see the old nonce, so it is skipped (no re-entry, whatever the terminal). */
+  let renewing = false;
+  const renewal = {
+    next: (): string => {
+      renewing = true;
+      try { nonce = o.links.issue(); } finally { renewing = false; }
+      return unlockLine(o.base, nonce);
+    },
+    stale: (): boolean => { const until = o.links.expiresAt(nonce); return until === undefined || o.links.now() >= until - RENEW_EARLY_MS; },
+  };
+  o.terminal.show(unlockLine(o.base, first), renewal);
+  if (o.terminal.pinned) {
+    o.links.watch(() => { o.terminal.release(); });
+    o.links.afterIssue(() => { if (!renewing) o.terminal.check(); });
+  }
+  o.open?.(unlockUrl(o.base, first), o.warn);
+}
 
 /**
  * Runs config recovery mode: one full-surface listener with the recovery routes, until a request finds the store usable.
@@ -495,15 +530,22 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const n = o.problems.length;
   const cause = causeOf(o.problems)!;
   o.log.error({ url }, `config recovery mode: ${CAUSE_TEXT[cause]}, ${n} problem${n === 1 ? "" : "s"}; fix them at ${url}`);
-  links.base = unlockBase(bind, addr.port);
+  const base = unlockBase(bind, addr.port);
+  links.base = base;
   // Only while the session key can be read is a link any use (DASH-UNL-001, DASH-RCV-028).
-  if (cause === "invalid-settings") (o.print ?? printToTerminal)(unlockLine(unlockBase(bind, addr.port), links.issue()));
+  let terminal: UnlockTerminal | undefined;
+  if (cause === "invalid-settings") {
+    terminal = o.terminal ?? (o.print ? plainTerminal(o.print) : processTerminal());
+    showUnlockLine({ base, links, terminal, open: o.open, warn: (m) => o.log.warn(m) });
+  }
 
   const stop = (): void => { server.close(); server.closeAllConnections(); exit(0); };
   if (o.signals !== false) { process.once("SIGINT", stop); process.once("SIGTERM", stop); }
   await valid;
   if (o.signals !== false) { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
   await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+  // Its link died with the listener: the pinned line goes before normal mode writes its own (DASH-UNL-012).
+  terminal?.release(); // @spec DASH-UNL-012
   return true;
 }
 
@@ -519,7 +561,9 @@ export interface StartOptions {
   /** The `.env` file checked for `CONTROL_TOKEN`; `dotEnvPath()` by default. */
   envFile?: string;
   /** Recovery mode's options for tests (its UI directory, its signal handlers, its terminal). */
-  recovery?: Pick<RecoveryOptions, "uiDir" | "signals" | "print" | "notice">;
+  recovery?: Pick<RecoveryOptions, "uiDir" | "signals" | "print" | "terminal" | "notice">;
+  /** Set by `--open`: hands recovery mode's unlock link to the browser opener (DASH-UNL-014). */
+  open?: RecoveryOptions["open"];
   /** Starts normal operation with the open store and the configuration it assembles (DASH-HTTP-016). */
   run: (store: Store, cfg: Config) => Promise<void>;
 }
@@ -557,7 +601,7 @@ export async function startDashboard(o: StartOptions): Promise<void> {
     if (peek !== undefined && peek.verifier === undefined) { fail(noVerifier); return; }
     let ok: boolean;
     try {
-      ok = await runRecovery({ env, log, problems, store: storeOpts, ...(o.exit ? { exit: o.exit } : {}), ...o.recovery });
+      ok = await runRecovery({ env, log, problems, store: storeOpts, ...(o.exit ? { exit: o.exit } : {}), ...(o.open ? { open: o.open } : {}), ...o.recovery });
     } catch (err) {
       log.error(err instanceof Error ? err.message : String(err));
       exit(1);

@@ -15,7 +15,7 @@ test("the dashboard task depends on build:native and build:ui, then runs the doc
   assert.deepEqual(dashboard.run, [
     `mise run docs:build || echo '${NOTICE}' >&2`,
     "tsc -b services/dashboard",
-    "node services/dashboard/dist/index.js",
+    "node services/dashboard/dist/index.js ${usage_open:+--open}",
   ]);
   assert.equal((dashboard.dir ?? "").replace(/\/$/, ""), repoRoot.replace(/\/$/, ""), "runs from the repository root wherever it is started");
   assert.ok(dependencyClosure("dashboard").has("install"), "build:ui installs the workspace first");
@@ -25,7 +25,7 @@ test("the dashboard task depends on build:native and build:ui, then runs the doc
  * Runs the task's commands as mise does (each in turn, stopping at the first that fails) with fake mise, tsc and node on
  * PATH; each records its call and exits as told.
  */
-function run(fail: { docs?: boolean; tsc?: boolean }) {
+function run(fail: { docs?: boolean; tsc?: boolean }, env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "dash-task-"));
   const log = join(dir, "calls");
   const fake = (name: string, code: number) => {
@@ -38,7 +38,7 @@ function run(fail: { docs?: boolean; tsc?: boolean }) {
   let status = 0;
   let stderr = "";
   for (const cmd of dashboard.run) {
-    const r = spawnSync("sh", ["-c", cmd], { env: { PATH: `${dir}:/usr/bin:/bin` }, encoding: "utf8" });
+    const r = spawnSync("sh", ["-c", cmd], { env: { PATH: `${dir}:/usr/bin:/bin`, ...env }, encoding: "utf8" });
     stderr += r.stderr;
     status = r.status ?? 1;
     if (status !== 0) break;
@@ -53,6 +53,15 @@ test("docs build, then the dashboard build, then the dashboard", () => {
   const r = run({});
   assert.deepEqual(r.calls, ["mise run docs:build", "tsc -b services/dashboard", "node services/dashboard/dist/index.js"]);
   assert.equal(r.stderr, "");
+});
+
+// @spec DEPLOY-HOST-001, DASH-UNL-014
+test("the task declares an --open flag and passes --open to the dashboard exactly when it was given", () => {
+  const usage = (dashboard as unknown as { usage?: string }).usage ?? "";
+  assert.match(usage, /flag "--open"/);
+  // mise sets usage_open=true for `mise run dashboard --open` and leaves it unset otherwise.
+  assert.deepEqual(run({}, { usage_open: "true" }).calls.at(-1), "node services/dashboard/dist/index.js --open");
+  assert.deepEqual(run({}).calls.at(-1), "node services/dashboard/dist/index.js");
 });
 
 // @spec DEPLOY-HOST-006

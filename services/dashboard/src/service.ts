@@ -1,3 +1,4 @@
+import type http from "node:http";
 import { WebSocketServer } from "ws";
 import type { HeartbeatSpec, ServiceContext } from "@cohost/shared";
 import { HealthTracker, LifecycleLock, storeRedeliver, withContainerRestarts, type ServiceHealth } from "@cohost/control";
@@ -14,8 +15,9 @@ import { ViewersClient } from "./viewers.js";
 import { ObservedStackController, StackService } from "./stack.js";
 import { resolvePorts, startListeners, type FeedConnection } from "./host.js";
 import { createAvatarRelay, systemClock, type Clock } from "./avatar-relay.js";
-import { unlockBase, unlockLine, UnlockLinks, type Gate } from "./access.js";
-import { printToTerminal } from "./recovery.js";
+import { hasSession, unlockBase, UnlockLinks, type Gate } from "./access.js";
+import { plainTerminal, processTerminal, type UnlockTerminal } from "./pinned-line.js";
+import { showUnlockLine } from "./recovery.js";
 import { Redeliverer, type Redeliver } from "./deliver.js";
 
 /** The one lock over the settings store: its verifier for a bearer, its session key for a cookie (DASH-CTRL-011). */
@@ -34,6 +36,10 @@ export interface DashboardDeps {
   exit?: (code: number) => void;
   /** Writes the unlock line to the terminal (DASH-UNL-001); standard output by default, never the logger. */
   print?: (line: string) => void;
+  /** Where the unlock line is shown and pinned (DASH-UNL-009); this process's terminal by default, `print` when that is given. */
+  terminal?: UnlockTerminal;
+  /** Set by `--open`: hands the start link to the browser opener, `warn` logging its failure (DASH-UNL-014, DASH-UNL-015). */
+  open?: (url: string, warn: (msg: string) => void) => void;
   /** The LAN listener's address; default all interfaces. */
   lanHost?: string;
   /** Gives the stack service its controller; default the Compose-backed one. */
@@ -106,15 +112,18 @@ export function dashboardService(deps: DashboardDeps) {
       void startFeed(feed, log).then(() => redeliverer.start()); // @spec DASH-HTTP-012
 
       // @spec DASH-HOST-001, DASH-HOST-003, DASH-HOST-009, DASH-HTTP-009
-      const listeners = await startListeners({ handler, wss, avatar: relay, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit });
+      // A browser that loads the page with a session from an earlier run is unlocked already: the pinned line goes (DASH-UNL-012).
+      const onFullRequest = (req: http.IncomingMessage): void => { if (links.watched && hasSession(gate, req)) links.unlocked(); };
+      const listeners = await startListeners({ handler, wss, avatar: relay, bind, port: PORT, lanPort: LAN_PORT, lanHost: deps.lanHost, allowedHosts: cfg.dashboard.allowed_hosts, log, exit: deps.exit, onFullRequest });
       // @spec DASH-HTTP-010, DASH-HTTP-016
       onStop(() => { offStack(); feed.stop(); stack.stop(); relay.stop(); return listeners?.close(); });
       if (!listeners) relay.stop(); // a listener that could not bind leaves nothing running
       if (listeners) {
         heartbeat.ready(); // only once both listeners are listening
-        links.base = unlockBase(bind, listeners.fullPort);
-        // @spec DASH-UNL-001
-        (deps.print ?? printToTerminal)(unlockLine(unlockBase(bind, listeners.fullPort), links.issue()));
+        const base = unlockBase(bind, listeners.fullPort);
+        links.base = base;
+        // @spec DASH-UNL-001, DASH-UNL-009, DASH-UNL-011, DASH-UNL-012, DASH-UNL-014
+        showUnlockLine({ base, links, terminal: deps.terminal ?? (deps.print ? plainTerminal(deps.print) : processTerminal()), open: deps.open, warn: (m) => log.warn(m) });
         log.info("the dashboard is locked: open the unlock link printed in this terminal, or paste the control token from your password manager when the page asks");
         stack.start();
       }

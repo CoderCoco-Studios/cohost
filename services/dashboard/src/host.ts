@@ -119,13 +119,14 @@ const isStateChanging = (method: string | undefined): boolean => method !== "GET
  * OPTIONS) with a foreign Origin is a 403 (DASH-HOST-005). They come before the control-token gate (DASH-STACK-002's order).
  */
 // @spec DASH-HOST-004, DASH-HOST-005, DASH-HOST-009
-export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; allowedHosts?: readonly string[] }): http.RequestListener {
+export function guardFullSurface(inner: http.RequestListener, o: { loopback: boolean; allowedHosts?: readonly string[]; seen?: (req: http.IncomingMessage) => void }): http.RequestListener {
   return (req, res) => {
     const method = req.method ?? "GET";
     if (!(o.loopback ? hostAllowed(req.headers.host) : hostPermitted(req.headers.host, o.allowedHosts))) { res.writeHead(403); res.end("forbidden"); return; }
     if (isStateChanging(method) && req.headers.origin !== undefined && !originAllowed(req.headers.origin, req.headers.host)) {
       res.writeHead(403); res.end("forbidden"); return;
     }
+    o.seen?.(req);
     return inner(req, res);
   };
 }
@@ -146,6 +147,8 @@ export interface ListenerOptions {
   allowedHosts?: readonly string[];
   log: Pick<Logger, "info" | "warn" | "fatal">;
   exit?: (code: number) => void;
+  /** Sees every request the full surface lets past its Host and Origin checks (the pinned unlock line's release, DASH-UNL-012). */
+  onFullRequest?: (req: http.IncomingMessage) => void;
 }
 
 /** The third argument of the feed server's `connection` event: whether the socket's tool events are redacted (DASH-FEED-011). */
@@ -198,7 +201,7 @@ export async function startListeners(o: ListenerOptions): Promise<Listeners | un
   const loopback = isLoopback(o.bind);
   const allowedHosts = o.allowedHosts ?? [];
   // No request timeout on the full surface: an upload's own 30 s idle limit (DASH-MDL-023) is the only cut on a slow body that keeps moving.
-  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, allowedHosts }));
+  const full = http.createServer({ requestTimeout: 0 }, guardFullSurface(o.handler, { loopback, allowedHosts, ...(o.onFullRequest ? { seen: o.onFullRequest } : {}) }));
   const lan = http.createServer(lanHandler(o.handler, allowedHosts));
   // @spec DASH-HOST-008, DASH-HOST-009
   const wsOrigin = (req: http.IncomingMessage): boolean => wsOriginAllowed(req.headers.origin, req.headers.host);

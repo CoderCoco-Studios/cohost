@@ -25,3 +25,9 @@ docs/.vitepress/dist
 # Rust / native addon build outputs (BUS-NAT-BLD-003)
 target/
 packages/bus/native/*.node
+
+# Claude Code: per-machine state only. Shared project config (.claude/settings.json, skills, agents, commands) stays
+# committable, so the directory itself is not ignored.
+.claude/settings.local.json
+.claude/worktrees/
+.claude/prompts/

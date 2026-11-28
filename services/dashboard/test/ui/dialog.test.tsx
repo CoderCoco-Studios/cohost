@@ -2,12 +2,43 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { useState } from "react";
 import { dialogSupported } from "./helpers/dom";
-import { fireEvent, render, screen, userEvent, within } from "./helpers/render";
+import { act, fireEvent, render, screen, userEvent, within } from "./helpers/render";
 import { Dialog, ConfirmDialog } from "../../ui/src/components/Dialog";
 import { SideSheet } from "../../ui/src/components/SideSheet";
 
 test("the emulated DOM supports <dialog>.showModal and close, which the dialog tests rely on", () => {
   assert.equal(dialogSupported(), true);
+});
+
+// @spec DASH-A11Y-005
+test("closing a dialog while another stays open keeps focus in the top one; the later one's opener chain leads back past the closed dialog to the page", async () => {
+  let set!: { a: (v: boolean) => void; b: (v: boolean) => void };
+  function H() {
+    const [a, setA] = useState(false), [b, setB] = useState(false);
+    set = { a: setA, b: setB };
+    return (<>
+      <h1 tabIndex={-1}>Screen</h1>
+      <button type="button" onClick={() => setA(true)}>Open A</button>
+      <Dialog open={a} title="A" onClose={() => setA(false)}><button type="button" onClick={() => setB(true)}>Open B</button></Dialog>
+      <Dialog open={b} title="B" onClose={() => setB(false)}><button type="button">Inside B</button></Dialog>
+    </>);
+  }
+  const user = userEvent.setup();
+  render(<H />);
+  const page = screen.getByRole("button", { name: "Open A" });
+  await user.click(page);
+  await user.click(within(screen.getByRole("dialog", { name: "A" })).getByRole("button", { name: "Open B" }));
+  const b = screen.getByRole("dialog", { name: "B" });
+  act(() => set.a(false)); // A closes behind B, as a confirmation does when its request returns
+  assert.ok(b.contains(document.activeElement), "focus stays in the open dialog, not on the inert page");
+  act(() => set.b(false));
+  assert.ok(document.activeElement === page, "B's opener (in A) is gone, so A's opener takes focus");
+});
+
+// @spec DASH-A11Y-005
+test("on open focus skips a control inside a closed disclosure", () => {
+  render(<Dialog open title="T" onClose={() => {}}><details><summary>More</summary><pre tabIndex={0}>log</pre></details></Dialog>);
+  assert.equal(document.activeElement?.textContent, "More", "the summary, not the hidden log");
 });
 
 function Host({ children = <input aria-label="Field" />, initialFocus }: { children?: React.ReactNode; initialFocus?: string }) {

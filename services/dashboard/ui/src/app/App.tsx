@@ -2,11 +2,10 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMute } from "../state/hooks";
 import { cohostName } from "../state/name";
 import { AccessDialog } from "./AccessDialog";
-import { ConfirmBars } from "./ConfirmBars";
 import { ConnectionBanner } from "./connection";
 import { RecoveryKeyBanner } from "./RecoveryKeyBanner";
 import { Header } from "./Header";
-import { LaunchDialogHost } from "./LaunchDialog";
+import { LaunchDialogHost, ShellConfirmBars } from "./LaunchDialog";
 import { navigate, useRoute } from "./routes";
 import { SCREENS } from "./screens";
 import { ShortcutHelp } from "./ShortcutHelp";
@@ -54,12 +53,12 @@ function Shell({ name }: { name: string }) {
 
   const Screen = SCREENS.find((s) => s.id === route.view)!.Screen;
   return (
-    <LaunchDialogHost>
+    <LaunchDialogHost mute={mute}>
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); mainRef.current?.focus(); }}>Skip to main content</a>
       <Header name={name} route={route} onNavigate={navigate} mute={mute} />
       <ConnectionBanner />
       <RecoveryKeyBanner />
-      <ConfirmBars />
+      <ShellConfirmBars />
       <main id="main" className="page" ref={mainRef} tabIndex={-1}><Screen route={route} /></main>
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />
       <AccessDialog />

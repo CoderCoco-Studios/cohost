@@ -18,9 +18,20 @@ async function boot(hash = "#live", opts: { sink?: boolean } = {}) {
   await act(async () => { await new Promise((res) => setTimeout(res, 0)); });
   return { ...r, app };
 }
-const push = (app: ReturnType<typeof makeApp>, frame: Record<string, unknown>) => act(() => { app.socket().message(frame); });
-const record = (over: Record<string, unknown> = {}) => ({ type: "stack-progress", kind: "launch", startedAt: 1, running: true, rows: [], lines: [], ...over });
 const stack = (over: Partial<StackSnapshot> = {}) => ({ type: "stack", ...stackMsg(over) });
+/**
+ * Sends a frame; a `stack-progress` record goes after the `stack` message the server would have sent with it: the action the
+ * record belongs to while it runs, none once it has ended.
+ */
+const push = (app: ReturnType<typeof makeApp>, frame: Record<string, unknown>) => act(() => {
+  if (frame.type === "stack-progress") {
+    const action = frame.running ? { kind: frame.kind, phase: "compose-build", startedAt: frame.startedAt } as StackSnapshot["action"] : null;
+    app.socket().message(stack({ state: action ? "starting" : "up", action }));
+  }
+  app.socket().message(frame);
+});
+const raw = (app: ReturnType<typeof makeApp>, frame: Record<string, unknown>) => act(() => { app.socket().message(frame); });
+const record = (over: Record<string, unknown> = {}) => ({ type: "stack-progress", kind: "launch", startedAt: 1, running: true, rows: [], lines: [], ...over });
 const dialog = () => screen.getByRole("dialog") as HTMLDialogElement;
 const queryDialog = () => screen.queryByRole("dialog") as HTMLDialogElement | null;
 const go = (hash: string) => act(() => { location.hash = hash; window.dispatchEvent(new HashChangeEvent("hashchange")); });
@@ -55,8 +66,10 @@ test("a page that connects while an action runs opens the dialog from the record
 // @spec DASH-UI-061
 test("while the action runs the dialog is modal and cannot be dismissed: no Close button, Escape and the backdrop do nothing, and a browser close reopens it", async () => {
   const { app } = await boot("#live");
-  push(app, record({ rows: [{ service: "voice", state: "building" }] }));
+  push(app, record({ rows: [{ service: "voice", state: "building" }], lines: ["#1 [voice 1/2] FROM cuda"] }));
   const d = dialog();
+  assert.ok(d.contains(document.activeElement), "focus is inside the dialog, not on the log inside the closed disclosure or the page");
+  assert.ok(!document.activeElement!.closest("details:not([open]) > pre"));
   assert.equal(d.getAttribute("aria-modal"), "true");
   assert.equal(within(d).queryByRole("button", { name: "Close" }), null);
   await userEvent.setup().keyboard("{Escape}");
@@ -67,6 +80,61 @@ test("while the action runs the dialog is modal and cannot be dismissed: no Clos
   assert.equal(dialog().open, true, "a backdrop click leaves it open");
   act(() => { d.close(); });
   await waitFor(() => assert.equal(dialog().open, true, "a browser close reopens it"));
+  assert.ok(dialog().contains(document.activeElement), "focus is back inside the reopened dialog");
+});
+
+// @spec DASH-UI-060
+test("a running record whose action the stack message does not report opens nothing", async () => {
+  const { app } = await boot("#live");
+  raw(app, stack({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: 9 } }));
+  raw(app, record({ startedAt: 1 }));
+  assert.equal(queryDialog(), null, "the record is not the running action's");
+  raw(app, stack({ state: "up" }));
+  raw(app, record({ startedAt: 2 }));
+  assert.equal(queryDialog(), null, "no action is running");
+});
+
+// @spec DASH-UI-060, DASH-UI-070
+test("a dashboard restarted mid-action: the dialog says live updates stopped, then the reconnect drops the old record and the dialog closes", async () => {
+  const { app } = await boot("#live");
+  push(app, record());
+  assert.ok(screen.getByRole("dialog", { name: "Launch running" }));
+  assert.doesNotMatch(dialog().textContent ?? "", /Live updates stopped/);
+  act(() => { app.socket().serverClose(); });
+  assert.match(within(dialog()).getByText(/Live updates stopped/).textContent ?? "", /out of date until the dashboard reconnects/);
+  assert.equal(within(dialog()).getByText(/Live updates stopped/).getAttribute("role"), "status");
+  act(() => { app.clock.tick(2000); });
+  act(() => { app.socket().open(); }); // the new dashboard process has no record and sends none
+  raw(app, stack({ state: "starting" }));
+  assert.equal(queryDialog(), null, "the dialog is not held open by a record the server no longer has");
+});
+
+// @spec DASH-UI-069
+test("the launch dialog holds the Mute button and the pending tool confirmations, and m toggles mute while it is open", async () => {
+  const { app } = await boot("#live");
+  app.fetch.on("POST /control", { status: 204 });
+  app.fetch.on("POST /tools/answer", { status: 202, text: "" });
+  app.rt.access.setToken("control", "tok", "tab");
+  push(app, record());
+  raw(app, { id: "1-0", type: "tool.confirm", ts: 0, source: "tools", data: { id: "c1", tool: "weather__post", arguments: { text: "hi" }, origin: "dashboard", expiresAt: 60000 } });
+  const d = dialog();
+  const bar = d.querySelector<HTMLElement>('[data-confirm="c1"]');
+  assert.ok(bar, "the confirmation bar is inside the dialog");
+  assert.equal(document.querySelectorAll('[data-confirm="c1"]').length, 1, "and only there");
+  const user = userEvent.setup();
+  await user.click(within(bar!).getByRole("button", { name: /Allow/ }));
+  await waitFor(() => assert.equal(app.fetch.callsTo("POST /tools/answer").length, 1));
+  await user.click(within(d).getByRole("button", { name: "Mute co-host" }));
+  await waitFor(() => assert.equal(app.fetch.callsTo("POST /control").length, 1));
+  assert.deepEqual(JSON.parse(app.fetch.callsTo("POST /control")[0]!.body!), { cmd: "mute" });
+  raw(app, { id: "2-0", type: "control", ts: 0, source: "dashboard", data: { cmd: "mute" } });
+  await user.keyboard("m");
+  await waitFor(() => assert.equal(app.fetch.callsTo("POST /control").length, 2));
+  assert.deepEqual(JSON.parse(app.fetch.callsTo("POST /control")[1]!.body!), { cmd: "unmute" });
+  push(app, record({ running: false, ok: true, finishedAt: 2 }));
+  await user.click(within(dialog()).getAllByRole("button", { name: "Close" })[0]!);
+  assert.ok(document.querySelector('[data-confirm="c1"]'), "the bar is back under the header once the dialog is closed");
+  assert.equal(document.querySelector('[data-confirm="c1"]')!.closest("dialog"), null);
 });
 
 // @spec DASH-UI-062
@@ -183,7 +251,9 @@ test("a failure reopened from the stack card's link is a status, not an alert", 
   push(app, record({ running: false, ok: false, finishedAt: 2, failure: { service: "voice", lines: ["ERROR: boom"] } }));
   await userEvent.setup().click(within(screen.getByRole("region", { name: "Stack" })).getByRole("button", { name: "Last launch: details" }));
   assert.equal(within(dialog()).queryByRole("alert"), null);
-  assert.match(within(dialog()).getByRole("status").textContent ?? "", /voice failed to build/);
+  const failure = dialog().querySelector(".launch-failure")!;
+  assert.equal(failure.getAttribute("role"), "status");
+  assert.match(failure.textContent ?? "", /voice failed to build/);
 });
 
 // @spec DASH-UI-057

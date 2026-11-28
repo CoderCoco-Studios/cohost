@@ -205,7 +205,7 @@ export function createFeed(deps: FeedDeps): Feed {
       return;
     }
     socket = sock;
-    sock.onopen = () => state.set((s) => { const { stoppedAt: _a, nextAttemptAt: _b, ...rest } = s; return { ...rest, status: "open" }; });
+    sock.onopen = () => state.set((s) => { const { stoppedAt: _a, nextAttemptAt: _b, ...rest } = s; return { ...rest, status: "open", progress: null }; }); // a record the server no longer has must not survive a reconnect (DASH-UI-060)
     sock.onmessage = (e) => { if (typeof e.data === "string") onFrame(e.data); };
     sock.onclose = () => {
       if (socket !== sock || stopped) return;

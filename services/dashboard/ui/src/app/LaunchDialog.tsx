@@ -1,14 +1,19 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { ActionStatus } from "../components/ActionStatus";
 import { Button } from "../components/Button";
 import { Dialog } from "../components/Dialog";
-import { useFeed } from "../state/hooks";
+import { Icon } from "../components/Icon";
+import { useFeed, type useMute } from "../state/hooks";
+import { ConfirmBars } from "./ConfirmBars";
+
+type Mute = ReturnType<typeof useMute>;
 import type { ProgressRow, StackProgress } from "../state/types";
 import { KIND_LABEL, outcomeWords, rowStateWords } from "../screens/services/model";
 
-/** What the stack card needs from the launch progress dialog: a way to reopen it on the kept record. */
-export interface LaunchDialogControl { show: () => void }
+/** What the shell and the stack card need from the launch progress dialog: whether it is open, and a way to reopen it on the kept record. */
+export interface LaunchDialogControl { open: boolean; show: () => void }
 
-const Ctx = createContext<LaunchDialogControl>({ show: () => {} });
+const Ctx = createContext<LaunchDialogControl>({ open: false, show: () => {} });
 
 /** The launch progress dialog's state, for the stack card's "Last launch: details" link (DASH-UI-063). */
 export function useLaunchDialog(): LaunchDialogControl { return useContext(Ctx); }
@@ -91,27 +96,42 @@ function Progress({ p, alert }: { p: StackProgress; alert: boolean }) {
  * nothing, but the stack card's link reopens it on the kept record. The failure is an alert only when this page saw the action
  * running and then fail and has not closed it since.
  */
-// @spec DASH-UI-055, DASH-UI-056, DASH-UI-057, DASH-UI-060, DASH-UI-061, DASH-UI-062, DASH-UI-063, DASH-UI-064
-export function LaunchDialogHost({ children }: { children?: ReactNode }) {
+// @spec DASH-UI-055, DASH-UI-056, DASH-UI-057, DASH-UI-060, DASH-UI-061, DASH-UI-062, DASH-UI-063, DASH-UI-064, DASH-UI-069, DASH-UI-070
+export function LaunchDialogHost({ mute, children }: { /** The shell's mute state, shared with the header and the `m` shortcut. */ mute: Mute; children?: ReactNode }) {
   const p = useFeed((f) => f.progress);
+  const actionStart = useFeed((f) => f.stack?.action?.startedAt);
+  const offline = useFeed((f) => f.stoppedAt !== undefined);
   const sawRunning = useRef<number | null>(null);
   const [closed, setClosed] = useState<number | null>(null);
   const [reopened, setReopened] = useState<number | null>(null);
-  if (p?.running) sawRunning.current = p.startedAt;
+  // Running only while the server still reports the action the record belongs to (DASH-UI-060).
+  const running = p !== null && p.running && actionStart === p.startedAt;
+  if (running) sawRunning.current = p.startedAt;
   const key = p?.startedAt ?? null;
-  const open = p !== null && (p.running || reopened === key || (sawRunning.current === key && closed !== key));
+  const open = p !== null && (running || reopened === key || (sawRunning.current === key && closed !== key));
   const close = useCallback(() => { setClosed(key); setReopened(null); }, [key]);
   const show = useCallback(() => setReopened(key), [key]);
-  const control = useMemo(() => ({ show }), [show]);
+  const control = useMemo(() => ({ open, show }), [open, show]);
   const alert = p !== null && p.failure !== undefined && !p.running && sawRunning.current === key && reopened !== key;
-  const title = p ? `${KIND_LABEL[p.kind]} ${outcomeWords(p)}` : "";
+  const title = p ? `${KIND_LABEL[p.kind]} ${outcomeWords({ running, ok: p.ok })}` : "";
   return (
     <Ctx.Provider value={control}>
       {children}
-      <Dialog open={open} title={title} className="launch-dialog" dismissible={!p?.running} onClose={close}
-        footer={p && !p.running ? <Button onClick={close}>Close</Button> : undefined}>
-        {p ? <Progress p={p} alert={alert} /> : null}
+      <Dialog open={open} title={title} className="launch-dialog" dismissible={!running} muteShortcut onClose={close}
+        footer={p && !running ? <Button onClick={close}>Close</Button> : undefined}>
+        {offline ? <p className="note note-warn small" role="status">Live updates stopped. What this shows may be out of date until the dashboard reconnects.</p> : null}
+        {p ? <Progress p={{ ...p, running }} alert={alert} /> : null}
+        <div className="row launch-mute">
+          <Button aria-pressed={mute.muted} busy={mute.pending} onClick={() => void mute.toggle()}><Icon name="mic" /><span className="btn-text">{mute.label}</span></Button>
+          <ActionStatus state={mute.action.state} onDismiss={mute.action.dismiss} />
+        </div>
+        <ConfirmBars />
       </Dialog>
     </Ctx.Provider>
   );
+}
+
+/** The tool confirmation bars between the header and the screen, except while the launch progress dialog holds them (DASH-UI-069). */
+export function ShellConfirmBars() {
+  return useLaunchDialog().open ? null : <ConfirmBars />;
 }

@@ -114,7 +114,15 @@ export class UnlockLinks {
   /** The full-surface address and port links name (`unlockBase`), set once the listener is bound (DASH-UNL-001, DASH-UNL-006). */
   base: string | undefined;
   private onUnlock: (() => void) | undefined;
-  constructor(private readonly now: () => number = Date.now, readonly ttlMs = 10 * 60_000, readonly max = 16) {}
+  private onIssue: (() => void) | undefined;
+  /** `now` is the wall clock the nonces' 10 minutes are counted on, so time the machine spent suspended counts too. */
+  constructor(readonly now: () => number = Date.now, readonly ttlMs = 10 * 60_000, readonly max = 16) {}
+
+  /** When `n` stops being accepted (by `now`), or undefined when it is not held: used, dropped by the cap, or never made here. */
+  expiresAt(n: string): number | undefined { return this.nonces.get(n); }
+
+  /** Calls `fn` after every `issue`, which may have dropped the oldest nonce (the pinned line's check, DASH-UNL-011). */
+  afterIssue(fn: (() => void) | undefined): void { this.onIssue = fn; }
 
   /** Calls `fn` once, on the first unlock after this (`unlocked`): the pinned terminal line's release (DASH-UNL-012). */
   watch(fn: () => void): void { this.onUnlock = fn; }
@@ -134,6 +142,7 @@ export class UnlockLinks {
     const n = b64(randomBytes(32));
     this.nonces.set(n, this.now() + this.ttlMs);
     while (this.nonces.size > this.max) this.nonces.delete(this.nonces.keys().next().value as string);
+    this.onIssue?.();
     return n;
   }
 

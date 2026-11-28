@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { openInBrowser, openerFor, wantsOpen, type OpenerHost, type Spawn } from "../src/opener.js";
+import { EventEmitter } from "node:events";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { openInBrowser, openerFor, spawnOpener, wantsOpen, type OpenerHost, type Spawn } from "../src/opener.js";
 
 const URL_ = "http://127.0.0.1:3000/unlock?n=SECRETNONCE";
 
@@ -52,4 +54,30 @@ test("a platform with no opener is one warning, and nothing is spawned", async (
   assert.equal(spawned, 0);
   assert.equal(warnings.length, 1);
   assert.ok(!warnings[0]!.includes("SECRETNONCE"));
+});
+
+/** A child process the test ends as it likes, recording how it was spawned and whether it was unref'd. */
+function fakeSpawn() {
+  const calls: { cmd: string; args: readonly string[]; opts: SpawnOptions }[] = [];
+  const child = Object.assign(new EventEmitter(), { unrefed: 0, unref() { this.unrefed++; } });
+  const spawn = (cmd: string, args: readonly string[], opts: SpawnOptions) => { calls.push({ cmd, args, opts }); return child as unknown as ChildProcess; };
+  return { calls, child, spawn };
+}
+
+// @spec DASH-UNL-014, DASH-UNL-015
+test("the opener runs detached from the dashboard's terminal and unref'd, so Ctrl+C on the dashboard does not reach it; its exit is still reported", async () => {
+  const f = fakeSpawn();
+  const done = spawnOpener("xdg-open", [URL_], f.spawn);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0]!.opts.detached, true);
+  assert.equal(f.calls[0]!.opts.stdio, "ignore");
+  assert.equal(f.child.unrefed, 1);
+  f.child.emit("exit", 4, null);
+  assert.deepEqual(await done, { code: 4, signal: null });
+
+  const g = fakeSpawn();
+  const failed = spawnOpener("wslview", [URL_], g.spawn);
+  const error = new Error("spawn wslview ENOENT");
+  g.child.emit("error", error);
+  assert.deepEqual(await failed, { error });
 });

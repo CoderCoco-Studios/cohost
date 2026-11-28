@@ -466,17 +466,29 @@ export interface RecoveryOptions {
   notice?: NoticeOut;
 }
 
+/** How long before its nonce's 10 minutes end the pinned link is renewed, so the link shown always has time left. */
+export const RENEW_EARLY_MS = 30_000;
+
 /**
- * Writes the start unlock line (DASH-UNL-001), in normal mode and in config recovery mode: to the terminal, which pins it and
- * renews it with a fresh nonce when the nonce's 10 minutes end (DASH-UNL-009, DASH-UNL-011), releases it on the first unlock
- * (DASH-UNL-012) and, with `--open`, hands the same link to the browser opener (DASH-UNL-014). Called once the listener is bound.
+ * Writes the unlock line at start (DASH-UNL-001), in normal mode and in config recovery mode: to the terminal, which pins it and
+ * renews it when its nonce is due by the wall clock or was dropped by the cap (DASH-UNL-009, DASH-UNL-011), releases it on the
+ * first unlock (DASH-UNL-012) and, with `--open`, hands the same link to the opener, which opens the first line of the process
+ * only (DASH-UNL-014). Called once the listener is bound.
  */
 // @spec DASH-UNL-001, DASH-UNL-009, DASH-UNL-011, DASH-UNL-012, DASH-UNL-014
 export function showUnlockLine(o: { base: string; links: UnlockLinks; terminal: UnlockTerminal; open?: ((url: string, warn: (msg: string) => void) => void) | undefined; warn: (msg: string) => void }): void {
-  const nonce = o.links.issue();
-  o.terminal.show(unlockLine(o.base, nonce), () => unlockLine(o.base, o.links.issue()), o.links.ttlMs);
-  if (o.terminal.pinned) o.links.watch(() => { o.terminal.release(); });
-  o.open?.(unlockUrl(o.base, nonce), o.warn);
+  const first = o.links.issue();
+  let nonce = first;
+  const renewal = {
+    next: (): string => { nonce = o.links.issue(); return unlockLine(o.base, nonce); },
+    stale: (): boolean => { const until = o.links.expiresAt(nonce); return until === undefined || o.links.now() >= until - RENEW_EARLY_MS; },
+  };
+  o.terminal.show(unlockLine(o.base, first), renewal);
+  if (o.terminal.pinned) {
+    o.links.watch(() => { o.terminal.release(); });
+    o.links.afterIssue(() => { o.terminal.check(); });
+  }
+  o.open?.(unlockUrl(o.base, first), o.warn);
 }
 
 /**
@@ -515,8 +527,9 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   const base = unlockBase(bind, addr.port);
   links.base = base;
   // Only while the session key can be read is a link any use (DASH-UNL-001, DASH-RCV-028).
+  let terminal: UnlockTerminal | undefined;
   if (cause === "invalid-settings") {
-    const terminal = o.terminal ?? (o.print ? plainTerminal(o.print) : processTerminal());
+    terminal = o.terminal ?? (o.print ? plainTerminal(o.print) : processTerminal());
     showUnlockLine({ base, links, terminal, open: o.open, warn: (m) => o.log.warn(m) });
   }
 
@@ -525,6 +538,8 @@ export async function runRecovery(o: RecoveryOptions): Promise<boolean> {
   await valid;
   if (o.signals !== false) { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
   await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections(); });
+  // Its link died with the listener: the pinned line goes before normal mode writes its own (DASH-UNL-012).
+  terminal?.release(); // @spec DASH-UNL-012
   return true;
 }
 

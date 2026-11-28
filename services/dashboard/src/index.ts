@@ -18,11 +18,12 @@ import { createLogger } from "@cohost/config";
 import { runService } from "@cohost/shared";
 import { dashboardService } from "./service.js";
 import { startDashboard } from "./recovery.js";
-import { openInBrowser, wantsOpen } from "./opener.js";
+import { firstOnly, openInBrowser, wantsOpen } from "./opener.js";
 
 /** `mise run dashboard --open`: the start unlock link goes to the browser opener once the listener is bound (DASH-UNL-014). */
 // @spec DASH-UNL-014
-const open = wantsOpen(process.argv) ? (url: string, warn: (msg: string) => void): void => { void openInBrowser(url, { warn }); } : undefined;
+// One opener for the whole process: recovery mode and the normal mode after it share it, so only the first line is opened.
+const open = wantsOpen(process.argv) ? firstOnly((url: string, warn: (msg: string) => void): void => { void openInBrowser(url, { warn }); }) : undefined;
 
 // @spec DASH-HTTP-016, DASH-RCV-001
 await startDashboard({

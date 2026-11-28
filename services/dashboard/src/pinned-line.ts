@@ -34,13 +34,21 @@ export interface TerminalIo {
   };
 }
 
+/** How a pinned line is kept working: `stale` says when its link is due for renewal, `next` makes the line with a fresh one. */
+export interface Renewal {
+  next(): string;
+  stale(): boolean;
+}
+
 /** Where the dashboard writes its unlock line (DASH-UNL-001): shown, renewed while shown, released on the first unlock. */
 export interface UnlockTerminal {
-  /** Writes `line`; while it stays pinned, `renew` makes the next line every `renewMs`. A line already pinned is replaced. */
-  show(line: string, renew?: () => string, renewMs?: number): void;
+  /** Writes `line`; while it stays pinned (or held unpinned for lack of rows), `renewal` keeps its link working. A line already pinned is replaced. */
+  show(line: string, renewal?: Renewal): void;
   /** Removes the pinned line, if any (DASH-UNL-012). */
   release(): void;
-  /** True while a line is pinned or waiting for a resize that leaves room for it. */
+  /** Renews the line now if its link is due (as when its nonce was just dropped by the cap, DASH-UNL-002). */
+  check(): void;
+  /** True while a line is pinned or held unpinned for lack of rows. */
   readonly pinned: boolean;
 }
 
@@ -54,6 +62,7 @@ const LOG_ROWS = 3;
 export const plainTerminal = (print: (line: string) => void): UnlockTerminal => ({
   show: (line) => { print(line); },
   release: () => {},
+  check: () => {},
   pinned: false,
 });
 
@@ -69,12 +78,16 @@ export class PinnedLine implements UnlockTerminal {
   /** The first row of the pinned rows, while they are on screen; undefined while the terminal is too small. */
   private top: number | undefined;
   private cleanups: (() => void)[] = [];
+  private renewal: Renewal | undefined;
+  private checking = false;
+  private readonly pollMs: number;
 
-  constructor(private readonly io: TerminalIo) {}
+  /** `pollMs`: how often the link is checked against the wall clock (timers do not count time the machine spent suspended). */
+  constructor(private readonly io: TerminalIo, o: { pollMs?: number } = {}) { this.pollMs = o.pollMs ?? 15_000; }
 
   get pinned(): boolean { return this.active; }
 
-  show(line: string, renew?: () => string, renewMs?: number): void {
+  show(line: string, renewal?: Renewal): void {
     if (this.active) this.release();
     const size = this.io.isTTY() ? this.io.size() : undefined;
     if (!size || !this.fits(line, size)) { this.io.write(`${line}\n`); return; }
@@ -93,23 +106,28 @@ export class PinnedLine implements UnlockTerminal {
     const handlers = SIGNALS.map((s) => [s, onSignal(s)] as const);
     for (const [s, fn] of handlers) this.io.proc.on(s, fn);
     let cancelTimer = (): void => {};
-    if (renew && renewMs !== undefined) {
-      const schedule = (): void => {
-        cancelTimer = this.io.setTimer(() => {
-          if (!this.active) return;
-          this.line = renew();
-          if (this.top !== undefined) this.paint();
-          schedule();
-        }, renewMs);
-      };
+    this.renewal = renewal;
+    if (renewal) {
+      const schedule = (): void => { cancelTimer = this.io.setTimer(() => { this.check(); if (this.active) schedule(); }, this.pollMs); };
       schedule();
     }
     this.cleanups = [offResize, () => { cancelTimer(); }, () => { this.io.proc.off("exit", onExit); }, ...handlers.map(([s, fn]) => () => { this.io.proc.off(s, fn); })];
   }
 
+  check(): void {
+    if (!this.active || !this.renewal || this.checking) return;
+    this.checking = true;
+    try {
+      if (!this.renewal.stale()) return;
+      this.line = this.renewal.next();
+      if (this.top !== undefined) this.paint();
+    } finally { this.checking = false; }
+  }
+
   release(): void {
     if (!this.active) return;
     this.active = false;
+    this.renewal = undefined;
     for (const c of this.cleanups.splice(0)) c();
     if (this.top !== undefined) this.io.write(`${SAVE}${RESET_REGION}${rowStart(this.top)}${CLEAR_BELOW}${RESTORE}`);
     this.top = undefined;
@@ -139,9 +157,12 @@ export class PinnedLine implements UnlockTerminal {
   private resized(): void {
     if (!this.active) return;
     const size = this.io.size();
-    if (this.top !== undefined) this.io.write(`${SAVE}${RESET_REGION}${RESTORE}`);
+    const fits = size !== undefined && this.fits(this.line, size);
+    // With room, the old rows are cleared at the old geometry so no stale copy of the link is left in the scrollback; without
+    // room they are left to scroll away with the logs (DASH-UNL-010).
+    if (this.top !== undefined) this.io.write(fits ? `${SAVE}${RESET_REGION}${rowStart(this.top)}${CLEAR_BELOW}${RESTORE}` : `${SAVE}${RESET_REGION}${RESTORE}`);
     this.top = undefined;
-    if (size && this.fits(this.line, size)) this.pin(size);
+    if (fits) this.pin(size);
   }
 }
 

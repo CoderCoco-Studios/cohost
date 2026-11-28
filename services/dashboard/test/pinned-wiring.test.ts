@@ -13,9 +13,10 @@ import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import type { StackService, StackOps } from "../src/stack.js";
 import { dashboardService, storeGate } from "../src/service.js";
-import { runRecovery } from "../src/recovery.js";
-import { SESSION_COOKIE, newSession } from "../src/access.js";
-import type { UnlockTerminal } from "../src/pinned-line.js";
+import { runRecovery, showUnlockLine } from "../src/recovery.js";
+import { SESSION_COOKIE, UnlockLinks, newSession } from "../src/access.js";
+import { firstOnly } from "../src/opener.js";
+import type { Renewal, UnlockTerminal } from "../src/pinned-line.js";
 import { brokenStore, testStore } from "./store-fixture.js";
 import { AUTH } from "./control-fixture.js";
 
@@ -43,11 +44,13 @@ async function freePort(): Promise<number> {
 /** A terminal that records what the dashboard hands it. */
 function recordingTerminal() {
   const t = {
-    shown: [] as { line: string; renew: (() => string) | undefined; renewMs: number | undefined }[],
+    shown: [] as { line: string; renewal: Renewal | undefined }[],
     releases: 0,
+    checks: 0,
     pinned: false,
-    show(line: string, renew?: () => string, renewMs?: number) { t.shown.push({ line, renew, renewMs }); t.pinned = true; },
+    show(line: string, renewal?: Renewal) { t.shown.push({ line, renewal }); t.pinned = true; },
     release() { t.releases++; t.pinned = false; },
+    check() { t.checks++; },
   };
   return t satisfies UnlockTerminal;
 }
@@ -97,10 +100,10 @@ async function normal(o: { open?: boolean } = {}) {
 test("normal mode hands the terminal the unlock line and a renewal that makes a working link every 10 minutes", async () => {
   const r = await normal();
   assert.equal(r.terminal.shown.length, 1);
-  const { line, renew, renewMs } = r.terminal.shown[0]!;
+  const { line, renewal } = r.terminal.shown[0]!;
   assert.match(line, /^Unlock this browser: http:\/\/127\.0\.0\.1:\d+\/unlock\?n=[A-Za-z0-9_-]{43}$/);
-  assert.equal(renewMs, 10 * 60_000);
-  const fresh = renew!();
+  assert.equal(renewal!.stale(), false, "a fresh link is not due");
+  const fresh = renewal!.next();
   assert.notEqual(fresh, line);
   const u = new URL(urlOf(fresh));
   assert.equal((await get(r.dashboard.port, u.pathname + u.search)).status, 303, "the renewed link unlocks");
@@ -166,7 +169,7 @@ async function recovery(cause: "invalid-settings" | "missing-key") {
 test("config recovery with invalid settings pins the line, opens it with --open, and releases it on a session cookie", async () => {
   const r = await recovery("invalid-settings");
   assert.equal(r.terminal.shown.length, 1);
-  assert.equal(r.terminal.shown[0]!.renewMs, 10 * 60_000);
+  assert.equal(r.terminal.shown[0]!.renewal!.stale(), false);
   assert.deepEqual(r.opened, [urlOf(r.terminal.shown[0]!.line)]);
   await get(r.port, "/services/control", { cookie: r.session });
   assert.equal(r.terminal.releases, 1);
@@ -188,4 +191,61 @@ test("where no unlock line is written (a missing key) --open opens nothing", asy
   assert.equal(r.terminal.shown.length, 0);
   assert.deepEqual(r.opened, []);
   await r.finish();
+});
+
+// @spec DASH-UNL-012
+test("config recovery mode ending and closing its listener releases the pinned line", async () => {
+  const r = await recovery("invalid-settings");
+  assert.equal(r.terminal.releases, 0);
+  await r.finish();
+  assert.equal(r.terminal.releases, 1);
+});
+
+const BASE = "http://127.0.0.1:3000";
+
+// @spec DASH-UNL-011
+test("the pinned link is due by the wall clock the nonces use, 30 s before its 10 minutes end, suspend time included", () => {
+  let now = 1_000_000;
+  const links = new UnlockLinks(() => now);
+  const terminal = recordingTerminal();
+  showUnlockLine({ base: BASE, links, terminal, warn: () => {} });
+  const renewal = terminal.shown[0]!.renewal!;
+  assert.equal(renewal.stale(), false);
+  now += 10 * 60_000 - 31_000; // a jump as after a suspend: no timer ran meanwhile
+  assert.equal(renewal.stale(), false);
+  now += 1_000;
+  assert.equal(renewal.stale(), true);
+  const fresh = renewal.next();
+  assert.notEqual(fresh, terminal.shown[0]!.line);
+  assert.equal(renewal.stale(), false, "the fresh nonce has its own 10 minutes");
+  const n = new URL(fresh.slice("Unlock this browser: ".length)).searchParams.get("n");
+  assert.equal(links.consume(n), true, "the fresh link works");
+});
+
+// @spec DASH-UNL-011
+test("a pinned nonce dropped by the cap of 16 is due at once: each issue asks the terminal to check", () => {
+  const links = new UnlockLinks();
+  const terminal = recordingTerminal();
+  showUnlockLine({ base: BASE, links, terminal, warn: () => {} });
+  const renewal = terminal.shown[0]!.renewal!;
+  for (let i = 0; i < 15; i++) links.issue();
+  assert.equal(renewal.stale(), false, "16 unused: still held");
+  const before = terminal.checks;
+  links.issue();
+  assert.ok(terminal.checks > before);
+  assert.equal(renewal.stale(), true, "dropped");
+  renewal.next();
+  assert.equal(renewal.stale(), false);
+});
+
+// @spec DASH-UNL-014
+test("--open opens the first unlock line of the process only: not the line normal mode writes after recovery, not a renewed line", () => {
+  const opened: string[] = [];
+  const open = firstOnly((url: string) => { opened.push(url); });
+  const first = recordingTerminal();
+  showUnlockLine({ base: BASE, links: new UnlockLinks(), terminal: first, open, warn: () => {} });
+  first.shown[0]!.renewal!.next();
+  const second = recordingTerminal();
+  showUnlockLine({ base: "http://127.0.0.1:3001", links: new UnlockLinks(), terminal: second, open, warn: () => {} });
+  assert.deepEqual(opened, [first.shown[0]!.line.slice("Unlock this browser: ".length)]);
 });

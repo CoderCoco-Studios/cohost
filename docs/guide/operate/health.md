@@ -65,7 +65,7 @@ A `—` in the column means no heartbeat has been seen.
 
 ## Infrastructure rows
 
-Below the services, an **Infrastructure** group lists the containers that send no heartbeat: Redis, Postgres, Ollama, the speech servers and the `models` job. Their state is what Docker reports (`running`, `running, healthy`, `exited`, ...), and the why and last-seen cells read "n/a — container only", since there is no heartbeat to show; the restart count is Docker's, as for the other rows. `models` downloads the configured models and stops, so after a good Launch it reads `completed`, and `failed (exit n)` if the download failed. Ollama, the speech servers and, with `CONTROL_ADVANCED=1`, Redis and Postgres have a **Restart** button.
+Below the services, an **Infrastructure** group lists the containers that send no heartbeat: Redis, [Postgres](../../start/glossary.md#postgres), [Ollama](../../start/glossary.md#ollama), the speech servers and the `models` job. Their state is what Docker reports (`running`, `running, healthy`, `exited`, ...), and the why and last-seen cells read "n/a — container only", since there is no heartbeat to show; the restart count is Docker's, as for the other rows. `models` downloads the configured models and stops, so after a good Launch it reads `completed`, and `failed (exit n)` if the download failed. Ollama, the speech servers and, with `CONTROL_ADVANCED=1`, Redis and Postgres have a **Restart** button.
 
 ## Live, from your dashboard
 

@@ -14,12 +14,13 @@ const EDITABLE = "input, textarea, select, [contenteditable=''], [contenteditabl
 
 /**
  * Global keyboard shortcuts (DASH-NAV-003): `/`, `1`-`4`, `m`, `Esc`, `?`. They do nothing while focus is in an input,
- * textarea, select or editable element, with Ctrl, Alt or Meta held, or (except `Esc`) while a modal dialog is open.
+ * textarea, select or editable element, with Ctrl, Alt or Meta held, or (except `Esc`, and `m` over a dialog marked
+ * `data-mute-shortcut`) while a modal dialog is open.
  * Esc closes the top-most modal dialog (the one opened last, which the browser also treats as the one Esc is for) by sending
  * it the `cancel` event itself and cancelling the key's default. A browser acts on Esc only when the keydown is not default-
  * prevented, so it does not also cancel the dialog (or the one behind it); the emulated DOM has no native Esc at all.
  */
-// @spec DASH-NAV-003
+// @spec DASH-NAV-003, DASH-UI-069
 export function useShortcuts(actions: ShortcutActions): void {
   const ref = useRef(actions);
   ref.current = actions;
@@ -32,8 +33,10 @@ export function useShortcuts(actions: ShortcutActions): void {
         if (dialog) { e.preventDefault(); dialog.dispatchEvent(new Event("cancel", { cancelable: true })); }
         return;
       }
-      if (dialog || target?.closest?.(EDITABLE) || (target as HTMLElement | null)?.isContentEditable) return;
+      if (target?.closest?.(EDITABLE) || (target as HTMLElement | null)?.isContentEditable) return;
       const a = ref.current;
+      // A dialog that keeps mute in reach (the launch progress dialog, DASH-UI-069) lets `m` through; nothing else.
+      if (dialog) { if (e.key === "m" && dialog.hasAttribute("data-mute-shortcut")) a.mute(); return; }
       if (e.key === "/") { e.preventDefault(); a.say(); }
       else if (e.key >= "1" && e.key <= "4") a.view(Number(e.key) - 1);
       else if (e.key === "m") a.mute();

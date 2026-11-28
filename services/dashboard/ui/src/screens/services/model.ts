@@ -1,5 +1,6 @@
 import type { HealthState, ProgressRowState, ServiceHealth, StackActionKind, StackProgress, StackSnapshot, UnitDescriptor } from "../../state/types";
 import { needsAttention } from "../../state/derive";
+import type { StatusInfo } from "../../components/Status";
 
 /** `45s`, or `2m 05s` from a minute up. Negative spans (a skewed clock) read as `0s`. */
 export function elapsed(ms: number): string {
@@ -66,7 +67,32 @@ export function stackStep(kind: StackActionKind, phase: string): 1 | 2 | undefin
   return phase === "waiting" ? 2 : 1;
 }
 
-/** A Launch panel row's state in words (DASH-UI-055). */
+/** A container of the stack snapshot. */
+export type Container = StackSnapshot["services"][number];
+
+/**
+ * An Infrastructure row's state from Docker's view (DASH-UI-065, DASH-UI-066): an exited one-shot reads `completed` on exit 0
+ * and `failed (exit n)` otherwise; a running container is ok unless its health says otherwise; the word carries the health.
+ */
+// @spec DASH-UI-065, DASH-UI-066
+export function containerStatus(c: Pick<Container, "status" | "health" | "oneShot" | "exitCode">): StatusInfo {
+  if (c.oneShot && c.status === "exited" && c.exitCode !== undefined) {
+    return c.exitCode === 0 ? { status: "ok", word: "completed" } : { status: "bad", word: `failed (exit ${c.exitCode})` };
+  }
+  const word = c.health ? `${c.status}, ${c.health}` : c.status;
+  if (c.status === "running") return { status: c.health === "unhealthy" ? "bad" : c.health === "starting" ? "building" : "ok", word };
+  if (c.status === "restarting") return { status: "warn", word };
+  if (c.status === "dead") return { status: "bad", word };
+  return { status: "stopped", word };
+}
+
+/** The containers of the snapshot that have no row of their own in the `services` message, by service name (DASH-UI-065). */
+export function infraContainers(stack: StackSnapshot | null, services: readonly Pick<ServiceHealth, "service">[] | null): Container[] {
+  const rows = new Set((services ?? []).map((s) => s.service));
+  return (stack?.services ?? []).filter((c) => !rows.has(c.service)).toSorted((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0));
+}
+
+/** A launch progress row's state in words (DASH-UI-055). */
 export function rowStateWords(s: ProgressRowState): string {
   return s; // building, cached, built, failed, restarting, done read as they are
 }

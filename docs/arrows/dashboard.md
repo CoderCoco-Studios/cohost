@@ -6,7 +6,7 @@ The operator's web UI and HTTP/WebSocket API: the React UI (live feed, controls,
 
 **#372 settings-store design (docs only, not built):** 465 specs: 395 `[x]`, 70 `[ ]`, 0 `[D]`; the token check against the store's verifier, the store's session key, personality and secret writes to the store, recovery for three causes ([settings-store.md](settings-store.md)). The status paragraphs below describe the code before that design.
 
-**MAPPED.** 478 specs: 467 implemented, 11 gaps, 0 deferred. The Services screen shows launch, rebuild and restart-all progress with the build output (DASH-STACK-011 to 017, DASH-FEED-013, DASH-UI-055 to 058) and one Docker restart count per row in a fixed-width table (DASH-UI-059). The dashboard runs over the settings store (#372): its entry opens the store, registers its `logging` section and refuses a `CONTROL_TOKEN` in `.env` or the environment and a store with no token verifier (DASH-CTRL-002); the one gate checks a bearer against the store's verifier and a session cookie against the store's session key (DASH-CTRL-011, DASH-UNL-005); the settings, personality and secret routes read and write the store (MOD-CFG-*, DASH-HTTP-005, -006, DASH-SECRET-*); config recovery mode covers a damaged store, a newer store, a missing key and stored settings that fail the schema, with backups, an import, the recovery key and the discard of credentials (DASH-RCV-001 to -029; the raw editor, the placeholder fallback and the secret-path rows are retired); a banner asks the owner to confirm a new recovery key (DASH-RCV-029). The 11 gaps are the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037).
+**MAPPED.** 489 specs: 478 implemented, 11 gaps, 0 deferred. Launch, rebuild and restart-all progress shows in a launch progress dialog over every operator screen, driven by the `stack-progress` record and not dismissible while the action runs (DASH-UI-055 to 057, DASH-UI-060 to 064, DASH-A11Y-005), with mute, tool confirmations and the connection state kept in reach inside it (DASH-UI-069, -070), the result beside the stack buttons follows the outcome (DASH-UI-068), and the containers without a heartbeat are Infrastructure rows of the Services table with the one-shot `models` read as completed (DASH-STACK-001, DASH-FEED-008, DASH-UI-058, DASH-UI-065 to 067). The Services screen shows one Docker restart count per row in a fixed-width table (DASH-UI-059). The dashboard runs over the settings store (#372): its entry opens the store, registers its `logging` section and refuses a `CONTROL_TOKEN` in `.env` or the environment and a store with no token verifier (DASH-CTRL-002); the one gate checks a bearer against the store's verifier and a session cookie against the store's session key (DASH-CTRL-011, DASH-UNL-005); the settings, personality and secret routes read and write the store (MOD-CFG-*, DASH-HTTP-005, -006, DASH-SECRET-*); config recovery mode covers a damaged store, a newer store, a missing key and stored settings that fail the schema, with backups, an import, the recovery key and the discard of credentials (DASH-RCV-001 to -029; the raw editor, the placeholder fallback and the secret-path rows are retired); a banner asks the owner to confirm a new recovery key (DASH-RCV-029). The 11 gaps are the renderer page specs that need a browser or GPU (DASH-AVP-006 to -008, -016 to -019, -025, -031, -034, -037).
 
 **Egress marks.** `GET /egress` answers the engine and chat-model destinations of the saved config (DASH-EGR-001 to 004), the Services screen marks the rows that leave the LAN and the Settings screen repeats the note beside the engine keys (DASH-UI-037, DASH-SET-034); `GET /options/voices` is a Kokoro list only (DASH-OPT-001, DASH-OPT-005).
 
@@ -26,12 +26,12 @@ Orientation:
 - docs/intent/dashboard/decisions/dashboard-revamp.md
 
 ### EARS
-- docs/intent/dashboard/dashboard-specs.md (478 specs, prefix `DASH`: 467 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
+- docs/intent/dashboard/dashboard-specs.md (489 specs, prefix `DASH`: 478 `[x]`, 11 `[ ]`, 0 `[D]`; DASH-CTRL-009, -010, DASH-HOST-007, DASH-UI-029, DASH-SECRET-004 and DASH-ACC-009 are retired (#370); DASH-DOCS-009, -014, DASH-BUILD-001, -005 and DASH-AVP-001 name the mise tasks of deployment #344; DASH-CTRL-006 is retired, and DASH-INJ-007 and DASH-UI-016 are retired placeholders, no number is reused)
 
 ### Tests
 `@spec DASH-` annotations are in:
 - services/dashboard/test/applied-view.test.ts, models.test.ts, models-upload.test.ts, models-applied.test.ts, models-transport.test.ts (the avatar model store, DASH-MDL and the applied view), body.test.ts, control.test.ts, dev-proxy.test.ts, docs-script.test.ts, docs.test.ts, egress.test.ts, feed.test.ts, host-docs.test.ts, host.test.ts, inject-connector.test.ts, inject-event.test.ts, inject.test.ts, options.test.ts, root-scripts.test.ts, routes.test.ts, routing.test.ts, secrets.test.ts, service.test.ts, stack-lock.test.ts, stack-progress.test.ts, stack-rebuild.test.ts, stack.test.ts, static.test.ts, uploads.test.ts, viewers.test.ts, ws-origin.test.ts
-- services/dashboard/test/ui/*.test.tsx (the React UI on `happy-dom` and Testing Library, and the renderer page's pure modules: `avatar-pose`, `avatar-motion`, `avatar-loader`, `avatar-session`, `notices`, `build`; `access`, `access-dialog`, `api`, `audio`, `components-display`, `components-form`, `dialog`, `egress-note`, `feed`, `live-avatar`, `live-feed`, `live-inject`, `live-say`, `personality`, `pickers`, `routes`, `services`, `services-launch`, `services-stack`, `services-test-sheet`, `settings-model`, `settings-page`, `settings-real`, `settings-secrets`, `shell`, `sink`, `stylesheet`, `theme`, `tokens`, `viewers`)
+- services/dashboard/test/ui/*.test.tsx (the React UI on `happy-dom` and Testing Library, and the renderer page's pure modules: `avatar-pose`, `avatar-motion`, `avatar-loader`, `avatar-session`, `notices`, `build`; `access`, `access-dialog`, `api`, `audio`, `components-display`, `components-form`, `dialog`, `egress-note`, `feed`, `live-avatar`, `live-feed`, `live-inject`, `live-say`, `personality`, `pickers`, `routes`, `services`, `services-infra`, `services-stack`, `services-table`, `launch-modal`, `services-test-sheet`, `settings-model`, `settings-page`, `settings-real`, `settings-secrets`, `shell`, `sink`, `stylesheet`, `theme`, `tokens`, `viewers`)
 - packages/control/test/derived-lists.test.ts
 - Out of segment, cited only: packages/config/test/config.test.ts (DASH-SINK-004 via `urls.voice()`)
 
@@ -69,7 +69,7 @@ Orientation:
 |----------|----------|-------------|----------|------|
 | HTTP routes | DASH-HTTP-001 to DASH-HTTP-017 | 17 | 0 | 0 |
 | Audio proxy and sink | DASH-SINK-001 to DASH-SINK-007 | 7 | 0 | 0 |
-| WebSocket feed | DASH-FEED-001 to DASH-FEED-012 | 12 | 0 | 0 |
+| WebSocket feed | DASH-FEED-001 to DASH-FEED-013 | 13 | 0 | 0 |
 | Control gating | DASH-CTRL-001 to DASH-CTRL-011 (006 retired) | 10 | 0 | 0 |
 | Service lifecycle | DASH-SVC-001 to DASH-SVC-004 | 4 | 0 | 0 |
 | Mouth routing | DASH-ROUTE-001 to DASH-ROUTE-003 | 3 | 0 | 0 |
@@ -77,8 +77,9 @@ Orientation:
 | Upload store (Redis) | DASH-UPL-001 to DASH-UPL-003 | 3 | 0 | 0 |
 | Web page | DASH-UI-001 to DASH-UI-037 (016 retired) | 37 | 0 | 0 |
 | Streamed lines on the page | DASH-UI-038 to DASH-UI-054 | 17 | 0 | 0 |
+| Launch progress dialog and Infrastructure rows | DASH-UI-055 to DASH-UI-070 | 16 | 0 | 0 |
 | Host process and listeners | DASH-HOST-001 to DASH-HOST-010 | 10 | 0 | 0 |
-| Stack control | DASH-STACK-001 to DASH-STACK-010 | 10 | 0 | 0 |
+| Stack control and launch progress record | DASH-STACK-001 to DASH-STACK-017 | 17 | 0 | 0 |
 | Docs site | DASH-DOCS-001 to DASH-DOCS-016 | 16 | 0 | 0 |
 | Viewers page | DASH-VIEWERS-001 to DASH-VIEWERS-023 | 23 | 0 | 0 |
 | Build and serving | DASH-BUILD-001 to DASH-BUILD-011 | 11 | 0 | 0 |

@@ -15,14 +15,15 @@ export interface StackSnapshot {
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: ContainerStatus[]; finishedAt: number };
   /**
    * Per container; `overrides` (CTRL-STACK-016) is empty for a container that sets none and absent where the probe could not read it;
-   * `stale` marks, while a launch builds, a previous run's container Compose has not yet acted on (DASH-STACK-014).
+   * `stale` marks, while a launch builds, a previous run's container Compose has not yet acted on (DASH-STACK-014);
+   * `oneShot` marks a one-shot job's container, and `exitCode` is its code once it has exited (DASH-STACK-001).
    */
-  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: true }[];
+  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: true; oneShot?: true; exitCode?: number }[];
 }
 
 export type ProgressRowState = "building" | "cached" | "built" | "failed" | "restarting" | "done";
 
-/** One service of the Launch panel: a build (launch, rebuild) or a unit restart (restart-all). */
+/** One service of the launch progress dialog: a build (launch, rebuild) or a unit restart (restart-all). */
 export interface ProgressRow {
   service: string;
   state: ProgressRowState;
@@ -169,7 +170,14 @@ export class StackService {
       action: this.action ? { ...this.action } : null,
       last: this.last ? { ...this.last } : null,
       services: (st?.services ?? [])
-        .map((c) => ({ service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}), ...(c.overrides ? { overrides: { ...c.overrides } } : {}), ...(stale?.(c) ? { stale: true as const } : {}) }))
+        .map((c) => {
+          const oneShot = ONE_SHOTS.includes(c.service);
+          return {
+            service: c.service, status: c.status, ...(c.health ? { health: c.health } : {}), ...(c.restartCount !== undefined ? { restartCount: c.restartCount } : {}),
+            ...(c.overrides ? { overrides: { ...c.overrides } } : {}), ...(stale?.(c) ? { stale: true as const } : {}),
+            ...(oneShot ? { oneShot: true as const } : {}), ...(oneShot && c.exitCode !== undefined ? { exitCode: c.exitCode } : {}),
+          };
+        })
         .toSorted((a, b) => (a.service < b.service ? -1 : a.service > b.service ? 1 : 0)),
     };
   }

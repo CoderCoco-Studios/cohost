@@ -204,12 +204,25 @@ test("when last changes the card shows the result and every service it lists as 
   assert.ok(within(card()).queryByText("voice") === null);
 });
 
-// @spec DASH-UI-018
-test("containers that send no heartbeat are listed on the card with their status", async () => {
-  await mountServices({ services: [svc("chat")], stack: stackMsg({ services: [{ service: "chat", status: "running" }, { service: "redis", status: "running", health: "healthy" }, { service: "postgres", status: "exited" }] }) });
-  const list = within(card()).getByRole("list", { name: "Other containers" });
-  const items = within(list).getAllByRole("listitem").map((i) => i.textContent);
-  assert.deepEqual(items, ["redis: running, healthy", "postgres: exited"]);
+// @spec DASH-UI-068
+test("the result beside the stack buttons reads started until the stack's last result of that kind arrives, then finished or failed", async () => {
+  const before = { kind: "stop" as const, ok: true, finishedAt: 1 };
+  const { app } = await mountServices({ control: ON, stack: stackMsg({ state: "down", last: before }) });
+  app.fetch.on("POST /stack/launch", { status: 202, json: { ok: true, action: "launch" } });
+  await press("Launch");
+  await confirm("Launch");
+  const out = () => card().querySelector("output")!.textContent;
+  await waitFor(() => assert.equal(out(), "Launch started"));
+  push(app, { type: "stack", ...stackMsg({ state: "starting", action: { kind: "launch", phase: "compose-build", startedAt: 2 }, last: before }) });
+  assert.equal(out(), "Launch started", "still running");
+  push(app, { type: "stack", ...stackMsg({ state: "up", last: { kind: "launch", ok: true, finishedAt: 3 } }) });
+  assert.equal(out(), "Launch finished");
+  app.fetch.on("POST /stack/rebuild", { status: 202, json: { ok: true, action: "rebuild" } });
+  await press("Rebuild");
+  await confirm("Rebuild");
+  await waitFor(() => assert.equal(out(), "Rebuild started"));
+  push(app, { type: "stack", ...stackMsg({ state: "degraded", last: { kind: "rebuild", ok: false, detail: "voice not ready", finishedAt: 4 } }) });
+  assert.equal(out(), "Rebuild failed: voice not ready");
 });
 
 // @spec DASH-UI-001

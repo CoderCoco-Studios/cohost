@@ -31,12 +31,12 @@ export interface StackSnapshot {
   bus: "connected" | "unreachable";
   action: null | { kind: StackActionKind; phase: string; startedAt: number };
   last: null | { kind: StackActionKind; ok: boolean; detail?: string; services?: { service: string; status: string; health?: string }[]; finishedAt: number };
-  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: boolean }[];
+  services: { service: string; status: string; health?: string; restartCount?: number; overrides?: Record<string, string>; stale?: boolean; oneShot?: boolean; exitCode?: number }[];
 }
 
 export type ProgressRowState = "building" | "cached" | "built" | "failed" | "restarting" | "done";
 
-/** One service of the Launch panel (DASH-UI-055). */
+/** One service of the launch progress dialog (DASH-UI-055). */
 export interface ProgressRow {
   service: string;
   state: ProgressRowState;

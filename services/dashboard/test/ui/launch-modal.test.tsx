@@ -121,10 +121,9 @@ test("a record that has already ended opens nothing; the stack card's Last launc
   await user.click(link);
   const d = screen.getByRole("dialog", { name: "Launch finished" });
   assert.equal(within(d).getAllByRole("button", { name: "Close" }).length, 2);
-  assert.equal(within(screen.getByRole("region", { name: "Stack" })).queryByRole("button", { name: "Last launch: details" }), null, "no link while the dialog is open");
   await user.click(within(d).getAllByRole("button", { name: "Close" })[0]!);
-  const again = within(screen.getByRole("region", { name: "Stack" })).getByRole("button", { name: "Last launch: details" });
-  assert.ok(document.activeElement === again, "focus returns to the link");
+  assert.equal(queryDialog(), null);
+  assert.ok(document.activeElement === link, "focus returns to the link");
   push(app, record({ kind: "rebuild", startedAt: 3, running: false, ok: false, finishedAt: 4 }));
   assert.ok(within(screen.getByRole("region", { name: "Stack" })).getByRole("button", { name: "Last rebuild: details" }));
   push(app, record({ kind: "restart", startedAt: 5, running: false, ok: true, finishedAt: 6 }));

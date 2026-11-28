@@ -39,7 +39,7 @@ export interface RowProps {
 }
 
 /** A 2xx whose body says `ok: false` is a failure. */
-function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiResult<{ ok: boolean; detail?: string }> {
+export function lifecycleResult(r: ApiResult<{ ok: boolean; detail?: string }>): ApiResult<{ ok: boolean; detail?: string }> {
   if (r.ok && r.data && !r.data.ok) return { ok: false, status: r.status, detail: r.data.detail ?? "not done" };
   return r;
 }

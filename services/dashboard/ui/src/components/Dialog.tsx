@@ -21,6 +21,11 @@ export interface DialogProps {
   backdropClose?: boolean;
   /** A CSS selector inside the dialog for the element that takes focus on open (default: `[data-autofocus]`, then the first control of the body or footer, the header's Close last). */
   initialFocus?: string;
+  /**
+   * False while the dialog must not be dismissed (the launch progress dialog while its action runs, DASH-UI-061): no header
+   * Close button, Esc and the backdrop do nothing, and a close by the browser opens it again. Default true.
+   */
+  dismissible?: boolean;
 }
 
 const FOCUSABLE = 'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
@@ -37,23 +42,50 @@ export function topModal(): HTMLDialogElement | undefined {
   return mine[mine.length - 1] ?? [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].pop();
 }
 
-/** Puts focus back where the operator was: the opener, or when it is gone or refuses focus, the screen heading. */
-function restoreFocus(opener: HTMLElement | null): void {
-  if (opener?.isConnected) { opener.focus(); if (document.activeElement === opener) return; }
+/** The opener of each open dialog, then the openers it falls back to: an opener inside another dialog is followed by that dialog's own. */
+const openers = new WeakMap<HTMLDialogElement, HTMLElement[]>();
+
+function openerChain(opener: HTMLElement | null): HTMLElement[] {
+  if (!opener || opener === document.body) return [];
+  const host = opener.closest("dialog");
+  return [opener, ...(host ? openers.get(host) ?? [] : [])];
+}
+
+/** Focuses the first control of a dialog's body or footer, else any control in it, else the dialog itself. */
+function focusInto(d: HTMLDialogElement): void {
+  const target = [...d.querySelectorAll<HTMLElement>(FOCUSABLE)].find((el) => !el.closest(".dialog-h")) ?? d.querySelector<HTMLElement>(FOCUSABLE) ?? d;
+  target.focus();
+}
+
+/**
+ * Puts focus back where the operator was: the first of the opener chain still in the page that takes focus, or the screen
+ * heading. While another modal dialog is still open, focus stays inside it, since everything behind it is inert.
+ */
+function restoreFocus(chain: readonly HTMLElement[]): void {
+  const top = topModal();
+  for (const el of chain) {
+    if (!el.isConnected || (top && !top.contains(el))) continue;
+    el.focus();
+    if (document.activeElement === el) return;
+  }
+  if (top) { focusInto(top); return; }
   document.querySelector<HTMLElement>("h1[tabindex]")?.focus();
 }
 
-function ModalDialog({ title, onClose, children, footer, className, initialFocus, backdropClose }: Omit<DialogProps, "open">) {
+function ModalDialog({ title, onClose, children, footer, className, initialFocus, backdropClose, dismissible = true }: Omit<DialogProps, "open">) {
   const ref = useRef<HTMLDialogElement>(null);
   const headingId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const dismissibleRef = useRef(dismissible);
+  dismissibleRef.current = dismissible;
   const unmounting = useRef(false);
   const pressedOnBackdrop = useRef(false);
   useLayoutEffect(() => {
     const d = ref.current!;
     unmounting.current = false;
-    const opener = document.activeElement as HTMLElement | null;
+    const chain = openerChain(document.activeElement as HTMLElement | null);
+    openers.set(d, chain);
     if (!d.open) d.showModal();
     if (!stack.includes(d)) stack.push(d);
     const target = (initialFocus ? d.querySelector<HTMLElement>(initialFocus) : null) ?? d.querySelector<HTMLElement>("[data-autofocus]") ?? [...d.querySelectorAll<HTMLElement>(FOCUSABLE)].find((el) => !el.closest(".dialog-h")) ?? d.querySelector<HTMLElement>(FOCUSABLE) ?? d;
@@ -63,21 +95,24 @@ function ModalDialog({ title, onClose, children, footer, className, initialFocus
       // A modal dialog makes everything behind it inert, and an inert element refuses focus: close it first, then restore.
       unmounting.current = true;
       if (d.open) d.close();
-      restoreFocus(opener);
+      restoreFocus(chain);
     };
   }, [initialFocus]);
   return (
-    <dialog ref={ref} className={`dialog${className ? ` ${className}` : ""}`} aria-labelledby={headingId} tabIndex={-1}
-      onCancel={(e) => { e.preventDefault(); closeRef.current("cancel"); }} onClose={(e) => {
+    <dialog ref={ref} className={`dialog${className ? ` ${className}` : ""}`} aria-labelledby={headingId} aria-modal="true" tabIndex={-1}
+      onCancel={(e) => { e.preventDefault(); if (dismissibleRef.current) closeRef.current("cancel"); }} onClose={(e) => {
         // A browser queues the close event of `close()`: in development the double run of the effect (setup, cleanup, setup)
         // reopens the dialog before the event of the first cleanup fires. A close event of a dialog that is open is stale.
-        if (!unmounting.current && !e.currentTarget.open) closeRef.current("close");
+        if (unmounting.current || e.currentTarget.open) return;
+        // A browser may close a modal whose cancel was refused (a second Esc): one that must not be dismissed opens again.
+        if (!dismissibleRef.current) { e.currentTarget.showModal(); focusInto(e.currentTarget); return; }
+        closeRef.current("close");
       }}
       onMouseDown={(e) => { pressedOnBackdrop.current = e.target === e.currentTarget; }}
-      onClick={(e) => { if (backdropClose && e.target === e.currentTarget && pressedOnBackdrop.current) closeRef.current("cancel"); pressedOnBackdrop.current = false; }}>
+      onClick={(e) => { if (backdropClose && dismissibleRef.current && e.target === e.currentTarget && pressedOnBackdrop.current) closeRef.current("cancel"); pressedOnBackdrop.current = false; }}>
       <div className="dialog-h">
         <h2 id={headingId}>{title}</h2>
-        <Button variant="ghost" size="sm" className="dialog-close" onClick={() => closeRef.current("cancel")}><Icon name="close" />Close</Button>
+        {dismissible ? <Button variant="ghost" size="sm" className="dialog-close" onClick={() => closeRef.current("cancel")}><Icon name="close" />Close</Button> : null}
       </div>
       <div className="dialog-b">{children}</div>
       {footer ? <div className="dialog-f">{footer}</div> : null}
@@ -87,7 +122,8 @@ function ModalDialog({ title, onClose, children, footer, className, initialFocus
 
 /**
  * A native modal `<dialog>` (`showModal()`): named by its heading, focus moves into it on open and returns to the control
- * that opened it once it has closed (the screen heading when that control is gone), Esc, the header's Close button and,
+ * that opened it once it has closed (when that control sat in a dialog that has closed since, that dialog's opener; the
+ * screen heading when none is left; inside the top-most dialog while another is still open), Esc, the header's Close button and,
  * where `backdropClose` is set (informational dialogs only), a click on the backdrop close it as a cancel, the browser traps focus
  * (DASH-A11Y-005, DASH-ACC-011). Nothing is rendered while closed, so typed text is gone when it reopens (DASH-ACC-012).
  * The page behind keeps running: dialogs never block the feed or the audio sink.

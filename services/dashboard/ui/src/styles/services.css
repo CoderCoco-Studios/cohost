@@ -23,6 +23,9 @@
 .svc-table tbody th { font-weight: 650; }
 .svc-table tr:last-child > * { border-bottom: 0; }
 .svc-attn { background: var(--bad-tint); }
+/* The Infrastructure group: the containers that send no heartbeat (DASH-UI-065). */
+.svc-group { border-top: 1px solid var(--line); }
+.svc-table .svc-group-h th { padding-top: 14px; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
 .svc-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .svc-state .needs { flex-basis: 100%; }
 .tag-iso { color: var(--build); background: var(--build-tint); border-color: transparent; }
@@ -36,8 +39,13 @@
 .td-feed { max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
 .td-feed > p { padding: 10px 12px; }
 
-/* Launch panel (DASH-UI-055 to 057): the last launch, rebuild or restart-all. */
-.launch-panel { display: flex; flex-direction: column; gap: 8px; }
+/* The launch progress dialog (DASH-UI-055 to 057, DASH-UI-060 to 064): the last launch, rebuild or restart-all. */
+.launch-dialog { max-width: 820px; }
+/* A fixed height that scrolls on its own, so a row added later never moves the failure block or the log (DASH-UI-064). */
+.launch-rows { height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.launch-rows thead th { position: sticky; top: 0; background: var(--surface); }
+/* The stack card's "Last launch: details": a button, since it opens a dialog, that reads as a link (DASH-UI-063). */
+.link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; min-height: 30px; }
 .launch-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 .launch-table th, .launch-table td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .launch-table thead th { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }

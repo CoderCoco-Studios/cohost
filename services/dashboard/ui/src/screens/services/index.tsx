@@ -7,7 +7,8 @@ import { useApi, useFeed } from "../../state/hooks";
 import { attentionCount } from "../../state/derive";
 import { useEgress, type EgressEntry } from "../../state/egress";
 import type { UnitDescriptor } from "../../state/types";
-import { blockReason, sortServices } from "./model";
+import { blockReason, infraContainers, sortServices } from "./model";
+import { InfraRow } from "./InfraRow";
 import { ServiceRow } from "./ServiceRow";
 import { StackCard } from "./StackCard";
 import { TestSheet } from "./TestSheet";
@@ -15,7 +16,7 @@ import { TestSheet } from "./TestSheet";
 type Loaded =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; units: Map<string, UnitDescriptor> };
+  | { status: "ready"; units: Map<string, UnitDescriptor>; advanced: boolean };
 
 /**
  * Reads `GET /services/control` and `GET /services/manifest` together; either failing is the error state, whose Retry
@@ -32,7 +33,7 @@ function useControlAndManifest(): [Loaded, () => void] {
       if (!alive) return;
       if (!c.ok) setState({ status: "error", message: `Could not load the service control settings: ${c.status ? `${c.status} ` : ""}${c.detail}` });
       else if (!m.ok) setState({ status: "error", message: `Could not load the service manifest: ${m.status ? `${m.status} ` : ""}${m.detail}` });
-      else setState({ status: "ready", units: new Map((m.data.units ?? []).map((u) => [u.id, u])) });
+      else setState({ status: "ready", units: new Map((m.data.units ?? []).map((u) => [u.id, u])), advanced: c.data.advanced });
     });
     return () => { alive = false; };
   }, [api, attempt]);
@@ -41,10 +42,11 @@ function useControlAndManifest(): [Loaded, () => void] {
 
 /**
  * The Services screen: the always-visible stack card, then the service list as a real table (one row per service, keyed
- * by name, needing-attention rows first) with the lifecycle, pause and Test actions of the manifest's units, and the
- * per-unit test side sheet. Loading, empty, error and stale (socket closed) states follow the design.
+ * by name, needing-attention rows first) with the lifecycle, pause and Test actions of the manifest's units, then the
+ * Infrastructure group of the containers that send no heartbeat, and the per-unit test side sheet. Loading, empty, error
+ * and stale (socket closed) states follow the design.
  */
-// @spec DASH-UI-007, DASH-UI-059, DASH-UI-021, DASH-UI-025, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001
+// @spec DASH-UI-007, DASH-UI-059, DASH-UI-021, DASH-UI-025, DASH-UI-030, DASH-UI-031, DASH-UI-032, DASH-UI-001, DASH-UI-065
 export function Screen(_props: ScreenProps) {
   const [load, reload] = useControlAndManifest();
   const services = useFeed((f) => f.services);
@@ -54,6 +56,7 @@ export function Screen(_props: ScreenProps) {
   const blocked = blockReason(stack);
   const rows = useMemo(() => (services ? sortServices(services) : null), [services]);
   const attention = attentionCount(services);
+  const infra = useMemo(() => infraContainers(stack, services), [stack, services]);
   const overrides = useMemo(() => new Map((stack?.services ?? []).map((c) => [c.service, Object.entries(c.overrides ?? {}).map(([k, v]) => `${k}=${v}`).join(", ")])), [stack]);
   const onTest = useCallback((id: string) => setTesting(id), []);
   const egress = useEgress();
@@ -76,7 +79,7 @@ export function Screen(_props: ScreenProps) {
         </div>
         {load.status === "error" ? <ErrorState message={load.message} onRetry={reload} />
           : services === null || load.status === "loading" ? <LoadingState label="Loading services…" />
-          : rows!.length === 0 ? <EmptyState title="No services reported yet">Services appear here once they send their first heartbeat.</EmptyState>
+          : rows!.length === 0 && infra.length === 0 ? <EmptyState title="No services reported yet">Services appear here once they send their first heartbeat.</EmptyState>
           : (
             <div className="svc-scroll">
               <table className="svc-table" aria-label="Services">
@@ -87,6 +90,15 @@ export function Screen(_props: ScreenProps) {
                     <ServiceRow key={s.service} s={s} unit={load.units.get(s.service)} blocked={blocked} isolatedBy={overrides.get(s.service) ?? ""} onTest={onTest} egress={egressBy.get(s.service) ?? []} />
                   ))}
                 </tbody>
+                {infra.length ? (
+                  <tbody className="svc-group">
+                    <tr className="svc-group-h"><th scope="colgroup" colSpan={5}>Infrastructure</th></tr>
+                    {infra.map((c) => {
+                      const unit = load.units.get(c.service);
+                      return <InfraRow key={c.service} c={c} action={stack?.action?.kind} restartable={unit !== undefined && (!unit.infra || load.advanced)} blocked={blocked} />;
+                    })}
+                  </tbody>
+                ) : null}
               </table>
             </div>
           )}

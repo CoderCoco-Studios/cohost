@@ -6,6 +6,7 @@ import { ConfirmBars } from "./ConfirmBars";
 import { ConnectionBanner } from "./connection";
 import { RecoveryKeyBanner } from "./RecoveryKeyBanner";
 import { Header } from "./Header";
+import { LaunchDialogHost } from "./LaunchDialog";
 import { navigate, useRoute } from "./routes";
 import { SCREENS } from "./screens";
 import { ShortcutHelp } from "./ShortcutHelp";
@@ -14,9 +15,10 @@ import { useShortcuts } from "./shortcuts";
 
 /**
  * The shell: skip link, header, connection banner, the current screen in `<main>`, and the dialogs host (shortcut list,
- * Access). Wrap it in `AppProviders`. With `sink` set it renders only the sink view (DASH-UI-011).
+ * Access, the launch progress dialog over every operator screen). Wrap it in `AppProviders`. With `sink` set it renders only
+ * the sink view (DASH-UI-011), which never shows the launch progress dialog (DASH-UI-060).
  */
-// @spec DASH-NAV-001, DASH-NAV-003, DASH-A11Y-001, DASH-A11Y-005, DASH-UI-011
+// @spec DASH-NAV-001, DASH-NAV-003, DASH-A11Y-001, DASH-A11Y-005, DASH-UI-011, DASH-UI-060
 export function App({ sink = false }: { sink?: boolean }) {
   const name = useMemo(() => cohostName(), []);
   if (sink) return <SinkView name={name} />;
@@ -52,7 +54,7 @@ function Shell({ name }: { name: string }) {
 
   const Screen = SCREENS.find((s) => s.id === route.view)!.Screen;
   return (
-    <>
+    <LaunchDialogHost>
       <a className="skip-link" href="#main" onClick={(e) => { e.preventDefault(); mainRef.current?.focus(); }}>Skip to main content</a>
       <Header name={name} route={route} onNavigate={navigate} mute={mute} />
       <ConnectionBanner />
@@ -61,6 +63,6 @@ function Shell({ name }: { name: string }) {
       <main id="main" className="page" ref={mainRef} tabIndex={-1}><Screen route={route} /></main>
       <ShortcutHelp open={help} onClose={() => setHelp(false)} />
       <AccessDialog />
-    </>
+    </LaunchDialogHost>
   );
 }

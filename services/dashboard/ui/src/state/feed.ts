@@ -28,7 +28,7 @@ export interface FeedState {
   /** When that snapshot arrived (page clock); a service's age is `lastSeenAgeMs + (now - servicesAt)`. */
   servicesAt: number;
   stack: StackSnapshot | null;
-  /** The latest `stack-progress` record, or null until one arrives (the Launch panel, DASH-UI-055). */
+  /** The latest `stack-progress` record, or null until one arrives (the launch progress dialog, DASH-UI-060). */
   progress: StackProgress | null;
   /** Rendered event types, oldest first, at most `LOG_LIMIT`, replayed events included and flagged. */
   events: FeedEvent[];

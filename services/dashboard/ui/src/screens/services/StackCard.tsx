@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useStale } from "../../app/connection";
+import { useLaunchDialog } from "../../app/LaunchDialog";
 import { ActionStatus } from "../../components/ActionStatus";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/Dialog";
 import { Status, stackStatus } from "../../components/Status";
 import { useAction, useApi, useFeed } from "../../state/hooks";
-import type { StackActionKind } from "../../state/types";
+import type { StackActionKind, StackSnapshot } from "../../state/types";
 import { KIND_LABEL, blockReason, healthySummary, phaseWords, stackCause, stackStep } from "./model";
-import { LaunchPanel } from "./LaunchPanel";
 import { Since } from "./Since";
 
 interface Ask { title: string; body: string; confirm: string; danger?: boolean }
@@ -20,38 +20,56 @@ const ASK: Record<StackActionKind, Ask> = {
   consolidate: { title: "Run the consolidation pass?", body: "The viewer-note consolidation pass runs now and can take up to 30 minutes.", confirm: "Run consolidation pass" },
 };
 const STARTED: Record<StackActionKind, string> = { launch: "Launch started", rebuild: "Rebuild started", restart: "Restart started", stop: "Stop started", consolidate: "Consolidation started" };
+const DETAILS: Partial<Record<StackActionKind, string>> = { launch: "Last launch: details", rebuild: "Last rebuild: details", restart: "Last restart all: details" };
+
+type Last = StackSnapshot["last"];
+/** The stack action this card sent and that was accepted, with the `last` result shown when it was sent. */
+interface Sent { kind: StackActionKind; before: Last }
+
+/** The result of a sent action once a later `last` names its kind: `Launch finished`, `Rebuild failed: <detail>` (DASH-UI-068). */
+function outcome(sent: Sent | null, last: Last): string | undefined {
+  if (!sent || !last || last.kind !== sent.kind) return undefined;
+  const b = sent.before;
+  if (b && b.kind === last.kind && b.finishedAt === last.finishedAt && b.ok === last.ok) return undefined; // the result shown when it was sent
+  return last.ok ? `${KIND_LABEL[sent.kind]} finished` : `${KIND_LABEL[sent.kind]} failed${last.detail ? `: ${last.detail}` : ""}`;
+}
 
 /**
  * The stack card, always shown: the stack's state as a status with a sentence of cause, the running action's kind, phase,
- * step and elapsed time, the last result with each not-ready service, the containers that send no heartbeat, the Launch,
- * Restart all, Rebuild and Stop stack buttons (each behind a confirmation dialog) and the
- * consolidation pass offered after a successful stop. A button is disabled while an action runs or Docker is unavailable.
+ * step and elapsed time, the last result with each not-ready service, the link that reopens the launch progress dialog, the
+ * Launch, Restart all, Rebuild and Stop stack buttons (each behind a confirmation dialog) with the sent action's result, and
+ * the consolidation pass offered after a successful stop. A button is disabled while an action runs or Docker is unavailable.
+ * The containers that send no heartbeat are rows of the Services table, not listed here (DASH-UI-065).
  */
-// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020, DASH-UI-058
+// @spec DASH-UI-017, DASH-UI-018, DASH-UI-019, DASH-UI-020, DASH-UI-063, DASH-UI-068
 export function StackCard() {
   const api = useApi();
   const stack = useFeed((f) => f.stack);
   const services = useFeed((f) => f.services);
+  const progress = useFeed((f) => f.progress);
+  const launchDialog = useLaunchDialog();
   const stale = useStale();
   const act = useAction();
   const [asking, setAsking] = useState<StackActionKind | null>(null);
+  const [sent, setSent] = useState<Sent | null>(null);
 
   const info = stack ? stackStatus(stack.state) : null;
-  const heartbeating = new Set((services ?? []).map((s) => s.service));
-  const others = (stack?.services ?? []).filter((c) => !heartbeating.has(c.service));
   const blocked = blockReason(stack);
   const last = stack?.last ?? null;
   const offerConsolidate = stack !== null && !stack.action && last !== null && last.kind === "stop" && last.ok;
+  const details = progress && !progress.running ? DETAILS[progress.kind] : undefined;
 
-  const open = (kind: StackActionKind) => { act.dismiss(); setAsking(kind); };
+  const open = (kind: StackActionKind) => { act.dismiss(); setSent(null); setAsking(kind); };
   const submit = async () => {
     if (!asking) return;
     const kind = asking;
+    const before = last;
     const r = await act.run(() => api.stackAction(kind, KIND_LABEL[kind]), STARTED[kind]);
-    if (r.ok) setAsking(null);
+    if (r.ok) { setAsking(null); setSent({ kind, before }); }
   };
   // While a dialog is open its failure shows inside it; the card shows only a failure that outlived the dialog.
-  const shown = asking !== null && act.state.kind === "error" ? { kind: "idle" as const } : act.state;
+  const ended = act.state.kind === "ok" ? outcome(sent, last) : undefined;
+  const shown = asking !== null && act.state.kind === "error" ? { kind: "idle" as const } : ended ? { kind: "ok" as const, message: ended } : act.state;
   const ask = asking ? ASK[asking] : null;
 
   const button = (kind: StackActionKind, label: string, variant?: "primary" | "danger") => (
@@ -92,12 +110,7 @@ export function StackCard() {
                   ) : null}
                 </div>
               ) : null}
-              <LaunchPanel />
-              {others.length ? (
-                <ul aria-label="Other containers" className="plain-list muted small">
-                  {others.map((c) => <li key={c.service}>{`${c.service}: ${c.stale ? `from the previous run, recreated by this ${stack.action?.kind === "rebuild" ? "rebuild" : "launch"}` : c.health ? `${c.status}, ${c.health}` : c.status}`}</li>)}
-                </ul>
-              ) : null}
+              {details ? <p><button type="button" className="link-btn small" onClick={launchDialog.show}>{details}</button></p> : null}
             </>
           )}
           {stack !== null ? (

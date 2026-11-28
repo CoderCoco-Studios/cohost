@@ -61,7 +61,7 @@ Mock mode means my answers are canned echoes and my voice is silence. Think of i
 
    It builds itself first, so the first start takes a minute. It prints the address it is listening on and a line `Unlock this browser: http://127.0.0.1:3000/unlock?n=...`.
 
-4. Open that [unlock link](../../start/glossary.md#unlock-link) in your browser. It works once, within 10 minutes, and opens the dashboard with this browser unlocked, so you never type the control token. If the link has expired, `mise run dashboard:unlock` prints a fresh one. You can instead open `http://localhost:3000` and, when the Access dialog asks for a token, paste the control token from your password manager.
+4. Open that [unlock link](../../start/glossary.md#unlock-link) in your browser. It works once, within 10 minutes, and opens the dashboard with this browser unlocked, so you never type the control token. The line stays pinned at the bottom of the terminal, renewed every 10 minutes, until a browser is unlocked; `mise run dashboard --open` opens it in your browser for you. If the link has expired, `mise run dashboard:unlock` prints a fresh one. You can instead open `http://localhost:3000` and, when the Access dialog asks for a token, paste the control token from your password manager.
 
 5. Press **Launch**. This builds and starts everything else. Be patient: the first time it downloads images and, through the `models` service, the language models.
 

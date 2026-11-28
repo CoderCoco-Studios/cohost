@@ -159,10 +159,11 @@ run = "scripts/compose-smoke.sh"
 description = "Build and start the dashboard on this machine (it brings up the stack)"
 depends = ["build:native", "build:ui"]
 raw = true
+usage = 'flag "--open" help="Open the unlock link in the browser once the dashboard is listening"'
 run = [
   "mise run docs:build || echo 'mise run dashboard: the docs build failed (see above); starting the dashboard anyway' >&2",
   "tsc -b services/dashboard",
-  "node services/dashboard/dist/index.js",
+  "node services/dashboard/dist/index.js ${usage_open:+--open}",
 ]
 
 [tasks."dashboard:unlock"]

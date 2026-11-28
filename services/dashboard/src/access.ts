@@ -113,7 +113,21 @@ export class UnlockLinks {
   private readonly nonces = new Map<string, number>();
   /** The full-surface address and port links name (`unlockBase`), set once the listener is bound (DASH-UNL-001, DASH-UNL-006). */
   base: string | undefined;
+  private onUnlock: (() => void) | undefined;
   constructor(private readonly now: () => number = Date.now, readonly ttlMs = 10 * 60_000, readonly max = 16) {}
+
+  /** Calls `fn` once, on the first unlock after this (`unlocked`): the pinned terminal line's release (DASH-UNL-012). */
+  watch(fn: () => void): void { this.onUnlock = fn; }
+
+  /** True while `watch` waits for an unlock. */
+  get watched(): boolean { return this.onUnlock !== undefined; }
+
+  /** A browser was unlocked (a link accepted, or a valid session cookie seen on the full surface): runs the watcher once. */
+  unlocked(): void {
+    const fn = this.onUnlock;
+    this.onUnlock = undefined;
+    fn?.();
+  }
 
   /** A fresh nonce. */
   issue(): string {
@@ -144,8 +158,11 @@ export function pathOf(req: http.IncomingMessage): string {
   try { return new URL(req.url ?? "/", "http://x").pathname; } catch { return "(unparsable)"; }
 }
 
+/** The unlock link of DASH-UNL-001. */
+export const unlockUrl = (base: string, nonce: string): string => `${base}/unlock?n=${nonce}`;
+
 /** The terminal line of DASH-UNL-001. */
-export const unlockLine = (base: string, nonce: string): string => `Unlock this browser: ${base}/unlock?n=${nonce}`;
+export const unlockLine = (base: string, nonce: string): string => `Unlock this browser: ${unlockUrl(base, nonce)}`;
 
 /** The answer to a link that is not valid (DASH-UNL-004): static, the same bytes for every request, nothing from the request. */
 export const BAD_LINK_PAGE = `<!doctype html>
@@ -187,6 +204,7 @@ export async function handleUnlock(d: { gate: Gate; links: UnlockLinks }, req: h
       "set-cookie": `${SESSION_COOKIE}=${newSession(key)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MAX_AGE}`,
     });
     res.end();
+    d.links.unlocked(); // @spec DASH-UNL-012
     return true;
   }
   if (req.method === "POST" && url.pathname === "/unlock/link") {

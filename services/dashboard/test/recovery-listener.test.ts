@@ -16,7 +16,7 @@ const freePort = (): Promise<number> => new Promise((resolve, reject) => {
 const logger = () => {
   const lines: string[] = [];
   const at = (level: string) => (...a: unknown[]) => { lines.push(`${level} ${a.map((x) => (typeof x === "string" ? x : "")).join(" ").trim()}`); };
-  return { lines, log: { info: at("info"), error: at("error"), fatal: at("fatal") } };
+  return { lines, log: { info: at("info"), warn: at("warn"), error: at("error"), fatal: at("fatal") } };
 };
 
 /** One raw request, so the Host header can be anything. */

@@ -443,7 +443,7 @@ test("runRecovery on DASHBOARD_HOST=0.0.0.0 with invalid settings: the token gat
   const dir = mkdtempSync(join(tmpdir(), "cohost-unlock-run-"));
   const lines: string[] = [];
   const logged: string[] = [];
-  const log = { info: (...a: unknown[]) => logged.push(JSON.stringify(a)), error: (...a: unknown[]) => logged.push(JSON.stringify(a)), fatal: (...a: unknown[]) => logged.push(JSON.stringify(a)) };
+  const log = { info: (...a: unknown[]) => logged.push(JSON.stringify(a)), warn: (...a: unknown[]) => logged.push(JSON.stringify(a)), error: (...a: unknown[]) => logged.push(JSON.stringify(a)), fatal: (...a: unknown[]) => logged.push(JSON.stringify(a)) };
   const running = runRecovery({
     env: { DASHBOARD_HOST: "0.0.0.0" }, log, problems, store: st.opts, uiDir: join(dir, "no-ui"), signals: false, exit: () => {}, print: (l) => lines.push(l),
   });
